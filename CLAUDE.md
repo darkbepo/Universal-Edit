@@ -109,6 +109,7 @@ src/umc/
   tools/                 # wrappers around external programs/libraries
     process.py           # find_executable (bundled → PATH → known install dirs), cancellable run()
     installer.py         # one-click download + verify + install of LibreOffice / Pandoc (Windows)
+    winsign.py           # Authenticode check via WinVerifyTrust/crypt32 (PowerShell's module is unreliable)
     ffmpeg.py, libreoffice.py, pandoc.py, pdf.py
 tests/                   # fixtures are generated in conftest.py — no binary files in git
 packaging/
@@ -172,8 +173,9 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
   (Windows; `tools/installer.py`), with "Download … myself" and "I've installed it — check again"
   as fallbacks. After a successful install the conversion is retried automatically.
   - **LibreOffice:** newest version from `download.documentfoundation.org/libreoffice/stable/`,
-    Windows x86-64 MSI. Authenticode signature must be *Valid* and signed by The Document
-    Foundation. Unpacked with `msiexec /a` into the private folder (no admin, no file
+    Windows x86-64 MSI. Must be a real MSI, trusted by `WinVerifyTrust` and signed by The
+    Document Foundation (`tools/winsign.py` — don't switch back to PowerShell's
+    Get-AuthenticodeSignature: its module fails to load in some environments). Unpacked with `msiexec /a` into the private folder (no admin, no file
     associations), then proven with a real txt → pdf conversion. If that copy won't run, fall
     back to `msiexec /i /passive` (Windows shows its permission prompt once; MS Office file
     associations are not taken over).
