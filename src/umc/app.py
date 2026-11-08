@@ -13,8 +13,10 @@ from umc import __version__
 
 def log_dir() -> Path:
     if sys.platform == "win32":
-        base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
-    elif sys.platform == "darwin":
+        from umc.core.paths import app_data_dir
+
+        return app_data_dir()
+    if sys.platform == "darwin":
         base = Path.home() / "Library" / "Logs"
     else:
         base = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state"))

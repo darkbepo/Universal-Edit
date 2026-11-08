@@ -1,6 +1,6 @@
 """Pandoc conversions for text-like formats (md, html, epub, docx, odt, rst, …).
 
-Like LibreOffice, Pandoc is detected rather than bundled; missing → download prompt.
+Like LibreOffice, Pandoc is detected rather than bundled; missing → "Install it for me" dialog.
 """
 
 from __future__ import annotations
@@ -10,6 +10,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from umc.core.errors import ToolMissingError
+from umc.core.paths import find_in_tools
 from umc.tools import process
 
 DOWNLOAD_URL = "https://pandoc.org/installing.html"
@@ -50,7 +51,8 @@ _STANDALONE = {"html", "rtf", "tex", "epub", "docx", "odt"}
 
 
 def pandoc_path() -> str | None:
-    return process.find_executable(["pandoc"], _EXTRA_PATHS)
+    private = find_in_tools("pandoc", "pandoc.exe" if process.IS_WINDOWS else "pandoc")
+    return private or process.find_executable(["pandoc"], _EXTRA_PATHS)
 
 
 def is_available() -> bool:

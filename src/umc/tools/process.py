@@ -53,7 +53,7 @@ def _creationflags() -> int:
 
 
 def run(
-    cmd: Sequence[str],
+    cmd: Sequence[str] | str,
     *,
     cancel_event: threading.Event | None = None,
     on_stdout_line: Callable[[str], None] | None = None,
@@ -63,11 +63,16 @@ def run(
 ) -> str:
     """Run ``cmd``; stream stdout lines to ``on_stdout_line``; honour cancellation.
 
-    Returns captured stderr. Raises :class:`ConversionError` on a non-zero exit code.
+    ``cmd`` may be a string on Windows for programs that parse their own command line
+    (msiexec). Returns captured stderr. Raises :class:`ConversionError` on a non-zero exit code.
     """
-    log.info("run: %s", subprocess.list2cmdline(list(cmd)))
+    if isinstance(cmd, str):
+        log.info("run: %s", cmd)
+    else:
+        cmd = list(cmd)
+        log.info("run: %s", subprocess.list2cmdline(cmd))
     proc = subprocess.Popen(
-        list(cmd),
+        cmd,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,

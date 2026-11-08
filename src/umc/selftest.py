@@ -20,8 +20,12 @@ def _convert(paths, target_id: str, out: Path, **values):
     files = [detect(p) for p in paths]
     target = {t.id: t for t in targets_for(files)}[target_id]
     cls = target.converter.options_cls
-    job = ConversionJob(files=files, target=target, output_dir=out,
-                        options=opts.build(cls, {**opts.defaults(cls), **values}))  # fmt: skip
+    job = ConversionJob(
+        files=files,
+        target=target,
+        output_dir=out,
+        options=opts.build(cls, {**opts.defaults(cls), **values}),
+    )
     return target.converter.run(job)
 
 
@@ -49,14 +53,16 @@ def run(report: Path) -> int:
             ("png -> heic", lambda: _convert(imgs[:1], "heic", out)),
             ("png -> avif", lambda: _convert(imgs[:1], "avif", out)),
             ("images -> pdf", lambda: _convert(imgs, "images:pdf", out)),
-            ("images -> mp4 slideshow (h264)",
-             lambda: _convert(imgs, "slideshow:mp4", out, seconds_per_image=0.5)),
+            (
+                "images -> mp4 slideshow (h264)",
+                lambda: _convert(imgs, "slideshow:mp4", out, seconds_per_image=0.5),
+            ),
             ("mp4 -> webm", lambda: _convert([out / "img0 slideshow.mp4"], "webm", out)),
             ("mp4 -> gif", lambda: _convert([out / "img0 slideshow.mp4"], "video:gif", out)),
             ("mp4 -> frames", lambda: _convert([out / "img0 slideshow.mp4"], "frames:png", out)),
             ("pdf -> png pages", lambda: _convert([out / "img0 + 2 more.pdf"], "pages:png", out)),
             ("pdf -> split", lambda: _convert([out / "img0 + 2 more.pdf"], "split:pdf", out)),
-        ]  # fmt: skip
+        ]
         for name, step in steps:
             try:
                 result = step()

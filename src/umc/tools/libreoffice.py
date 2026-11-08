@@ -1,7 +1,7 @@
 """Headless LibreOffice conversions.
 
 LibreOffice is not bundled (it's large). If it's missing we raise :class:`ToolMissingError`,
-which the GUI turns into a "Download LibreOffice / check again" dialog.
+which the GUI turns into an "Install it for me" dialog (see :mod:`umc.tools.installer`).
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ import threading
 from pathlib import Path
 
 from umc.core.errors import ConversionError, ToolMissingError
+from umc.core.paths import find_in_tools
 from umc.tools import process
 
 DOWNLOAD_URL = "https://www.libreoffice.org/download/download/"
@@ -31,7 +32,9 @@ _lock = threading.Lock()
 
 
 def soffice_path() -> str | None:
-    return process.find_executable(["soffice", "libreoffice"], _EXTRA_PATHS)
+    # A private copy installed by the app wins, then bundled/PATH/standard install folders.
+    private = find_in_tools("libreoffice", "soffice.exe" if process.IS_WINDOWS else "soffice")
+    return private or process.find_executable(["soffice", "libreoffice"], _EXTRA_PATHS)
 
 
 def is_available() -> bool:
@@ -54,9 +57,10 @@ def convert(
     export_filter: str | None = None,
     import_filter: str | None = None,
     timeout: float = 600,
+    soffice: str | None = None,
 ) -> Path:
     """Convert ``src`` to ``dest`` (whose extension is ``out_ext``)."""
-    soffice = require()
+    soffice = soffice or require()
     with tempfile.TemporaryDirectory(prefix="umc-lo-") as tmp:
         tmp_path = Path(tmp)
         profile = tmp_path / "profile"

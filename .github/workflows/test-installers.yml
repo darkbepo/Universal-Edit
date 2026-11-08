@@ -1,0 +1,40 @@
+name: Test one-click installers
+
+# Downloads and installs the real LibreOffice and Pandoc into a private folder,
+# then converts documents with them. Slow (~350 MB download), so it runs on demand.
+on:
+  workflow_dispatch:
+
+env:
+  PYTHONUTF8: "1"
+  QT_QPA_PLATFORM: offscreen
+
+jobs:
+  live-install:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Install LibreOffice and Pandoc with the app's installer, then convert
+        env:
+          UMC_LIVE_INSTALL: "1"
+          UMC_TOOLS_DIR: ${{ runner.temp }}\umc-tools
+        run: pytest -s -v tests/test_installer_live.py
+
+      - name: Upload installer logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-logs
+          path: ${{ runner.temp }}\umc-tools\*.log
+          if-no-files-found: ignore
