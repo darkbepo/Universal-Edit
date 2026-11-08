@@ -21,7 +21,6 @@ import json
 import logging
 import re
 import shutil
-import subprocess
 import sys
 import tempfile
 import threading
@@ -128,43 +127,20 @@ def _require_msi(path: Path) -> None:
 
 
 def verify_authenticode(path: Path, publisher: str) -> None:
-    """Require a valid Windows code signature whose signer name contains ``publisher``."""
-    script = (
-        "Import-Module Microsoft.PowerShell.Security; "
-        "$s = Get-AuthenticodeSignature -LiteralPath $env:UMC_SIGNED_FILE; "
-        "Write-Output $s.Status; Write-Output $s.SignerCertificate.Subject"
-    )
-    env = _environ()
-    # A PSModulePath inherited from PowerShell 7 stops Windows PowerShell 5.1 from loading its
-    # own modules (Get-AuthenticodeSignature then silently does nothing); let it rebuild.
-    env.pop("PSModulePath", None)
-    env["UMC_SIGNED_FILE"] = str(path)
+    """Require a valid, trusted Windows code signature from ``publisher``."""
     try:
-        result = subprocess.run(
-            ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
-            capture_output=True,
-            text=True,
-            timeout=120,
-            env=env,
-            creationflags=process._creationflags(),
-        )
-    except (OSError, subprocess.SubprocessError) as exc:
+        from umc.tools import winsign
+
+        trusted, hr = winsign.is_trusted(str(path))
+        signer = winsign.signer_name(str(path))
+    except (OSError, AttributeError, ValueError) as exc:
         raise InstallError("Couldn't check the installer's signature.", details=repr(exc)) from exc
-    out = [line.strip() for line in result.stdout.splitlines() if line.strip()]
-    status = out[0] if out else ""
-    subject = out[1] if len(out) > 1 else ""
-    if status != "Valid" or publisher not in subject:
+    if not trusted or publisher not in signer:
         raise InstallError(
             "The downloaded installer isn't correctly signed, so it wasn't installed.",
-            details=f"status={status!r} subject={subject!r} stderr={result.stderr[-1500:]!r}",
+            details=f"trusted={trusted} hresult=0x{hr:08X} signer={signer!r}",
         )
-    log.info("signature OK: %s", subject)
-
-
-def _environ() -> dict[str, str]:
-    import os
-
-    return dict(os.environ)
+    log.info("signature OK: %s", signer)
 
 
 # --------------------------------------------------------------------------- Pandoc

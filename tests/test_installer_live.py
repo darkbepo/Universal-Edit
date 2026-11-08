@@ -64,3 +64,12 @@ def test_install_libreoffice_and_convert(media, tmp_path):
     [pdf] = convert([docx], "doc:pdf", tmp_path)
     with pymupdf.open(pdf) as doc:
         assert "Plain text line 1" in doc[0].get_text()
+
+
+def test_signature_check_rejects_unsigned_and_tampered(tmp_path):
+    from umc.tools import installer
+
+    unsigned = tmp_path / "unsigned.msi"
+    unsigned.write_bytes(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\0" * 4096)
+    with pytest.raises(installer.InstallError, match="signed"):
+        installer.verify_authenticode(unsigned, installer.LO_PUBLISHER)
