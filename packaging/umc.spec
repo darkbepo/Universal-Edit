@@ -9,7 +9,7 @@ BIN = ROOT / "packaging" / "bin"
 ICON = ROOT / "packaging" / "icon.ico"
 
 binaries = [(str(p), "bin") for p in BIN.glob("*") if p.is_file()] if BIN.is_dir() else []
-datas = [(str(ROOT / "src" / "umc" / "gui" / "style.qss"), "umc/gui")]
+datas = [(str(ROOT / "src" / "umc" / "gui" / "style.qss"), "umc/gui"), (str(ROOT / "LICENSE"), ".")]
 datas += collect_data_files("pymupdf")
 
 a = Analysis(

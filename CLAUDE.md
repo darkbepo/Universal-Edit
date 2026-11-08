@@ -180,8 +180,10 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
   Ask the owner before adding anything that would conflict with that.
 - FFmpeg: **GPL build** (x264/x265 included). `codecs.py` still keeps encoder fallbacks in case
   an LGPL build (`scripts/fetch_ffmpeg.py --lgpl`) or a system FFmpeg is used.
-- PyMuPDF is AGPL-3.0. Together with the GPL FFmpeg, any public release of the app must be
-  licensed **AGPL-3.0** (or a compatible licence) with its source available.
+- PyMuPDF is AGPL-3.0. Together with the GPL FFmpeg, the project is licensed
+  **AGPL-3.0-or-later** (`LICENSE`, declared in `pyproject.toml`, shipped inside the .exe).
+  Any public release must make its source available. New dependencies must be
+  AGPL-3.0-compatible (no proprietary or GPL-2.0-only libraries).
 
 ## Coding conventions
 

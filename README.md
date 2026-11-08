@@ -28,7 +28,14 @@ app explains why and offers a download button — no restart needed after instal
 On GitHub: **Actions → Build Windows executable → Run workflow**, then download the zip from
 the finished run. Locally on Windows: `pyinstaller packaging/umc.spec` → `dist/UniversalMediaConverter/`.
 
-The bundled FFmpeg is a GPL build and PyMuPDF is AGPL-3.0, so public releases of this app must
-be open source under AGPL-3.0-compatible terms.
+## License
+
+Copyright (C) 2026 darkbepo
+
+This program is free software: you can redistribute it and/or modify it under the terms of the
+GNU Affero General Public License as published by the Free Software Foundation, either version 3
+of the License, or (at your option) any later version. See [LICENSE](LICENSE).
+
+The bundled FFmpeg (GPL build) and PyMuPDF (AGPL-3.0) are why the app uses this licence.
 
 See [CLAUDE.md](CLAUDE.md) for architecture and contributor notes.
