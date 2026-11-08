@@ -1,0 +1,40 @@
+name: Build Windows executable
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Fetch FFmpeg (LGPL build)
+        run: python scripts/fetch_ffmpeg.py
+
+      - name: Run tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: pytest -q
+
+      - name: Build executable
+        run: pyinstaller --noconfirm packaging/umc.spec
+
+      - name: Zip
+        run: Compress-Archive -Path dist/UniversalMediaConverter -DestinationPath UniversalMediaConverter-windows.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: UniversalMediaConverter-windows
+          path: UniversalMediaConverter-windows.zip

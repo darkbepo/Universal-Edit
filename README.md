@@ -1,0 +1,31 @@
+# Universal Media Converter
+
+A minimal desktop app that converts documents, images and videos. Drop files in, pick an
+output format, (optionally) tweak settings, press **Convert**.
+
+| From | To |
+|---|---|
+| **Images** (PNG, JPG, WEBP, AVIF, HEIC, GIF, BMP, TIFF, ICO, …) | any other image format · a slideshow video (MP4/MKV/WEBM/MOV/AVI) or animated GIF · a PDF |
+| **Videos** (MP4, MKV, MOV, AVI, WEBM, FLV, WMV, …) | any other video format · GIF · image frames (choose how many per 30 frames) · audio only (MP3, M4A, WAV, FLAC, OGG, OPUS) |
+| **Documents** (PDF, DOCX, DOC, ODT, RTF, TXT, MD, HTML, EPUB, XLSX, PPTX, …) | other document formats · images (one per page) |
+
+## Running from source
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate          # macOS/Linux: source .venv/bin/activate
+pip install -e ".[dev]"
+python scripts/fetch_ffmpeg.py   # Windows; elsewhere install ffmpeg with brew/apt
+python -m umc
+```
+
+Office formats (DOC/DOCX/ODT/XLSX/PPTX…) need [LibreOffice](https://www.libreoffice.org/download/download/)
+and Markdown/EPUB/HTML need [Pandoc](https://pandoc.org/installing.html). If one is missing, the
+app explains why and offers a download button — no restart needed after installing.
+
+## Building the Windows executable
+
+On GitHub: **Actions → Build Windows executable → Run workflow**, then download the zip from
+the finished run. Locally on Windows: `pyinstaller packaging/umc.spec` → `dist/UniversalMediaConverter/`.
+
+See [CLAUDE.md](CLAUDE.md) for architecture and contributor notes.

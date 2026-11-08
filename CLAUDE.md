@@ -59,14 +59,15 @@ imports, but keep the defaults sensible so a user can convert with zero configur
 ## Tech stack
 
 - **Language:** Python 3.11+
-- **GUI:** PySide6 (Qt 6) — custom QSS stylesheet for the minimal look
-- **Images:** Pillow (+ `pillow-heif` for HEIC/AVIF)
-- **Video / GIF / slideshow:** FFmpeg (bundled binary, invoked via `subprocess`; parse `-progress pipe:1` for progress)
-- **PDF:** PyMuPDF (`fitz`) for PDF → images, page ranges, and future splitting
-- **Office documents:** LibreOffice in headless mode (`soffice --headless --convert-to`) for doc/docx/odt/rtf ↔ pdf etc.
-- **Text-ish formats:** Pandoc (via `pypandoc`) for md/html/txt/epub ↔ docx etc. where it gives better results
-- **Packaging:** PyInstaller (one-folder build; bundle FFmpeg; LibreOffice detected or bundled — see Packaging)
-- **Tests:** pytest
+- **GUI:** PySide6-Essentials (Qt 6) — Fusion style + `gui/style.qss` with `@token` colours filled from `gui/theme.py`
+- **Images:** Pillow (+ `pillow-heif` for HEIC; AVIF is native in Pillow ≥ 11.3)
+- **Video / GIF / slideshow / audio:** FFmpeg (bundled binary, invoked via `subprocess`; progress parsed from `-progress pipe:1`)
+- **PDF:** PyMuPDF (`pymupdf`) for PDF → images/text, page ranges, EPUB/XPS → PDF, and future splitting.
+  All PyMuPDF use is isolated in `tools/pdf.py` (it is AGPL — see Licensing).
+- **Office documents:** LibreOffice in headless mode (`soffice --headless --convert-to`) — *detected, not bundled*
+- **Text-ish formats:** Pandoc CLI (called directly via `subprocess`, no `pypandoc`) for md/html/epub/rst/tex ↔ docx etc. — *detected, not bundled*
+- **Packaging:** PyInstaller one-folder build; FFmpeg bundled; LibreOffice/Pandoc detected with a download prompt
+- **Tests:** pytest + pytest-qt (GUI tests run with `QT_QPA_PLATFORM=offscreen`)
 
 Primary target platform is **Windows** (`.exe`); keep code cross-platform (macOS/Linux) where it costs nothing.
 
@@ -74,36 +75,53 @@ Primary target platform is **Windows** (`.exe`); keep code cross-platform (macOS
 
 ```
 src/umc/
-  app.py              # entry point: creates QApplication, main window
-  gui/
-    main_window.py    # drop zone, format selector, settings panel, progress
-    widgets/          # reusable widgets (DropZone, LabeledSlider, FormatPicker, …)
-    settings_panels/  # one panel per conversion kind, built from the option schema
-    style.qss
-  core/
-    detect.py         # detect media family from extension + magic bytes
-    registry.py       # maps (source family, target format) -> Converter
-    options.py        # dataclass-based option schemas (drive the settings UI)
-    job.py            # ConversionJob: inputs, target, options, progress & cancel callbacks
-    worker.py         # QThread/QRunnable wrapper around jobs
+  app.py                 # entry point: logging, QApplication, theme, main window
+  gui/                   # the ONLY package that imports Qt
+    main_window.py       # drop zone, file list, format picker, settings, progress, Convert/Cancel
+    worker.py            # runs a ConversionJob on a QThread, reports via signals
+    tool_dialog.py       # "LibreOffice/Pandoc needed" → Download / I've installed it — check again
+    theme.py, style.qss  # light/dark palettes + stylesheet (follows the OS colour scheme)
+    widgets/             # DropZone, FormatPicker (pills), SettingsPanel (auto form), FlowLayout
+  core/                  # pure Python, no Qt
+    detect.py            # media family from extension, falling back to magic bytes
+    registry.py          # Target dataclass + targets_for(files) across all converters
+    options.py           # opt() field helper → OptionSpec metadata that drives the settings UI
+    job.py               # ConversionJob (progress/cancel), unique_path()
+    errors.py            # ConversionError (user-facing msg), ToolMissingError, ConversionCancelled
   converters/
-    base.py           # Converter interface: supported_inputs, supported_outputs, options_schema, run(job)
-    image.py          # image ↔ image
-    slideshow.py      # images -> video
-    video.py          # video ↔ video
-    video_frames.py   # video -> images
-    gif.py            # video -> gif
-    document.py       # document ↔ document (LibreOffice / Pandoc / PyMuPDF)
-    document_images.py# document -> images
-  tools/
-    ffmpeg.py         # locate bundled ffmpeg/ffprobe, run with progress parsing
-    libreoffice.py    # locate soffice, run headless conversions
-tests/
-  fixtures/           # small sample files for each family
+    base.py              # Converter ABC: family, options_cls, targets(files), run(job)
+    image.py             # image ↔ image; images → PDF
+    imaging.py           # shared Pillow helpers (open incl. HEIC, flatten, fit/letterbox)
+    slideshow.py         # images → video (concat demuxer, or xfade transitions) / animated GIF
+    video.py             # video ↔ video (codec, CRF/bitrate, resize, fps, trim, speed, rotate…)
+    codecs.py            # codec → encoder fallback lists, container rules, rate-control args
+    video_frames.py      # video → image sequence ("N frames per 30" select filter)
+    gif.py               # video → GIF (palettegen/paletteuse)
+    audio.py             # video → audio only
+    document.py          # document ↔ document via a cheapest-route planner over engine "edges"
+    document_images.py   # document → images (via PDF, rendered with PyMuPDF)
+  tools/                 # wrappers around external programs/libraries
+    process.py           # find_executable (bundled → PATH → known install dirs), cancellable run()
+    ffmpeg.py, libreoffice.py, pandoc.py, pdf.py
+tests/                   # fixtures are generated in conftest.py — no binary files in git
 packaging/
-  umc.spec            # PyInstaller spec
-  bin/                # bundled third-party binaries (not committed; fetched by script)
+  umc.spec               # PyInstaller spec
+  icon.ico / icon.png    # generated by scripts/make_icon.py
+  bin/                   # bundled ffmpeg/ffprobe (git-ignored; scripts/fetch_ffmpeg.py)
+scripts/                 # fetch_ffmpeg.py, make_icon.py
+.github/workflows/build-windows.yml  # builds the .exe zip on windows-latest (manual or v* tag)
 ```
+
+**Target ids** are unique per input set: plain ids for same-family conversions (`png`, `mp4`),
+prefixed ids for cross-family ones (`slideshow:mp4`, `frames:png`, `video:gif`, `audio:mp3`,
+`doc:pdf`, `pages:png`, `images:pdf`). An option can be limited to some targets with
+`opt(..., targets=(...))` and made conditional with `show_if=lambda values: ...`.
+
+**Document routing:** `converters/document.py` lists every conversion each engine can do as a
+weighted edge (e.g. pandoc md→docx, libreoffice docx→pdf) and picks the cheapest path, so
+`md → pdf` becomes `md →(pandoc) docx →(libreoffice) pdf`. Engines that aren't installed get a
++100 penalty, so working routes are preferred and a missing tool only triggers the download
+prompt when there's no alternative. To support a new document format, add edges — not special cases.
 
 Key rules:
 - **The GUI never calls libraries directly** — it builds a `ConversionJob` and hands it to the
@@ -114,17 +132,24 @@ Key rules:
 - External tools (ffmpeg, soffice, pandoc) are located through `tools/` helpers that check the
   bundled path first, then `PATH`, and raise a clear, user-facing error if missing.
 - Never overwrite an existing output file silently — auto-suffix (`name (1).ext`) or ask.
+- Keep references to the worker and its QThread until `QThread.finished` (not the worker's
+  `done` signal) — releasing the Python wrapper earlier crashes while `run()` unwinds.
+- On Windows every subprocess uses `CREATE_NO_WINDOW` (handled in `tools/process.py`).
 
 ## Development commands
 
 ```bash
 python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
+python scripts/fetch_ffmpeg.py                      # Windows: download FFmpeg into packaging/bin
 python -m umc                                       # run the app
-pytest                                              # run tests
+pytest                                              # run tests (needs ffmpeg/pandoc/soffice for all; else skips)
 ruff check . && ruff format .                       # lint + format
 pyinstaller packaging/umc.spec                      # build the executable into dist/
 ```
+
+Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
+`~/.local/state/UniversalMediaConverter/umc.log` (Linux), `~/Library/Logs/…` (macOS).
 
 ## Packaging
 
@@ -139,6 +164,18 @@ pyinstaller packaging/umc.spec                      # build the executable into 
   **"I've installed it — check again"** button that re-runs detection without restarting the app.
 - Conversions that don't need LibreOffice (images, video, PDF → images, Pandoc formats) must keep
   working when it is absent.
+- **Pandoc** follows the same pattern (detected, "Download Pandoc" → https://pandoc.org/installing.html).
+- The Windows build is produced by `.github/workflows/build-windows.yml` (Actions → "Build Windows
+  executable" → Run workflow, or push a `v*` tag); download the zip from the run's artifacts.
+
+## Licensing (open decision — ask the owner before changing)
+
+- FFmpeg: LGPL build bundled by default. LGPL builds have no libx264/libx265, so H.264/H.265 use
+  fallback encoders (Media Foundation / NVENC / QSV / AMF / OpenH264) — see `converters/codecs.py`.
+  `scripts/fetch_ffmpeg.py --gpl` gets x264/x265 but makes the distributed app GPL.
+- PyMuPDF is AGPL (or commercial licence). Distributing the .exe means the app must be released
+  under AGPL-compatible terms, or PyMuPDF must be swapped (e.g. pypdfium2 + pypdf) — only
+  `tools/pdf.py` would need to change.
 
 ## Coding conventions
 
@@ -150,11 +187,13 @@ pyinstaller packaging/umc.spec                      # build the executable into 
 
 ## Roadmap
 
-1. **MVP:** project skeleton, GUI shell (drop zone + format picker + convert), image ↔ image.
-2. Video ↔ video, video → GIF, video → images (frames-per-30 slider).
-3. Images → video slideshow (seconds-per-image slider).
-4. Documents ↔ documents, documents → images.
-5. Packaging into a Windows executable, installer/icon.
+1. ✅ Project skeleton, GUI (drop zone, file list, format picker, auto settings, progress, cancel), image ↔ image.
+2. ✅ Video ↔ video, video → GIF, video → images (frames-per-30 slider), video → audio.
+3. ✅ Images → video slideshow (seconds-per-image slider, transitions, music), images → PDF.
+4. ✅ Documents ↔ documents, documents → images.
+5. 🟡 Packaging: PyInstaller spec, icon and CI build done; Windows build not yet verified on a
+   real machine; no installer yet.
+   Not done yet: page size / margins for document outputs.
 6. **Later — document splitting:**
    - Split into chunks of *N* pages per document, or by custom ranges (e.g. `1-3, 4-10, 11-`)
    - Split every page into its own document

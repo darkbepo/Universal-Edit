@@ -1,0 +1,267 @@
+/* Tokens like @accent are replaced from umc.gui.theme at runtime. */
+
+* {
+    font-size: 13px;
+    color: @text;
+}
+
+QWidget#Root, QScrollArea, QScrollArea > QWidget > QWidget#Content {
+    background: @bg;
+}
+
+QLabel#Title {
+    font-size: 20px;
+    font-weight: 600;
+}
+
+QLabel#Subtitle, QLabel.muted, QLabel#Muted, QLabel#Help {
+    color: @muted;
+}
+
+QLabel#Help {
+    font-size: 11px;
+}
+
+QLabel#Section {
+    font-size: 11px;
+    font-weight: 600;
+    color: @muted;
+    letter-spacing: 1px;
+    margin-top: 6px;
+}
+
+QLabel#GroupHeading {
+    font-size: 11px;
+    color: @muted;
+    margin-top: 2px;
+}
+
+QLabel#Error {
+    color: @danger;
+}
+
+QLabel#Success {
+    color: @success;
+}
+
+/* ---------- drop zone */
+QFrame#DropZone {
+    background: @surface;
+    border: 2px dashed @border;
+    border-radius: 16px;
+}
+QFrame#DropZone[hover="true"] {
+    border-color: @accent;
+    background: @accent_soft;
+}
+QLabel#DropIcon {
+    font-size: 34px;
+    color: @accent;
+}
+QLabel#DropTitle {
+    font-size: 15px;
+    font-weight: 600;
+}
+
+/* ---------- cards */
+QFrame#Card {
+    background: @surface;
+    border: 1px solid @border;
+    border-radius: 14px;
+}
+
+QListWidget#FileList {
+    background: transparent;
+    border: none;
+    outline: none;
+}
+QListWidget#FileList::item {
+    padding: 6px 8px;
+    border-radius: 8px;
+}
+QListWidget#FileList::item:selected, QListWidget#FileList::item:hover {
+    background: @surface_alt;
+    color: @text;
+}
+
+/* ---------- format pills */
+QPushButton#Pill {
+    background: @surface;
+    border: 1px solid @border;
+    border-radius: 15px;
+    padding: 5px 14px;
+    min-height: 20px;
+}
+QPushButton#Pill:hover {
+    border-color: @accent;
+}
+QPushButton#Pill:checked {
+    background: @accent;
+    border-color: @accent;
+    color: @accent_text;
+    font-weight: 600;
+}
+
+/* ---------- buttons */
+QPushButton, QToolButton {
+    background: @surface;
+    border: 1px solid @border;
+    border-radius: 10px;
+    padding: 7px 14px;
+}
+QPushButton:hover, QToolButton:hover {
+    background: @surface_alt;
+}
+QPushButton:disabled {
+    color: @muted;
+}
+QToolButton::menu-indicator {
+    image: none;
+}
+
+QPushButton#Primary {
+    background: @accent;
+    border: none;
+    color: @accent_text;
+    font-size: 14px;
+    font-weight: 600;
+    padding: 10px 28px;
+    border-radius: 12px;
+}
+QPushButton#Primary:hover {
+    background: @accent_hover;
+}
+QPushButton#Primary:disabled {
+    background: @surface_alt;
+    color: @muted;
+}
+QPushButton#Primary[danger="true"] {
+    background: @danger;
+}
+
+QPushButton#Link, QToolButton#Link {
+    background: transparent;
+    border: none;
+    color: @accent;
+    padding: 2px 4px;
+}
+QPushButton#Link:hover, QToolButton#Link:hover {
+    text-decoration: underline;
+}
+
+QToolButton#Disclosure {
+    background: transparent;
+    border: none;
+    font-weight: 600;
+    padding: 4px 0;
+}
+
+/* ---------- inputs */
+QComboBox, QSpinBox, QDoubleSpinBox, QLineEdit {
+    background: @surface_alt;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    padding: 5px 8px;
+    min-height: 20px;
+    selection-background-color: @accent;
+    selection-color: @accent_text;
+}
+QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus, QLineEdit:focus {
+    border-color: @accent;
+}
+QComboBox::drop-down {
+    border: none;
+    width: 22px;
+}
+QComboBox QAbstractItemView {
+    background: @surface;
+    border: 1px solid @border;
+    selection-background-color: @accent_soft;
+    selection-color: @text;
+    outline: none;
+}
+
+QSlider::groove:horizontal {
+    height: 4px;
+    background: @surface_alt;
+    border-radius: 2px;
+}
+QSlider::sub-page:horizontal {
+    background: @accent;
+    border-radius: 2px;
+}
+QSlider::handle:horizontal {
+    background: @surface;
+    border: 2px solid @accent;
+    width: 14px;
+    height: 14px;
+    margin: -7px 0;
+    border-radius: 9px;
+}
+
+QCheckBox {
+    spacing: 8px;
+}
+QCheckBox::indicator {
+    width: 18px;
+    height: 18px;
+    border-radius: 5px;
+    border: 1px solid @border;
+    background: @surface_alt;
+}
+QCheckBox::indicator:checked {
+    background: @accent;
+    border-color: @accent;
+}
+
+QProgressBar {
+    background: @surface_alt;
+    border: none;
+    border-radius: 3px;
+    max-height: 6px;
+    min-height: 6px;
+}
+QProgressBar::chunk {
+    background: @accent;
+    border-radius: 3px;
+}
+
+QScrollBar:vertical {
+    background: transparent;
+    width: 10px;
+    margin: 2px;
+}
+QScrollBar::handle:vertical {
+    background: @border;
+    border-radius: 3px;
+    min-height: 30px;
+}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical,
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+    background: none;
+    height: 0;
+}
+
+QToolTip {
+    background: @surface;
+    color: @text;
+    border: 1px solid @border;
+    padding: 4px 6px;
+}
+
+QMenu {
+    background: @surface;
+    border: 1px solid @border;
+    padding: 4px;
+}
+QMenu::item {
+    padding: 6px 18px;
+    border-radius: 6px;
+}
+QMenu::item:selected {
+    background: @accent_soft;
+}
+
+QDialog {
+    background: @bg;
+}
