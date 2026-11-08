@@ -117,6 +117,16 @@ def _check_space(path: Path, needed: int, label: str) -> None:
         )
 
 
+def _require_msi(path: Path) -> None:
+    """MSI files are OLE compound documents; anything else (e.g. an HTML page) is rejected."""
+    head = path.read_bytes()[:512] if path.stat().st_size < 4096 else path.open("rb").read(512)
+    if not head.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"):
+        raise InstallError(
+            "The LibreOffice download wasn't a valid installer. Please try again later.",
+            details=f"size={path.stat().st_size} head={head[:200]!r}",
+        )
+
+
 def verify_authenticode(path: Path, publisher: str) -> None:
     """Require a valid Windows code signature whose signer name contains ``publisher``."""
     script = (
@@ -257,6 +267,7 @@ def install_libreoffice(progress: Progress, cancel_event: threading.Event) -> st
             cancel_event=cancel_event,
         )
         progress(0.61, "Checking the installer's signature…")
+        _require_msi(msi)
         verify_authenticode(msi, LO_PUBLISHER)
 
         # 1) Private copy: unpack the MSI into our folder (no admin, no system changes).
