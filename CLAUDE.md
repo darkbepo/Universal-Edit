@@ -154,8 +154,8 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
 ## Packaging
 
 - PyInstaller one-folder build is the default (faster startup than one-file, easier to bundle binaries).
-- FFmpeg/ffprobe are bundled under `bin/`. Respect FFmpeg's licence (use an LGPL build unless we
-  decide otherwise) and ship the licence text.
+- FFmpeg/ffprobe are bundled under `bin/` (GPL build, includes x264/x265) together with its
+  licence text (`FFMPEG-LICENSE.txt`).
 - LibreOffice is large, so it is **not bundled**. The app detects an installed LibreOffice
   (bundled path → `PATH` → standard install locations such as `C:\Program Files\LibreOffice\program\soffice.exe`).
 - If an office-document conversion is requested and LibreOffice is missing, show a friendly dialog
@@ -168,14 +168,14 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
 - The Windows build is produced by `.github/workflows/build-windows.yml` (Actions → "Build Windows
   executable" → Run workflow, or push a `v*` tag); download the zip from the run's artifacts.
 
-## Licensing (open decision — ask the owner before changing)
+## Licensing (decided: personal use / free & open source)
 
-- FFmpeg: LGPL build bundled by default. LGPL builds have no libx264/libx265, so H.264/H.265 use
-  fallback encoders (Media Foundation / NVENC / QSV / AMF / OpenH264) — see `converters/codecs.py`.
-  `scripts/fetch_ffmpeg.py --gpl` gets x264/x265 but makes the distributed app GPL.
-- PyMuPDF is AGPL (or commercial licence). Distributing the .exe means the app must be released
-  under AGPL-compatible terms, or PyMuPDF must be swapped (e.g. pypdfium2 + pypdf) — only
-  `tools/pdf.py` would need to change.
+- The app is for personal use or free open-source distribution — never closed-source or sold.
+  Ask the owner before adding anything that would conflict with that.
+- FFmpeg: **GPL build** (x264/x265 included). `codecs.py` still keeps encoder fallbacks in case
+  an LGPL build (`scripts/fetch_ffmpeg.py --lgpl`) or a system FFmpeg is used.
+- PyMuPDF is AGPL-3.0. Together with the GPL FFmpeg, any public release of the app must be
+  licensed **AGPL-3.0** (or a compatible licence) with its source available.
 
 ## Coding conventions
 

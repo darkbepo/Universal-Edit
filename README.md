@@ -28,4 +28,7 @@ app explains why and offers a download button — no restart needed after instal
 On GitHub: **Actions → Build Windows executable → Run workflow**, then download the zip from
 the finished run. Locally on Windows: `pyinstaller packaging/umc.spec` → `dist/UniversalMediaConverter/`.
 
+The bundled FFmpeg is a GPL build and PyMuPDF is AGPL-3.0, so public releases of this app must
+be open source under AGPL-3.0-compatible terms.
+
 See [CLAUDE.md](CLAUDE.md) for architecture and contributor notes.
