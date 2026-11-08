@@ -36,6 +36,13 @@ def setup_logging() -> Path:
 
 
 def main(argv: list[str] | None = None) -> int:
+    args = sys.argv[1:] if argv is None else argv[1:]
+    if args[:1] == ["--self-test"]:
+        from umc.selftest import run
+
+        setup_logging()
+        return run(Path(args[1] if len(args) > 1 else "umc-selftest.txt"))
+
     from PySide6.QtWidgets import QApplication
 
     from umc.gui import theme

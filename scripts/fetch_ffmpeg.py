@@ -32,7 +32,7 @@ def main() -> int:
         return 0
     arch = "winarm64" if platform.machine().lower() in ("arm64", "aarch64") else "win64"
     name = f"ffmpeg-master-latest-{arch}-{'lgpl' if args.lgpl else 'gpl'}.zip"
-    print(f"Downloading {name} …")
+    print(f"Downloading {name} ...")
     with urllib.request.urlopen(BTBN + name, timeout=300) as resp:
         data = resp.read()
     BIN.mkdir(parents=True, exist_ok=True)
@@ -43,7 +43,7 @@ def main() -> int:
                 target = BIN / ("FFMPEG-LICENSE.txt" if base == "LICENSE.txt" else base)
                 with zf.open(member) as src, target.open("wb") as dst:
                     shutil.copyfileobj(src, dst)
-                print(f"  → {target}")
+                print(f"  -> {target}")
     return 0
 
 

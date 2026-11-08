@@ -168,6 +168,42 @@ class DocumentOptions:
         "Add a table of contents",
         targets=("doc:html", "doc:epub", "doc:docx", "doc:odt", "doc:md"),
     )
+    paper: str = opt(
+        "original",
+        "Page size",
+        targets=("doc:pdf",),
+        choices=[
+            ("original", "Keep original"),
+            ("a4", "A4"),
+            ("letter", "US Letter"),
+            ("legal", "US Legal"),
+            ("a3", "A3"),
+            ("a5", "A5"),
+        ],
+    )
+    orientation: str = opt(
+        "auto",
+        "Orientation",
+        targets=("doc:pdf",),
+        choices=[("auto", "Match each page"), ("portrait", "Portrait"), ("landscape", "Landscape")],
+        show_if=lambda v: v["paper"] != "original",
+    )
+    margin_mm: int = opt(
+        0,
+        "Margins",
+        kind="slider",
+        min=0,
+        max=50,
+        unit="mm",
+        targets=("doc:pdf",),
+        show_if=lambda v: v["paper"] != "original",
+    )
+    scale_up: bool = opt(
+        True,
+        "Enlarge small pages to fill the paper",
+        targets=("doc:pdf",),
+        show_if=lambda v: v["paper"] != "original",
+    )
 
 
 class DocumentConverter(Converter):
@@ -197,6 +233,14 @@ class DocumentConverter(Converter):
             job.report(i / n, f"Converting {f.name} ({i + 1}/{n})")
             dest = unique_path(job.output_dir_for(f.path), f.path.stem, dst)
             convert_document(f, dst, dest, job, page_range=o.page_range, toc=o.toc)
+            if dst == "pdf" and o.paper != "original":
+                job.report((i + 0.9) / n, f"Fitting pages of {f.name} to {o.paper.upper()}")
+                fitted = dest.with_name(dest.stem + ".fitting.pdf")
+                try:
+                    pdf.refit_pages(dest, fitted, o.paper, o.orientation, o.margin_mm, o.scale_up)
+                    fitted.replace(dest)
+                finally:
+                    fitted.unlink(missing_ok=True)
             outputs.append(dest)
         job.report(1.0, "Done")
         return outputs

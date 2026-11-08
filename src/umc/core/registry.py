@@ -30,6 +30,7 @@ def converters() -> tuple[Converter, ...]:
     from umc.converters.gif import VideoToGifConverter
     from umc.converters.image import ImageConverter, ImagesToPdfConverter
     from umc.converters.slideshow import SlideshowConverter
+    from umc.converters.split import DocumentSplitConverter
     from umc.converters.video import VideoConverter
     from umc.converters.video_frames import VideoToFramesConverter
 
@@ -43,6 +44,7 @@ def converters() -> tuple[Converter, ...]:
         AudioExtractConverter(),
         DocumentConverter(),
         DocumentToImagesConverter(),
+        DocumentSplitConverter(),
     )
 
 

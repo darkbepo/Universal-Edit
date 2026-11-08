@@ -54,7 +54,11 @@ imports, but keep the defaults sensible so a user can convert with zero configur
 
 **Document → document / image**
 - DPI and image format for document → images, page range, single multi-page TIFF option
-- Page size / margins where the target supports it
+- Page size / orientation / margins for PDF output (pages are re-placed onto the chosen paper)
+
+**Document → split (several PDFs)**
+- Every page into its own document, every N pages, or custom ranges (`1-3, 4-10, 11-`)
+- File naming (`name_pages_1-3.pdf` / `name_part_01.pdf`), optional subfolder
 
 ## Tech stack
 
@@ -100,6 +104,7 @@ src/umc/
     audio.py             # video → audio only
     document.py          # document ↔ document via a cheapest-route planner over engine "edges"
     document_images.py   # document → images (via PDF, rendered with PyMuPDF)
+    split.py             # document → several PDFs (every page / N pages / custom ranges)
   tools/                 # wrappers around external programs/libraries
     process.py           # find_executable (bundled → PATH → known install dirs), cancellable run()
     ffmpeg.py, libreoffice.py, pandoc.py, pdf.py
@@ -146,6 +151,7 @@ python -m umc                                       # run the app
 pytest                                              # run tests (needs ffmpeg/pandoc/soffice for all; else skips)
 ruff check . && ruff format .                       # lint + format
 pyinstaller packaging/umc.spec                      # build the executable into dist/
+UniversalMediaConverter.exe --self-test report.txt  # headless smoke test of a build (exit 0 = OK)
 ```
 
 Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
@@ -191,10 +197,7 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
 2. ✅ Video ↔ video, video → GIF, video → images (frames-per-30 slider), video → audio.
 3. ✅ Images → video slideshow (seconds-per-image slider, transitions, music), images → PDF.
 4. ✅ Documents ↔ documents, documents → images.
-5. 🟡 Packaging: PyInstaller spec, icon and CI build done; Windows build not yet verified on a
-   real machine; no installer yet.
-   Not done yet: page size / margins for document outputs.
-6. **Later — document splitting:**
-   - Split into chunks of *N* pages per document, or by custom ranges (e.g. `1-3, 4-10, 11-`)
-   - Split every page into its own document
-   - (Possible) merge documents, batch queue, drag-to-reorder inputs, presets for settings
+5. ✅ Packaging: PyInstaller spec, icon, CI build on windows-latest with tests and an
+   `--self-test` run of the built .exe. No installer yet.
+6. ✅ Document splitting (every page / N pages / custom ranges) and PDF page size & margins.
+7. Ideas: merge documents, installer (Inno Setup), presets for settings, batch queue.

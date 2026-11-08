@@ -109,3 +109,49 @@ def render_pages(src: Path, pages: list[int], dpi: int, alpha: bool, grayscale: 
             pix = doc[i].get_pixmap(dpi=dpi, alpha=alpha and not grayscale, colorspace=colorspace)
             mode = "L" if pix.n == 1 else ("RGBA" if pix.alpha else "RGB")
             yield i, Image.frombytes(mode, (pix.width, pix.height), pix.samples)
+
+
+# Paper sizes in millimetres (portrait).
+PAPER_SIZES_MM = {
+    "a3": (297, 420),
+    "a4": (210, 297),
+    "a5": (148, 210),
+    "letter": (215.9, 279.4),
+    "legal": (215.9, 355.6),
+}
+_MM = 72 / 25.4  # PDF points per millimetre
+
+
+def parse_page_groups(text: str, page_count: int) -> list[list[int]]:
+    """``"1-3, 4-10, 11-"`` → one list of zero-based pages per comma-separated group."""
+    groups = [parse_page_range(part, page_count) for part in text.split(",") if part.strip()]
+    if not groups:
+        raise ConversionError("Enter at least one page range, e.g. 1-3, 4-10, 11-")
+    return groups
+
+
+def refit_pages(
+    src: Path, dest: Path, paper: str, orientation: str, margin_mm: float, scale_up: bool
+) -> Path:
+    """Place every page of ``src`` onto ``paper``-sized pages with the given margins."""
+    w_mm, h_mm = PAPER_SIZES_MM[paper]
+    with open_document(src) as doc, pymupdf.open() as out:
+        for page in doc:
+            landscape = orientation == "landscape" or (
+                orientation == "auto" and page.rect.width > page.rect.height
+            )
+            w, h = (h_mm, w_mm) if landscape else (w_mm, h_mm)
+            new = out.new_page(width=w * _MM, height=h * _MM)
+            m = margin_mm * _MM
+            box = pymupdf.Rect(m, m, new.rect.width - m, new.rect.height - m)
+            if box.is_empty:
+                raise ConversionError("The margins are larger than the page.")
+            if not scale_up:
+                # Don't enlarge small pages: shrink the target box to the page's own size.
+                pw, ph = page.rect.width, page.rect.height
+                if pw <= box.width and ph <= box.height:
+                    cx, cy = (box.x0 + box.x1) / 2, (box.y0 + box.y1) / 2
+                    box = pymupdf.Rect(cx - pw / 2, cy - ph / 2, cx + pw / 2, cy + ph / 2)
+            new.show_pdf_page(box, doc, page.number, keep_proportion=True)
+        out.save(dest, garbage=3, deflate=True)
+    return dest
