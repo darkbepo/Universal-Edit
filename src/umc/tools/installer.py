@@ -130,27 +130,35 @@ def _require_msi(path: Path) -> None:
 def verify_authenticode(path: Path, publisher: str) -> None:
     """Require a valid Windows code signature whose signer name contains ``publisher``."""
     script = (
+        "Import-Module Microsoft.PowerShell.Security; "
         "$s = Get-AuthenticodeSignature -LiteralPath $env:UMC_SIGNED_FILE; "
         "Write-Output $s.Status; Write-Output $s.SignerCertificate.Subject"
     )
+    env = _environ()
+    # A PSModulePath inherited from PowerShell 7 stops Windows PowerShell 5.1 from loading its
+    # own modules (Get-AuthenticodeSignature then silently does nothing); let it rebuild.
+    env.pop("PSModulePath", None)
+    env["UMC_SIGNED_FILE"] = str(path)
     try:
-        out = subprocess.run(
+        result = subprocess.run(
             ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
             capture_output=True,
             text=True,
             timeout=120,
-            env={**_environ(), "UMC_SIGNED_FILE": str(path)},
+            env=env,
             creationflags=process._creationflags(),
-        ).stdout.splitlines()
+        )
     except (OSError, subprocess.SubprocessError) as exc:
         raise InstallError("Couldn't check the installer's signature.", details=repr(exc)) from exc
-    status = out[0].strip() if out else ""
+    out = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    status = out[0] if out else ""
     subject = out[1] if len(out) > 1 else ""
     if status != "Valid" or publisher not in subject:
         raise InstallError(
             "The downloaded installer isn't correctly signed, so it wasn't installed.",
-            details=f"status={status!r} subject={subject!r}",
+            details=f"status={status!r} subject={subject!r} stderr={result.stderr[-1500:]!r}",
         )
+    log.info("signature OK: %s", subject)
 
 
 def _environ() -> dict[str, str]:
