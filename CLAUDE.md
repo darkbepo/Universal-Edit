@@ -131,8 +131,14 @@ pyinstaller packaging/umc.spec                      # build the executable into 
 - PyInstaller one-folder build is the default (faster startup than one-file, easier to bundle binaries).
 - FFmpeg/ffprobe are bundled under `bin/`. Respect FFmpeg's licence (use an LGPL build unless we
   decide otherwise) and ship the licence text.
-- LibreOffice is large; first version detects an installed LibreOffice and shows a helpful message
-  if document ↔ office conversions are requested without it. Revisit bundling later.
+- LibreOffice is large, so it is **not bundled**. The app detects an installed LibreOffice
+  (bundled path → `PATH` → standard install locations such as `C:\Program Files\LibreOffice\program\soffice.exe`).
+- If an office-document conversion is requested and LibreOffice is missing, show a friendly dialog
+  explaining why it's needed, with a **"Download LibreOffice"** button that opens the official
+  download page (https://www.libreoffice.org/download/download/) in the browser, plus a
+  **"I've installed it — check again"** button that re-runs detection without restarting the app.
+- Conversions that don't need LibreOffice (images, video, PDF → images, Pandoc formats) must keep
+  working when it is absent.
 
 ## Coding conventions
 
