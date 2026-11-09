@@ -32,7 +32,59 @@ jobs:
           npx playwright install --with-deps chromium
           npm run e2e
 
+      - name: Package the local test version
+        run: node scripts/package-local.mjs
+
+      # Download → extract → double-click "Start Media Converter.bat".
       - uses: actions/upload-artifact@v4
         with:
-          name: web-companion-site
-          path: web/dist
+          name: MediaConverter-web-local
+          path: web/release/MediaConverter-web-local/
+
+  # Proves the Windows launcher (PowerShell server) works, by running every browser test against it.
+  windows-launcher:
+    needs: test-and-build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: MediaConverter-web-local
+          path: local-build
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test tools
+        working-directory: web
+        run: |
+          npm ci
+          npx playwright install chromium
+          python ..\scripts\fetch_ffmpeg.py
+          "$PWD\..\packaging\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+
+      - name: Start the launcher's server
+        env:
+          UMC_NO_BROWSER: "1"
+        run: |
+          Start-Process powershell -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','local-build\serve.ps1' -WindowStyle Hidden
+          for ($i = 0; $i -lt 30; $i++) {
+            try { $r = Invoke-WebRequest http://localhost:8790/ -UseBasicParsing; break } catch { Start-Sleep 1 }
+          }
+          $r.StatusCode
+          $r.Headers['Cross-Origin-Opener-Policy']; $r.Headers['Cross-Origin-Embedder-Policy']
+          if ($r.Headers['Cross-Origin-Embedder-Policy'] -ne 'require-corp') { throw 'isolation headers missing' }
+
+      - name: Browser tests against the launcher
+        working-directory: web
+        env:
+          E2E_BASE_URL: http://localhost:8790
+        run: npx playwright test --trace off

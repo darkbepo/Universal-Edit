@@ -25,10 +25,18 @@ npm run e2e        # real conversions in headless Chromium (Playwright); video t
 npm run build      # static site in dist/
 ```
 
+## Local test version (no install)
+
+`npm run package:local` builds `release/MediaConverter-web-local.zip`: the site in `app/` plus
+`Start Media Converter.bat` (Windows, PowerShell server) and `serve.py` (macOS/Linux). Both serve
+on `localhost` only, with the isolation headers. CI publishes it as the `MediaConverter-web-local`
+artifact of the "Web companion" workflow, and tests the Windows launcher on windows-latest.
+
 ## Deploy
 
-`dist/` is a static site. It must be served with these headers so FFmpeg can use threads
-(`public/_headers` sets them automatically on Netlify and Cloudflare Pages):
+`dist/` is a static site. FFmpeg needs these headers to use threads. `public/_headers` sets them on
+Netlify / Cloudflare Pages; on hosts that can't (GitHub Pages), the bundled `coi-serviceworker.js`
+adds them itself (the first visit reloads once):
 
 ```
 Cross-Origin-Opener-Policy: same-origin

@@ -25,7 +25,10 @@ async function downloadSingle(page: Page, targetId: string): Promise<Buffer> {
 
 test("page is cross-origin isolated (multi-threaded engines available)", async ({ page }) => {
   await page.goto("/");
-  expect(await page.evaluate(() => crossOriginIsolated)).toBe(true);
+  // On hosts without COOP/COEP headers (GitHub Pages) coi-serviceworker reloads the page once.
+  await expect
+    .poll(() => page.evaluate(() => crossOriginIsolated).catch(() => false), { timeout: 15_000 })
+    .toBe(true);
   await expect(page.getByText("Files never leave your device")).toBeVisible();
 });
 

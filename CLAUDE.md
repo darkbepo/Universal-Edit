@@ -73,7 +73,11 @@ See `web/README.md` for commands and deployment.
   types — no DOM/WASM), `converters/` (declare options + targets; `run()` imports engines dynamically
   so the page bundle stays ~60 KB), `engines/`, `ui/`. Target ids match the desktop ones.
 - **Cancel** = terminate the worker (kills FFmpeg's nested worker too); a new worker starts next run.
-- **Must be served cross-origin isolated** (COOP/COEP headers: `vite.config.ts`, `public/_headers`).
+- **Must be cross-origin isolated** (COOP/COEP): headers in `vite.config.ts` / `public/_headers`;
+  where a host can't send them (GitHub Pages) `coi-serviceworker.js` (emitted by a plugin in
+  `vite.config.ts`, loaded first in `index.html`) adds them and reloads the first visit once.
+- **Local test version:** `npm run package:local` → zip with `app/` + `Start Media Converter.bat`
+  / `serve.ps1` (Windows) and `serve.py`, all localhost-only. Keep `.bat` files CRLF.
 - **Keep `build.assetsInlineLimit: 0`** — an inlined (data:) FFmpeg thread worker can't load the
   engine and every video conversion crashes.
 - **Codecs:** only H.264, VP8 and MPEG-4 video. In @ffmpeg/core 0.12.10 libvpx-vp9 crashes the
@@ -245,6 +249,7 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
    `--self-test` run of the built .exe. No installer yet.
 6. ✅ Document splitting (every page / N pages / custom ranges) and PDF page size & margins.
 7. ✅ One-click install of LibreOffice / Pandoc from inside the app.
-8. 🟡 Web companion (`web/`): images, video, PDF done and tested; not deployed yet.
+8. 🟡 Web companion (`web/`): images, video, PDF done and tested; local test zip available;
+   GitHub Pages deployment planned after the owner has tested locally.
    Next: Pandoc-wasm for Markdown/HTML/EPUB/DOCX, WebCodecs for VP9/AV1, PWA/offline.
 9. Ideas: merge documents, installer for the app itself (Inno Setup), presets, batch queue.
