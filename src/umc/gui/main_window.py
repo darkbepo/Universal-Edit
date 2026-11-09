@@ -41,6 +41,7 @@ FAMILY_NOUN = {
     MediaFamily.MODEL: ("3D model", "3D models"),
     MediaFamily.DOCUMENT: ("document", "documents"),
     MediaFamily.ARCHIVE: ("archive", "archives"),
+    MediaFamily.SUBTITLE: ("subtitle file", "subtitle files"),
 }
 ICONS = {
     MediaFamily.IMAGE: "🖼",
@@ -49,6 +50,7 @@ ICONS = {
     MediaFamily.MODEL: "🧊",
     MediaFamily.DOCUMENT: "📄",
     MediaFamily.ARCHIVE: "🗜",
+    MediaFamily.SUBTITLE: "💬",
 }
 
 

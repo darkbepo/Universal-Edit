@@ -52,6 +52,7 @@ datas += collect_data_files("pymupdf")
 datas += collect_data_files("trimesh")
 TESSDATA = ROOT / "packaging" / "tessdata"
 datas += [(str(p), "tessdata") for p in TESSDATA.glob("*.traineddata")]
+datas += [(str(p), "fonts") for p in (ROOT / "packaging" / "fonts").glob("*") if p.is_file()]
 
 a = Analysis(
     [str(ROOT / "src" / "umc" / "__main__.py")],

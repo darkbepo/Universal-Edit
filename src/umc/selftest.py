@@ -71,6 +71,19 @@ def _archive_check(d: Path, out: Path, imgs: list[Path]) -> list[Path]:
     return results
 
 
+def _subtitle_check(d: Path, out: Path) -> list[Path]:
+    srt = d / "clip.en.srt"
+    srt.write_text("1\n00:00:00,100 --> 00:00:01,000\nHello ÆØÅ\n", encoding="utf-8")
+    video = out / "img0 slideshow.mp4"
+    [vtt] = _convert([srt], "vtt", out)
+    [burned] = _convert([video, srt], "burn:mp4", out)
+    [mkv] = _convert([video, srt], "subtrack:mkv", out)
+    extracted = _convert([mkv], "subs:srt", out)
+    if "ÆØÅ" not in extracted[0].read_text(encoding="utf-8"):
+        raise AssertionError("subtitle text was not kept")
+    return [vtt, burned, mkv, *extracted]
+
+
 def run(report: Path) -> int:
     from PIL import Image
 
@@ -109,6 +122,7 @@ def run(report: Path) -> int:
                 "images -> mp4 slideshow (h264)",
                 lambda: _convert(imgs, "slideshow:mp4", out, seconds_per_image=0.5),
             ),
+            ("subtitles: srt -> vtt, burn in, add track, extract", lambda: _subtitle_check(d, out)),
             ("mp4 -> webm", lambda: _convert([out / "img0 slideshow.mp4"], "webm", out)),
             ("mp4 -> gif", lambda: _convert([out / "img0 slideshow.mp4"], "video:gif", out)),
             ("mp4 -> frames", lambda: _convert([out / "img0 slideshow.mp4"], "frames:png", out)),

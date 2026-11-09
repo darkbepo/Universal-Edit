@@ -36,6 +36,11 @@ def converters() -> tuple[Converter, ...]:
     from umc.converters.pdf_tools import PdfToolsConverter
     from umc.converters.slideshow import SlideshowConverter
     from umc.converters.split import DocumentSplitConverter
+    from umc.converters.subtitles import (
+        SubtitleConverter,
+        SubtitleExtractConverter,
+        SubtitleVideoConverter,
+    )
     from umc.converters.video import VideoConverter
     from umc.converters.video_frames import VideoToFramesConverter
 
@@ -57,6 +62,9 @@ def converters() -> tuple[Converter, ...]:
         PdfOcrConverter(),
         ModelConverter(),
         ArchiveConverter(),
+        SubtitleConverter(),
+        SubtitleExtractConverter(),
+        SubtitleVideoConverter(),
         PackConverter(),
     )
 

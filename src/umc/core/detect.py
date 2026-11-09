@@ -15,6 +15,7 @@ class MediaFamily(StrEnum):
     AUDIO = "audio"
     MODEL = "model"
     ARCHIVE = "archive"
+    SUBTITLE = "subtitle"
 
 
 # Aliases → canonical extension.
@@ -29,6 +30,8 @@ ALIASES = {
     "yml": "yaml",
     "stp": "step",
     "tgz": "tar.gz",
+    "webvtt": "vtt",
+    "sami": "smi",
     "txz": "tar.xz",
     "tbz2": "tar.bz2",
     "tbz": "tar.bz2",
@@ -148,6 +151,7 @@ SPREADSHEET_EXTS = {"xlsx", "xls", "ods", "csv"}
 DATA_EXTS = {"json", "yaml", "xml", "tsv"}
 MODEL_EXTS = {"stl", "obj", "ply", "glb", "3mf", "off", "step", "iges"}
 ARCHIVE_EXTS = {"zip", "7z", "rar", "tar", "tar.gz", "tar.xz", "tar.bz2"}
+SUBTITLE_EXTS = {"srt", "vtt", "ass", "ssa", "smi", "lrc"}
 COMPOUND_EXTS = ("tar.gz", "tar.xz", "tar.bz2")
 PRESENTATION_EXTS = {"pptx", "ppt", "odp"}
 DOCUMENT_EXTS = TEXT_DOCUMENT_EXTS | SPREADSHEET_EXTS | PRESENTATION_EXTS | DATA_EXTS
@@ -189,6 +193,8 @@ def family_of_ext(ext: str) -> MediaFamily | None:
         return MediaFamily.MODEL
     if ext in ARCHIVE_EXTS:
         return MediaFamily.ARCHIVE
+    if ext in SUBTITLE_EXTS:
+        return MediaFamily.SUBTITLE
     if ext in DOCUMENT_EXTS:
         return MediaFamily.DOCUMENT
     return None

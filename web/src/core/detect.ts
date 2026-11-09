@@ -4,7 +4,7 @@ import type { Family, InputFile } from "./types";
 const ALIASES: Record<string, string> = {
   jpeg: "jpg", jpe: "jpg", jfif: "jpg", tif: "tiff", htm: "html", markdown: "md",
   heif: "heic", mpeg: "mpg", text: "txt", yml: "yaml", stp: "step", igs: "iges",
-  tgz: "tar.gz", txz: "tar.xz", tbz2: "tar.bz2", tbz: "tar.bz2",
+  webvtt: "vtt", sami: "smi", tgz: "tar.gz", txz: "tar.xz", tbz2: "tar.bz2", tbz: "tar.bz2",
 };
 
 export const IMAGE_EXTS = new Set([
@@ -31,6 +31,7 @@ export const WEB_DOCUMENT_EXTS = new Set([
 /** Documents recognised but only convertible in the desktop app (they need LibreOffice). */
 export const DESKTOP_ONLY_DOCUMENT_EXTS = new Set(["doc", "xls", "ppt", "ods", "odp", "wpd"]);
 
+export const SUBTITLE_EXTS = new Set(["srt", "vtt", "ass", "ssa", "smi", "lrc"]);
 export const ARCHIVE_EXTS = new Set(["zip", "7z", "rar", "tar", "tar.gz", "tar.xz", "tar.bz2"]);
 const COMPOUND_EXTS = ["tar.gz", "tar.xz", "tar.bz2"];
 
@@ -49,6 +50,7 @@ export function familyOfExt(ext: string): Family | null {
   if (AUDIO_EXTS.has(ext)) return "audio";
   if (MODEL_EXTS.has(ext)) return "model";
   if (ARCHIVE_EXTS.has(ext)) return "archive";
+  if (SUBTITLE_EXTS.has(ext)) return "subtitle";
   if (WEB_DOCUMENT_EXTS.has(ext) || DESKTOP_ONLY_DOCUMENT_EXTS.has(ext)) return "document";
   return null;
 }

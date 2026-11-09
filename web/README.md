@@ -46,6 +46,6 @@ Cross-Origin-Embedder-Policy: require-corp
 ```
 
 Engines (downloaded on first use, then cached): FFmpeg ~10 MB, ImageMagick ~5.5 MB, MuPDF ~4.8 MB,
-Pandoc ~16 MB, OpenCASCADE for STEP/IGES ~3 MB (gzipped). three.js (MIT) and occt-import-js (LGPL-2.1) handle 3D models; libarchive.js (MIT, ~0.5 MB) opens archives; tesseract.js (Apache-2.0, ~4 MB) does OCR, with language data (1–8 MB each) downloaded once from tessdata_fast and checked against SHA-256.
+Pandoc ~16 MB, OpenCASCADE for STEP/IGES ~3 MB (gzipped). three.js (MIT) and occt-import-js (LGPL-2.1) handle 3D models; libarchive.js (MIT, ~0.5 MB) opens archives; DejaVu Sans (~0.7 MB, free licence) is the font for burned-in subtitles; tesseract.js (Apache-2.0, ~4 MB) does OCR, with language data (1–8 MB each) downloaded once from tessdata_fast and checked against SHA-256.
 
 Licensed AGPL-3.0-or-later (same as the desktop app); a public deployment must link to the source.

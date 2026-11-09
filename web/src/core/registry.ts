@@ -5,6 +5,7 @@ import { dataConverter } from "../converters/data";
 import { modelConverter } from "../converters/model3d";
 import { ocrImageConverter, ocrPdfConverter } from "../converters/ocr";
 import { archiveConverter, packConverter } from "../converters/archive";
+import { subtitleConverter, subtitleExtractConverter, subtitleVideoConverter } from "../converters/subtitles";
 import { documentConverter, pagesConverter, splitConverter } from "../converters/pdf";
 import { pdfToolsConverter } from "../converters/pdftools";
 import { slideshowConverter } from "../converters/slideshow";
@@ -30,6 +31,9 @@ export const CONVERTERS: Converter[] = [
   ocrImageConverter,
   ocrPdfConverter,
   archiveConverter,
+  subtitleConverter,
+  subtitleExtractConverter,
+  subtitleVideoConverter,
   packConverter,
 ];
 

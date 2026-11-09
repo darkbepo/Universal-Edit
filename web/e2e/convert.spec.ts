@@ -502,3 +502,50 @@ test.describe("archives", () => {
     expect(gz.length).toBeGreaterThan(readFileSync(fx("noise.png")).length);
   });
 });
+
+test.describe("subtitles", () => {
+  test("old Windows-1252 SRT → VTT, shifted", async ({ page }) => {
+    test.skip(!hasVideo(), "needs ffmpeg"); // the fixtures' generator also needs it for video
+    await load(page, [fx("old.srt")]);
+    await page.locator('.pill[data-target="vtt"]').click();
+    await page.getByRole("button", { name: /Settings/ }).click();
+    await page.locator("#opt-shift").fill("2.5");
+    const vtt = (await downloadSingle(page, "vtt")).toString("utf8");
+    expect(vtt.startsWith("WEBVTT")).toBe(true);
+    expect(vtt).toContain("Æble");
+    expect(vtt).toContain("02.700 --> 00:04.000");
+  });
+
+  test("video + SRT → MKV track → extract it again", async ({ page }) => {
+    test.skip(!hasVideo(), "needs ffmpeg");
+    await load(page, [fx("clip.mp4"), fx("movie.da.srt")]);
+    await expect(page.locator('.pill[data-target="burn:mp4"]')).toHaveCount(1);
+    const mkv = await downloadSingle(page, "subtrack:mkv");
+    expect([...mkv.subarray(0, 4)]).toEqual([0x1a, 0x45, 0xdf, 0xa3]);
+    const { writeFileSync } = await import("node:fs");
+    writeFileSync(fx("with-subs.mkv"), mkv);
+    await load(page, [fx("with-subs.mkv")]);
+    const srt = await downloadSingle(page, "subs:srt");
+    expect(srt.toString("utf8")).toContain("Hej Æble ØL Å");
+    await expect(page.locator(".results a.fname")).toHaveText("with-subs.dan.srt");
+  });
+
+  test("burn into video draws on the picture", async ({ page }) => {
+    test.skip(!hasVideo(), "needs ffmpeg");
+    await load(page, [fx("clip.mp4"), fx("movie.da.srt")]);
+    await page.locator('.pill[data-target="burn:mp4"]').click();
+    await page.getByRole("button", { name: /Settings/ }).click();
+    await page.locator("#opt-font_size").fill("80");
+    const mp4 = await downloadSingle(page, "burn:mp4");
+    const { writeFileSync } = await import("node:fs");
+    const { execFileSync } = await import("node:child_process");
+    writeFileSync(fx("burned.mp4"), mp4);
+    // one grey frame at 1 s from each, compared pixel by pixel (320×240)
+    const grab = (file: string) => execFileSync("ffmpeg", ["-loglevel", "error", "-ss", "1", "-i", fx(file), "-frames:v", "1", "-s", "320x240", "-pix_fmt", "gray", "-f", "rawvideo", "-"]);
+    const [a, b] = [grab("clip.mp4"), grab("burned.mp4")];
+    let top = 0, bottom = 0;
+    for (let i = 0; i < a.length; i++) if (Math.abs(a[i] - b[i]) > 60) (i < 320 * 80 ? top++ : i >= 320 * 120 ? bottom++ : 0);
+    expect(bottom).toBeGreaterThan(300);
+    expect(top).toBeLessThan(50);
+  });
+});

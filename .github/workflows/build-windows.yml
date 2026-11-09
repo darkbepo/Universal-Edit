@@ -44,6 +44,9 @@ jobs:
       - name: Fetch OCR language data (English, bundled)
         run: python scripts/fetch_tessdata.py
 
+      - name: Fetch subtitle font (DejaVu Sans, bundled)
+        run: python scripts/fetch_font.py
+
       - name: Run tests
         run: pytest -q
 

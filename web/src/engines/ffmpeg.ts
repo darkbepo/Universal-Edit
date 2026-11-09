@@ -100,6 +100,18 @@ export class Engine {
     };
   }
 
+  /** Subtitle tracks of a file, in order (index = N for -map 0:s:N). */
+  async subtitleStreams(path: string): Promise<{ index: number; codec: string; language: string }[]> {
+    this.log = [];
+    await this.ff.exec(["-hide_banner", "-i", path]);
+    const out: { index: number; codec: string; language: string }[] = [];
+    for (const line of this.log) {
+      const m = /Stream #\d+:\d+(?:\[\w+\])?(?:\((\w+)\))?: Subtitle: (\w+)/.exec(line);
+      if (m) out.push({ index: out.length, codec: m[2], language: m[1] && m[1] !== "und" ? m[1] : "" });
+    }
+    return out;
+  }
+
   /** Run ffmpeg; reports 0..1 progress based on output time vs ``totalSeconds``. */
   async run(args: string[], totalSeconds: number, progress: (f: number) => void, error: string) {
     this.log = [];

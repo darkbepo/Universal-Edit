@@ -8,4 +8,5 @@ dist/
 .ruff_cache/
 packaging/bin/
 packaging/tessdata/
+packaging/fonts/
 *.log

@@ -141,8 +141,12 @@ def run_ffmpeg(
     progress: Callable[[float], None],
     cancel_event: threading.Event,
     error_message: str = "FFmpeg couldn't convert this file.",
+    cwd: Path | None = None,
 ) -> None:
-    """Run ffmpeg with ``args`` (output path included), reporting 0..1 progress."""
+    """Run ffmpeg with ``args`` (output path included), reporting 0..1 progress.
+
+    ``cwd`` lets filter arguments use plain relative names (no path escaping in filtergraphs).
+    """
     cmd = [
         ffmpeg_path(),
         "-hide_banner",
@@ -166,7 +170,11 @@ def run_ffmpeg(
 
     try:
         process.run(
-            cmd, cancel_event=cancel_event, on_stdout_line=on_line, error_message=error_message
+            cmd,
+            cancel_event=cancel_event,
+            on_stdout_line=on_line,
+            error_message=error_message,
+            cwd=cwd,
         )
     except ConversionError as exc:
         hint = _friendly_hint(exc.details)
@@ -186,3 +194,72 @@ def _friendly_hint(stderr: str) -> str:
     if "no space left" in s:
         return "The disk is full."
     return ""
+
+
+TEXT_SUBTITLE_CODECS = {
+    "subrip",
+    "srt",
+    "ass",
+    "ssa",
+    "webvtt",
+    "mov_text",
+    "text",
+    "microdvd",
+    "subviewer",
+    "sami",
+    "realtext",
+    "jacosub",
+    "mpl2",
+    "pjs",
+    "vplayer",
+    "stl",
+    "ttml",
+}
+
+
+@dataclass
+class SubtitleStream:
+    index: int  # among the file's subtitle streams (for -map 0:s:N)
+    codec: str
+    language: str
+    title: str
+
+    @property
+    def is_text(self) -> bool:
+        return self.codec in TEXT_SUBTITLE_CODECS
+
+
+def subtitle_streams(path: Path) -> list[SubtitleStream]:
+    """Subtitle tracks inside a video file."""
+    cmd = [
+        ffprobe_path(),
+        "-v",
+        "error",
+        "-select_streams",
+        "s",
+        "-print_format",
+        "json",
+        "-show_streams",
+        str(path),
+    ]
+    try:
+        out = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=60,
+            creationflags=process._creationflags(),
+        ).stdout
+        streams = json.loads(out).get("streams", [])
+    except (subprocess.SubprocessError, json.JSONDecodeError) as exc:
+        raise ConversionError(f"Couldn't read “{path.name}”. Is it a valid video file?") from exc
+    return [
+        SubtitleStream(
+            index=i,
+            codec=s.get("codec_name", ""),
+            language=(s.get("tags") or {}).get("language", ""),
+            title=(s.get("tags") or {}).get("title", ""),
+        )
+        for i, s in enumerate(streams)
+    ]

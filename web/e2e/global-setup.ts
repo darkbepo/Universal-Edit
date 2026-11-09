@@ -58,6 +58,12 @@ export default async function globalSetup() {
     writeFileSync(`${FIXTURES}bundle.zip`, zipSync({ "readme.txt": strToU8("hello ÆØÅ\n"), "sub/deep/data.bin": new Uint8Array(10240).map((_, i) => i % 256) }));
     for (const f of ["sample.7z", "sample-aes.zip", "sample-rar5.rar"]) copyFileSync(fileURLToPath(new URL(`../../tests/fixtures/${f}`, import.meta.url)), `${FIXTURES}${f}`);
   }
+  // Subtitles: a UTF-8 SRT with a language in its name, and the same text as an old Windows-1252 file.
+  {
+    const srt = "1\n00:00:00,200 --> 00:00:01,500\nHej Æble ØL Å\n\n2\n00:00:01,600 --> 00:00:01,900\nSecond line\n";
+    writeFileSync(`${FIXTURES}movie.da.srt`, srt, "utf8");
+    writeFileSync(`${FIXTURES}old.srt`, Buffer.from(srt, "latin1")); // ÆØÅ are the same bytes in Windows-1252
+  }
   // OCR language data (served to the page by a route in the tests, unless run against the live
   // site). Taken from packaging/tessdata (scripts/fetch_tessdata.py eng dan) or downloaded.
   for (const code of ["eng", "dan"]) {

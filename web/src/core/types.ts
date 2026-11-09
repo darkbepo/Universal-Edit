@@ -2,7 +2,7 @@
 // worker and in unit tests alike.
 import type { OptionSpec, Values } from "./options";
 
-export type Family = "image" | "video" | "audio" | "document" | "model" | "archive";
+export type Family = "image" | "video" | "audio" | "document" | "model" | "archive" | "subtitle";
 
 export interface InputFile {
   file: File;
