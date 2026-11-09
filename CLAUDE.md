@@ -83,7 +83,7 @@ See `web/README.md` for commands and deployment.
 - **Must be cross-origin isolated** (COOP/COEP): headers in `vite.config.ts` / `public/_headers`;
   where a host can't send them (GitHub Pages) `coi-serviceworker.js` (emitted by a plugin in
   `vite.config.ts`, loaded first in `index.html`) adds them and reloads the first visit once.
-- **Local test version:** `npm run package:local` → zip with `app/` + `Start Media Converter.bat`
+- **Local test version:** `npm run package:local` → zip with `app/` + `Start Universal Media Converter.bat`
   / `serve.ps1` (Windows) and `serve.py`, all localhost-only. Keep `.bat` files CRLF.
 - **Keep `build.assetsInlineLimit: 0`** — an inlined (data:) FFmpeg thread worker can't load the
   engine and every video conversion crashes.

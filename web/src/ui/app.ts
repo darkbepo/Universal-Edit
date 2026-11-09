@@ -63,7 +63,7 @@ export function mountApp(root: HTMLElement): void {
   root.append(
     h("main", { class: "app" },
       h("div", { class: "header" },
-        h("div", {}, h("h1", {}, "Media Converter"), h("p", { class: "subtitle" }, "Images, video and documents — drop it in, pick a format.")),
+        h("div", {}, h("h1", {}, "Universal Media Converter"), h("p", { class: "subtitle" }, "Images, video and documents — drop it in, pick a format.")),
         h("span", { class: "badge", title: "Everything is processed in your browser. Nothing is uploaded." }, "🔒 Files never leave your device")),
       picker, drop, filesCard, note, formatSection, formats, disclosure, settingsCard, resultsCard),
     bar,

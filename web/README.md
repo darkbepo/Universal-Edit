@@ -1,4 +1,4 @@
-# Media Converter — web companion
+# Universal Media Converter — web companion
 
 The browser version of Universal Media Converter. Everything runs **on the visitor's own
 device** (WebAssembly in a Web Worker) — files are never uploaded.
@@ -28,9 +28,9 @@ npm run build      # static site in dist/
 
 ## Local test version (no install)
 
-`npm run package:local` builds `release/MediaConverter-web-local.zip`: the site in `app/` plus
-`Start Media Converter.bat` (Windows, PowerShell server) and `serve.py` (macOS/Linux). Both serve
-on `localhost` only, with the isolation headers. CI publishes it as the `MediaConverter-web-local`
+`npm run package:local` builds `release/UniversalMediaConverter-web-local.zip`: the site in `app/` plus
+`Start Universal Media Converter.bat` (Windows, PowerShell server) and `serve.py` (macOS/Linux). Both serve
+on `localhost` only, with the isolation headers. CI publishes it as the `UniversalMediaConverter-web-local`
 artifact of the "Web companion" workflow, and tests the Windows launcher on windows-latest.
 
 ## Deploy

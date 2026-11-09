@@ -1,19 +1,30 @@
 # Universal Media Converter
 
-A minimal desktop app that converts documents, images and videos. Drop files in, pick an
-output format, (optionally) tweak settings, press **Convert**.
+## ▶ [Open the converter in your browser](https://darkbepo.github.io/Universal-Media-Converter/)
+
+**https://darkbepo.github.io/Universal-Media-Converter/** — nothing to install, works on Windows,
+Mac, Linux and phones. Your files **never leave your device**: everything is converted right in
+your browser, nothing is uploaded.
+
+Drop files in, pick an output format, (optionally) tweak settings, press **Convert**.
 
 | From | To |
 |---|---|
-| **Images** (PNG, JPG, WEBP, AVIF, HEIC, GIF, BMP, TIFF, ICO, …) | any other image format · a slideshow video (MP4/MKV/WEBM/MOV/AVI) or animated GIF · a PDF |
-| **Videos** (MP4, MKV, MOV, AVI, WEBM, FLV, WMV, …) | any other video format · GIF · image frames (choose how many per 30 frames) · audio only (MP3, M4A, WAV, FLAC, OGG, OPUS) |
-| **Documents** (PDF, DOCX, DOC, ODT, RTF, TXT, MD, HTML, EPUB, XLSX, PPTX, …) | other document formats · images (one per page) |
+| **Images** (PNG, JPG, WEBP, AVIF, HEIC, GIF, BMP, TIFF, ICO, …) | any other image format · a slideshow video or animated GIF · a PDF |
+| **Videos** (MP4, MKV, MOV, AVI, WEBM, …) | other video formats · GIF · image frames (choose how many per 30 frames) · audio only (MP3, M4A, WAV, FLAC, OGG, OPUS) |
+| **Documents** (PDF, DOCX, ODT, RTF, TXT, Markdown, HTML, EPUB, CSV, XLSX, PPTX, …) | other document formats · images (one per page) · split into several PDFs |
 
-## Web companion
+## Desktop app (for the heavy stuff)
 
-There's also a browser version in [`web/`](web/README.md) that converts images, videos and
-documents entirely on your own device — nothing is uploaded. Old Office formats (DOC/XLS/PPT)
-still need the desktop app.
+Prefer a program on your PC, or need something the browser can't do? The **Windows desktop app**
+adds old Office formats (DOC, XLS, PPT and OpenDocument spreadsheets/presentations), VP9 / H.265 /
+AV1 video and very large files. It installs LibreOffice and Pandoc for you with one click when a
+conversion needs them.
+
+Get it from **Actions → Build Windows executable** → latest successful run → download
+`UniversalMediaConverter-windows`, extract, and run `UniversalMediaConverter.exe`.
+
+The browser version's source is in [`web/`](web/README.md).
 
 ## Running from source
 
@@ -27,7 +38,7 @@ python -m umc
 
 Office formats (DOC/DOCX/ODT/XLSX/PPTX…) need [LibreOffice](https://www.libreoffice.org/download/download/)
 and Markdown/EPUB/HTML need [Pandoc](https://pandoc.org/installing.html). If one is missing, the
-app explains why and offers a download button — no restart needed after installing.
+app offers to install it for you with one click — no restart needed.
 
 ## Building the Windows executable
 

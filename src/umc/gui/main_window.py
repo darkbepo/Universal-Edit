@@ -78,7 +78,7 @@ class MainWindow(QMainWindow):
         body.setContentsMargins(28, 24, 28, 16)
         body.setSpacing(12)
 
-        title = QLabel("Media Converter", objectName="Title")
+        title = QLabel("Universal Media Converter", objectName="Title")
         subtitle = QLabel(
             "Documents, images and video — drop it in, pick a format.", objectName="Subtitle"
         )

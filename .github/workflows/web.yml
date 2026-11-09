@@ -35,11 +35,11 @@ jobs:
       - name: Package the local test version
         run: node scripts/package-local.mjs
 
-      # Download → extract → double-click "Start Media Converter.bat".
+      # Download → extract → double-click "Start Universal Media Converter.bat".
       - uses: actions/upload-artifact@v4
         with:
-          name: MediaConverter-web-local
-          path: web/release/MediaConverter-web-local/
+          name: UniversalMediaConverter-web-local
+          path: web/release/UniversalMediaConverter-web-local/
 
   # Proves the Windows launcher (PowerShell server) works, by running every browser test against it.
   windows-launcher:
@@ -50,7 +50,7 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          name: MediaConverter-web-local
+          name: UniversalMediaConverter-web-local
           path: local-build
 
       - uses: actions/setup-node@v4

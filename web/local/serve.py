@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Serve the Media Converter web app on this computer only (macOS / Linux / any Python 3).
+"""Serve the Universal Media Converter web app on this computer only (macOS / Linux / any Python 3).
 
 Usage: python3 serve.py      then open the printed address. Press Ctrl+C to stop.
 """
@@ -45,7 +45,7 @@ def main() -> int:
         print("No free port between 8790 and 8799.")
         return 1
     url = f"http://localhost:{port}/"
-    print(f"\n  Media Converter is running at {url}\n  Your files stay on this computer. Press Ctrl+C to stop.\n")
+    print(f"\n  Universal Media Converter is running at {url}\n  Your files stay on this computer. Press Ctrl+C to stop.\n")
     if not os.environ.get("UMC_NO_BROWSER"):
         webbrowser.open(url)
     try:

@@ -1,11 +1,11 @@
-// Builds release/MediaConverter-web-local/ (+ .zip): the built site in app/ plus launchers.
+// Builds release/UniversalMediaConverter-web-local/ (+ .zip): the built site in app/ plus launchers.
 import { cpSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { zipSync } from "fflate";
 
 const web = fileURLToPath(new URL("..", import.meta.url));
-const name = "MediaConverter-web-local";
+const name = "UniversalMediaConverter-web-local";
 const out = join(web, "release", name);
 rmSync(join(web, "release"), { recursive: true, force: true });
 mkdirSync(out, { recursive: true });

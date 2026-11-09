@@ -1,4 +1,4 @@
-Media Converter — local test version
+Universal Media Converter — local test version
 ====================================
 
 Converts images, videos and documents inside your web browser. Everything happens on this
@@ -7,7 +7,7 @@ this computer.
 
 WINDOWS
   1. Extract the whole zip (don't run it from inside the zip).
-  2. Double-click "Start Media Converter.bat".
+  2. Double-click "Start Universal Media Converter.bat".
      If Windows SmartScreen asks, choose "More info" > "Run anyway" (the script is
      plain text — you can open serve.ps1 in Notepad to read it).
   3. Your browser opens the converter. Keep the black window open while you use it;
