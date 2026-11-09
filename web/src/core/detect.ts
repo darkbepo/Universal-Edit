@@ -3,7 +3,7 @@ import type { Family, InputFile } from "./types";
 
 const ALIASES: Record<string, string> = {
   jpeg: "jpg", jpe: "jpg", jfif: "jpg", tif: "tiff", htm: "html", markdown: "md",
-  heif: "heic", mpeg: "mpg", text: "txt", yml: "yaml",
+  heif: "heic", mpeg: "mpg", text: "txt", yml: "yaml", stp: "step", igs: "iges",
 };
 
 export const IMAGE_EXTS = new Set([
@@ -21,6 +21,7 @@ export const AUDIO_EXTS = new Set([
   "mp3", "wav", "flac", "m4a", "aac", "ogg", "oga", "opus", "wma", "aiff", "aif", "ac3",
   "amr", "mka", "caf", "ape", "wv", "mp2", "au",
 ]);
+export const MODEL_EXTS = new Set(["stl", "obj", "ply", "glb", "3mf", "step", "iges"]);
 /** Documents the web version converts itself (MuPDF + Pandoc). */
 export const WEB_DOCUMENT_EXTS = new Set([
   "pdf", "epub", "xps", "mobi", "fb2", "cbz", "docx", "odt", "rtf", "txt", "md", "html", "rst",
@@ -39,6 +40,7 @@ export function familyOfExt(ext: string): Family | null {
   if (IMAGE_EXTS.has(ext)) return "image";
   if (VIDEO_EXTS.has(ext)) return "video";
   if (AUDIO_EXTS.has(ext)) return "audio";
+  if (MODEL_EXTS.has(ext)) return "model";
   if (WEB_DOCUMENT_EXTS.has(ext) || DESKTOP_ONLY_DOCUMENT_EXTS.has(ext)) return "document";
   return null;
 }
@@ -46,6 +48,8 @@ export function familyOfExt(ext: string): Family | null {
 export function sniff(head: Uint8Array): string | null {
   const s = (a: number, b: number) => String.fromCharCode(...head.slice(a, b));
   if (s(0, 4) === "%PDF") return "pdf";
+  if (s(0, 4) === "glTF") return "glb";
+  if (s(0, 13) === "ISO-10303-21;") return "step";
   if (head[0] === 0x89 && s(1, 4) === "PNG") return "png";
   if (head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff) return "jpg";
   if (s(0, 4) === "GIF8") return "gif";

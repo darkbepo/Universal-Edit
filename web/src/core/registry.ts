@@ -2,6 +2,7 @@
 // Converter modules only *declare* engines; the heavy WebAssembly loads lazily in the worker.
 import { imageConverter, imagesToPdfConverter } from "../converters/image";
 import { dataConverter } from "../converters/data";
+import { modelConverter } from "../converters/model3d";
 import { documentConverter, pagesConverter, splitConverter } from "../converters/pdf";
 import { pdfToolsConverter } from "../converters/pdftools";
 import { slideshowConverter } from "../converters/slideshow";
@@ -23,6 +24,7 @@ export const CONVERTERS: Converter[] = [
   pagesConverter,
   splitConverter,
   pdfToolsConverter,
+  modelConverter,
 ];
 
 export const converterById = (id: string) => CONVERTERS.find((c) => c.id === id)!;
@@ -37,7 +39,7 @@ export function targetsFor(files: InputFile[]): TargetResult {
   if (!files.length) return { targets: [], note: "" };
   const families = new Set(files.map((f) => f.family));
   if (families.size > 1) {
-    return { targets: [], note: "Please add files of one kind at a time (only images, only videos, only audio or only documents)." };
+    return { targets: [], note: "Please add files of one kind at a time (only images, only videos, only audio, only documents or only 3D models)." };
   }
   const desktopOnly = files.filter((f) => DESKTOP_ONLY_DOCUMENT_EXTS.has(f.ext));
   if (desktopOnly.length) {

@@ -1,7 +1,7 @@
 // Generates small sample files (no binaries in git). Video needs a system ffmpeg; those tests
 // skip without it.
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 export const FIXTURES = fileURLToPath(new URL("./fixtures/", import.meta.url));
@@ -57,6 +57,8 @@ export default async function globalSetup() {
   } catch {
     console.warn("python3 not found: RAW/PSD e2e tests will be skipped");
   }
+  // STEP / IGES cubes (10 mm) shared with the desktop tests.
+  for (const f of ["cube-10mm.stp", "cube-10mm.igs"]) copyFileSync(fileURLToPath(new URL(`../../tests/fixtures/${f}`, import.meta.url)), `${FIXTURES}${f}`);
   if (!existsSync(`${FIXTURES}noise.png`)) {
     const pix = new mupdf.Pixmap(mupdf.ColorSpace.DeviceRGB, [0, 0, 1200, 900], false);
     const px = pix.getPixels();

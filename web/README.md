@@ -46,6 +46,6 @@ Cross-Origin-Embedder-Policy: require-corp
 ```
 
 Engines (downloaded on first use, then cached): FFmpeg ~10 MB, ImageMagick ~5.5 MB, MuPDF ~4.8 MB,
-Pandoc ~16 MB (gzipped).
+Pandoc ~16 MB, OpenCASCADE for STEP/IGES ~3 MB (gzipped). three.js (MIT) and occt-import-js (LGPL-2.1) handle 3D models.
 
 Licensed AGPL-3.0-or-later (same as the desktop app); a public deployment must link to the source.

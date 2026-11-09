@@ -14,3 +14,8 @@ declare module "pandoc-wasm-binary?url" {
   const url: string;
   export default url;
 }
+declare module "occt-import-js" {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const init: (opts?: { locateFile?: (path: string) => string }) => Promise<any>;
+  export default init;
+}

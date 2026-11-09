@@ -367,3 +367,37 @@ test.describe("video", () => {
     await expect(page.getByRole("button", { name: "Convert" })).toBeEnabled();
   });
 });
+
+test.describe("3D models", () => {
+  const stlSize = (data: Buffer) => {
+    // binary STL: 80-byte header, uint32 count, then 50 bytes per triangle
+    const n = data.readUInt32LE(80);
+    const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
+    for (let t = 0; t < n; t++) for (let v = 0; v < 3; v++) for (let a = 0; a < 3; a++) {
+      const x = data.readFloatLE(84 + t * 50 + 12 + v * 12 + a * 4);
+      min[a] = Math.min(min[a], x); max[a] = Math.max(max[a], x);
+    }
+    return { triangles: n, size: max.map((m, a) => +(m - min[a]).toFixed(3)), minZ: +min[2].toFixed(3) };
+  };
+
+  for (const f of ["cube-10mm.stp", "cube-10mm.igs"]) {
+    test(`${f.split(".")[1].toUpperCase()} → STL is 10 mm on the bed`, async ({ page }) => {
+      await load(page, [fx(f)]);
+      const m = stlSize(await downloadSingle(page, "stl"));
+      expect(m.size).toEqual([10, 10, 10]);
+      expect(m.minZ).toBe(0);
+      expect(m.triangles).toBe(12);
+    });
+  }
+
+  test("STEP → 3MF → GLB", async ({ page }) => {
+    await load(page, [fx("cube-10mm.stp")]);
+    const tmf = await downloadSingle(page, "3mf");
+    expect(tmf.subarray(0, 2).toString()).toBe("PK");
+    const { writeFileSync } = await import("node:fs");
+    writeFileSync(fx("cube.3mf"), tmf);
+    await load(page, [fx("cube.3mf")]);
+    const glb = await downloadSingle(page, "glb");
+    expect(glb.subarray(0, 4).toString()).toBe("glTF");
+  });
+});

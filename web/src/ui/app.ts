@@ -7,8 +7,8 @@ import type { InputFile, OutputFile, Target } from "../core/types";
 import { ConversionClient, JobCancelled } from "../worker/client";
 import { SettingsForm } from "./settings";
 
-const ICON: Record<string, string> = { image: "🖼", video: "🎞", audio: "🎵", document: "📄" };
-const NOUN: Record<string, [string, string]> = { image: ["image", "images"], video: ["video", "videos"], audio: ["audio file", "audio files"], document: ["document", "documents"] };
+const ICON: Record<string, string> = { image: "🖼", video: "🎞", audio: "🎵", document: "📄", model: "🧊" };
+const NOUN: Record<string, [string, string]> = { image: ["image", "images"], video: ["video", "videos"], audio: ["audio file", "audio files"], document: ["document", "documents"], model: ["3D model", "3D models"] };
 
 const h = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> & { class?: string } = {}, ...children: (Node | string)[]) => {
   const el = document.createElement(tag);
@@ -34,7 +34,7 @@ export function mountApp(root: HTMLElement): void {
   const picker = h("input", { type: "file", multiple: true, hidden: true });
   const drop = h("div", { class: "drop", tabIndex: 0, role: "button", ariaLabel: "Add files" },
     h("div", { class: "icon" }, "⬆"), h("div", { class: "title" }, "Drop files here"),
-    h("div", { class: "sub" }, "or click to browse — images, videos, audio or documents"));
+    h("div", { class: "sub" }, "or click to browse — images, videos, audio, documents or 3D models"));
   const filesLabel = h("span");
   const clearBtn = h("button", { class: "link" }, "Clear");
   const fileList = h("ul", { class: "file-list" });

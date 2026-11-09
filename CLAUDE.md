@@ -69,7 +69,7 @@ See `web/README.md` for commands and deployment.
 
 - **Stack:** TypeScript + Vite, no UI framework. Engines are WebAssembly, loaded lazily inside one
   long-lived module Worker (`src/worker/jobWorker.ts`): ffmpeg.wasm (`@ffmpeg/core`, multi-threaded
-  `core-mt` when cross-origin isolated), ImageMagick (`@imagemagick/magick-wasm`), MuPDF (`mupdf`),
+  `core-mt` when cross-origin isolated), ImageMagick (`@imagemagick/magick-wasm`), MuPDF (`mupdf`), three.js + occt-import-js (3D),
   Pandoc (official `pandoc-wasm`, ~16 MB gz; wired via `pandoc-wasm-core` / `pandoc-wasm-binary`
   aliases in `vite.config.ts` because the package only exports a browser entry Vite can't bundle).
 - **Documents:** `converters/docroute.ts` is a port of the desktop route planner (pandoc edges +
@@ -285,7 +285,11 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
       hand-written XLSX reader/writer on fflate — SheetJS is only on its own CDN, npm copy is stale).
       Same conventions in both: XML attributes "@name", text "#text", nesting ↔ "a.b" columns.
       Group "Data" replaces doc:csv/doc:xlsx for data-readable inputs (no LibreOffice needed).
-   6. 3D printing: STL, OBJ, 3MF, PLY, GLB/GLTF, STEP/IGES (units, scale, mesh detail)
+   6. ✅ 3D printing: STL, OBJ, 3MF, PLY, GLB, STEP/IGES — everything is normalised to mm.
+      Desktop `converters/model3d.py` (trimesh; cascadio/OpenCASCADE for STEP/IGES — STEP comes
+      back in metres, IGES in the file's own unit). Web `converters/model3d.ts`: three.js parsers
+      for STL/OBJ/PLY, own GLB/3MF readers and PLY/GLB/3MF writers (three's 3MF/GLTF loaders and
+      PLY/GLTF exporters need DOM APIs missing in workers), occt-import-js (LGPL) for STEP/IGES.
    7. OCR (tesseract)
    8. Archives: ZIP, 7Z, RAR, TAR
    9. Subtitles: SRT/VTT/ASS, extract from / burn into video
