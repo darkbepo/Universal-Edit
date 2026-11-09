@@ -1,4 +1,4 @@
-"""One-click installation of LibreOffice, Pandoc, Ghostscript and Calibre (Windows).
+"""One-click installation of LibreOffice, Pandoc, Ghostscript, Calibre and LibreDWG (Windows).
 
 Both are installed *privately* into the app's tools folder (see :func:`paths.tools_dir`):
 
@@ -461,7 +461,57 @@ def install_calibre(progress: Progress, cancel_event: threading.Event) -> str:
         msi.unlink(missing_ok=True)
 
 
+# --------------------------------------------------------------------------- LibreDWG
+
+LIBREDWG_LATEST = "https://api.github.com/repos/LibreDWG/libredwg/releases/latest"
+
+
+def pick_libredwg_asset(release: dict) -> tuple[str, str, str | None]:
+    version = str(release.get("tag_name", "")).lstrip("v")
+    for asset in release.get("assets", []):
+        name = asset.get("name", "")
+        if re.fullmatch(r"libredwg-[\d.]+-win64\.zip", name):
+            digest = asset.get("digest") or ""
+            sha = digest.split(":", 1)[1] if digest.startswith("sha256:") else None
+            return version, asset["browser_download_url"], sha
+    raise InstallError(
+        "Couldn't find a Windows download of LibreDWG.", details=json.dumps(release)[:500]
+    )
+
+
+def install_libredwg(progress: Progress, cancel_event: threading.Event) -> str:
+    from umc.core.paths import find_in_tools
+
+    target = tools_dir() / "libredwg"
+    _check_space(tools_dir(), 200_000_000, "LibreDWG")
+    progress(0.0, "Finding the latest LibreDWG…")
+    with _get(LIBREDWG_LATEST) as resp:
+        version, url, sha = pick_libredwg_asset(json.load(resp))
+    with tempfile.TemporaryDirectory(prefix="umc-libredwg-", dir=tools_dir()) as tmp:
+        archive = Path(tmp) / "libredwg.zip"
+        download(
+            url,
+            archive,
+            label=f"LibreDWG {version}",
+            expected_sha256=sha,
+            progress=lambda f, m: progress(0.9 * f, m),
+            cancel_event=cancel_event,
+        )
+        progress(0.92, "Unpacking LibreDWG…")
+        staging = Path(tmp) / "unpacked"
+        with zipfile.ZipFile(archive) as zf:
+            _safe_extract(zf, staging)
+        shutil.rmtree(target, ignore_errors=True)
+        shutil.move(str(staging), target)
+    exe = find_in_tools("libredwg", "dwg2dxf.exe")
+    if exe is None:
+        raise InstallError("LibreDWG was downloaded but dwg2dxf.exe wasn't found in it.")
+    progress(1.0, f"LibreDWG {version} installed.")
+    return exe
+
+
 INSTALLERS: dict[str, Callable[[Progress, threading.Event], str]] = {
+    "LibreDWG": install_libredwg,
     "Calibre": install_calibre,
     "Ghostscript": install_ghostscript,
     "LibreOffice": install_libreoffice,

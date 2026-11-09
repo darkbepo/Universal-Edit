@@ -69,7 +69,7 @@ See `web/README.md` for commands and deployment.
 
 - **Stack:** TypeScript + Vite, no UI framework. Engines are WebAssembly, loaded lazily inside one
   long-lived module Worker (`src/worker/jobWorker.ts`): ffmpeg.wasm (`@ffmpeg/core`, multi-threaded
-  `core-mt` when cross-origin isolated), ImageMagick (`@imagemagick/magick-wasm`), MuPDF (`mupdf`), three.js + occt-import-js (3D), tesseract.js (OCR), libarchive.js (archives), HarfBuzz hb-subset + woff2-encoder (fonts), resvg + vectortracer (vector),
+  `core-mt` when cross-origin isolated), ImageMagick (`@imagemagick/magick-wasm`), MuPDF (`mupdf`), three.js + occt-import-js (3D), tesseract.js (OCR), libarchive.js (archives), HarfBuzz hb-subset + woff2-encoder (fonts), resvg + vectortracer (vector), dxf (CAD),
   Pandoc (official `pandoc-wasm`, ~16 MB gz; wired via `pandoc-wasm-core` / `pandoc-wasm-binary`
   aliases in `vite.config.ts` because the package only exports a browser entry Vite can't bundle).
 - **Documents:** `converters/docroute.ts` is a port of the desktop route planner (pandoc edges +
@@ -149,12 +149,14 @@ src/umc/
     subtitles.py         # subtitles ↔ subtitles, extract from video, burn in / add as track
     fonts.py             # fonts: TTF ↔ OTF ↔ WOFF ↔ WOFF2, subsetting (fontTools)
     vector.py            # SVG/EPS/PS/AI ↔ each other / PDF / images; PDF → SVG; image tracing
+    cad.py               # CAD: DXF/DWG → PDF/SVG/PNG/JPG, DWG → DXF, DXF versions (ezdxf)
   tools/                 # wrappers around external programs/libraries
     process.py           # find_executable (bundled → PATH → known install dirs), cancellable run()
     installer.py         # one-click download + verify + install of LibreOffice / Pandoc (Windows)
     archive.py           # ZIP (pyzipper) / 7Z (py7zr) / TAR / RAR (bsdtar) read + write, safe extraction
     ghostscript.py       # EPS/PS via Ghostscript (-dSAFER), found or one-click installed
     calibre.py           # Kindle MOBI/AZW3 via Calibre's ebook-convert, found or one-click installed
+    libredwg.py          # AutoCAD DWG → DXF via LibreDWG's dwg2dxf, found or one-click installed
     tessdata.py          # OCR language files: bundled English, pinned SHA-256 downloads
     winsign.py           # Authenticode check via WinVerifyTrust/crypt32 (PowerShell's module is unreliable)
     ffmpeg.py, libreoffice.py, pandoc.py, pdf.py
@@ -346,7 +348,13 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
       is a document-route engine: Kindle MOBI/AZW3 in and out, plus EPUB/FB2 (expensive edges, so
       Pandoc keeps those routes). One-click install = the signed Calibre MSI (Kovid Goyal) unpacked
       with `msiexec /a` like LibreOffice, then a test conversion. Title / author options. Web: —.
-   14. CAD: DXF (DWG if feasible)
+   14. ✅ CAD (family "cad": dxf, dwg) → `dxf` (DWG → DXF / DXF version change, R12 via ezdxf's
+      r12export), `cad:pdf|svg|png|jpg`. Desktop `converters/cad.py`: ezdxf (MIT) with its PyMuPDF
+      + SVG drawing backends (paper sizes, margins, colour modes, line thickness, model space or
+      every paper layout); DWG via LibreDWG `dwg2dxf` (GPL-3 program, `tools/libredwg.py`, one-click
+      win64 zip from GitHub, SHA-256 checked; live test makes a DWG with its `dxf2dwg`). Web
+      `converters/cad.ts`: `dxf` package (MIT) → SVG, restyled (colours, 1.5 px lines) → resvg for
+      PNG/JPG. No DWG / PDF / DXF writing on the web.
    15. Close web gaps: WebCodecs for H.265/VP9/AV1, LibreOffice-wasm for DOC/XLS/PPT
 10. **Editor** (only after 9 is done): image editor (paint/photoshop-like), video timeline
     (trim, join, mix video + images + music), text/document editing and saving.

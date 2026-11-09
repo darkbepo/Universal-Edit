@@ -64,7 +64,8 @@ The browser version's source is in [`web/`](web/README.md).
 | Vector: trace images into SVG (colour or black & white) | ✅ | ✅ |
 | Vector: SVG → PDF, EPS / PostScript in and out | ✅ | ❌ |
 | eBooks: save as MOBI / AZW3 (Kindle), read Kindle books (one-click Calibre install) | ✅ | — |
-| CAD drawings: DXF (DWG if feasible) | 🔜 | 🔜 |
+| CAD drawings: DXF → SVG, PNG, JPG (layer colours or print black-on-white) | ✅ | ✅ |
+| CAD drawings: DWG in (one-click LibreDWG install), → PDF on paper sizes, save as another DXF version | ✅ | ❌ |
 | Files never leave your computer | ✅ | ✅ |
 | No install needed | ❌ | ✅ |
 | Save straight into a folder | ✅ | ✅ Chrome/Edge · ❌ Firefox/Safari (zip instead) |

@@ -32,6 +32,7 @@ export const WEB_DOCUMENT_EXTS = new Set([
 export const DESKTOP_ONLY_DOCUMENT_EXTS = new Set(["doc", "xls", "ppt", "ods", "odp", "wpd"]);
 
 export const VECTOR_EXTS = new Set(["svg", "eps", "ps", "ai"]);
+export const CAD_EXTS = new Set(["dxf", "dwg"]);
 export const FONT_EXTS = new Set(["ttf", "otf", "woff", "woff2"]);
 export const SUBTITLE_EXTS = new Set(["srt", "vtt", "ass", "ssa", "smi", "lrc"]);
 export const ARCHIVE_EXTS = new Set(["zip", "7z", "rar", "tar", "tar.gz", "tar.xz", "tar.bz2"]);
@@ -55,6 +56,7 @@ export function familyOfExt(ext: string): Family | null {
   if (SUBTITLE_EXTS.has(ext)) return "subtitle";
   if (FONT_EXTS.has(ext)) return "font";
   if (VECTOR_EXTS.has(ext)) return "vector";
+  if (CAD_EXTS.has(ext)) return "cad";
   if (WEB_DOCUMENT_EXTS.has(ext) || DESKTOP_ONLY_DOCUMENT_EXTS.has(ext)) return "document";
   return null;
 }

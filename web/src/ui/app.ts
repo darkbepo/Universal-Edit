@@ -7,8 +7,8 @@ import type { InputFile, OutputFile, Target } from "../core/types";
 import { ConversionClient, JobCancelled } from "../worker/client";
 import { SettingsForm } from "./settings";
 
-const ICON: Record<string, string> = { image: "🖼", video: "🎞", audio: "🎵", document: "📄", model: "🧊", archive: "🗜", subtitle: "💬", font: "🔤", vector: "✒" };
-const NOUN: Record<string, [string, string]> = { image: ["image", "images"], video: ["video", "videos"], audio: ["audio file", "audio files"], document: ["document", "documents"], model: ["3D model", "3D models"], archive: ["archive", "archives"], subtitle: ["subtitle file", "subtitle files"], font: ["font", "fonts"], vector: ["vector graphic", "vector graphics"] };
+const ICON: Record<string, string> = { image: "🖼", video: "🎞", audio: "🎵", document: "📄", model: "🧊", archive: "🗜", subtitle: "💬", font: "🔤", vector: "✒", cad: "📐" };
+const NOUN: Record<string, [string, string]> = { image: ["image", "images"], video: ["video", "videos"], audio: ["audio file", "audio files"], document: ["document", "documents"], model: ["3D model", "3D models"], archive: ["archive", "archives"], subtitle: ["subtitle file", "subtitle files"], font: ["font", "fonts"], vector: ["vector graphic", "vector graphics"], cad: ["CAD drawing", "CAD drawings"] };
 
 const h = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> & { class?: string } = {}, ...children: (Node | string)[]) => {
   const el = document.createElement(tag);

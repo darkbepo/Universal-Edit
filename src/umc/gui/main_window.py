@@ -44,6 +44,7 @@ FAMILY_NOUN = {
     MediaFamily.SUBTITLE: ("subtitle file", "subtitle files"),
     MediaFamily.FONT: ("font", "fonts"),
     MediaFamily.VECTOR: ("vector graphic", "vector graphics"),
+    MediaFamily.CAD: ("CAD drawing", "CAD drawings"),
 }
 ICONS = {
     MediaFamily.IMAGE: "🖼",
@@ -55,6 +56,7 @@ ICONS = {
     MediaFamily.SUBTITLE: "💬",
     MediaFamily.FONT: "🔤",
     MediaFamily.VECTOR: "✒",
+    MediaFamily.CAD: "📐",
 }
 
 

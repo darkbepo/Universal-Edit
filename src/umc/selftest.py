@@ -121,6 +121,20 @@ def _pdf_to_word_check(d: Path, out: Path) -> list[Path]:
     return [docx]
 
 
+def _cad_check(d: Path, out: Path) -> list[Path]:
+    import ezdxf
+
+    doc = ezdxf.new("R2010")
+    doc.modelspace().add_circle((50, 50), 25)
+    doc.modelspace().add_line((0, 0), (100, 100))
+    src = d / "drawing.dxf"
+    doc.saveas(src)
+    [pdf_out] = _convert([src], "cad:pdf", out)
+    [png] = _convert([src], "cad:png", out)
+    [r12] = _convert([src], "dxf", out / "r12", dxf_version="R12")
+    return [pdf_out, png, r12]
+
+
 def run(report: Path) -> int:
     from PIL import Image
 
@@ -163,6 +177,7 @@ def run(report: Path) -> int:
             ("fonts: ttf -> woff2 -> otf -> ttf (subset)", lambda: _font_check(d, out)),
             ("vector: svg -> png/pdf, trace png -> svg", lambda: _vector_check(d, out, imgs)),
             ("PDF -> Word keeping layout (pdf2docx)", lambda: _pdf_to_word_check(d, out)),
+            ("CAD: dxf -> pdf/png, save as R12", lambda: _cad_check(d, out)),
             ("mp4 -> webm", lambda: _convert([out / "img0 slideshow.mp4"], "webm", out)),
             ("mp4 -> gif", lambda: _convert([out / "img0 slideshow.mp4"], "video:gif", out)),
             ("mp4 -> frames", lambda: _convert([out / "img0 slideshow.mp4"], "frames:png", out)),

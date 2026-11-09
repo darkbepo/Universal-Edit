@@ -60,7 +60,7 @@ a = Analysis(
     pathex=[str(ROOT / "src")],
     binaries=binaries,
     datas=datas,
-    hiddenimports=["pillow_heif", "rawpy", "cascadio", "py7zr", "pyzipper", "brotli", "vtracer", "pdf2docx", "docx", *collect_submodules("fontTools.ttLib.tables"), "umc.gui", "umc.converters"],
+    hiddenimports=["pillow_heif", "rawpy", "cascadio", "py7zr", "pyzipper", "brotli", "vtracer", "pdf2docx", "docx", "ezdxf", *collect_submodules("fontTools.ttLib.tables"), "umc.gui", "umc.converters"],
     excludes=["tkinter", "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets", "PySide6.Qt3DCore",
               "PySide6.QtQuick", "PySide6.QtQml", "PySide6.QtMultimedia", "PySide6.QtPdf",
               "pymupdf4llm", "pytest"],

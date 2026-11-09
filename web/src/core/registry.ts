@@ -6,6 +6,7 @@ import { modelConverter } from "../converters/model3d";
 import { ocrImageConverter, ocrPdfConverter } from "../converters/ocr";
 import { archiveConverter, packConverter } from "../converters/archive";
 import { fontConverter } from "../converters/fonts";
+import { cadConverter } from "../converters/cad";
 import { pdfToSvgConverter, traceConverter, vectorConverter } from "../converters/vector";
 import { subtitleConverter, subtitleExtractConverter, subtitleVideoConverter } from "../converters/subtitles";
 import { documentConverter, pagesConverter, splitConverter } from "../converters/pdf";
@@ -35,6 +36,7 @@ export const CONVERTERS: Converter[] = [
   archiveConverter,
   fontConverter,
   vectorConverter,
+  cadConverter,
   pdfToSvgConverter,
   traceConverter,
   subtitleConverter,
@@ -65,6 +67,9 @@ export function targetsFor(files: InputFile[]): TargetResult {
   const postscript = files.filter((f) => f.ext === "eps" || f.ext === "ps");
   if (postscript.length && postscript.length === files.length) {
     return { targets: [], note: "EPS and PostScript files need Ghostscript, which only the desktop app can install. SVG and Illustrator (.ai) files work here." };
+  }
+  if (files.some((f) => f.ext === "dwg") && files.every((f) => f.family === "cad")) {
+    return { targets: [], note: "DWG drawings need LibreDWG, which only the desktop app can install. DXF files work here." };
   }
   const family = families.size === 1 ? [...families][0] : null; // null = mixed: only "pack" targets
   const seen = new Set<string>();

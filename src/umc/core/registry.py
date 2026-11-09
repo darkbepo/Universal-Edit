@@ -26,6 +26,7 @@ class Target:
 def converters() -> tuple[Converter, ...]:
     from umc.converters.archive import ArchiveConverter, PackConverter
     from umc.converters.audio import AudioConverter, AudioExtractConverter
+    from umc.converters.cad import CadConverter
     from umc.converters.data import DataConverter
     from umc.converters.document import DocumentConverter
     from umc.converters.document_images import DocumentToImagesConverter
@@ -66,6 +67,7 @@ def converters() -> tuple[Converter, ...]:
         ArchiveConverter(),
         FontConverter(),
         VectorConverter(),
+        CadConverter(),
         PdfToSvgConverter(),
         TraceConverter(),
         SubtitleConverter(),

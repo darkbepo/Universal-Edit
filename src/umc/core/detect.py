@@ -18,6 +18,7 @@ class MediaFamily(StrEnum):
     SUBTITLE = "subtitle"
     FONT = "font"
     VECTOR = "vector"
+    CAD = "cad"
 
 
 # Aliases → canonical extension.
@@ -159,6 +160,7 @@ ARCHIVE_EXTS = {"zip", "7z", "rar", "tar", "tar.gz", "tar.xz", "tar.bz2"}
 SUBTITLE_EXTS = {"srt", "vtt", "ass", "ssa", "smi", "lrc"}
 FONT_EXTS = {"ttf", "otf", "woff", "woff2"}
 VECTOR_EXTS = {"svg", "eps", "ps", "ai"}
+CAD_EXTS = {"dxf", "dwg"}
 COMPOUND_EXTS = ("tar.gz", "tar.xz", "tar.bz2")
 PRESENTATION_EXTS = {"pptx", "ppt", "odp"}
 DOCUMENT_EXTS = TEXT_DOCUMENT_EXTS | SPREADSHEET_EXTS | PRESENTATION_EXTS | DATA_EXTS
@@ -206,6 +208,8 @@ def family_of_ext(ext: str) -> MediaFamily | None:
         return MediaFamily.FONT
     if ext in VECTOR_EXTS:
         return MediaFamily.VECTOR
+    if ext in CAD_EXTS:
+        return MediaFamily.CAD
     if ext in DOCUMENT_EXTS:
         return MediaFamily.DOCUMENT
     return None

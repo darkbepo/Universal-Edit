@@ -86,6 +86,18 @@ export default async function globalSetup() {
     }
     writeFileSync(`${FIXTURES}shapes.png`, shapes.asPNG());
   }
+  // CAD: a hand-written R12 DXF — red WALLS layer (a 200 × 100 rectangle) and a blue circle.
+  {
+    const pairs: (string | number)[] = [0, "SECTION", 2, "TABLES", 0, "TABLE", 2, "LAYER", 70, 2,
+      0, "LAYER", 2, "WALLS", 70, 0, 62, 1, 6, "CONTINUOUS", 0, "LAYER", 2, "FURN", 70, 0, 62, 5, 6, "CONTINUOUS",
+      0, "ENDTAB", 0, "ENDSEC", 0, "SECTION", 2, "ENTITIES"];
+    for (const [x1, y1, x2, y2] of [[0, 0, 200, 0], [200, 0, 200, 100], [200, 100, 0, 100], [0, 100, 0, 0]]) {
+      pairs.push(0, "LINE", 8, "WALLS", 10, x1, 20, y1, 30, 0, 11, x2, 21, y2, 31, 0);
+    }
+    pairs.push(0, "CIRCLE", 8, "FURN", 10, 150, 20, 50, 30, 0, 40, 30, 0, "ENDSEC", 0, "EOF");
+    writeFileSync(`${FIXTURES}plan.dxf`, pairs.map((v) => String(v)).join("\n") + "\n");
+    writeFileSync(`${FIXTURES}house.dwg`, "AC1032" + "\0".repeat(100));
+  }
   // OCR language data (served to the page by a route in the tests, unless run against the live
   // site). Taken from packaging/tessdata (scripts/fetch_tessdata.py eng dan) or downloaded.
   for (const code of ["eng", "dan"]) {

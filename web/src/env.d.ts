@@ -34,3 +34,9 @@ declare module "vectortracer-wasm?url" {
   const url: string;
   export default url;
 }
+declare module "dxf" {
+  export class Helper {
+    constructor(contents: string);
+    toSVG(): string;
+  }
+}

@@ -1,4 +1,4 @@
-"""Real downloads + installs (LibreOffice, Pandoc, Ghostscript, Calibre).
+"""Real downloads + installs (LibreOffice, Pandoc, Ghostscript, Calibre, LibreDWG).
 
 Only runs when UMC_LIVE_INSTALL=1 (CI on windows-latest).
 """
@@ -104,6 +104,35 @@ def test_install_calibre_and_convert(media, tmp_path):
     assert calibre.ebook_convert_path() == exe
     [azw3] = convert([media / "doc.md"], "doc:azw3", tmp_path)
     assert azw3.read_bytes()[60:68] == b"BOOKMOBI"
+
+
+def test_install_libredwg_and_convert(tmp_path):
+    import shutil
+    import subprocess
+
+    import ezdxf
+
+    from umc.core.errors import ConversionError
+    from umc.tools import installer, libredwg
+
+    try:
+        exe = installer.install_libredwg(_progress, threading.Event())
+    except ConversionError as exc:
+        pytest.fail(f"{exc}\nDETAILS: {exc.details}")
+    print("dwg2dxf:", exe, flush=True)
+    assert libredwg.dwg2dxf_path() == exe
+    # make a DWG with LibreDWG's own dxf2dwg, then read it back through the app
+    src = tmp_path / "plan.dxf"
+    doc = ezdxf.new("R2000")
+    doc.modelspace().add_circle((50, 50), 25)
+    doc.saveas(src)
+    from pathlib import Path
+
+    dxf2dwg = shutil.which("dxf2dwg", path=str(Path(exe).parent))
+    assert dxf2dwg, "dxf2dwg not shipped next to dwg2dxf"
+    subprocess.run([dxf2dwg, "-y", "-o", str(tmp_path / "plan.dwg"), str(src)], check=True)
+    [pdf] = convert([tmp_path / "plan.dwg"], "cad:pdf", tmp_path / "out")
+    assert pdf.stat().st_size > 0
 
 
 def test_signature_check_rejects_unsigned_and_tampered(tmp_path):

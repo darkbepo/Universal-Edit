@@ -683,3 +683,40 @@ test.describe("vector", () => {
     await expect(page.getByText("need Ghostscript")).toBeVisible();
   });
 });
+
+test.describe("CAD", () => {
+  test("DXF → SVG keeps layer colours; → PNG on a dark background", async ({ page }) => {
+    await load(page, [fx("plan.dxf")]);
+    await page.locator('.pill[data-target="cad:svg"]').click();
+    await page.getByRole("button", { name: /Settings/ }).click();
+    await page.locator("#opt-colours").selectOption({ label: "Layer colours on white" });
+    const svg = (await downloadSingle(page, "cad:svg")).toString("utf8");
+    expect(svg).toContain("rgb(255, 0, 0)");
+    expect(svg).toContain("rgb(0, 0, 255)");
+    await page.locator('.pill[data-target="cad:png"]').click();
+    await page.locator("#opt-colours").selectOption({ label: "Layer colours on black (like the CAD screen)" });
+    await page.locator("#opt-width_px").fill("800");
+    const png = await downloadSingle(page, "cad:png");
+    const r = await page.evaluate(async (b64) => {
+      const img = await createImageBitmap(new Blob([Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))]));
+      const g = new OffscreenCanvas(img.width, img.height).getContext("2d")!;
+      g.drawImage(img, 0, 0);
+      const d = g.getImageData(0, 0, img.width, img.height).data;
+      let red = 0, blue = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        if (d[i] > 180 && d[i + 1] < 80 && d[i + 2] < 80) red++;
+        if (d[i + 2] > 180 && d[i] < 80) blue++;
+      }
+      return { w: img.width, corner: [...g.getImageData(1, 1, 1, 1).data], red, blue };
+    }, png.toString("base64"));
+    expect(r.w).toBe(800);
+    expect(r.corner.slice(0, 3)).toEqual([0, 0, 0]);
+    expect(r.red).toBeGreaterThan(100);
+    expect(r.blue).toBeGreaterThan(100);
+  });
+
+  test("DWG explains it needs the desktop app", async ({ page }) => {
+    await load(page, [fx("house.dwg")]);
+    await expect(page.getByText("need LibreDWG")).toBeVisible();
+  });
+});
