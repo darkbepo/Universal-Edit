@@ -295,6 +295,8 @@ def _msiexec(args: str, log_file: Path, cancel_event: threading.Event, message: 
     # msiexec does its own command-line parsing, so build the string ourselves.
     cmd = f'msiexec {args} /L*v "{log_file}"'
     process.run(cmd, cancel_event=cancel_event, timeout=3600, error_message=message)
+    # The verbose log is ~30 MB for LibreOffice; keep it only when msiexec failed (to debug).
+    log_file.unlink(missing_ok=True)
 
 
 def _works(soffice: str, cancel_event: threading.Event) -> bool:

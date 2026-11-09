@@ -88,10 +88,12 @@ See `web/README.md` for commands and deployment.
 - **Keep `build.assetsInlineLimit: 0`** — an inlined (data:) FFmpeg thread worker can't load the
   engine and every video conversion crashes.
 - **Thread limits (`engines/threads.ts`):** every `Engine.run` gets explicit `-threads` /
-  `-filter_threads` (decoder ≤ 4, 1 with 3+ inputs; filters ≤ 4; encoder ≤ 4). `core-mt` has a fixed
-  pool of 32 workers and FFmpeg's automatic counts scale with the CPU, so on a 12-core PC an H.264
-  re-encode hung at 0 % (CI runners have few cores and never showed it). Encoder 6 crashed a
-  1080×1920 encode (wasm memory). Crossfade slideshows still use one input (thread) per image.
+  `-filter_threads` (decoder ≤ 4 and filters ≤ 4 with one input, both 1 with 2+ inputs; encoder
+  ≤ 4). `core-mt` has a fixed pool of 32 workers and FFmpeg's automatic counts scale with the CPU,
+  so on a 12-core PC an H.264 re-encode hung at 0 % (CI runners have few cores and never showed
+  it). Encoder 6 crashed a 1080×1920 encode (wasm memory). Crossfade slideshows (one input per
+  picture) hung after frame 1 until decoders and filters were single-threaded. Video-type
+  targets show a "desktop app is much faster" note (`SLOW_IN_BROWSER` in `ui/app.ts`).
 - **Codecs:** ffmpeg.wasm encodes H.264, VP8 and MPEG-4 only (in @ffmpeg/core 0.12.10
   libvpx-vp9 crashes the tab, libx265 hangs, no AV1 encoder). VP9 / AV1 / H.265 go through the
   browser's WebCodecs encoders via Mediabunny (`engines/webcodecs.ts`, `WEBCODECS_VIDEO` in
@@ -238,7 +240,12 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
     associations are not taken over).
   - **Pandoc:** newest `pandoc-*-windows-x86_64.zip` from the GitHub release, verified against
     the SHA-256 digest GitHub publishes, extracted into the private folder (zip-slip checked).
-  - Disk space is checked first; the MSI is deleted afterwards; msiexec logs go next to the tools.
+  - Disk space is checked first; the MSI is deleted afterwards; msiexec's verbose log (~30 MB for
+    LibreOffice) goes next to the tools and is deleted when the install succeeds.
+- **Never fill the user's disk:** temporary folders are `tempfile.TemporaryDirectory(prefix="umc-…")`
+  context managers. At startup `core/cleanup.py` (background thread) removes what crashed runs left:
+  `umc-*` temp folders and `tools/downloads` files untouched for 2 days, installer logs after 7
+  days. Installed tools are never touched.
 - Conversions that don't need LibreOffice (images, video, PDF → images, Pandoc formats) must keep
   working when it is absent.
 - **Antivirus false positives** (e.g. Defender `Trojan:Win32/Bearfoos.B!ml`, where `!ml` means a
