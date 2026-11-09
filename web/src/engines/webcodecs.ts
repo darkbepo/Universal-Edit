@@ -3,12 +3,15 @@
 // (libvpx-vp9 crashes, libx265 hangs, no AV1 encoder in @ffmpeg/core 0.12.10).
 import { ConversionError } from "../core/types";
 
-export type WebCodec = "vp9" | "av1" | "h265";
-const MB_CODEC = { vp9: "vp9", av1: "av1", h265: "hevc" } as const;
+export type WebCodec = "vp9" | "av1" | "h265" | "h264";
+const MB_CODEC = { vp9: "vp9", av1: "av1", h265: "hevc", h264: "avc" } as const;
 export const WEBCODECS_LABELS: Record<WebCodec, string> = {
   vp9: "VP9 (browser encoder)",
   av1: "AV1 (browser encoder, slow)",
   h265: "H.265 / HEVC (if your device supports it)",
+  // H.264 also has an ffmpeg.wasm encoder; the browser's (often hardware) one is ~10× faster,
+  // so it is tried first and ffmpeg.wasm is the fallback (converters/video.ts).
+  h264: "H.264",
 };
 
 export interface WebCodecsJob {

@@ -67,13 +67,38 @@ const encodes = (v: Values) => v.video_codec !== "copy";
 
 const QUALITY_FOR_CRF = (crf: number) => (crf <= 18 ? "very-high" : crf <= 23 ? "high" : crf <= 30 ? "medium" : "low") as "very-high" | "high" | "medium" | "low";
 
-/** VP9 / AV1 / H.265: decode + encode with the browser's WebCodecs (Mediabunny). */
-async function runWebCodecs(files: Parameters<Converter["run"]>[0], container: string, o: Values, ctx: RunContext, unique: (n: string) => string): Promise<OutputFile[]> {
+/** Containers Mediabunny writes (others — AVI, FLV — stay with ffmpeg.wasm). */
+const WEBCODECS_CONTAINERS = new Set(["mp4", "m4v", "mov", "mkv", "webm"]);
+
+/**
+ * H.264 through the browser's own encoder (usually the GPU's): ~10× faster than ffmpeg.wasm's
+ * libx264. Only when nothing needs FFmpeg; returns null to mean "use ffmpeg.wasm instead".
+ */
+async function tryBrowserH264(files: Parameters<Converter["run"]>[0], container: string, o: Values, ctx: RunContext, unique: (n: string) => string): Promise<OutputFile[] | null> {
+  if (!WEBCODECS_CONTAINERS.has(container) || container === "webm") return null;
+  if (Number(o.speed) !== 1 || Number(o.volume) !== 100) return null; // filters only FFmpeg has
+  // A target size needs FFmpeg's two-pass encode; browser encoders overshoot a plain bitrate.
+  if (Number(o.target_size_mb) > 0) return null;
+  if (!o.remove_audio && o.audio_codec !== "auto") return null; // a specific audio codec was chosen
+  const { webcodecsSupported } = await import("../engines/webcodecs");
+  if (!(await webcodecsSupported("h264").catch(() => false))) return null;
+  const mb = await import("mediabunny");
+  if (!o.remove_audio && !(await mb.canEncodeAudio("aac").catch(() => false))) return null; // keep AAC
+  try {
+    return await runWebCodecs(files, container, o, ctx, unique, "h264", false);
+  } catch (e) {
+    if (e instanceof ConversionError && e.message === "UNREADABLE") return null; // e.g. AVI input
+    throw e;
+  }
+}
+
+/** VP9 / AV1 / H.265 (and H.264 when possible): decode + encode with WebCodecs (Mediabunny). */
+async function runWebCodecs(files: Parameters<Converter["run"]>[0], container: string, o: Values, ctx: RunContext, unique: (n: string) => string, forced?: "h264", allowIntermediate = true): Promise<OutputFile[]> {
   if (Number(o.speed) !== 1 || Number(o.volume) !== 100) {
     throw new ConversionError("Speed and volume changes aren't available with VP9 / AV1 / H.265 in the browser. Use H.264, or the desktop app.");
   }
   const { webcodecsConvert } = await import("../engines/webcodecs");
-  const codec = resolveVideoCodec(container, String(o.video_codec)) as "vp9" | "av1" | "h265";
+  const codec = forced ?? (resolveVideoCodec(container, String(o.video_codec)) as "vp9" | "av1" | "h265");
   const out: OutputFile[] = [];
   for (const [i, f] of files.entries()) {
     const msg = `Converting ${f.name} (${i + 1}/${files.length})`;
@@ -106,7 +131,7 @@ async function runWebCodecs(files: Parameters<Converter["run"]>[0], container: s
     try {
       data = await webcodecsConvert(source, job, (p) => ctx.progress((i + p) / files.length, msg));
     } catch (e) {
-      if (!(e instanceof ConversionError) || e.message !== "UNREADABLE") throw e;
+      if (!(e instanceof ConversionError) || e.message !== "UNREADABLE" || !allowIntermediate) throw e;
       // e.g. AVI / FLV / WMV: make a near-lossless H.264 + FLAC MKV with FFmpeg first
       ctx.progress(i / files.length, `Preparing ${f.name} for the browser encoder`);
       const fe = ff ?? (await engine(ctx));
@@ -129,7 +154,7 @@ export const videoConverter: Converter = {
   id: "video",
   family: "video",
   options: [
-    opt.choice("video_codec", "Video codec", "auto", [["auto", "Auto (best for format)"], ["copy", "Copy — no re-encode (fastest)"], ...Object.entries(VIDEO_CODEC_LABELS)], { group: "Video", help: "VP9, AV1 and H.265 use your browser's own encoder (H.265 only where the device supports it). Speed and volume changes aren't available with them." }),
+    opt.choice("video_codec", "Video codec", "auto", [["auto", "Auto (best for format)"], ["copy", "Copy — no re-encode (fastest)"], ...Object.entries(VIDEO_CODEC_LABELS)], { group: "Video", help: "H.264 uses your browser's own (usually hardware) encoder when it can — much faster — and the built-in FFmpeg otherwise (speed/volume changes, target size, AVI/FLV). VP9, AV1 and H.265 always use the browser's encoder (H.265 only where the device supports it); speed and volume changes aren't available with them." }),
     opt.float("target_size_mb", "Target file size", 0, { min: 0, step: 0.5, decimals: 1, unit: "MB", group: "Video", showIf: encodes, help: "0 = off. Encodes (in two passes) to land just under this size — e.g. 25 for Discord, 10 for email. Overrides the quality setting." }),
     opt.slider("crf", "Quality (CRF)", 23, 0, 51, { group: "Video", showIf: (v) => encodes(v) && !Number(v.target_size_mb), help: "Lower = better quality and bigger files. 18 ≈ visually lossless, 23 = default, 28+ = small." }),
     opt.choice("preset", "Encoding speed", "veryfast", X264_PRESETS.map((p) => [p, p]), { group: "Video", showIf: encodes, help: "Slower = smaller file at the same quality. In the browser, faster presets are recommended." }),
@@ -153,6 +178,10 @@ export const videoConverter: Converter = {
     const container = target.id;
     if (o.video_codec !== "copy" && WEBCODECS_VIDEO.has(resolveVideoCodec(container, String(o.video_codec)))) {
       return runWebCodecs(files, container, o, ctx, unique);
+    }
+    if (o.video_codec !== "copy" && resolveVideoCodec(container, String(o.video_codec)) === "h264") {
+      const fast = await tryBrowserH264(files, container, o, ctx, unique);
+      if (fast) return fast;
     }
     return eachVideo(files, ctx, "Converting", async (ff, path, info, name, progress) => {
       if (!info.hasVideo) throw new ConversionError(`“${name}” has no video stream.`);
