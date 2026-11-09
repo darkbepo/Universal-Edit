@@ -31,6 +31,7 @@ def converters() -> tuple[Converter, ...]:
     from umc.converters.gif import VideoToGifConverter
     from umc.converters.image import ImageConverter, ImagesToPdfConverter
     from umc.converters.model3d import ModelConverter
+    from umc.converters.ocr import ImageOcrConverter, PdfOcrConverter
     from umc.converters.pdf_tools import PdfToolsConverter
     from umc.converters.slideshow import SlideshowConverter
     from umc.converters.split import DocumentSplitConverter
@@ -41,6 +42,7 @@ def converters() -> tuple[Converter, ...]:
         ImageConverter(),
         SlideshowConverter(),
         ImagesToPdfConverter(),
+        ImageOcrConverter(),
         VideoConverter(),
         VideoToGifConverter(),
         VideoToFramesConverter(),
@@ -51,6 +53,7 @@ def converters() -> tuple[Converter, ...]:
         DocumentToImagesConverter(),
         DocumentSplitConverter(),
         PdfToolsConverter(),
+        PdfOcrConverter(),
         ModelConverter(),
     )
 

@@ -69,7 +69,7 @@ See `web/README.md` for commands and deployment.
 
 - **Stack:** TypeScript + Vite, no UI framework. Engines are WebAssembly, loaded lazily inside one
   long-lived module Worker (`src/worker/jobWorker.ts`): ffmpeg.wasm (`@ffmpeg/core`, multi-threaded
-  `core-mt` when cross-origin isolated), ImageMagick (`@imagemagick/magick-wasm`), MuPDF (`mupdf`), three.js + occt-import-js (3D),
+  `core-mt` when cross-origin isolated), ImageMagick (`@imagemagick/magick-wasm`), MuPDF (`mupdf`), three.js + occt-import-js (3D), tesseract.js (OCR),
   Pandoc (official `pandoc-wasm`, ~16 MB gz; wired via `pandoc-wasm-core` / `pandoc-wasm-binary`
   aliases in `vite.config.ts` because the package only exports a browser entry Vite can't bundle).
 - **Documents:** `converters/docroute.ts` is a port of the desktop route planner (pandoc edges +
@@ -143,9 +143,12 @@ src/umc/
     split.py             # document → several PDFs (every page / N pages / custom ranges)
     data.py              # JSON ↔ YAML ↔ XML ↔ CSV/TSV/XLSX
     pdf_tools.py         # PDF toolkit: merge, compress, rotate, organize, protect, unlock
+    ocr.py               # images / scanned PDFs → searchable PDF or text (Tesseract in PyMuPDF)
+    model3d.py           # 3D models: STL/3MF/OBJ/PLY/GLB, STEP/IGES via OpenCASCADE
   tools/                 # wrappers around external programs/libraries
     process.py           # find_executable (bundled → PATH → known install dirs), cancellable run()
     installer.py         # one-click download + verify + install of LibreOffice / Pandoc (Windows)
+    tessdata.py          # OCR language files: bundled English, pinned SHA-256 downloads
     winsign.py           # Authenticode check via WinVerifyTrust/crypt32 (PowerShell's module is unreliable)
     ffmpeg.py, libreoffice.py, pandoc.py, pdf.py
 tests/                   # fixtures are generated in conftest.py — no binary files in git
@@ -290,7 +293,13 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
       back in metres, IGES in the file's own unit). Web `converters/model3d.ts`: three.js parsers
       for STL/OBJ/PLY, own GLB/3MF readers and PLY/GLB/3MF writers (three's 3MF/GLTF loaders and
       PLY/GLTF exporters need DOM APIs missing in workers), occt-import-js (LGPL) for STEP/IGES.
-   7. OCR (tesseract)
+   7. ✅ OCR: images / scanned PDFs → searchable PDF (`ocr:pdf`) or text (`ocr:txt`). Desktop uses
+      the Tesseract built into PyMuPDF (`Pixmap.pdfocr_tobytes`, all in `tools/pdf.py`) — only the
+      language files are needed: `tools/tessdata.py` (tessdata_fast 4.1.0, SHA-256 pinned; English
+      bundled via `scripts/fetch_tessdata.py`, others downloaded once). Web: tesseract.js in a nested
+      worker (`engines/tesseract.ts`); verified files go into IndexedDB and it starts with
+      cacheMethod "readOnly" (passing {code, data} is broken in tesseract.js 7.0.0). Both tables
+      must match — `web/tests/ocr.test.ts` checks it.
    8. Archives: ZIP, 7Z, RAR, TAR
    9. Subtitles: SRT/VTT/ASS, extract from / burn into video
    10. Fonts: TTF/OTF/WOFF/WOFF2

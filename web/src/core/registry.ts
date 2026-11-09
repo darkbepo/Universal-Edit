@@ -3,6 +3,7 @@
 import { imageConverter, imagesToPdfConverter } from "../converters/image";
 import { dataConverter } from "../converters/data";
 import { modelConverter } from "../converters/model3d";
+import { ocrImageConverter, ocrPdfConverter } from "../converters/ocr";
 import { documentConverter, pagesConverter, splitConverter } from "../converters/pdf";
 import { pdfToolsConverter } from "../converters/pdftools";
 import { slideshowConverter } from "../converters/slideshow";
@@ -25,6 +26,8 @@ export const CONVERTERS: Converter[] = [
   splitConverter,
   pdfToolsConverter,
   modelConverter,
+  ocrImageConverter,
+  ocrPdfConverter,
 ];
 
 export const converterById = (id: string) => CONVERTERS.find((c) => c.id === id)!;

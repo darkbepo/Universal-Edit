@@ -50,6 +50,8 @@ binaries = [(str(p), "bin") for p in BIN.glob("*") if p.is_file()] if BIN.is_dir
 datas = [(str(ROOT / "src" / "umc" / "gui" / "style.qss"), "umc/gui"), (str(ROOT / "LICENSE"), ".")]
 datas += collect_data_files("pymupdf")
 datas += collect_data_files("trimesh")
+TESSDATA = ROOT / "packaging" / "tessdata"
+datas += [(str(p), "tessdata") for p in TESSDATA.glob("*.traineddata")]
 
 a = Analysis(
     [str(ROOT / "src" / "umc" / "__main__.py")],

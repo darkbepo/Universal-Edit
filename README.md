@@ -51,7 +51,7 @@ The browser version's source is in [`web/`](web/README.md).
 | PDF: page range, paper size, margins, split | ✅ | ✅ |
 | PDF: merge, compress, rotate, add / remove password, reorder / delete pages | ✅ | ✅ |
 | PDF → Word keeping the layout | 🔜 | 🔜 |
-| OCR (scanned PDF / photo → text) | 🔜 | 🔜 |
+| OCR (scanned PDF / photo → searchable PDF or text, 30 languages) | ✅ | ✅ |
 | Compress to a target size (video, image, PDF, audio) | ✅ | ✅ |
 | Data: JSON ↔ CSV ↔ TSV ↔ XML ↔ YAML ↔ XLSX | ✅ | ✅ |
 | **3D printing**: STL, OBJ, 3MF, PLY, GLB, STEP / IGES | ✅ | ✅ |

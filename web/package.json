@@ -23,6 +23,7 @@
     "mupdf": "^1.28.1",
     "occt-import-js": "^0.0.23",
     "pandoc-wasm": "^1.1.0",
+    "tesseract.js": "^7.0.0",
     "three": "^0.187.0",
     "yaml": "^2.9.1"
   },

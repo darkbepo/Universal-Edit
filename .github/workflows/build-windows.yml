@@ -41,6 +41,9 @@ jobs:
           python scripts/fetch_ffmpeg.py
           "$PWD\packaging\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
 
+      - name: Fetch OCR language data (English, bundled)
+        run: python scripts/fetch_tessdata.py
+
       - name: Run tests
         run: pytest -q
 

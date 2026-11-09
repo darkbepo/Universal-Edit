@@ -81,3 +81,19 @@ def write_test_psd(path: Path, width: int = 40, height: int = 30) -> Path:
     image = struct.pack(">H", 0) + bytes(plane) + bytes([200]) * plane + bytes(plane)
     path.write_bytes(header + sections + image)
     return path
+
+
+SCAN_TEXT = ("INVOICE 2026", "Total due 42.50 EUR")
+
+
+def write_test_scan(path: Path, lines: tuple[str, ...] = SCAN_TEXT) -> Path:
+    """A white "scanned page" PNG with large black text, for OCR tests."""
+    from PIL import Image, ImageDraw, ImageFont
+
+    img = Image.new("RGB", (1400, 220 + 120 * len(lines)), "white")
+    draw = ImageDraw.Draw(img)
+    font = ImageFont.load_default(size=72)
+    for i, line in enumerate(lines):
+        draw.text((80, 100 + 120 * i), line, fill="black", font=font)
+    img.save(path, dpi=(300, 300))
+    return path

@@ -279,3 +279,69 @@ def unlock(src: Path, dest: Path, password: str) -> Path:
         if doc.needs_pass and not doc.authenticate(password):
             raise ConversionError(f"That password doesn't open “{src.name}”.")
         return _save(doc, dest, encryption=pymupdf.PDF_ENCRYPT_NONE)
+
+
+# --------------------------------------------------------------------------- OCR
+# PyMuPDF ships Tesseract inside MuPDF; it only needs the language files (tools/tessdata.py).
+
+
+def ocr_document() -> pymupdf.Document:
+    """An empty PDF that :func:`ocr_add_image` / :func:`ocr_add_pdf` append pages to."""
+    return pymupdf.open()
+
+
+def _ocr_pixmap(out: pymupdf.Document, pix: pymupdf.Pixmap, language: str, tessdata: str) -> None:
+    try:
+        data = pix.pdfocr_tobytes(compress=True, language=language, tessdata=tessdata)
+    except RuntimeError as exc:
+        raise ConversionError("Text recognition (OCR) failed.", details=repr(exc)) from exc
+    with pymupdf.open("pdf", data) as page_doc:
+        out.insert_pdf(page_doc)
+
+
+def ocr_add_image(out: pymupdf.Document, img, language: str, tessdata: str) -> None:
+    """Recognise a PIL image and append it as a page (image + invisible, selectable text)."""
+    from PIL import Image
+
+    dpi = img.info.get("dpi", (0, 0))[0] or 0
+    dpi = round(dpi) if dpi >= 72 else 300
+    img = img.convert("L") if img.mode in ("1", "L", "LA", "I;16") else img.convert("RGB")
+    if min(img.size) < 1000:  # small text recognises far better when upscaled
+        img = img.resize((img.width * 2, img.height * 2), Image.Resampling.LANCZOS)
+        dpi *= 2
+    cs = pymupdf.csGRAY if img.mode == "L" else pymupdf.csRGB
+    pix = pymupdf.Pixmap(cs, img.width, img.height, img.tobytes(), False)
+    pix.set_dpi(dpi, dpi)
+    _ocr_pixmap(out, pix, language, tessdata)
+
+
+def ocr_add_pdf(
+    out: pymupdf.Document,
+    src: Path,
+    pages: list[int],
+    language: str,
+    tessdata: str,
+    dpi: int,
+    skip_text_pages: bool,
+    on_page=lambda done, total: None,
+) -> None:
+    """Append ``pages`` of ``src``: pages with real text are copied, scanned ones recognised."""
+    with _open_unlocked(src) as doc:
+        for n, i in enumerate(pages):
+            page = doc[i]
+            if skip_text_pages and page.get_text().strip():
+                out.insert_pdf(doc, from_page=i, to_page=i)
+            else:
+                pix = page.get_pixmap(dpi=dpi)
+                pix.set_dpi(dpi, dpi)
+                _ocr_pixmap(out, pix, language, tessdata)
+            on_page(n + 1, len(pages))
+
+
+def ocr_save(out: pymupdf.Document, dest: Path) -> Path:
+    return _save(out, dest)
+
+
+def ocr_text(out: pymupdf.Document) -> str:
+    """Plain text of every page, pages separated by a blank line."""
+    return "\n\n".join(page.get_text().strip() for page in out) + "\n"

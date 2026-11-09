@@ -43,6 +43,22 @@ def _cad_engine_check() -> list[Path]:
     return []
 
 
+def _ocr_check(d: Path, out: Path) -> list[Path]:
+    """OCR with the bundled English data only (fresh tools folder, so nothing is downloaded)."""
+    import os
+
+    from umc.core.samples import SCAN_TEXT, write_test_scan
+
+    os.environ["UMC_TOOLS_DIR"] = str(d / "tools")
+    try:
+        [txt] = _convert([write_test_scan(d / "scan.png")], "ocr:txt", out)
+    finally:
+        os.environ.pop("UMC_TOOLS_DIR", None)
+    if SCAN_TEXT[0] not in txt.read_text(encoding="utf-8"):
+        raise AssertionError(f"OCR text was {txt.read_text(encoding='utf-8')!r}")
+    return [txt]
+
+
 def run(report: Path) -> int:
     from PIL import Image
 
@@ -71,6 +87,7 @@ def run(report: Path) -> int:
             ("photoshop psd -> png", lambda: _convert([psd], "png", out)),
             ("3D stl -> 3mf", lambda: _convert([_box_stl(d)], "3mf", out)),
             ("3D CAD engine (STEP/IGES) loads", _cad_engine_check),
+            ("OCR image -> text (bundled English)", lambda: _ocr_check(d, out)),
             ("png -> jpg", lambda: _convert(imgs[:1], "jpg", out)),
             ("png -> heic", lambda: _convert(imgs[:1], "heic", out)),
             ("png -> avif", lambda: _convert(imgs[:1], "avif", out)),

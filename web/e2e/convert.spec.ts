@@ -401,3 +401,47 @@ test.describe("3D models", () => {
     expect(glb.subarray(0, 4).toString()).toBe("glTF");
   });
 });
+
+test.describe("OCR", () => {
+  test.beforeEach(async ({ context }) => {
+    if (process.env.E2E_BASE_URL) return; // the live-site run uses the real download
+    await context.route("https://raw.githubusercontent.com/tesseract-ocr/**", (route) =>
+      route.fulfill({
+        body: readFileSync(fx(route.request().url().split("/").pop()!)),
+        headers: { "access-control-allow-origin": "*", "content-type": "application/octet-stream" },
+      }));
+  });
+  const words = (s: string) => s.replace(/\s+/g, " ");
+
+  test("scan PNG → text", async ({ page }) => {
+    await load(page, [fx("scan.png")]);
+    const text = words((await downloadSingle(page, "ocr:txt")).toString("utf8"));
+    expect(text).toContain("INVOICE 2026");
+    expect(text).toContain("Total due 42.50 EUR");
+  });
+
+  test("scanned PDF → searchable PDF keeps the text page", async ({ page }) => {
+    await load(page, [fx("scanned.pdf")]);
+    const data = await downloadSingle(page, "ocr:pdf");
+    const mupdf = await import("mupdf");
+    const doc = mupdf.Document.openDocument(new Uint8Array(data), "application/pdf");
+    expect(doc.countPages()).toBe(2);
+    const text = (i: number) => words(doc.loadPage(i).toStructuredText("").asText());
+    expect(text(0)).toContain("INVOICE 2026");
+    expect(text(1)).toContain("Real text page");
+    const size = doc.loadPage(0).getBounds();
+    expect(Math.round(size[2] - size[0])).toBe(420); // page size kept
+  });
+
+  test("two scans → one searchable PDF (Danish data downloaded and verified)", async ({ page }) => {
+    await load(page, [fx("scan.png"), fx("img0.png")]);
+    await page.locator('.pill[data-target="ocr:pdf"]').click();
+    await page.getByRole("button", { name: /Settings/ }).click();
+    await page.locator("#opt-language").selectOption({ label: "Danish" });
+    const data = await downloadSingle(page, "ocr:pdf");
+    const mupdf = await import("mupdf");
+    const doc = mupdf.Document.openDocument(new Uint8Array(data), "application/pdf");
+    expect(doc.countPages()).toBe(2);
+    expect(words(doc.loadPage(0).toStructuredText("").asText())).toContain("2026");
+  });
+});

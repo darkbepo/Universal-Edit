@@ -35,6 +35,36 @@ export default async function globalSetup() {
     photo.insertPage(-1, photo.addPage([0, 0, 595, 842], 0, res, "q 595 0 0 842 0 0 cm /I0 Do Q"));
     writeFileSync(`${FIXTURES}photo.pdf`, photo.saveToBuffer("compress").asUint8Array());
   }
+  // OCR samples: text drawn into a PDF, rendered at 300 DPI to a "scan" PNG; then a PDF with that
+  // scan (image only, no text) as page 1 and a page with real text as page 2.
+  {
+    const src = new mupdf.PDFDocument();
+    const font = src.addSimpleFont(new mupdf.Font("Helvetica"));
+    const res = src.addObject({ Font: { F1: font } });
+    src.insertPage(-1, src.addPage([0, 0, 420, 140], 0, res, "BT /F1 28 Tf 30 85 Td (INVOICE 2026) Tj 0 -45 Td (Total due 42.50 EUR) Tj ET"));
+    const scan = src.loadPage(0).toPixmap(mupdf.Matrix.scale(300 / 72, 300 / 72), mupdf.ColorSpace.DeviceRGB, false);
+    scan.setResolution(300, 300);
+    writeFileSync(`${FIXTURES}scan.png`, scan.asPNG());
+    const mixed = new mupdf.PDFDocument();
+    const img = mixed.addImage(new mupdf.Image(scan));
+    mixed.insertPage(-1, mixed.addPage([0, 0, 420, 140], 0, mixed.addObject({ XObject: { I0: img } }), "q 420 0 0 140 0 0 cm /I0 Do Q"));
+    const f2 = mixed.addSimpleFont(new mupdf.Font("Helvetica"));
+    mixed.insertPage(-1, mixed.addPage([0, 0, 420, 140], 0, mixed.addObject({ Font: { F1: f2 } }), "BT /F1 18 Tf 30 70 Td (Real text page) Tj ET"));
+    writeFileSync(`${FIXTURES}scanned.pdf`, mixed.saveToBuffer("compress").asUint8Array());
+  }
+  // OCR language data (served to the page by a route in the tests, unless run against the live
+  // site). Taken from packaging/tessdata (scripts/fetch_tessdata.py eng dan) or downloaded.
+  for (const code of ["eng", "dan"]) {
+    const name = `${code}.traineddata`;
+    if (existsSync(`${FIXTURES}${name}`)) continue;
+    const local = fileURLToPath(new URL(`../../packaging/tessdata/${name}`, import.meta.url));
+    if (existsSync(local)) copyFileSync(local, `${FIXTURES}${name}`);
+    else {
+      const r = await fetch(`https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/4.1.0/${name}`);
+      if (r.ok) writeFileSync(`${FIXTURES}${name}`, Buffer.from(await r.arrayBuffer()));
+      else console.warn(`couldn't fetch ${name}: OCR e2e tests will fail`);
+    }
+  }
   writeFileSync(`${FIXTURES}letter.doc`, "old binary Word file");
   writeFileSync(`${FIXTURES}eye effect.txt`, "Hi\n"); // the 3-byte file from the owner's test
   writeFileSync(`${FIXTURES}notes.txt`, "Plain text line 1\nLine 2 with ÆØÅ\n");
