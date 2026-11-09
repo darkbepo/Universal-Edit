@@ -102,6 +102,17 @@ See `web/README.md` for commands and deployment.
   a hardware encoder (not in headless Linux Chromium, so it has no e2e test).
 - ImageMagick enum: pass the format *value* (`"JPEG"`), not `MagickFormat["JPEG"]` (keys are
   PascalCase, so that lookup is undefined and silently keeps the input format).
+- ImageMagick can't recognise ICO / CUR / TGA from bytes (it uses the file name, which it never
+  sees): `formatHint()` in `engines/magick.ts` passes the format, and icons keep their largest size.
+- libopus in @ffmpeg/core 0.12.10 hangs after the first packet: Opus uses FFmpeg's own `opus`
+  encoder (`audioEncoderArgs()` adds `-strict -2`). Plain TAR is written as TAR.GZ + gunzip
+  (libarchive.js passes the unknown filter name "none" and writes 0 bytes).
+- Pandoc's XLSX/PPTX/DOCX readers fail on absolute part paths (openpyxl/pandas write
+  `Target="/xl/…"`): `engines/officezip.ts` makes them relative first.
+- **Only offer what can work:** videos get `tracks` at detect time (`core/tracks.ts`: Mediabunny for
+  audio, the MP4 `moov` / MKV `Tracks` list for text subtitles; `null` = unknown → still offered).
+  "Audio only" / "Extract subtitles" are hidden when a file is known to lack them. Desktop does the
+  same with one cached ffprobe per file (`ffmpeg.stream_summary`).
 - **Tests:** `npm test` (vitest, logic) and `npm run e2e` (Playwright: real conversions through the
   UI in headless Chromium; fixtures generated in `e2e/global-setup.ts`). CI: `.github/workflows/web.yml`.
 
@@ -215,7 +226,13 @@ pytest                                              # run tests (needs ffmpeg/pa
 ruff check . && ruff format .                       # lint + format
 pyinstaller packaging/umc.spec                      # build the executable into dist/
 UniversalMediaConverter.exe --self-test report.txt  # headless smoke test of a build (exit 0 = OK)
+python scripts/convert_matrix.py --out matrix-out   # try EVERY conversion with defaults → report.md
+node web/scripts/convert-matrix.mjs matrix-out/samples --channel msedge  # same for the website
 ```
+
+The two matrix scripts are the broad safety net: one sample per input format, every target the
+app offers, each output checked to open. Run them after anything that touches several converters;
+"tool-missing" (Pandoc/Calibre/Ghostscript not installed) is not a failure.
 
 Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
 `~/.local/state/UniversalMediaConverter/umc.log` (Linux), `~/Library/Logs/…` (macOS).
