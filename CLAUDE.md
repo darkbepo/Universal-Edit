@@ -60,6 +60,30 @@ imports, but keep the defaults sensible so a user can convert with zero configur
 - Every page into its own document, every N pages, or custom ranges (`1-3, 4-10, 11-`)
 - File naming (`name_pages_1-3.pdf` / `name_part_01.pdf`), optional subfolder
 
+## Web companion (`web/`)
+
+A browser version that runs entirely on the visitor's device — **a companion, not a
+replacement**: the desktop app stays for Office/Markdown documents, VP9/H.265/AV1 and huge files.
+See `web/README.md` for commands and deployment.
+
+- **Stack:** TypeScript + Vite, no UI framework. Engines are WebAssembly, loaded lazily inside one
+  long-lived module Worker (`src/worker/jobWorker.ts`): ffmpeg.wasm (`@ffmpeg/core`, multi-threaded
+  `core-mt` when cross-origin isolated), ImageMagick (`@imagemagick/magick-wasm`), MuPDF (`mupdf`).
+- **Same architecture as the desktop app:** `core/` (detect, options schema → auto form, registry,
+  types — no DOM/WASM), `converters/` (declare options + targets; `run()` imports engines dynamically
+  so the page bundle stays ~60 KB), `engines/`, `ui/`. Target ids match the desktop ones.
+- **Cancel** = terminate the worker (kills FFmpeg's nested worker too); a new worker starts next run.
+- **Must be served cross-origin isolated** (COOP/COEP headers: `vite.config.ts`, `public/_headers`).
+- **Keep `build.assetsInlineLimit: 0`** — an inlined (data:) FFmpeg thread worker can't load the
+  engine and every video conversion crashes.
+- **Codecs:** only H.264, VP8 and MPEG-4 video. In @ffmpeg/core 0.12.10 libvpx-vp9 crashes the
+  tab, libx265 hangs and there's no AV1 encoder — re-test before enabling (WebCodecs is the
+  likely route for VP9/AV1/HEVC).
+- ImageMagick enum: pass the format *value* (`"JPEG"`), not `MagickFormat["JPEG"]` (keys are
+  PascalCase, so that lookup is undefined and silently keeps the input format).
+- **Tests:** `npm test` (vitest, logic) and `npm run e2e` (Playwright: real conversions through the
+  UI in headless Chromium; fixtures generated in `e2e/global-setup.ts`). CI: `.github/workflows/web.yml`.
+
 ## Tech stack
 
 - **Language:** Python 3.11+
@@ -221,4 +245,6 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
    `--self-test` run of the built .exe. No installer yet.
 6. ✅ Document splitting (every page / N pages / custom ranges) and PDF page size & margins.
 7. ✅ One-click install of LibreOffice / Pandoc from inside the app.
-8. Ideas: merge documents, installer for the app itself (Inno Setup), presets, batch queue.
+8. 🟡 Web companion (`web/`): images, video, PDF done and tested; not deployed yet.
+   Next: Pandoc-wasm for Markdown/HTML/EPUB/DOCX, WebCodecs for VP9/AV1, PWA/offline.
+9. Ideas: merge documents, installer for the app itself (Inno Setup), presets, batch queue.

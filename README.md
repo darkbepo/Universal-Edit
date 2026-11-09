@@ -9,6 +9,12 @@ output format, (optionally) tweak settings, press **Convert**.
 | **Videos** (MP4, MKV, MOV, AVI, WEBM, FLV, WMV, …) | any other video format · GIF · image frames (choose how many per 30 frames) · audio only (MP3, M4A, WAV, FLAC, OGG, OPUS) |
 | **Documents** (PDF, DOCX, DOC, ODT, RTF, TXT, MD, HTML, EPUB, XLSX, PPTX, …) | other document formats · images (one per page) |
 
+## Web companion
+
+There's also a browser version in [`web/`](web/README.md) that converts images, videos and PDFs
+entirely on your own device — nothing is uploaded. Office and Markdown documents still need the
+desktop app.
+
 ## Running from source
 
 ```bash
