@@ -46,6 +46,20 @@ async function runRoute(
   for (const [i, edge] of route.entries()) {
     const last = i === route.length - 1;
     ctx.progress(0.1 + (0.8 * i) / route.length, `Converting ${edge.src.toUpperCase()} → ${edge.dst.toUpperCase()}`);
+    if (edge.engine === "mammoth") {
+      const mammoth = await import("mammoth");
+      const bytes = cur.bytes;
+      let html: string;
+      try {
+        const r = await mammoth.convertToHtml({ arrayBuffer: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer });
+        html = r.value;
+      } catch (e) {
+        throw new ConversionError("Couldn't read this Word document.", String(e));
+      }
+      const page = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${stem.replace(/[&<>]/g, "")}</title></head><body>\n${html}\n</body></html>`;
+      cur = { bytes: new TextEncoder().encode(page), ext: "html" };
+      continue;
+    }
     if (edge.engine === "pandoc") {
       const { runPandoc } = await import("../engines/pandoc");
       const r = await runPandoc(cur.bytes, edge.src, edge.dst, {

@@ -15,7 +15,7 @@ describe("document routes", () => {
   it("picks sensible chains", () => {
     expect(route("txt", "pdf")).toEqual(["mupdf:pdf"]);
     expect(route("md", "pdf")).toEqual(["pandoc:html", "mupdf:pdf"]);
-    expect(route("docx", "pdf")).toEqual(["pandoc:html", "mupdf:pdf"]);
+    expect(route("docx", "pdf")).toEqual(["mammoth:html", "mupdf:pdf"]); // no Pandoc download
     expect(route("md", "docx")).toEqual(["pandoc:docx"]);
     expect(route("pdf", "txt")).toEqual(["mupdf:txt"]);
     expect(route("pdf", "docx")).toEqual(["mupdf:html", "pandoc:docx"]);

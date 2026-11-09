@@ -2,7 +2,7 @@
 // weighted edge; the cheapest path wins. e.g. md → pdf = md →(pandoc) html →(mupdf) pdf.
 // Pure logic here; execution lives in pdf.ts.
 
-export type DocEngine = "pandoc" | "mupdf";
+export type DocEngine = "pandoc" | "mupdf" | "mammoth";
 
 export interface Edge {
   engine: DocEngine;
@@ -27,6 +27,9 @@ function buildEdges(): Edge[] {
       e.push({ engine: "pandoc", src: s, dst: d, cost });
     }
   }
+  // mammoth.js (BSD-2, ~0.3 MB): DOCX → HTML without loading Pandoc (~16 MB gzipped), so the
+  // most common job — Word → PDF / HTML — skips that download. Pandoc still does everything else.
+  e.push({ engine: "mammoth", src: "docx", dst: "html", cost: 0.9 });
   e.push({ engine: "mupdf", src: "html", dst: "pdf", cost: 1.5 }); // HTML layout engine
   e.push({ engine: "mupdf", src: "txt", dst: "pdf", cost: 1 });
   e.push({ engine: "mupdf", src: "pdf", dst: "txt", cost: 1 });

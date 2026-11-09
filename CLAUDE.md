@@ -100,6 +100,11 @@ See `web/README.md` for commands and deployment.
   `codecs.ts`): resize, fps, quality, target size, rotate, flip, trim; no speed/volume. Inputs
   Mediabunny can't read (AVI/FLV/WMV) get a near-lossless FFmpeg intermediate first. H.265 needs
   a hardware encoder (not in headless Linux Chromium, so it has no e2e test).
+  **H.264 tries WebCodecs first too** (`tryBrowserH264` in `converters/video.ts`): 15 s 1080×1920
+  phone clip 21 s → 4.7 s. Falls back to ffmpeg.wasm for speed/volume, target size (needs
+  two-pass), a chosen audio codec, AVI/FLV output, unreadable inputs or no H.264/AAC encoder.
+- **Word → HTML / PDF** use mammoth.js (`docroute.ts` engine "mammoth", BSD-2) instead of Pandoc, so
+  the commonest document job doesn't download Pandoc (~16 MB gz). Other DOCX targets use Pandoc.
 - ImageMagick enum: pass the format *value* (`"JPEG"`), not `MagickFormat["JPEG"]` (keys are
   PascalCase, so that lookup is undefined and silently keeps the input format).
 - ImageMagick can't recognise ICO / CUR / TGA from bytes (it uses the file name, which it never
