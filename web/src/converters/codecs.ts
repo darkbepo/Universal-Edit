@@ -2,8 +2,8 @@
 // app's codecs.py, trimmed to what works in ffmpeg.wasm).
 //
 // Tested in Chromium with @ffmpeg/core 0.12.10: libvpx-vp9 crashes the tab, libx265 hangs and
-// there is no AV1 encoder — so VP9 / H.265 / AV1 are desktop-only for now (a WebCodecs path
-// could add them later). Re-test before re-enabling any of them.
+// there is no AV1 encoder — so VP9 / H.265 / AV1 go through WebCodecs instead
+// (engines/webcodecs.ts, Mediabunny); they have no ffmpeg.wasm encoder entry here.
 import { ConversionError } from "../core/types";
 
 export const VIDEO_ENCODERS: Record<string, string[]> = {
@@ -24,18 +24,21 @@ export const AUDIO_ENCODERS: Record<string, string[]> = {
 };
 export const VIDEO_CODEC_LABELS: Record<string, string> = {
   h264: "H.264 (most compatible)", vp8: "VP8", mpeg4: "MPEG-4 Part 2",
+  vp9: "VP9 (browser encoder)", av1: "AV1 (browser encoder, slow)", h265: "H.265 / HEVC (if your device supports it)",
 };
+/** Codecs encoded with WebCodecs (Mediabunny) rather than ffmpeg.wasm. */
+export const WEBCODECS_VIDEO = new Set(["vp9", "av1", "h265"]);
 export const AUDIO_CODEC_LABELS: Record<string, string> = {
   aac: "AAC", mp3: "MP3", opus: "Opus", vorbis: "Vorbis", flac: "FLAC (lossless)", pcm: "PCM (uncompressed)",
 };
 
 // container → [default video, default audio, allowed video, allowed audio]
 export const CONTAINERS: Record<string, [string, string, string[], string[]]> = {
-  mp4: ["h264", "aac", ["h264", "mpeg4"], ["aac", "mp3", "opus", "flac"]],
+  mp4: ["h264", "aac", ["h264", "mpeg4", "vp9", "av1", "h265"], ["aac", "mp3", "opus", "flac"]],
   m4v: ["h264", "aac", ["h264", "mpeg4"], ["aac"]],
-  mov: ["h264", "aac", ["h264", "mpeg4"], ["aac", "pcm", "mp3"]],
-  mkv: ["h264", "aac", ["h264", "vp8", "mpeg4"], ["aac", "mp3", "opus", "vorbis", "flac", "pcm"]],
-  webm: ["vp8", "opus", ["vp8"], ["opus", "vorbis"]],
+  mov: ["h264", "aac", ["h264", "mpeg4", "h265"], ["aac", "pcm", "mp3"]],
+  mkv: ["h264", "aac", ["h264", "vp8", "mpeg4", "vp9", "av1", "h265"], ["aac", "mp3", "opus", "vorbis", "flac", "pcm"]],
+  webm: ["vp8", "opus", ["vp8", "vp9", "av1"], ["opus", "vorbis"]],
   avi: ["mpeg4", "mp3", ["mpeg4", "h264"], ["mp3", "pcm"]],
 };
 

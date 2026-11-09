@@ -64,7 +64,7 @@ imports, but keep the defaults sensible so a user can convert with zero configur
 
 A browser version that runs entirely on the visitor's device — **a companion, not a
 replacement**: the desktop app stays for legacy Office files (DOC/XLS/PPT/ODS/ODP, which need
-LibreOffice), VP9/H.265/AV1 and huge files.
+LibreOffice) and huge files.
 See `web/README.md` for commands and deployment.
 
 - **Stack:** TypeScript + Vite, no UI framework. Engines are WebAssembly, loaded lazily inside one
@@ -87,9 +87,12 @@ See `web/README.md` for commands and deployment.
   / `serve.ps1` (Windows) and `serve.py`, all localhost-only. Keep `.bat` files CRLF.
 - **Keep `build.assetsInlineLimit: 0`** — an inlined (data:) FFmpeg thread worker can't load the
   engine and every video conversion crashes.
-- **Codecs:** only H.264, VP8 and MPEG-4 video. In @ffmpeg/core 0.12.10 libvpx-vp9 crashes the
-  tab, libx265 hangs and there's no AV1 encoder — re-test before enabling (WebCodecs is the
-  likely route for VP9/AV1/HEVC).
+- **Codecs:** ffmpeg.wasm encodes H.264, VP8 and MPEG-4 only (in @ffmpeg/core 0.12.10
+  libvpx-vp9 crashes the tab, libx265 hangs, no AV1 encoder). VP9 / AV1 / H.265 go through the
+  browser's WebCodecs encoders via Mediabunny (`engines/webcodecs.ts`, `WEBCODECS_VIDEO` in
+  `codecs.ts`): resize, fps, quality, target size, rotate, flip, trim; no speed/volume. Inputs
+  Mediabunny can't read (AVI/FLV/WMV) get a near-lossless FFmpeg intermediate first. H.265 needs
+  a hardware encoder (not in headless Linux Chromium, so it has no e2e test).
 - ImageMagick enum: pass the format *value* (`"JPEG"`), not `MagickFormat["JPEG"]` (keys are
   PascalCase, so that lookup is undefined and silently keeps the input format).
 - **Tests:** `npm test` (vitest, logic) and `npm run e2e` (Playwright: real conversions through the
@@ -275,7 +278,7 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
 8. ✅ Web companion (`web/`): images, video, PDF and documents (Pandoc). Live at
    https://darkbepo.github.io/Universal-Media-Converter/ — `.github/workflows/pages.yml` publishes
    on every push to `main` that touches `web/` and then runs all browser tests against the live site.
-   Next: WebCodecs for VP9/AV1, PWA/offline.
+   Next: PWA/offline.
 9. **Converter parity with the big online converters** (owner wants all of these, in this order;
    each lands in BOTH apps where possible, and the "What works where" table in README.md must be
    updated in the same commit):
@@ -355,7 +358,86 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
       win64 zip from GitHub, SHA-256 checked; live test makes a DWG with its `dxf2dwg`). Web
       `converters/cad.ts`: `dxf` package (MIT) → SVG, restyled (colours, 1.5 px lines) → resvg for
       PNG/JPG. No DWG / PDF / DXF writing on the web.
-   15. Close web gaps: WebCodecs for H.265/VP9/AV1, LibreOffice-wasm for DOC/XLS/PPT
+   15. ✅ / ⏸ Close web gaps. ✅ VP9 / AV1 / H.265 on the web via WebCodecs (see "Codecs" above).
+      ⏸ LibreOffice-wasm for DOC/XLS/PPT: investigated, not shipped — `@matbee/libreoffice-converter`
+      (MPL-2.0, headless LibreOffice wasm) works in principle but `soffice.wasm` is 147 MB plus a
+      100 MB `soffice.data`: over GitHub Pages' and jsdelivr's per-file limits and a ~250 MB first
+      download per visitor. Options when revisiting: host on Cloudflare R2/Pages (25 MB file limit
+      → would need splitting) or a release asset with CORS, load only on demand behind an explicit
+      "download 250 MB engine" button, cache in Cache Storage; keep `DESKTOP_ONLY_DOCUMENT_EXTS`
+      until then.
 10. **Editor** (only after 9 is done): image editor (paint/photoshop-like), video timeline
     (trim, join, mix video + images + music), text/document editing and saving.
 11. Ideas: installer for the app itself (Inno Setup), presets, batch queue.
+
+## Handoff — read this first (for the next Claude account)
+
+The converter (roadmap items 1–9) is done in both apps except the one parked item (9.15
+LibreOffice-wasm). The owner hands the project over at this point; the next phase is the
+**Editor** (item 10). Everything below is the agreed way of working.
+
+### How the owner likes to work
+- Plain, non-technical language in replies. One task at a time, then **stop and summarise**
+  (what changed, what was verified, what's next) and list every file created/modified.
+- Commits: on `main`, authored as `darkbepo`, imperative subject, **no co-author or session
+  trailers**. Push after each finished task. Update the README "What works where" table and the
+  roadmap here in the same commit as the feature.
+- New dependencies must be AGPL-3.0-compatible (MIT/BSD/Apache/MPL/LGPL/GPL-3/AGPL). Big external
+  programs are never bundled: detect + "Install it for me" (signed MSI/NSIS or SHA-256-checked
+  zip, private folder, test conversion) — see `tools/installer.py` (LibreOffice, Pandoc,
+  Ghostscript, Calibre, LibreDWG).
+
+### How every change is verified
+1. `ruff check . && ruff format --check .`, `pytest` (desktop), and in `web/`: `npx tsc --noEmit`,
+   `npm test`, `npm run e2e` (Playwright, real conversions; fixtures made in `e2e/global-setup.ts`,
+   no binaries in git except the small, attributed samples in `tests/fixtures/`).
+2. Add a step to `src/umc/selftest.py` for anything that adds a library or bundled file, then run
+   "Build Windows executable" (Actions → Run workflow): it builds the .exe and runs `--self-test`
+   inside it — that's how packaging mistakes (missing hidden imports/data files) are caught.
+3. Pushing to `web/` deploys GitHub Pages and re-runs every browser test against the live site
+   (`pages.yml`; one retry for network flakes only). Runs that never start are GitHub-side —
+   re-run them.
+4. One-click installers are only proven by the manual "Test one-click installers" workflow
+   (`tests/test_installer_live.py`, real downloads on windows-latest) — run it after touching
+   `tools/installer.py`. The Ghostscript (NSIS, may need UAC) and LibreDWG installers were added
+   last and need a green run there before calling them done.
+
+### Next phase: the Editor (roadmap item 10) — proposed plan
+Keep the converter untouched; the editor is a second mode of the same window and reuses the
+converters for saving/exporting. Suggested order (most value first), one task per step:
+
+1. **Shell:** a "Convert | Edit" switch at the top of the window (keep it minimal); dropping a
+   single image/video/document while in Edit mode opens the matching editor. Web: same switch in
+   `web/src/ui/`. Add GUI tests (pytest-qt) and e2e tests from the start.
+2. **Image editor** (Photoshop-light). Qt-free model in `src/umc/editor/image/` (layers as Pillow
+   RGBA images or numpy arrays, a command/undo stack, selections as masks); Qt view in
+   `src/umc/gui/editor/` (`QGraphicsView`, `QUndoStack`). Tools in this order: crop / resize /
+   rotate / flip → brightness, contrast, saturation, hue, curves → brush, eraser, fill, shapes,
+   text → rectangle / lasso / magic-wand selection → layers (add, reorder, opacity, blend modes)
+   → filters (blur, sharpen, noise). Open via `imaging.open_image` (so RAW/PSD/HEIC work); save via
+   the existing image converter so every format + option keeps working. Project file: layered
+   PSD (Pillow can't write PSD; consider a ZIP of PNG layers + JSON, or OpenRaster `.ora`, an open
+   standard GIMP/Krita read). Web: `web/src/editor/` on `OffscreenCanvas` in the worker, same
+   command model; export through the existing converters.
+3. **Video timeline:** a model of tracks (video, images, audio, text) and clips (source, in/out,
+   start, transitions, volume). Rendering = one FFmpeg `filter_complex` (trim/setpts, concat,
+   overlay, xfade, amix, drawtext/ass) — reuse `converters/slideshow.py`, `video.py`,
+   `subtitles.py`. Preview: thumbnails/filmstrip via FFmpeg; real playback needs
+   `PySide6.QtMultimedia`, which `packaging/umc.spec` currently **excludes** (and is not in
+   PySide6-Essentials — needs PySide6-Addons, check size/licence) — or play low-res proxy frames
+   rendered by FFmpeg. Web: Mediabunny + WebCodecs for decoding/preview/export.
+4. **Text / document editing:** rich-text editing of DOCX/ODT/MD/TXT/HTML (`QTextEdit` reads and
+   writes HTML and Markdown; round-trip DOCX through Pandoc/LibreOffice via the document route
+   planner). Web: a contenteditable/ProseMirror-style editor (MIT) + pandoc-wasm for import/export.
+
+For each editor feature add rows to the README table (desktop / website columns) and a roadmap
+line here, exactly like the converter features.
+
+### Known gaps / ideas left open
+- 9.15 LibreOffice-wasm (above). H.265 on the web depends on the visitor's hardware.
+- Web: no EPS/PS, SVG → PDF, DWG, 7Z writing, archive encryption, TTF ↔ OTF, Kindle formats, PDF →
+  Word with layout (all desktop-only, listed in the README table).
+- Code signing for the .exe (owner's decision; SignPath.io is free for open source) — the real fix
+  for antivirus false positives.
+- Item 11 ideas: installer for the app itself (Inno Setup), presets, batch queue, PWA/offline.
+

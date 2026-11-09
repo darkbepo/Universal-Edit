@@ -39,12 +39,13 @@ The browser version's source is in [`web/`](web/README.md).
 | Camera RAW (CR2, CR3, NEF, ARW, DNG, RAF, ORF, RW2…) and Photoshop PSD as input | ✅ | ✅ |
 | **Video** ↔ each other (MP4, MKV, MOV, WEBM, AVI…) | ✅ | ✅ |
 | Video codecs H.264 · VP8 · MPEG-4 | ✅ | ✅ |
-| Video codecs H.265 · VP9 · AV1 | ✅ | 🔜 |
+| Video codecs VP9 · AV1 | ✅ | ✅ (browser encoder) |
+| Video codec H.265 / HEVC | ✅ | ✅ where the device has an encoder (most Windows/Mac/phones; not Linux) |
 | Video → GIF · frames (N per 30) · audio only | ✅ | ✅ |
 | Very large videos (several GB) | ✅ | ❌ |
 | **Audio** ↔ each other (MP3, WAV, FLAC, M4A, OGG, AIFF, WMA…) | ✅ | ✅ |
 | **Documents** ↔ each other (DOCX, ODT, RTF, TXT, Markdown, HTML, EPUB, PDF) | ✅ | ✅ |
-| Old Office formats (DOC, XLS, PPT) and ODS / ODP | ✅ | 🔜 |
+| Old Office formats (DOC, XLS, PPT) and ODS / ODP | ✅ | ❌ (needs LibreOffice: ~250 MB, too big for the website for now) |
 | Spreadsheets & slides as input (XLSX, CSV, PPTX) | ✅ | ✅ |
 | Save as PowerPoint (PPTX) | ❌ | ✅ |
 | Documents → images (one per page) | ✅ | ✅ |

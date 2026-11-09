@@ -720,3 +720,46 @@ test.describe("CAD", () => {
     await expect(page.getByText("need LibreDWG")).toBeVisible();
   });
 });
+
+test.describe("WebCodecs video (VP9 / AV1)", () => {
+  const probe = async (data: Buffer, name: string) => {
+    const { writeFileSync } = await import("node:fs");
+    const { execFileSync } = await import("node:child_process");
+    writeFileSync(fx(name), data);
+    return JSON.parse(execFileSync("ffprobe", ["-v", "error", "-print_format", "json", "-show_streams", fx(name)]).toString()).streams as { codec_type: string; codec_name: string; height?: number }[];
+  };
+  const pickCodec = async (page: Page, target: string, label: string) => {
+    await page.locator(`.pill[data-target="${target}"]`).click();
+    await page.getByRole("button", { name: /Settings/ }).click();
+    await page.locator("#opt-video_codec").selectOption({ label });
+  };
+
+  test("MP4 → WebM with VP9", async ({ page }) => {
+    test.skip(!hasVideo(), "needs ffmpeg");
+    await load(page, [fx("clip.mp4")]);
+    await pickCodec(page, "webm", "VP9 (browser encoder)");
+    const streams = await probe(await downloadSingle(page, "webm"), "out-vp9.webm");
+    expect(streams.find((s) => s.codec_type === "video")?.codec_name).toBe("vp9");
+    expect(streams.find((s) => s.codec_type === "audio")?.codec_name).toBe("opus");
+  });
+
+  test("MP4 → MKV with AV1 at 360p", async ({ page }) => {
+    test.skip(!hasVideo(), "needs ffmpeg");
+    await load(page, [fx("clip.mp4")]);
+    await pickCodec(page, "mkv", "AV1 (browser encoder, slow)");
+    await page.locator("#opt-resolution").selectOption({ label: "360p" });
+    const video = (await probe(await downloadSingle(page, "mkv"), "out-av1.mkv")).find((s) => s.codec_type === "video");
+    expect(video?.codec_name).toBe("av1");
+    expect(video?.height).toBe(360);
+  });
+
+  test("AVI (not readable by WebCodecs) → WebM VP9 via the FFmpeg fallback", async ({ page }) => {
+    test.skip(!hasVideo(), "needs ffmpeg");
+    const { execFileSync } = await import("node:child_process");
+    execFileSync("ffmpeg", ["-loglevel", "error", "-y", "-i", fx("clip.mp4"), "-c:v", "mpeg4", "-c:a", "mp3", fx("clip.avi")]);
+    await load(page, [fx("clip.avi")]);
+    await pickCodec(page, "webm", "VP9 (browser encoder)");
+    const streams = await probe(await downloadSingle(page, "webm"), "out-avi-vp9.webm");
+    expect(streams.find((s) => s.codec_type === "video")?.codec_name).toBe("vp9");
+  });
+});
