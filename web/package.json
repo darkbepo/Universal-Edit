@@ -21,7 +21,6 @@
     "dejavu-fonts-ttf": "^2.37.3",
     "fast-xml-parser": "^5.12.0",
     "fflate": "^0.8.3",
-    "fonteditor-core": "^2.6.3",
     "harfbuzzjs": "^1.6.4",
     "libarchive.js": "^2.0.2",
     "mupdf": "^1.28.1",
