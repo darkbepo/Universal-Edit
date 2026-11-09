@@ -21,9 +21,26 @@ def _register_plugins() -> None:
         pass
 
 
+RAW_EXTS = {
+    ".cr2", ".cr3", ".crw", ".nef", ".nrw", ".arw", ".srf", ".sr2", ".dng", ".orf", ".raf",
+    ".rw2", ".pef", ".srw", ".x3f", ".3fr", ".iiq", ".mrw", ".kdc", ".dcr", ".erf", ".mef", ".mos",
+}  # fmt: skip
+
+
+def _open_raw(path: Path) -> Image.Image:
+    """Develop a camera RAW file with LibRaw (camera white balance, sRGB, 8-bit)."""
+    import rawpy
+
+    with rawpy.imread(str(path)) as raw:
+        rgb = raw.postprocess(use_camera_wb=True, output_bps=8)
+    return Image.fromarray(rgb)
+
+
 def open_image(path: Path) -> Image.Image:
     _register_plugins()
     try:
+        if path.suffix.lower() in RAW_EXTS:
+            return _open_raw(path)
         img = Image.open(path)
         img.load()
         return img
@@ -32,8 +49,10 @@ def open_image(path: Path) -> Image.Image:
 
 
 def open_image_lazy(path: Path) -> Image.Image:
-    """Open without decoding pixels (for reading size/metadata)."""
+    """Open without decoding pixels (for reading size/metadata). RAW files are developed."""
     _register_plugins()
+    if path.suffix.lower() in RAW_EXTS:
+        return open_image(path)
     try:
         return Image.open(path)
     except Exception as exc:

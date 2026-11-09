@@ -36,6 +36,16 @@ export default async function globalSetup() {
   const r = await pandoc.convert({ from: "markdown", to: "docx", "output-file": "out.docx" },
     "# Report\n\nFirst paragraph with **bold**.\n\n- one\n- two\n", {});
   writeFileSync(`${FIXTURES}report.docx`, Buffer.from(await (r.files["out.docx"] as Blob).arrayBuffer()));
+  // Camera RAW (DNG) and Photoshop samples, from the desktop app's pure-Python writer.
+  try {
+    execFileSync("python3", ["-c",
+      "import sys; sys.path.insert(0, sys.argv[1]); from pathlib import Path; " +
+      "from umc.core.samples import write_test_dng, write_test_psd; " +
+      "write_test_dng(Path(sys.argv[2]) / 'photo.dng'); write_test_psd(Path(sys.argv[2]) / 'design.psd')",
+      fileURLToPath(new URL("../../src", import.meta.url)), FIXTURES]);
+  } catch {
+    console.warn("python3 not found: RAW/PSD e2e tests will be skipped");
+  }
   if (!existsSync(`${FIXTURES}tone.wav`)) {
     try {
       execFileSync("ffmpeg", ["-loglevel", "error", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=3",

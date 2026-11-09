@@ -48,7 +48,13 @@ def run(report: Path) -> int:
             Image.new("RGB", (320, 240), color).save(p)
             imgs.append(p)
         out = d / "out"
+        from umc.core.samples import write_test_dng, write_test_psd
+
+        dng = write_test_dng(d / "camera.dng")
+        psd = write_test_psd(d / "design.psd")
         steps = [
+            ("camera RAW (dng) -> jpg", lambda: _convert([dng], "jpg", out)),
+            ("photoshop psd -> png", lambda: _convert([psd], "png", out)),
             ("png -> jpg", lambda: _convert(imgs[:1], "jpg", out)),
             ("png -> heic", lambda: _convert(imgs[:1], "heic", out)),
             ("png -> avif", lambda: _convert(imgs[:1], "avif", out)),

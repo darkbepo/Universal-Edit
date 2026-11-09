@@ -47,6 +47,30 @@ test("png → avif with resize", async ({ page }) => {
   expect(data.subarray(4, 12).toString("latin1")).toContain("ftypavif");
 });
 
+test.describe("camera RAW and Photoshop", () => {
+  test.skip(!existsSync(fx("photo.dng")), "needs python3 to create the samples");
+
+  test("DNG → JPG keeps the colours", async ({ page }) => {
+    await load(page, [fx("photo.dng")]);
+    const data = await downloadSingle(page, "jpg");
+    const mupdf = await import("mupdf");
+    const img = new mupdf.Image(new Uint8Array(data)).toPixmap();
+    const px = (x: number, y: number) => [...img.getPixels().slice((y * img.getWidth() + x) * img.getNumberOfComponents(), (y * img.getWidth() + x) * img.getNumberOfComponents() + 3)];
+    expect(img.getWidth()).toBe(64);
+    const [r1, , b1] = px(5, 24);
+    const [r2, , b2] = px(60, 24);
+    expect(r1).toBeGreaterThan(200); expect(b1).toBeLessThan(80);
+    expect(b2).toBeGreaterThan(200); expect(r2).toBeLessThan(80);
+  });
+
+  test("PSD → PNG uses the flattened image (not layers as frames)", async ({ page }) => {
+    await load(page, [fx("design.psd")]);
+    const data = await downloadSingle(page, "png");
+    expect([...data.subarray(1, 4)].map((c) => String.fromCharCode(c)).join("")).toBe("PNG");
+    expect(data.toString("latin1")).not.toContain("acTL"); // not an animated PNG
+  });
+});
+
 test("images → PDF", async ({ page }) => {
   await load(page, [fx("img0.png"), fx("img1.png"), fx("img2.png")]);
   const data = await downloadSingle(page, "images:pdf");

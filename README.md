@@ -36,7 +36,7 @@ The browser version's source is in [`web/`](web/README.md).
 | Save as HEIC | ✅ | ❌ |
 | Save as JPEG XL (JXL) | ❌ | ✅ |
 | Images → slideshow video / animated GIF / PDF | ✅ | ✅ |
-| Camera RAW (CR2, NEF, ARW, DNG…) and Photoshop PSD as input | 🔜 | 🔜 |
+| Camera RAW (CR2, CR3, NEF, ARW, DNG, RAF, ORF, RW2…) and Photoshop PSD as input | ✅ | ✅ |
 | **Video** ↔ each other (MP4, MKV, MOV, WEBM, AVI…) | ✅ | ✅ |
 | Video codecs H.264 · VP8 · MPEG-4 | ✅ | ✅ |
 | Video codecs H.265 · VP9 · AV1 | ✅ | 🔜 |

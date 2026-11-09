@@ -266,7 +266,10 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
    each lands in BOTH apps where possible, and the "What works where" table in README.md must be
    updated in the same commit):
    1. ✅ Audio files as input (MP3/WAV/FLAC/M4A/OGG… ↔ each other) — `MediaFamily.AUDIO` / family "audio"
-   2. Camera RAW + PSD input
+   2. ✅ Camera RAW + PSD input — desktop: rawpy/LibRaw in `imaging.open_image`; web: magick-wasm
+      needs an explicit format hint for RAW (`engines/magick.ts` readImage/readFrames), and PSD
+      layers must not become animation frames. Test samples: `umc/core/samples.py` (DNG + PSD
+      written from scratch; the web e2e setup calls it via python3).
    3. PDF toolkit: merge, compress, rotate, protect/unlock, reorder/delete pages
    4. Compress to a target size (video, image, PDF, audio)
    5. Data formats: JSON ↔ CSV ↔ XML ↔ YAML ↔ XLSX

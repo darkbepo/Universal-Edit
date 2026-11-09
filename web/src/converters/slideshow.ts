@@ -74,7 +74,7 @@ export const slideshowConverter: Converter = {
     return t;
   },
   async run(files, target, o, ctx) {
-    const { getMagick, copy } = await import("../engines/magick");
+    const { getMagick, copy, readImage } = await import("../engines/magick");
     const M = await getMagick((m) => ctx.progress(0, m));
     const ordered = orderFiles(files, String(o.order));
     const d = Number(o.seconds_per_image);
@@ -86,7 +86,7 @@ export const slideshowConverter: Converter = {
       ctx.progress(0.15 * (i / ordered.length), `Reading images (${i + 1}/${ordered.length})`);
       const bytes = new Uint8Array(await f.file.arrayBuffer());
       try {
-        M.ImageMagick.read(bytes, (img) => {
+        readImage(M, bytes, f.ext, (img) => {
           img.autoOrient();
           sizes.push([img.width, img.height]);
           raw.push(img.write(M.MagickFormat.Png, copy));

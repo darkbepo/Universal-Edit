@@ -46,7 +46,7 @@ export const imageConverter: Converter = {
     }));
   },
   async run(files, target, o, ctx) {
-    const { getMagick, copy } = await import("../engines/magick");
+    const { getMagick, copy, readFrames } = await import("../engines/magick");
     const M = await getMagick((m) => ctx.progress(0, m));
     const [, format, mime] = IMAGE_FORMATS[target.id];
     const unique = uniqueNamer();
@@ -56,7 +56,7 @@ export const imageConverter: Converter = {
       const bytes = new Uint8Array(await f.file.arrayBuffer());
       let data: Uint8Array;
       try {
-        data = M.ImageMagick.readCollection(bytes, (images) => {
+        data = readFrames(M, bytes, f.ext, (images) => {
           const animated = Boolean(o.keep_animation) && ANIMATED.includes(target.id) && images.length > 1;
           if (animated) images.coalesce();
           const frames = animated ? [...images] : [images[0]];
@@ -127,7 +127,7 @@ export const imagesToPdfConverter: Converter = {
     return [{ id: "images:pdf", label: "PDF", ext: "pdf", group: "Document", converterId: "images-pdf", hint: "Put the images into a PDF document" }];
   },
   async run(files, _target, o, ctx) {
-    const { getMagick, copy } = await import("../engines/magick");
+    const { getMagick, copy, readImage } = await import("../engines/magick");
     const { getMuPDF } = await import("../engines/mupdf");
     const M = await getMagick((m) => ctx.progress(0, m));
     const mupdf = await getMuPDF();
@@ -142,7 +142,7 @@ export const imagesToPdfConverter: Converter = {
     for (const [i, f] of files.entries()) {
       ctx.progress((i / files.length) * 0.95, `Adding ${f.name}`);
       const bytes = new Uint8Array(await f.file.arrayBuffer());
-      const [jpeg, w, h] = M.ImageMagick.read(bytes, (img) => {
+      const [jpeg, w, h] = readImage(M, bytes, f.ext, (img) => {
         img.autoOrient();
         img.backgroundColor = new M.MagickColor(String(o.background));
         img.alpha(M.AlphaAction.Remove);
