@@ -245,6 +245,8 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
 - Long operations must report progress (0–100) and honour cancellation.
 - Log to a rotating file in the user's app-data folder; the UI shows friendly messages.
 - Commit messages: imperative mood, short subject line (`Add video to GIF converter`).
+- Work on `main`. Commits are authored as `darkbepo` with no co-author or session trailers
+  (the owner asked for this).
 
 ## Roadmap
 
@@ -256,7 +258,8 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
    `--self-test` run of the built .exe. No installer yet.
 6. ✅ Document splitting (every page / N pages / custom ranges) and PDF page size & margins.
 7. ✅ One-click install of LibreOffice / Pandoc from inside the app.
-8. 🟡 Web companion (`web/`): images, video, PDF and documents (Pandoc) done and tested; local test zip available;
-   GitHub Pages deployment planned after the owner has tested locally.
+8. ✅ Web companion (`web/`): images, video, PDF and documents (Pandoc). Live at
+   https://darkbepo.github.io/Universal-Media-Converter/ — `.github/workflows/pages.yml` publishes
+   on every push to `main` that touches `web/` and then runs all browser tests against the live site.
    Next: WebCodecs for VP9/AV1, PWA/offline.
 9. Ideas: merge documents, installer for the app itself (Inno Setup), presets, batch queue.
