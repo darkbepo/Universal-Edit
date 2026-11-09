@@ -22,7 +22,7 @@ class DropZone(QFrame):
         self.icon.setObjectName("DropIcon")
         self.title = QLabel("Drop files here")
         self.title.setObjectName("DropTitle")
-        self.subtitle = QLabel("or click to browse — documents, images or videos")
+        self.subtitle = QLabel("or click to browse — images, videos, audio or documents")
         self.subtitle.setObjectName("Muted")
         for w in (self.icon, self.title, self.subtitle):
             w.setAlignment(Qt.AlignmentFlag.AlignCenter)

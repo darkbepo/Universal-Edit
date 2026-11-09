@@ -60,6 +60,11 @@ def media(tmp_path_factory) -> Path:
             ],
             check=True,
         )
+        subprocess.run(
+            ["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i",
+             "sine=frequency=440:duration=3", "-ac", "2", str(d / "tone.wav")],
+            check=True,
+        )  # fmt: skip
     import pymupdf
 
     with pymupdf.open() as pdf:

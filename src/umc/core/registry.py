@@ -24,7 +24,7 @@ class Target:
 
 @cache
 def converters() -> tuple[Converter, ...]:
-    from umc.converters.audio import AudioExtractConverter
+    from umc.converters.audio import AudioConverter, AudioExtractConverter
     from umc.converters.document import DocumentConverter
     from umc.converters.document_images import DocumentToImagesConverter
     from umc.converters.gif import VideoToGifConverter
@@ -42,6 +42,7 @@ def converters() -> tuple[Converter, ...]:
         VideoToGifConverter(),
         VideoToFramesConverter(),
         AudioExtractConverter(),
+        AudioConverter(),
         DocumentConverter(),
         DocumentToImagesConverter(),
         DocumentSplitConverter(),
@@ -59,7 +60,8 @@ def targets_for(files: list[DetectedFile]) -> list[Target]:
     families = {f.family for f in files}
     if len(families) > 1:
         raise MixedInputError(
-            "Please add files of one kind at a time (only images, only videos or only documents)."
+            "Please add files of one kind at a time "
+            "(only images, only videos, only audio or only documents)."
         )
     family = families.pop()
     result: list[Target] = []

@@ -12,6 +12,7 @@ class MediaFamily(StrEnum):
     DOCUMENT = "document"
     IMAGE = "image"
     VIDEO = "video"
+    AUDIO = "audio"
 
 
 # Aliases → canonical extension.
@@ -48,6 +49,11 @@ IMAGE_EXTS = {
     "jp2",
     "qoi",
 }
+
+AUDIO_EXTS = {
+    "mp3", "wav", "flac", "m4a", "aac", "ogg", "oga", "opus", "wma", "aiff", "aif", "ac3",
+    "amr", "mka", "caf", "ape", "wv", "mp2", "au",
+}  # fmt: skip
 
 VIDEO_EXTS = {
     "mp4",
@@ -115,6 +121,8 @@ def family_of_ext(ext: str) -> MediaFamily | None:
         return MediaFamily.IMAGE
     if ext in VIDEO_EXTS:
         return MediaFamily.VIDEO
+    if ext in AUDIO_EXTS:
+        return MediaFamily.AUDIO
     if ext in DOCUMENT_EXTS:
         return MediaFamily.DOCUMENT
     return None
@@ -137,6 +145,16 @@ def _sniff(path: Path) -> str | None:
         return "gif"
     if head.startswith(b"RIFF") and head[8:12] == b"WEBP":
         return "webp"
+    if head.startswith(b"RIFF") and head[8:12] == b"WAVE":
+        return "wav"
+    if head.startswith(b"FORM") and head[8:12] in (b"AIFF", b"AIFC"):
+        return "aiff"
+    if head.startswith(b"fLaC"):
+        return "flac"
+    if head.startswith(b"OggS"):
+        return "opus" if b"OpusHead" in head else "ogg"
+    if head.startswith(b"ID3") or (len(head) > 1 and head[0] == 0xFF and head[1] & 0xE0 == 0xE0):
+        return "mp3"
     if head.startswith(b"RIFF") and head[8:12] == b"AVI ":
         return "avi"
     if head[:4] in (b"II*\x00", b"MM\x00*"):
@@ -153,6 +171,8 @@ def _sniff(path: Path) -> str | None:
             return "avif"
         if brand == b"qt  ":
             return "mov"
+        if brand in (b"M4A ", b"M4B "):
+            return "m4a"
         return "mp4"
     if head.startswith(b"FLV"):
         return "flv"

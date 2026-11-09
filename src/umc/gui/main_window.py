@@ -37,9 +37,15 @@ from umc.gui.worker import start_worker
 FAMILY_NOUN = {
     MediaFamily.IMAGE: ("image", "images"),
     MediaFamily.VIDEO: ("video", "videos"),
+    MediaFamily.AUDIO: ("audio file", "audio files"),
     MediaFamily.DOCUMENT: ("document", "documents"),
 }
-ICONS = {MediaFamily.IMAGE: "🖼", MediaFamily.VIDEO: "🎞", MediaFamily.DOCUMENT: "📄"}
+ICONS = {
+    MediaFamily.IMAGE: "🖼",
+    MediaFamily.VIDEO: "🎞",
+    MediaFamily.AUDIO: "🎵",
+    MediaFamily.DOCUMENT: "📄",
+}
 
 
 def section(text: str) -> QLabel:

@@ -42,7 +42,7 @@ The browser version's source is in [`web/`](web/README.md).
 | Video codecs H.265 · VP9 · AV1 | ✅ | 🔜 |
 | Video → GIF · frames (N per 30) · audio only | ✅ | ✅ |
 | Very large videos (several GB) | ✅ | ❌ |
-| **Audio** ↔ each other (MP3, WAV, FLAC, M4A, OGG…) | 🔜 | 🔜 |
+| **Audio** ↔ each other (MP3, WAV, FLAC, M4A, OGG, AIFF, WMA…) | ✅ | 🔜 |
 | **Documents** ↔ each other (DOCX, ODT, RTF, TXT, Markdown, HTML, EPUB, PDF) | ✅ | ✅ |
 | Old Office formats (DOC, XLS, PPT) and ODS / ODP | ✅ | 🔜 |
 | Spreadsheets & slides as input (XLSX, CSV, PPTX) | ✅ | ✅ |

@@ -1,4 +1,4 @@
-"""Video → audio only (extract the soundtrack)."""
+"""Audio ↔ audio, and video → audio only (extract the soundtrack)."""
 
 from __future__ import annotations
 
@@ -22,8 +22,13 @@ AUDIO_TARGETS = {
     "flac": ("FLAC", "flac"),
     "ogg": ("OGG", "vorbis"),
     "opus": ("OPUS", "opus"),
+    "aiff": ("AIFF", "pcm_be"),
+    "wma": ("WMA", "wma"),
+    "ac3": ("AC-3", "ac3"),
 }
-LOSSY = tuple(f"audio:{k}" for k in ("mp3", "m4a", "ogg", "opus"))
+LOSSY_EXTS = ("mp3", "m4a", "ogg", "opus", "wma", "ac3")
+# Option targets: video → audio ids ("audio:mp3") and audio → audio ids ("mp3").
+LOSSY = tuple(f"audio:{k}" for k in LOSSY_EXTS) + LOSSY_EXTS
 
 
 @dataclass
@@ -54,15 +59,9 @@ class AudioOptions:
     end: str = opt("", "End at", help="Seconds or mm:ss. Empty = until the end.")
 
 
-class AudioExtractConverter(Converter):
-    family = MediaFamily.VIDEO
+class _AudioConverter(Converter):
     options_cls = AudioOptions
-
-    def targets(self, files):
-        return [
-            self.target(f"audio:{ext}", label, ext, "Audio only", "Extract the soundtrack")
-            for ext, (label, _) in AUDIO_TARGETS.items()
-        ]
+    verb = "Converting"
 
     def run(self, job: ConversionJob) -> list[Path]:
         o: AudioOptions = job.options
@@ -73,14 +72,16 @@ class AudioExtractConverter(Converter):
         n = len(job.files)
         for i, f in enumerate(job.files):
             job.check_cancelled()
-            msg = f"Extracting audio from {f.name} ({i + 1}/{n})"
+            msg = f"{self.verb} {f.name} ({i + 1}/{n})"
             prog = job.sub_progress(i / n, (i + 1) / n, msg)
             info = ffmpeg.probe(f.path)
             if not info.has_audio:
                 raise ConversionError(f"“{f.name}” has no audio track.")
             seek, duration = trim_args(o.start, o.end, info.duration)
+            # -vn also drops embedded cover art, which most audio containers can't hold.
             args = [*seek, "-i", str(f.path), "-vn", "-sn", "-map", "0:a:0", "-c:a", enc]
-            if f"audio:{ext}" in LOSSY:
+            args += ["-map_metadata", "0"]
+            if ext in LOSSY_EXTS:
                 args += ["-b:a", f"{o.bitrate}k"]
             if o.sample_rate != "original":
                 args += ["-ar", str(o.sample_rate)]
@@ -101,7 +102,7 @@ class AudioExtractConverter(Converter):
                     total_seconds=duration,
                     progress=prog,
                     cancel_event=job.cancel_event,
-                    error_message=f"Couldn't extract audio from “{f.name}”.",
+                    error_message=f"Couldn't convert the audio of “{f.name}”.",
                 )
             except BaseException:
                 dest.unlink(missing_ok=True)
@@ -109,3 +110,25 @@ class AudioExtractConverter(Converter):
             outputs.append(dest)
         job.report(1.0, "Done")
         return outputs
+
+
+class AudioExtractConverter(_AudioConverter):
+    """Video → audio only."""
+
+    family = MediaFamily.VIDEO
+    verb = "Extracting audio from"
+
+    def targets(self, files):
+        return [
+            self.target(f"audio:{ext}", label, ext, "Audio only", "Extract the soundtrack")
+            for ext, (label, _) in AUDIO_TARGETS.items()
+        ]
+
+
+class AudioConverter(_AudioConverter):
+    """Audio ↔ audio."""
+
+    family = MediaFamily.AUDIO
+
+    def targets(self, files):
+        return [self.target(ext, label, ext, "Audio") for ext, (label, _) in AUDIO_TARGETS.items()]

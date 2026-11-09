@@ -55,9 +55,9 @@ def _vcodec_choices():
 
 
 def _acodec_choices():
-    return [("auto", "Auto"), ("copy", "Copy — no re-encode")] + list(
-        codecs.AUDIO_CODEC_LABELS.items()
-    )
+    return [("auto", "Auto"), ("copy", "Copy — no re-encode")] + [
+        (k, v) for k, v in codecs.AUDIO_CODEC_LABELS.items() if k != "pcm_be"
+    ]
 
 
 def _encodes_video(v) -> bool:

@@ -4,6 +4,7 @@
 Usage: python3 serve.py      then open the printed address. Press Ctrl+C to stop.
 """
 
+import contextlib
 import http.server
 import mimetypes
 import os
@@ -37,7 +38,9 @@ def main() -> int:
         return 1
     for port in range(8790, 8800):
         try:
-            server = http.server.ThreadingHTTPServer(("127.0.0.1", port), partial(Handler, directory=ROOT))
+            server = http.server.ThreadingHTTPServer(
+                ("127.0.0.1", port), partial(Handler, directory=ROOT)
+            )
             break
         except OSError:
             continue
@@ -45,13 +48,14 @@ def main() -> int:
         print("No free port between 8790 and 8799.")
         return 1
     url = f"http://localhost:{port}/"
-    print(f"\n  Universal Media Converter is running at {url}\n  Your files stay on this computer. Press Ctrl+C to stop.\n")
+    print(
+        f"\n  Universal Media Converter is running at {url}\n"
+        "  Your files stay on this computer. Press Ctrl+C to stop.\n"
+    )
     if not os.environ.get("UMC_NO_BROWSER"):
         webbrowser.open(url)
-    try:
+    with contextlib.suppress(KeyboardInterrupt):
         server.serve_forever()
-    except KeyboardInterrupt:
-        pass
     return 0
 
 
