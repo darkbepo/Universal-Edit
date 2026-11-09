@@ -30,6 +30,7 @@ def converters() -> tuple[Converter, ...]:
     from umc.converters.document_images import DocumentToImagesConverter
     from umc.converters.gif import VideoToGifConverter
     from umc.converters.image import ImageConverter, ImagesToPdfConverter
+    from umc.converters.model3d import ModelConverter
     from umc.converters.pdf_tools import PdfToolsConverter
     from umc.converters.slideshow import SlideshowConverter
     from umc.converters.split import DocumentSplitConverter
@@ -50,6 +51,7 @@ def converters() -> tuple[Converter, ...]:
         DocumentToImagesConverter(),
         DocumentSplitConverter(),
         PdfToolsConverter(),
+        ModelConverter(),
     )
 
 
@@ -65,7 +67,7 @@ def targets_for(files: list[DetectedFile]) -> list[Target]:
     if len(families) > 1:
         raise MixedInputError(
             "Please add files of one kind at a time "
-            "(only images, only videos, only audio or only documents)."
+            "(only images, only videos, only audio, only documents or only 3D models)."
         )
     family = families.pop()
     result: list[Target] = []

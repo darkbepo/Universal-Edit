@@ -13,6 +13,7 @@ class MediaFamily(StrEnum):
     IMAGE = "image"
     VIDEO = "video"
     AUDIO = "audio"
+    MODEL = "model"
 
 
 # Aliases → canonical extension.
@@ -25,6 +26,8 @@ ALIASES = {
     "xhtml": "html",
     "markdown": "md",
     "yml": "yaml",
+    "stp": "step",
+    "igs": "iges",
     "heif": "heic",
     "mpeg": "mpg",
     "text": "txt",
@@ -138,6 +141,7 @@ TEXT_DOCUMENT_EXTS = {
 }
 SPREADSHEET_EXTS = {"xlsx", "xls", "ods", "csv"}
 DATA_EXTS = {"json", "yaml", "xml", "tsv"}
+MODEL_EXTS = {"stl", "obj", "ply", "glb", "3mf", "off", "step", "iges"}
 PRESENTATION_EXTS = {"pptx", "ppt", "odp"}
 DOCUMENT_EXTS = TEXT_DOCUMENT_EXTS | SPREADSHEET_EXTS | PRESENTATION_EXTS | DATA_EXTS
 
@@ -166,6 +170,8 @@ def family_of_ext(ext: str) -> MediaFamily | None:
         return MediaFamily.VIDEO
     if ext in AUDIO_EXTS:
         return MediaFamily.AUDIO
+    if ext in MODEL_EXTS:
+        return MediaFamily.MODEL
     if ext in DOCUMENT_EXTS:
         return MediaFamily.DOCUMENT
     return None

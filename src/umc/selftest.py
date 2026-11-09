@@ -29,6 +29,20 @@ def _convert(paths, target_id: str, out: Path, **values):
     return target.converter.run(job)
 
 
+def _box_stl(d: Path) -> Path:
+    import trimesh
+
+    path = d / "box.stl"
+    path.write_bytes(trimesh.creation.box((20, 10, 5)).export(file_type="stl"))
+    return path
+
+
+def _cad_engine_check() -> list[Path]:
+    import cascadio  # noqa: F401  (native OpenCASCADE module must be packaged)
+
+    return []
+
+
 def run(report: Path) -> int:
     from PIL import Image
 
@@ -55,6 +69,8 @@ def run(report: Path) -> int:
         steps = [
             ("camera RAW (dng) -> jpg", lambda: _convert([dng], "jpg", out)),
             ("photoshop psd -> png", lambda: _convert([psd], "png", out)),
+            ("3D stl -> 3mf", lambda: _convert([_box_stl(d)], "3mf", out)),
+            ("3D CAD engine (STEP/IGES) loads", _cad_engine_check),
             ("png -> jpg", lambda: _convert(imgs[:1], "jpg", out)),
             ("png -> heic", lambda: _convert(imgs[:1], "heic", out)),
             ("png -> avif", lambda: _convert(imgs[:1], "avif", out)),

@@ -49,13 +49,14 @@ if sys.platform == "win32":  # the version-resource helpers need pefile (Windows
 binaries = [(str(p), "bin") for p in BIN.glob("*") if p.is_file()] if BIN.is_dir() else []
 datas = [(str(ROOT / "src" / "umc" / "gui" / "style.qss"), "umc/gui"), (str(ROOT / "LICENSE"), ".")]
 datas += collect_data_files("pymupdf")
+datas += collect_data_files("trimesh")
 
 a = Analysis(
     [str(ROOT / "src" / "umc" / "__main__.py")],
     pathex=[str(ROOT / "src")],
     binaries=binaries,
     datas=datas,
-    hiddenimports=["pillow_heif", "rawpy", "umc.gui", "umc.converters"],
+    hiddenimports=["pillow_heif", "rawpy", "cascadio", "umc.gui", "umc.converters"],
     excludes=["tkinter", "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets", "PySide6.Qt3DCore",
               "PySide6.QtQuick", "PySide6.QtQml", "PySide6.QtMultimedia", "PySide6.QtPdf",
               "pymupdf4llm", "pytest"],

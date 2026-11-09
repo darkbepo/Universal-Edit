@@ -18,6 +18,10 @@ dependencies = [
     "rawpy>=0.20",
     "openpyxl>=3.1",
     "PyYAML>=6.0",
+    "trimesh>=4.0",
+    "cascadio>=0.1",
+    "lxml>=5.0",
+    "networkx>=3.0",
 ]
 
 [project.optional-dependencies]

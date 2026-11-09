@@ -38,12 +38,14 @@ FAMILY_NOUN = {
     MediaFamily.IMAGE: ("image", "images"),
     MediaFamily.VIDEO: ("video", "videos"),
     MediaFamily.AUDIO: ("audio file", "audio files"),
+    MediaFamily.MODEL: ("3D model", "3D models"),
     MediaFamily.DOCUMENT: ("document", "documents"),
 }
 ICONS = {
     MediaFamily.IMAGE: "🖼",
     MediaFamily.VIDEO: "🎞",
     MediaFamily.AUDIO: "🎵",
+    MediaFamily.MODEL: "🧊",
     MediaFamily.DOCUMENT: "📄",
 }
 
