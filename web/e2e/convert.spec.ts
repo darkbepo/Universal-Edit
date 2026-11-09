@@ -6,7 +6,7 @@ const fx = (name: string) => `${FIXTURES}${name}`;
 const hasVideo = () => existsSync(fx("clip.mp4"));
 
 async function load(page: Page, files: string[]) {
-  await page.goto("/");
+  await page.goto("./");
   await page.locator('input[type="file"]').first().setInputFiles(files);
 }
 
@@ -24,7 +24,7 @@ async function downloadSingle(page: Page, targetId: string): Promise<Buffer> {
 }
 
 test("page is cross-origin isolated (multi-threaded engines available)", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("./");
   // On hosts without COOP/COEP headers (GitHub Pages) coi-serviceworker reloads the page once.
   await expect
     .poll(() => page.evaluate(() => crossOriginIsolated).catch(() => false), { timeout: 15_000 })
