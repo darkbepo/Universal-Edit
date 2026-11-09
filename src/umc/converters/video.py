@@ -315,12 +315,14 @@ class VideoConverter(Converter):
         try:
             if two_pass:
                 with tempfile.TemporaryDirectory(prefix="umc-2pass-") as tmp:
+                    # Only the video stream is two-pass: a plain -pass also applies to the audio
+                    # encoder, and newer FFmpeg then fails looking for a pass-1 log for audio.
                     log = str(Path(tmp) / "pass")
                     first = [
                         *args,
-                        "-pass",
+                        "-pass:v",
                         "1",
-                        "-passlogfile",
+                        "-passlogfile:v",
                         log,
                         "-an",
                         "-f",
@@ -334,7 +336,7 @@ class VideoConverter(Converter):
                         cancel_event=job.cancel_event,
                         error_message=error,
                     )
-                    second = [*args, "-pass", "2", "-passlogfile", log, str(dest)]
+                    second = [*args, "-pass:v", "2", "-passlogfile:v", log, str(dest)]
                     ffmpeg.run_ffmpeg(
                         second,
                         total_seconds=total,

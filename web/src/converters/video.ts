@@ -139,8 +139,8 @@ export const videoConverter: Converter = {
       const dest = `/out.${container}`;
       const error = `Couldn't convert “${name}”.`;
       if (twoPass) {
-        await ff.run([...args, "-pass", "1", "-passlogfile", "/pass", "-an", "-f", "null", "-"], duration / speed, (p) => progress(p / 2), error);
-        await ff.run([...args, "-pass", "2", "-passlogfile", "/pass", dest], duration / speed, (p) => progress(0.5 + p / 2), error);
+        await ff.run([...args, "-pass:v", "1", "-passlogfile:v", "/pass", "-an", "-f", "null", "-"], duration / speed, (p) => progress(p / 2), error);
+        await ff.run([...args, "-pass:v", "2", "-passlogfile:v", "/pass", dest], duration / speed, (p) => progress(0.5 + p / 2), error);
       } else {
         await ff.run([...args, dest], duration / speed, progress, error);
       }
