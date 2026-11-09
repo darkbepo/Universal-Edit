@@ -66,6 +66,15 @@ a = Analysis(
               "pymupdf4llm", "pytest"],
     noarchive=False,
 )
+# OpenCV (pulled in by pdf2docx for table/image detection) ships its own 29 MB FFmpeg for reading
+# video files. pdf2docx only uses image functions, and the app has its own FFmpeg in bin/.
+a.binaries = [b for b in a.binaries if "opencv_videoio_ffmpeg" not in b[0].lower()]
+# The shared FFmpeg DLLs live in bin/ next to ffmpeg.exe (which loads them from there).
+# PyInstaller also copies them to the top folder as "dependencies" of the exe: a ~180 MB duplicate.
+_ffmpeg_dlls = {p.name.lower() for p in BIN.glob("*.dll")} if BIN.is_dir() else set()
+a.binaries = [
+    b for b in a.binaries if not ("/" not in b[0].replace("\\", "/") and b[0].lower() in _ffmpeg_dlls)
+]
 pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
