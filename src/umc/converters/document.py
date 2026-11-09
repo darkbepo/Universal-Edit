@@ -20,11 +20,14 @@ from umc.core.detect import PRESENTATION_EXTS, SPREADSHEET_EXTS, DetectedFile, M
 from umc.core.errors import ConversionError
 from umc.core.job import ConversionJob, unique_path
 from umc.core.options import opt
-from umc.tools import calibre, libreoffice, pandoc, pdf
+from umc.tools import calibre, htmlpdf, libreoffice, pandoc, pdf
 
 PYMUPDF, PANDOC, SOFFICE = "pymupdf", "pandoc", "libreoffice"
 PDF2DOCX = "pdf2docx"
 CALIBRE = "calibre"
+# Built-in (no download): DOCX → HTML (mammoth), Markdown → HTML (Python-Markdown),
+# HTML / TXT → PDF (PyMuPDF Story). Simpler layout than LibreOffice, so priced above it.
+MAMMOTH, MARKDOWN, HTMLPDF = "mammoth", "markdown", "pymupdf-html"
 # Calibre reads these and writes the e-book formats below (Kindle formats only through it)
 CALIBRE_IN = ("epub", "mobi", "azw3", "fb2", "docx", "odt", "html", "txt", "md", "rtf")
 EBOOK_OUT = ("mobi", "azw3", "epub", "fb2")
@@ -113,6 +116,14 @@ def _edges() -> list[Edge]:
     # pdf2docx rebuilds the page layout (text boxes, tables, columns, images) as an editable DOCX;
     # cheaper than LibreOffice's PDF import, so PDF → ODT/DOC/RTF also go through it.
     e.append(Edge(PDF2DOCX, "pdf", "docx", 1))
+    # Built in, so DOCX / Markdown / HTML / TXT → PDF work without LibreOffice (or Pandoc).
+    # Priced above LibreOffice (docx→pdf 1.0, html→pdf 1.5) so it stays first when installed.
+    e += [
+        Edge(MAMMOTH, "docx", "html", 1.6),
+        Edge(MARKDOWN, "md", "html", 1.3),
+        Edge(HTMLPDF, "html", "pdf", 3.0),
+        Edge(HTMLPDF, "txt", "pdf", 3.0),
+    ]
     # Calibre: the only route to MOBI / AZW3; also reads Kindle files (→ EPUB opens up the rest).
     for s in CALIBRE_IN:
         for d in EBOOK_OUT:
@@ -332,7 +343,21 @@ def convert_document(
 
 
 def _run_edge(edge: Edge, src: Path, src_ext: str, out: Path, job: ConversionJob, toc: bool):
-    if edge.engine == PDF2DOCX:
+    if edge.engine == MAMMOTH:
+        htmlpdf.docx_to_html(src, out)
+    elif edge.engine == MARKDOWN:
+        htmlpdf.markdown_to_html(src, out)
+    elif edge.engine == HTMLPDF:
+        if src_ext == "txt":
+            html_src = out.with_suffix(".html")
+            htmlpdf.text_to_html(src, html_src)
+            try:
+                htmlpdf.html_to_pdf(html_src, out)
+            finally:
+                html_src.unlink(missing_ok=True)
+        else:
+            htmlpdf.html_to_pdf(src, out)
+    elif edge.engine == PDF2DOCX:
         pdf.pdf_to_docx(src, out)
     elif edge.engine == CALIBRE:
         o = job.options

@@ -404,6 +404,41 @@ def render_page(src: Path, index: int, width_px: int, default_dpi: int, alpha: b
 # --------------------------------------------------------------------------- PDF → Word
 
 
+def layout_html(
+    html_text: str,
+    css: str,
+    resource_dirs: list[Path],
+    dest: Path,
+    page_size: tuple[float, float],
+    margin: float,
+    name: str,
+) -> Path:
+    """Lay out HTML onto pages with PyMuPDF's Story engine (images from ``resource_dirs``)."""
+    archive = pymupdf.Archive()
+    for d in resource_dirs:
+        archive.add(str(d))
+    try:
+        story = pymupdf.Story(html=html_text, user_css=css, archive=archive)
+        writer = pymupdf.DocumentWriter(str(dest))
+        page_rect = pymupdf.Rect(0, 0, *page_size)
+        where = page_rect + (margin, margin, -margin, -margin)
+        more, pages = True, 0
+        while more:
+            device = writer.begin_page(page_rect)
+            more, _ = story.place(where)
+            story.draw(device)
+            writer.end_page()
+            pages += 1
+            if pages > 5000:
+                raise ConversionError(f"“{name}” is too long to lay out as a PDF.")
+        writer.close()
+    except ConversionError:
+        raise
+    except Exception as exc:  # noqa: BLE001 — Story raises plain RuntimeErrors
+        raise ConversionError(f"Couldn't lay out “{name}” as a PDF.", str(exc)) from exc
+    return dest
+
+
 def pdf_to_docx(src: Path, dest: Path) -> Path:
     """PDF → DOCX keeping the layout (text boxes, tables, images, columns) with pdf2docx."""
     import logging

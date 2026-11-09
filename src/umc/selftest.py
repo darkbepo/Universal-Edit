@@ -121,6 +121,32 @@ def _pdf_to_word_check(d: Path, out: Path) -> list[Path]:
     return [docx]
 
 
+def _builtin_documents_check(d: Path, out: Path) -> list[Path]:
+    """Word / Markdown → PDF with the built-in engines (mammoth, Markdown, PyMuPDF Story)."""
+    import pymupdf
+
+    from umc.converters import document
+    from umc.tools import htmlpdf
+
+    md = d / "notes.md"
+    md.write_text("# Built in\n\n| a | b |\n|---|---|\n| 1 | 2 |\n", encoding="utf-8")
+    html = htmlpdf.markdown_to_html(md, d / "notes.html")
+    pdf_out = htmlpdf.html_to_pdf(html, out / "notes.pdf")
+    letter = d / "letter.docx"
+    if not letter.exists():
+        letter = _pdf_to_word_check(d, out)[0]
+    docx_html = htmlpdf.docx_to_html(letter, d / "letter.html")
+    docx_pdf = htmlpdf.html_to_pdf(docx_html, out / "letter-builtin.pdf")
+    with pymupdf.open(pdf_out) as doc:
+        if "Built in" not in doc[0].get_text():
+            raise AssertionError("Markdown → PDF lost its text")
+    with pymupdf.open(docx_pdf) as doc:
+        if "This came from a PDF." not in doc[0].get_text():
+            raise AssertionError("Word → PDF lost its text")
+    assert document.plan("docx", "pdf", {document.SOFFICE: False}) is not None
+    return [pdf_out, docx_pdf]
+
+
 def _cad_check(d: Path, out: Path) -> list[Path]:
     import ezdxf
 
@@ -177,6 +203,10 @@ def run(report: Path) -> int:
             ("fonts: ttf -> woff2 -> otf -> ttf (subset)", lambda: _font_check(d, out)),
             ("vector: svg -> png/pdf, trace png -> svg", lambda: _vector_check(d, out, imgs)),
             ("PDF -> Word keeping layout (pdf2docx)", lambda: _pdf_to_word_check(d, out)),
+            (
+                "Word/Markdown -> PDF built in (no LibreOffice)",
+                lambda: _builtin_documents_check(d, out),
+            ),
             ("CAD: dxf -> pdf/png, save as R12", lambda: _cad_check(d, out)),
             ("mp4 -> webm", lambda: _convert([out / "img0 slideshow.mp4"], "webm", out)),
             ("mp4 -> gif", lambda: _convert([out / "img0 slideshow.mp4"], "video:gif", out)),
