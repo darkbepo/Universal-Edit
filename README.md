@@ -55,7 +55,8 @@ The browser version's source is in [`web/`](web/README.md).
 | Compress to a target size (video, image, PDF, audio) | ✅ | ✅ |
 | Data: JSON ↔ CSV ↔ TSV ↔ XML ↔ YAML ↔ XLSX | ✅ | ✅ |
 | **3D printing**: STL, OBJ, 3MF, PLY, GLB, STEP / IGES | ✅ | ✅ |
-| Archives: ZIP, 7Z, RAR, TAR | 🔜 | 🔜 |
+| Archives: open ZIP, 7Z, RAR, TAR(.GZ/.XZ/.BZ2) · extract · repack · pack any files | ✅ | ✅ |
+| Archives: create 7Z, password-protect (AES-256) | ✅ | ❌ |
 | Subtitles: SRT, VTT, ASS · extract / burn into video | 🔜 | 🔜 |
 | Fonts: TTF, OTF, WOFF, WOFF2 | 🔜 | 🔜 |
 | Vector: SVG, EPS, AI · image → SVG tracing | 🔜 | 🔜 |

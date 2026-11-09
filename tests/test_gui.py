@@ -32,10 +32,10 @@ def test_offers_formats_for_dropped_images(window, media):
     assert "jpg" in ids and "slideshow:mp4" in ids
 
 
-def test_mixed_files_show_error(window, media):
+def test_mixed_files_offer_archive(window, media):
     window.add_files([str(media / "img0.png"), str(media / "doc.md")])
-    assert "one kind" in window.input_error.text()
-    assert not window.picker._targets
+    assert not window.input_error.isVisible() and not window.input_error.text()
+    assert {t.id for t in window.picker._targets.values()} == {"pack:zip", "pack:7z", "pack:tar.gz"}
 
 
 def test_settings_panel_follows_target(window, media):

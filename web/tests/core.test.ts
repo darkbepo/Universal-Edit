@@ -105,8 +105,10 @@ describe("registry", () => {
     expect(docx).toEqual(expect.arrayContaining(["doc:pdf", "doc:odt", "doc:md", "doc:epub", "doc:pptx"]));
     expect(targetsFor([input("a.xlsx", "document")]).targets.map((t) => t.id)).toEqual(expect.arrayContaining(["doc:pdf", "doc:html", "doc:docx"]));
   });
-  it("rejects mixed families", () => {
-    expect(targetsFor([input("a.png", "image"), input("b.mp4", "video")]).note).toContain("one kind");
+  it("mixed families can only be packed into an archive", () => {
+    const r = targetsFor([input("a.png", "image"), input("b.mp4", "video")]);
+    expect(r.targets.map((t) => t.group)).toEqual(["Archive", "Archive"]);
+    expect(r.note).toBe("");
   });
   it("target ids are unique per input set", () => {
     const ids = targetsFor([input("a.png", "image"), input("b.png", "image")]).targets.map((t) => t.id);

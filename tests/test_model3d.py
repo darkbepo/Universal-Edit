@@ -25,7 +25,7 @@ def extents(path):
 def test_detect_and_targets(box_stl):
     assert detect(box_stl).family is MediaFamily.MODEL
     assert detect(FIXTURES / "cube-10mm.stp").ext == "step"
-    ids = {t.id for t in targets_for([detect(box_stl)])}
+    ids = {t.id for t in targets_for([detect(box_stl)]) if t.group == "3D model"}
     assert ids == {"3mf", "obj", "ply", "glb"}
 
 

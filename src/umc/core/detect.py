@@ -14,6 +14,7 @@ class MediaFamily(StrEnum):
     VIDEO = "video"
     AUDIO = "audio"
     MODEL = "model"
+    ARCHIVE = "archive"
 
 
 # Aliases → canonical extension.
@@ -27,6 +28,10 @@ ALIASES = {
     "markdown": "md",
     "yml": "yaml",
     "stp": "step",
+    "tgz": "tar.gz",
+    "txz": "tar.xz",
+    "tbz2": "tar.bz2",
+    "tbz": "tar.bz2",
     "igs": "iges",
     "heif": "heic",
     "mpeg": "mpg",
@@ -142,6 +147,8 @@ TEXT_DOCUMENT_EXTS = {
 SPREADSHEET_EXTS = {"xlsx", "xls", "ods", "csv"}
 DATA_EXTS = {"json", "yaml", "xml", "tsv"}
 MODEL_EXTS = {"stl", "obj", "ply", "glb", "3mf", "off", "step", "iges"}
+ARCHIVE_EXTS = {"zip", "7z", "rar", "tar", "tar.gz", "tar.xz", "tar.bz2"}
+COMPOUND_EXTS = ("tar.gz", "tar.xz", "tar.bz2")
 PRESENTATION_EXTS = {"pptx", "ppt", "odp"}
 DOCUMENT_EXTS = TEXT_DOCUMENT_EXTS | SPREADSHEET_EXTS | PRESENTATION_EXTS | DATA_EXTS
 
@@ -155,6 +162,14 @@ class DetectedFile:
     @property
     def name(self) -> str:
         return self.path.name
+
+    @property
+    def stem(self) -> str:
+        """File name without its extension (``a.tar.gz`` → ``a``)."""
+        name = self.path.name
+        return (
+            name[: -len(self.ext) - 1] if name.lower().endswith("." + self.ext) else self.path.stem
+        )
 
 
 def canonical_ext(ext: str) -> str:
@@ -172,6 +187,8 @@ def family_of_ext(ext: str) -> MediaFamily | None:
         return MediaFamily.AUDIO
     if ext in MODEL_EXTS:
         return MediaFamily.MODEL
+    if ext in ARCHIVE_EXTS:
+        return MediaFamily.ARCHIVE
     if ext in DOCUMENT_EXTS:
         return MediaFamily.DOCUMENT
     return None
@@ -181,7 +198,7 @@ def _sniff(path: Path) -> str | None:
     """Guess a canonical extension from the first bytes of the file."""
     try:
         with path.open("rb") as fh:
-            head = fh.read(64)
+            head = fh.read(512)
     except OSError:
         return None
     if head.startswith(b"%PDF"):
@@ -231,6 +248,12 @@ def _sniff(path: Path) -> str | None:
         return "doc"  # OLE container; could also be xls/ppt
     if head.startswith(b"PK\x03\x04"):
         return _sniff_zip(path)
+    if head.startswith(b"7z\xbc\xaf\x27\x1c"):
+        return "7z"
+    if head.startswith(b"Rar!\x1a\x07"):
+        return "rar"
+    if head[257:262] == b"ustar":
+        return "tar"
     if head.startswith(b"{\\rtf"):
         return "rtf"
     return None
@@ -256,13 +279,15 @@ def _sniff_zip(path: Path) -> str | None:
                 return "pptx"
     except (OSError, zipfile.BadZipFile):
         return None
-    return None
+    return "zip"
 
 
 def detect(path: str | Path) -> DetectedFile | None:
     """Return the detected file, or ``None`` if it isn't a supported format."""
     path = Path(path).resolve()
-    ext = canonical_ext(path.suffix)
+    lower = path.name.lower()
+    compound = next((c for c in COMPOUND_EXTS if lower.endswith("." + c)), None)
+    ext = compound or canonical_ext(path.suffix)
     family = family_of_ext(ext)
     if family is None:
         sniffed = _sniff(path)

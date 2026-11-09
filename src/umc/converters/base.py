@@ -23,6 +23,8 @@ class Converter(ABC):
     family: ClassVar[MediaFamily]
     #: Options dataclass (see :mod:`umc.core.options`).
     options_cls: ClassVar[type]
+    #: Offered for inputs of any family — also mixed ones (e.g. "pack into a ZIP").
+    any_family: ClassVar[bool] = False
 
     @abstractmethod
     def targets(self, files: list[DetectedFile]) -> list[Target]:

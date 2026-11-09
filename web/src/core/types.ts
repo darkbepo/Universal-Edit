@@ -2,7 +2,7 @@
 // worker and in unit tests alike.
 import type { OptionSpec, Values } from "./options";
 
-export type Family = "image" | "video" | "audio" | "document" | "model";
+export type Family = "image" | "video" | "audio" | "document" | "model" | "archive";
 
 export interface InputFile {
   file: File;
@@ -34,6 +34,8 @@ export interface RunContext {
 export interface Converter {
   id: string;
   family: Family;
+  /** Offered for inputs of any family — also mixed ones (e.g. "pack into a ZIP"). */
+  anyFamily?: boolean;
   options: OptionSpec[];
   targets(files: InputFile[]): Target[];
   /** Runs inside the worker. Engines must be imported dynamically to keep the page bundle small. */

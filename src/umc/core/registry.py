@@ -24,6 +24,7 @@ class Target:
 
 @cache
 def converters() -> tuple[Converter, ...]:
+    from umc.converters.archive import ArchiveConverter, PackConverter
     from umc.converters.audio import AudioConverter, AudioExtractConverter
     from umc.converters.data import DataConverter
     from umc.converters.document import DocumentConverter
@@ -55,6 +56,8 @@ def converters() -> tuple[Converter, ...]:
         PdfToolsConverter(),
         PdfOcrConverter(),
         ModelConverter(),
+        ArchiveConverter(),
+        PackConverter(),
     )
 
 
@@ -63,20 +66,15 @@ class MixedInputError(ValueError):
 
 
 def targets_for(files: list[DetectedFile]) -> list[Target]:
-    """All targets available for ``files``. Raises :class:`MixedInputError` on mixed families."""
+    """All targets available for ``files`` (files of mixed kinds can only be packed)."""
     if not files:
         return []
     families = {f.family for f in files}
-    if len(families) > 1:
-        raise MixedInputError(
-            "Please add files of one kind at a time "
-            "(only images, only videos, only audio, only documents or only 3D models)."
-        )
-    family = families.pop()
+    family = families.pop() if len(families) == 1 else None  # None = mixed: only "pack" targets
     result: list[Target] = []
     seen: set[str] = set()
     for conv in converters():
-        if conv.family != family:
+        if not conv.any_family and conv.family != family:
             continue
         for t in conv.targets(files):
             if t.id not in seen:

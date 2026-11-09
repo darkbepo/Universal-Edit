@@ -4,6 +4,7 @@ import type { Family, InputFile } from "./types";
 const ALIASES: Record<string, string> = {
   jpeg: "jpg", jpe: "jpg", jfif: "jpg", tif: "tiff", htm: "html", markdown: "md",
   heif: "heic", mpeg: "mpg", text: "txt", yml: "yaml", stp: "step", igs: "iges",
+  tgz: "tar.gz", txz: "tar.xz", tbz2: "tar.bz2", tbz: "tar.bz2",
 };
 
 export const IMAGE_EXTS = new Set([
@@ -30,7 +31,13 @@ export const WEB_DOCUMENT_EXTS = new Set([
 /** Documents recognised but only convertible in the desktop app (they need LibreOffice). */
 export const DESKTOP_ONLY_DOCUMENT_EXTS = new Set(["doc", "xls", "ppt", "ods", "odp", "wpd"]);
 
+export const ARCHIVE_EXTS = new Set(["zip", "7z", "rar", "tar", "tar.gz", "tar.xz", "tar.bz2"]);
+const COMPOUND_EXTS = ["tar.gz", "tar.xz", "tar.bz2"];
+
 export function canonicalExt(nameOrExt: string): string {
+  const lower = nameOrExt.toLowerCase();
+  const compound = COMPOUND_EXTS.find((c) => lower.endsWith("." + c) || lower === c);
+  if (compound) return compound;
   const dot = nameOrExt.lastIndexOf(".");
   const ext = (dot >= 0 ? nameOrExt.slice(dot + 1) : nameOrExt).toLowerCase();
   return ALIASES[ext] ?? ext;
@@ -41,6 +48,7 @@ export function familyOfExt(ext: string): Family | null {
   if (VIDEO_EXTS.has(ext)) return "video";
   if (AUDIO_EXTS.has(ext)) return "audio";
   if (MODEL_EXTS.has(ext)) return "model";
+  if (ARCHIVE_EXTS.has(ext)) return "archive";
   if (WEB_DOCUMENT_EXTS.has(ext) || DESKTOP_ONLY_DOCUMENT_EXTS.has(ext)) return "document";
   return null;
 }
@@ -48,6 +56,10 @@ export function familyOfExt(ext: string): Family | null {
 export function sniff(head: Uint8Array): string | null {
   const s = (a: number, b: number) => String.fromCharCode(...head.slice(a, b));
   if (s(0, 4) === "%PDF") return "pdf";
+  if (s(0, 4) === "PK\x03\x04") return "zip"; // only reached for unknown extensions
+  if (head[0] === 0x37 && head[1] === 0x7a && head[2] === 0xbc && head[3] === 0xaf) return "7z";
+  if (s(0, 7) === "Rar!\x1a\x07") return "rar";
+  if (s(257, 262) === "ustar") return "tar";
   if (s(0, 4) === "glTF") return "glb";
   if (s(0, 13) === "ISO-10303-21;") return "step";
   if (head[0] === 0x89 && s(1, 4) === "PNG") return "png";
@@ -79,7 +91,7 @@ export async function detect(file: File): Promise<InputFile | null> {
   let ext = canonicalExt(file.name);
   let family = file.name.includes(".") ? familyOfExt(ext) : null;
   if (!family) {
-    const head = new Uint8Array(await file.slice(0, 64).arrayBuffer());
+    const head = new Uint8Array(await file.slice(0, 512).arrayBuffer());
     const sniffed = sniff(head);
     if (!sniffed) return null;
     ext = sniffed;

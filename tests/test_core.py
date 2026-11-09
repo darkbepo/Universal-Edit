@@ -8,7 +8,7 @@ from umc.core import options as opts
 from umc.core.detect import MediaFamily, detect
 from umc.core.errors import ConversionError
 from umc.core.job import unique_path
-from umc.core.registry import MixedInputError, targets_for
+from umc.core.registry import targets_for
 from umc.tools.pdf import parse_page_range
 
 
@@ -31,9 +31,9 @@ def test_unknown_file_is_rejected(tmp_path):
     assert detect(p) is None
 
 
-def test_mixed_families_rejected(media):
-    with pytest.raises(MixedInputError):
-        targets_for([detect(media / "img0.png"), detect(media / "doc.md")])
+def test_mixed_families_can_only_be_packed(media):
+    targets = targets_for([detect(media / "img0.png"), detect(media / "doc.md")])
+    assert {t.id for t in targets} == {"pack:zip", "pack:7z", "pack:tar.gz"}
 
 
 def test_unique_path(tmp_path):

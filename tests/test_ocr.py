@@ -90,6 +90,7 @@ def test_damaged_language_download_is_rejected(tmp_path, monkeypatch):
         headers: dict = {}
 
     monkeypatch.setenv("UMC_TOOLS_DIR", str(tmp_path))
+    monkeypatch.setattr(tessdata, "bundled_dir", lambda: tmp_path / "no-bundle")
     monkeypatch.setattr(installer, "_get", lambda url, timeout=30: FakeResponse(b"not tessdata"))
     with pytest.raises(ConversionError, match="checksum"):
         tessdata.ensure(["dan"], lambda f, m: None, threading.Event())

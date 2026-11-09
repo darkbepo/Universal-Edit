@@ -52,6 +52,12 @@ export default async function globalSetup() {
     mixed.insertPage(-1, mixed.addPage([0, 0, 420, 140], 0, mixed.addObject({ Font: { F1: f2 } }), "BT /F1 18 Tf 30 70 Td (Real text page) Tj ET"));
     writeFileSync(`${FIXTURES}scanned.pdf`, mixed.saveToBuffer("compress").asUint8Array());
   }
+  // Archives: a ZIP made here, plus the small 7Z / AES-ZIP / RAR samples from the desktop tests.
+  {
+    const { zipSync, strToU8 } = await import("fflate");
+    writeFileSync(`${FIXTURES}bundle.zip`, zipSync({ "readme.txt": strToU8("hello ÆØÅ\n"), "sub/deep/data.bin": new Uint8Array(10240).map((_, i) => i % 256) }));
+    for (const f of ["sample.7z", "sample-aes.zip", "sample-rar5.rar"]) copyFileSync(fileURLToPath(new URL(`../../tests/fixtures/${f}`, import.meta.url)), `${FIXTURES}${f}`);
+  }
   // OCR language data (served to the page by a route in the tests, unless run against the live
   // site). Taken from packaging/tessdata (scripts/fetch_tessdata.py eng dan) or downloaded.
   for (const code of ["eng", "dan"]) {

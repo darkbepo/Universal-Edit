@@ -22,6 +22,8 @@ dependencies = [
     "cascadio>=0.1",
     "lxml>=5.0",
     "networkx>=3.0",
+    "py7zr>=1.0",
+    "pyzipper>=0.3.6",
 ]
 
 [project.optional-dependencies]

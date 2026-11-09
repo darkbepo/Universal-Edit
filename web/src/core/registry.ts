@@ -4,6 +4,7 @@ import { imageConverter, imagesToPdfConverter } from "../converters/image";
 import { dataConverter } from "../converters/data";
 import { modelConverter } from "../converters/model3d";
 import { ocrImageConverter, ocrPdfConverter } from "../converters/ocr";
+import { archiveConverter, packConverter } from "../converters/archive";
 import { documentConverter, pagesConverter, splitConverter } from "../converters/pdf";
 import { pdfToolsConverter } from "../converters/pdftools";
 import { slideshowConverter } from "../converters/slideshow";
@@ -28,6 +29,8 @@ export const CONVERTERS: Converter[] = [
   modelConverter,
   ocrImageConverter,
   ocrPdfConverter,
+  archiveConverter,
+  packConverter,
 ];
 
 export const converterById = (id: string) => CONVERTERS.find((c) => c.id === id)!;
@@ -41,9 +44,6 @@ export interface TargetResult {
 export function targetsFor(files: InputFile[]): TargetResult {
   if (!files.length) return { targets: [], note: "" };
   const families = new Set(files.map((f) => f.family));
-  if (families.size > 1) {
-    return { targets: [], note: "Please add files of one kind at a time (only images, only videos, only audio, only documents or only 3D models)." };
-  }
   const desktopOnly = files.filter((f) => DESKTOP_ONLY_DOCUMENT_EXTS.has(f.ext));
   if (desktopOnly.length) {
     const kinds = [...new Set(desktopOnly.map((f) => f.ext.toUpperCase()))].join(", ");
@@ -52,11 +52,11 @@ export function targetsFor(files: InputFile[]): TargetResult {
       note: `${kinds} files can't be converted in the browser — they need LibreOffice, which only the desktop app can install. Newer formats (DOCX, XLSX, PPTX) work here.`,
     };
   }
-  const family = [...families][0];
+  const family = families.size === 1 ? [...families][0] : null; // null = mixed: only "pack" targets
   const seen = new Set<string>();
   const targets: Target[] = [];
   for (const c of CONVERTERS) {
-    if (c.family !== family) continue;
+    if (!c.anyFamily && c.family !== family) continue;
     for (const t of c.targets(files)) {
       if (!seen.has(t.id)) {
         seen.add(t.id);

@@ -40,6 +40,7 @@ FAMILY_NOUN = {
     MediaFamily.AUDIO: ("audio file", "audio files"),
     MediaFamily.MODEL: ("3D model", "3D models"),
     MediaFamily.DOCUMENT: ("document", "documents"),
+    MediaFamily.ARCHIVE: ("archive", "archives"),
 }
 ICONS = {
     MediaFamily.IMAGE: "🖼",
@@ -47,6 +48,7 @@ ICONS = {
     MediaFamily.AUDIO: "🎵",
     MediaFamily.MODEL: "🧊",
     MediaFamily.DOCUMENT: "📄",
+    MediaFamily.ARCHIVE: "🗜",
 }
 
 

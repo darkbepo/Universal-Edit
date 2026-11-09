@@ -59,6 +59,18 @@ def _ocr_check(d: Path, out: Path) -> list[Path]:
     return [txt]
 
 
+def _archive_check(d: Path, out: Path, imgs: list[Path]) -> list[Path]:
+    from umc.core.samples import write_test_rar
+
+    [zipped] = _convert(imgs, "pack:zip", out, password="selftest")
+    [sevenz] = _convert([zipped], "7z", out, source_password="selftest", password="selftest")
+    results = [zipped, sevenz]
+    for version in (4, 5):
+        rar = write_test_rar(d / f"sample{version}.rar", version)
+        results += _convert([rar], "zip", out)
+    return results
+
+
 def run(report: Path) -> int:
     from PIL import Image
 
@@ -88,6 +100,7 @@ def run(report: Path) -> int:
             ("3D stl -> 3mf", lambda: _convert([_box_stl(d)], "3mf", out)),
             ("3D CAD engine (STEP/IGES) loads", _cad_engine_check),
             ("OCR image -> text (bundled English)", lambda: _ocr_check(d, out)),
+            ("archives: zip (AES) -> 7z, RAR4/RAR5 -> zip", lambda: _archive_check(d, out, imgs)),
             ("png -> jpg", lambda: _convert(imgs[:1], "jpg", out)),
             ("png -> heic", lambda: _convert(imgs[:1], "heic", out)),
             ("png -> avif", lambda: _convert(imgs[:1], "avif", out)),

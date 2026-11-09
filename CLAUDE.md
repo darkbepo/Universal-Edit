@@ -69,7 +69,7 @@ See `web/README.md` for commands and deployment.
 
 - **Stack:** TypeScript + Vite, no UI framework. Engines are WebAssembly, loaded lazily inside one
   long-lived module Worker (`src/worker/jobWorker.ts`): ffmpeg.wasm (`@ffmpeg/core`, multi-threaded
-  `core-mt` when cross-origin isolated), ImageMagick (`@imagemagick/magick-wasm`), MuPDF (`mupdf`), three.js + occt-import-js (3D), tesseract.js (OCR),
+  `core-mt` when cross-origin isolated), ImageMagick (`@imagemagick/magick-wasm`), MuPDF (`mupdf`), three.js + occt-import-js (3D), tesseract.js (OCR), libarchive.js (archives),
   Pandoc (official `pandoc-wasm`, ~16 MB gz; wired via `pandoc-wasm-core` / `pandoc-wasm-binary`
   aliases in `vite.config.ts` because the package only exports a browser entry Vite can't bundle).
 - **Documents:** `converters/docroute.ts` is a port of the desktop route planner (pandoc edges +
@@ -145,9 +145,11 @@ src/umc/
     pdf_tools.py         # PDF toolkit: merge, compress, rotate, organize, protect, unlock
     ocr.py               # images / scanned PDFs → searchable PDF or text (Tesseract in PyMuPDF)
     model3d.py           # 3D models: STL/3MF/OBJ/PLY/GLB, STEP/IGES via OpenCASCADE
+    archive.py           # archives: extract / repack, and pack any files into ZIP/7Z/TAR.GZ
   tools/                 # wrappers around external programs/libraries
     process.py           # find_executable (bundled → PATH → known install dirs), cancellable run()
     installer.py         # one-click download + verify + install of LibreOffice / Pandoc (Windows)
+    archive.py           # ZIP (pyzipper) / 7Z (py7zr) / TAR / RAR (bsdtar) read + write, safe extraction
     tessdata.py          # OCR language files: bundled English, pinned SHA-256 downloads
     winsign.py           # Authenticode check via WinVerifyTrust/crypt32 (PowerShell's module is unreliable)
     ffmpeg.py, libreoffice.py, pandoc.py, pdf.py
@@ -300,7 +302,14 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
       worker (`engines/tesseract.ts`); verified files go into IndexedDB and it starts with
       cacheMethod "readOnly" (passing {code, data} is broken in tesseract.js 7.0.0). Both tables
       must match — `web/tests/ocr.test.ts` checks it.
-   8. Archives: ZIP, 7Z, RAR, TAR
+   8. ✅ Archives: ZIP/7Z/RAR/TAR(.gz/.xz/.bz2) → extract (`archive:extract`) or repack; any files —
+      also of mixed kinds — → `pack:zip|7z|tar.gz` (converters with `any_family` / `anyFamily`;
+      mixed inputs now get only those instead of an error). Desktop `tools/archive.py`: pyzipper
+      (AES zip), py7zr, tarfile; RAR via bsdtar (Windows' own System32\tar.exe, macOS tar,
+      Linux `libarchive-tools`) — no unRAR code (licence). Extraction never writes outside the
+      target (no `..`, absolute paths or links). Web: libarchive.js reads everything; ZIP is
+      written with fflate, TAR flavours with libarchive.js (its worker + wasm are emitted by a
+      vite plugin with a patched output-buffer size); no 7Z writing or encryption on the web.
    9. Subtitles: SRT/VTT/ASS, extract from / burn into video
    10. Fonts: TTF/OTF/WOFF/WOFF2
    11. Vector: SVG/EPS/AI, image → SVG tracing

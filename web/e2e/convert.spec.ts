@@ -445,3 +445,60 @@ test.describe("OCR", () => {
     expect(words(doc.loadPage(0).toStructuredText("").asText())).toContain("2026");
   });
 });
+
+test.describe("archives", () => {
+  const unzip = async (data: Buffer) => {
+    const { unzipSync, strFromU8 } = await import("fflate");
+    const files = unzipSync(new Uint8Array(data));
+    return { names: Object.keys(files).filter((n) => !n.endsWith("/")).sort(), text: (n: string) => strFromU8(files[n]) };
+  };
+  const extracted = async (page: Page) => {
+    await convert(page, "archive:extract");
+    return (await page.locator(".results a.fname").allTextContents()).sort();
+  };
+
+  test("ZIP → TAR.XZ → ZIP keeps every file", async ({ page }) => {
+    await load(page, [fx("bundle.zip")]);
+    const xz = await downloadSingle(page, "tar.xz");
+    expect([...xz.subarray(0, 6)]).toEqual([0xfd, 0x37, 0x7a, 0x58, 0x5a, 0x00]);
+    const { writeFileSync } = await import("node:fs");
+    writeFileSync(fx("bundle.tar.xz"), xz);
+    await load(page, [fx("bundle.tar.xz")]);
+    const z = await unzip(await downloadSingle(page, "zip"));
+    expect(z.names).toEqual(["readme.txt", "sub/deep/data.bin"]);
+    expect(z.text("readme.txt")).toBe("hello ÆØÅ\n");
+  });
+
+  test("RAR → ZIP", async ({ page }) => {
+    await load(page, [fx("sample-rar5.rar")]);
+    await expect(page.locator('.pill[data-target="rar"]')).toHaveCount(0); // RAR can't be written
+    expect((await unzip(await downloadSingle(page, "zip"))).names).toEqual(["test.bin"]);
+  });
+
+  test("7Z → extract", async ({ page }) => {
+    await load(page, [fx("sample.7z")]);
+    expect(await extracted(page)).toEqual(["sample/notes/hello.txt", "sample/second.txt"]);
+  });
+
+  test("password-protected ZIP: asks, then opens with the password", async ({ page }) => {
+    await load(page, [fx("sample-aes.zip")]);
+    await page.locator('.pill[data-target="archive:extract"]').click();
+    await page.getByRole("button", { name: "Convert" }).click();
+    await expect(page.locator(".status")).toHaveClass(/error/, { timeout: 60_000 });
+    await expect(page.locator(".status")).toContainText("password");
+    await page.getByRole("button", { name: /Settings/ }).click();
+    await page.locator("#opt-source_password").fill("s3cret");
+    const data = await downloadSingle(page, "archive:extract");
+    expect(data.toString("utf8")).toBe("top secret ÆØÅ\n");
+  });
+
+  test("mixed files → one ZIP; incompressible data → TAR.GZ", async ({ page }) => {
+    await load(page, [fx("img0.png"), fx("notes.txt"), fx("scan.png")]);
+    await expect(page.locator(".pill")).toHaveCount(2); // pack:zip, pack:tar.gz only
+    expect((await unzip(await downloadSingle(page, "pack:zip"))).names).toEqual(["img0.png", "notes.txt", "scan.png"]);
+    await load(page, [fx("noise.png")]);
+    const gz = await downloadSingle(page, "pack:tar.gz");
+    expect([...gz.subarray(0, 2)]).toEqual([0x1f, 0x8b]);
+    expect(gz.length).toBeGreaterThan(readFileSync(fx("noise.png")).length);
+  });
+});
