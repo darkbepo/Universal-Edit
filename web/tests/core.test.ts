@@ -8,6 +8,21 @@ import { orderFiles, outputSize } from "../src/converters/slideshow";
 import { atempoChain, trimArgs } from "../src/converters/video";
 import { selectExpr, uniqueNamer } from "../src/converters/util";
 import { resolveVideoCodec } from "../src/converters/codecs";
+import { plan } from "../src/converters/docroute";
+
+describe("document routes", () => {
+  const route = (a: string, b: string) => plan(a, b)?.map((e) => `${e.engine}:${e.dst}`);
+  it("picks sensible chains", () => {
+    expect(route("txt", "pdf")).toEqual(["mupdf:pdf"]);
+    expect(route("md", "pdf")).toEqual(["pandoc:html", "mupdf:pdf"]);
+    expect(route("docx", "pdf")).toEqual(["pandoc:html", "mupdf:pdf"]);
+    expect(route("md", "docx")).toEqual(["pandoc:docx"]);
+    expect(route("pdf", "txt")).toEqual(["mupdf:txt"]);
+    expect(route("pdf", "docx")).toEqual(["mupdf:html", "pandoc:docx"]);
+    expect(route("epub", "pdf")).toEqual(["mupdf:pdf"]);
+    expect(plan("doc", "pdf")).toBeNull();
+  });
+});
 
 const input = (name: string, family: InputFile["family"], ext = canonicalExt(name), lastModified = 0): InputFile =>
   ({ file: { name, size: 1, lastModified } as File, name, ext, family });
@@ -70,9 +85,17 @@ describe("registry", () => {
     expect(targetsFor([input("a.pdf", "document")]).targets.map((t) => t.id)).toEqual(
       expect.arrayContaining(["doc:pdf", "doc:txt", "pages:png", "split:pdf"]),
     );
-    const docx = targetsFor([input("a.docx", "document")]);
-    expect(docx.targets).toEqual([]);
-    expect(docx.note).toContain("desktop app");
+    const doc = targetsFor([input("a.doc", "document")]);
+    expect(doc.targets).toEqual([]);
+    expect(doc.note).toContain("desktop app");
+  });
+  it("offers document targets for text, Word, Markdown and spreadsheets", () => {
+    const txt = targetsFor([input("eye effect.txt", "document")]).targets.map((t) => t.id);
+    expect(txt).toEqual(expect.arrayContaining(["doc:pdf", "doc:docx", "doc:md", "doc:html", "pages:png", "split:pdf"]));
+    expect(txt).not.toContain("doc:txt"); // same format as the input
+    const docx = targetsFor([input("a.docx", "document")]).targets.map((t) => t.id);
+    expect(docx).toEqual(expect.arrayContaining(["doc:pdf", "doc:odt", "doc:md", "doc:epub", "doc:pptx"]));
+    expect(targetsFor([input("a.xlsx", "document")]).targets.map((t) => t.id)).toEqual(expect.arrayContaining(["doc:pdf", "doc:html", "doc:docx"]));
   });
   it("rejects mixed families", () => {
     expect(targetsFor([input("a.png", "image"), input("b.mp4", "video")]).note).toContain("one kind");

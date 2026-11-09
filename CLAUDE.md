@@ -63,12 +63,19 @@ imports, but keep the defaults sensible so a user can convert with zero configur
 ## Web companion (`web/`)
 
 A browser version that runs entirely on the visitor's device — **a companion, not a
-replacement**: the desktop app stays for Office/Markdown documents, VP9/H.265/AV1 and huge files.
+replacement**: the desktop app stays for legacy Office files (DOC/XLS/PPT/ODS/ODP, which need
+LibreOffice), VP9/H.265/AV1 and huge files.
 See `web/README.md` for commands and deployment.
 
 - **Stack:** TypeScript + Vite, no UI framework. Engines are WebAssembly, loaded lazily inside one
   long-lived module Worker (`src/worker/jobWorker.ts`): ffmpeg.wasm (`@ffmpeg/core`, multi-threaded
-  `core-mt` when cross-origin isolated), ImageMagick (`@imagemagick/magick-wasm`), MuPDF (`mupdf`).
+  `core-mt` when cross-origin isolated), ImageMagick (`@imagemagick/magick-wasm`), MuPDF (`mupdf`),
+  Pandoc (official `pandoc-wasm`, ~16 MB gz; wired via `pandoc-wasm-core` / `pandoc-wasm-binary`
+  aliases in `vite.config.ts` because the package only exports a browser entry Vite can't bundle).
+- **Documents:** `converters/docroute.ts` is a port of the desktop route planner (pandoc edges +
+  mupdf edges). Pandoc-wasm can't write PDF (no PDF engine), so → PDF goes via HTML laid out by
+  MuPDF (`htmlToPdf`, which injects CSS to undo Pandoc's `table{display:block}` — otherwise tables
+  collapse). TXT → PDF wraps the text in `<pre>` HTML (UTF-8, falling back to Windows-1252).
 - **Same architecture as the desktop app:** `core/` (detect, options schema → auto form, registry,
   types — no DOM/WASM), `converters/` (declare options + targets; `run()` imports engines dynamically
   so the page bundle stays ~60 KB), `engines/`, `ui/`. Target ids match the desktop ones.
@@ -249,7 +256,7 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
    `--self-test` run of the built .exe. No installer yet.
 6. ✅ Document splitting (every page / N pages / custom ranges) and PDF page size & margins.
 7. ✅ One-click install of LibreOffice / Pandoc from inside the app.
-8. 🟡 Web companion (`web/`): images, video, PDF done and tested; local test zip available;
+8. 🟡 Web companion (`web/`): images, video, PDF and documents (Pandoc) done and tested; local test zip available;
    GitHub Pages deployment planned after the owner has tested locally.
-   Next: Pandoc-wasm for Markdown/HTML/EPUB/DOCX, WebCodecs for VP9/AV1, PWA/offline.
+   Next: WebCodecs for VP9/AV1, PWA/offline.
 9. Ideas: merge documents, installer for the app itself (Inno Setup), presets, batch queue.

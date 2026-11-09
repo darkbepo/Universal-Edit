@@ -11,9 +11,9 @@ output format, (optionally) tweak settings, press **Convert**.
 
 ## Web companion
 
-There's also a browser version in [`web/`](web/README.md) that converts images, videos and PDFs
-entirely on your own device — nothing is uploaded. Office and Markdown documents still need the
-desktop app.
+There's also a browser version in [`web/`](web/README.md) that converts images, videos and
+documents entirely on your own device — nothing is uploaded. Old Office formats (DOC/XLS/PPT)
+still need the desktop app.
 
 ## Running from source
 

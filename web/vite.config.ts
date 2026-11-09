@@ -33,6 +33,12 @@ const isolation = {
 export default defineConfig({
   base: "./",
   plugins: [coiServiceWorker()],
+  resolve: {
+    alias: [
+      { find: /^pandoc-wasm-core$/, replacement: fileURLToPath(new URL("./node_modules/pandoc-wasm/src/core.js", import.meta.url)) },
+      { find: /^pandoc-wasm-binary/, replacement: fileURLToPath(new URL("./node_modules/pandoc-wasm/src/pandoc.wasm", import.meta.url)) },
+    ],
+  },
   server: { headers: isolation },
   preview: { headers: isolation },
   optimizeDeps: { exclude: ["@ffmpeg/ffmpeg", "@ffmpeg/util"] },

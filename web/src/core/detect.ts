@@ -14,13 +14,13 @@ export const VIDEO_EXTS = new Set([
   "mp4", "mkv", "mov", "avi", "webm", "flv", "wmv", "m4v", "mpg", "ts", "mts", "m2ts", "3gp",
   "ogv", "vob", "asf",
 ]);
-/** Documents the web version can open itself (MuPDF). */
-export const WEB_DOCUMENT_EXTS = new Set(["pdf", "epub", "xps", "mobi", "fb2", "cbz"]);
-/** Documents recognised but (for now) only convertible in the desktop app. */
-export const DESKTOP_ONLY_DOCUMENT_EXTS = new Set([
-  "docx", "doc", "odt", "rtf", "txt", "md", "html", "rst", "tex", "org", "wpd",
-  "xlsx", "xls", "ods", "csv", "pptx", "ppt", "odp",
+/** Documents the web version converts itself (MuPDF + Pandoc). */
+export const WEB_DOCUMENT_EXTS = new Set([
+  "pdf", "epub", "xps", "mobi", "fb2", "cbz", "docx", "odt", "rtf", "txt", "md", "html", "rst",
+  "tex", "org", "csv", "tsv", "xlsx", "pptx", "ipynb",
 ]);
+/** Documents recognised but only convertible in the desktop app (they need LibreOffice). */
+export const DESKTOP_ONLY_DOCUMENT_EXTS = new Set(["doc", "xls", "ppt", "ods", "odp", "wpd"]);
 
 export function canonicalExt(nameOrExt: string): string {
   const dot = nameOrExt.lastIndexOf(".");

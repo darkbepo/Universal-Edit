@@ -19,7 +19,8 @@
     "@ffmpeg/util": "^0.12.2",
     "@imagemagick/magick-wasm": "^0.0.46",
     "fflate": "^0.8.3",
-    "mupdf": "^1.28.1"
+    "mupdf": "^1.28.1",
+    "pandoc-wasm": "^1.1.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",

@@ -1,7 +1,7 @@
 Media Converter — local test version
 ====================================
 
-Converts images, videos and PDFs inside your web browser. Everything happens on this
+Converts images, videos and documents inside your web browser. Everything happens on this
 computer: nothing is uploaded, and the small web server only accepts connections from
 this computer.
 
@@ -18,6 +18,7 @@ MAC / LINUX
 
 Works best in Chrome or Edge (needed for "Save to folder…"). Firefox and Safari also work.
 The first conversion of each kind downloads its engine (5-10 MB) and takes a few seconds.
-Word, Markdown, spreadsheet and presentation files need the desktop app.
+Old Office formats (DOC, XLS, PPT) need the desktop app; DOCX, XLSX, PPTX, ODT, RTF,
+Markdown, HTML, TXT and EPUB work here.
 
 Licence: AGPL-3.0-or-later. Source: https://github.com/darkbepo/Universal-Media-Converter

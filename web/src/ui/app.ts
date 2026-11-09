@@ -34,7 +34,7 @@ export function mountApp(root: HTMLElement): void {
   const picker = h("input", { type: "file", multiple: true, hidden: true });
   const drop = h("div", { class: "drop", tabIndex: 0, role: "button", ariaLabel: "Add files" },
     h("div", { class: "icon" }, "⬆"), h("div", { class: "title" }, "Drop files here"),
-    h("div", { class: "sub" }, "or click to browse — images, videos or PDFs"));
+    h("div", { class: "sub" }, "or click to browse — images, videos or documents"));
   const filesLabel = h("span");
   const clearBtn = h("button", { class: "link" }, "Clear");
   const fileList = h("ul", { class: "file-list" });
@@ -63,7 +63,7 @@ export function mountApp(root: HTMLElement): void {
   root.append(
     h("main", { class: "app" },
       h("div", { class: "header" },
-        h("div", {}, h("h1", {}, "Media Converter"), h("p", { class: "subtitle" }, "Images, video and PDF — drop it in, pick a format.")),
+        h("div", {}, h("h1", {}, "Media Converter"), h("p", { class: "subtitle" }, "Images, video and documents — drop it in, pick a format.")),
         h("span", { class: "badge", title: "Everything is processed in your browser. Nothing is uploaded." }, "🔒 Files never leave your device")),
       picker, drop, filesCard, note, formatSection, formats, disclosure, settingsCard, resultsCard),
     bar,

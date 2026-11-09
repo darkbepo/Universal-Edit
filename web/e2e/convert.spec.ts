@@ -88,10 +88,75 @@ test("PDF → A4 with page range", async ({ page }) => {
   expect((data.toString("latin1").match(/\/Type\s*\/Page\b/g) ?? []).length).toBe(2);
 });
 
-test("Word files explain they need the desktop app", async ({ page }) => {
-  await load(page, [fx("letter.docx")]);
+test("old .doc files explain they need the desktop app", async ({ page }) => {
+  await load(page, [fx("letter.doc")]);
   await expect(page.locator(".note")).toContainText("desktop app");
   await expect(page.locator(".pill")).toHaveCount(0);
+});
+
+const pdfText = async (data: Buffer) => {
+  const mupdf = await import("mupdf");
+  const doc = mupdf.Document.openDocument(new Uint8Array(data), "application/pdf");
+  return [...Array(doc.countPages()).keys()].map((i) => doc.loadPage(i).toStructuredText("").asText()).join("\n");
+};
+
+test.describe("documents", () => {
+  test("tiny TXT → PDF (the owner's “eye effect.txt”)", async ({ page }) => {
+    await load(page, [fx("eye effect.txt")]);
+    const data = await downloadSingle(page, "doc:pdf");
+    expect(data.subarray(0, 4).toString()).toBe("%PDF");
+    expect(await pdfText(data)).toContain("Hi");
+  });
+
+  test("TXT → DOCX keeps special characters", async ({ page }) => {
+    await load(page, [fx("notes.txt")]);
+    const data = await downloadSingle(page, "doc:docx");
+    expect(data.subarray(0, 2).toString()).toBe("PK");
+  });
+
+  test("Markdown → PDF with a table", async ({ page }) => {
+    await load(page, [fx("doc.md")]);
+    const text = await pdfText(await downloadSingle(page, "doc:pdf"));
+    expect(text).toContain("Title ÆØÅ");
+    expect(text).toContain("world");
+  });
+
+  test("DOCX → PDF", async ({ page }) => {
+    await load(page, [fx("report.docx")]);
+    const text = await pdfText(await downloadSingle(page, "doc:pdf"));
+    expect(text).toContain("First paragraph with bold");
+  });
+
+  test("DOCX → Markdown", async ({ page }) => {
+    await load(page, [fx("report.docx")]);
+    const md = (await downloadSingle(page, "doc:md")).toString();
+    expect(md).toContain("# Report");
+    expect(md).toContain("**bold**");
+  });
+
+  test("Markdown → PowerPoint", async ({ page }) => {
+    await load(page, [fx("doc.md")]);
+    const data = await downloadSingle(page, "doc:pptx");
+    expect(data.subarray(0, 2).toString()).toBe("PK");
+  });
+
+  test("CSV → Word table", async ({ page }) => {
+    await load(page, [fx("data.csv")]);
+    const data = await downloadSingle(page, "doc:docx");
+    expect(data.subarray(0, 2).toString()).toBe("PK");
+  });
+
+  test("DOCX → page images", async ({ page }) => {
+    await load(page, [fx("report.docx")]);
+    await convert(page, "pages:png");
+    await expect(page.locator(".results li")).toHaveCount(1);
+  });
+
+  test("PDF → DOCX", async ({ page }) => {
+    await load(page, [fx("three.pdf")]);
+    const data = await downloadSingle(page, "doc:docx");
+    expect(data.subarray(0, 2).toString()).toBe("PK");
+  });
 });
 
 test.describe("video", () => {

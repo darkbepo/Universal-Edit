@@ -39,7 +39,7 @@ export function targetsFor(files: InputFile[]): TargetResult {
     const kinds = [...new Set(desktopOnly.map((f) => f.ext.toUpperCase()))].join(", ");
     return {
       targets: [],
-      note: `${kinds} files can't be converted in the browser yet — use the desktop app for Word, Markdown, spreadsheet and presentation files.`,
+      note: `${kinds} files can't be converted in the browser — they need LibreOffice, which only the desktop app can install. Newer formats (DOCX, XLSX, PPTX) work here.`,
     };
   }
   const family = [...families][0];

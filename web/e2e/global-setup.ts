@@ -24,7 +24,18 @@ export default async function globalSetup() {
     doc.insertPage(-1, page);
   }
   writeFileSync(`${FIXTURES}three.pdf`, doc.saveToBuffer("compress").asUint8Array());
-  writeFileSync(`${FIXTURES}letter.docx`, "not really a docx");
+  writeFileSync(`${FIXTURES}letter.doc`, "old binary Word file");
+  writeFileSync(`${FIXTURES}eye effect.txt`, "Hi\n"); // the 3-byte file from the owner's test
+  writeFileSync(`${FIXTURES}notes.txt`, "Plain text line 1\nLine 2 with ÆØÅ\n");
+  writeFileSync(`${FIXTURES}doc.md`, "# Title ÆØÅ\n\nHello **world**.\n\n| a | b |\n|---|---|\n| 1 | 2 |\n");
+  writeFileSync(`${FIXTURES}data.csv`, "name,score\nAda,10\nLin,7\n");
+  // A real .docx, made with the same pandoc build the app uses.
+  const { createPandocInstance } = await import("../node_modules/pandoc-wasm/src/core.js");
+  const { readFileSync } = await import("node:fs");
+  const pandoc = await createPandocInstance(readFileSync(new URL("../node_modules/pandoc-wasm/src/pandoc.wasm", import.meta.url)));
+  const r = await pandoc.convert({ from: "markdown", to: "docx", "output-file": "out.docx" },
+    "# Report\n\nFirst paragraph with **bold**.\n\n- one\n- two\n", {});
+  writeFileSync(`${FIXTURES}report.docx`, Buffer.from(await (r.files["out.docx"] as Blob).arrayBuffer()));
   if (!existsSync(`${FIXTURES}clip.mp4`)) {
     try {
       execFileSync("ffmpeg", ["-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc=duration=2:size=320x240:rate=30",
