@@ -124,6 +124,44 @@ const pdfText = async (data: Buffer) => {
   return [...Array(doc.countPages()).keys()].map((i) => doc.loadPage(i).toStructuredText("").asText()).join("\n");
 };
 
+test.describe("target file size", () => {
+  const MB = 1024 * 1024;
+  const setTarget = async (page: Page, target: string, value: string) => {
+    await page.locator(`.pill[data-target="${target}"]`).click();
+    if (!(await page.locator(".form").isVisible())) await page.getByRole("button", { name: /Settings/ }).click();
+    await page.locator(target.startsWith("jpg") ? "#opt-target_size_kb" : "#opt-target_size_mb").fill(value);
+  };
+
+  test("image → JPG under 100 KB", async ({ page }) => {
+    await load(page, [fx("noise.png")]);
+    await setTarget(page, "jpg", "100");
+    expect((await downloadSingle(page, "jpg")).length).toBeLessThanOrEqual(100 * 1024);
+  });
+
+  test("photo PDF → under 0.3 MB", async ({ page }) => {
+    await load(page, [fx("photo.pdf")]);
+    await setTarget(page, "pdf:compress", "0.3");
+    expect((await downloadSingle(page, "pdf:compress")).length).toBeLessThanOrEqual(0.3 * MB);
+  });
+
+  test("video → MP4 under 1 MB (two-pass)", async ({ page }) => {
+    test.skip(!existsSync(fx("noisy.mp4")), "needs ffmpeg");
+    await load(page, [fx("noisy.mp4")]);
+    await setTarget(page, "mp4", "1");
+    await page.locator("#opt-preset").selectOption("ultrafast");
+    const size = (await downloadSingle(page, "mp4")).length;
+    expect(size).toBeLessThanOrEqual(1 * MB);
+    expect(size).toBeGreaterThan(0.6 * MB);
+  });
+
+  test("audio → MP3 under its target", async ({ page }) => {
+    test.skip(!existsSync(fx("tone.wav")), "needs ffmpeg");
+    await load(page, [fx("tone.wav")]);
+    await setTarget(page, "mp3", "0.03");
+    expect((await downloadSingle(page, "mp3")).length).toBeLessThanOrEqual(0.03 * MB);
+  });
+});
+
 test.describe("PDF tools", () => {
   const openPdf = async (data: Buffer) => (await import("mupdf")).Document.openDocument(new Uint8Array(data), "application/pdf").asPDF()!;
   const settings = async (page: Page, target: string) => {

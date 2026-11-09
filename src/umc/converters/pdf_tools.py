@@ -45,6 +45,17 @@ class PdfToolOptions:
         ],
         targets=("pdf:compress",),
     )
+    target_size_mb: float = opt(
+        0.0,
+        "Target file size",
+        kind="float",
+        min=0,
+        max=100000,
+        decimals=1,
+        unit="MB",
+        targets=("pdf:compress",),
+        help="0 = off. Compresses harder until the PDF fits (best effort for text-heavy PDFs).",
+    )
     strip_metadata: bool = opt(False, "Remove metadata (author, title…)", targets=("pdf:compress",))
     angle: int = opt(
         90,
@@ -104,14 +115,23 @@ class PdfToolsConverter(Converter):
             dest = unique_path(job.output_dir_for(f.path), f"{f.path.stem}{suffix}", "pdf")
             try:
                 if tool == "pdf:compress":
-                    pdf.compress(f.path, dest, o.level, o.strip_metadata)
+                    pdf.compress(
+                        f.path, dest, o.level, o.strip_metadata, int(o.target_size_mb * 1024 * 1024)
+                    )
                 elif tool == "pdf:rotate":
                     pdf.rotate(f.path, dest, o.angle, o.rotate_pages)
                 elif tool == "pdf:organize":
                     pdf.organize(f.path, dest, o.keep, o.reverse)
                 elif tool == "pdf:protect":
-                    pdf.protect(f.path, dest, o.password, o.owner_password, o.allow_print,
-                                o.allow_copy, o.allow_edit)  # fmt: skip
+                    pdf.protect(
+                        f.path,
+                        dest,
+                        o.password,
+                        o.owner_password,
+                        o.allow_print,
+                        o.allow_copy,
+                        o.allow_edit,
+                    )
                 elif tool == "pdf:unlock":
                     pdf.unlock(f.path, dest, o.password)
             except BaseException:

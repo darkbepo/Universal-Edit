@@ -52,7 +52,7 @@ The browser version's source is in [`web/`](web/README.md).
 | PDF: merge, compress, rotate, add / remove password, reorder / delete pages | ✅ | ✅ |
 | PDF → Word keeping the layout | 🔜 | 🔜 |
 | OCR (scanned PDF / photo → text) | 🔜 | 🔜 |
-| Compress to a target size (video, image, PDF, audio) | 🔜 | 🔜 |
+| Compress to a target size (video, image, PDF, audio) | ✅ | ✅ |
 | Data: JSON ↔ CSV ↔ XML ↔ YAML ↔ XLSX | 🔜 | 🔜 |
 | **3D printing**: STL, OBJ, 3MF, PLY, GLB, STEP / IGES | 🔜 | 🔜 |
 | Archives: ZIP, 7Z, RAR, TAR | 🔜 | 🔜 |

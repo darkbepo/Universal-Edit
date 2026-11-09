@@ -195,17 +195,30 @@ def merge(sources: list[Path], dest: Path, bookmarks: bool, titles: list[str]) -
         return _save(out, dest)
 
 
-def compress(src: Path, dest: Path, level: str, strip_metadata: bool) -> Path:
-    with _open_unlocked(src) as doc:
-        preset = COMPRESS_LEVELS[level]
-        if preset:
-            dpi, quality = preset
-            doc.rewrite_images(dpi_threshold=dpi + 10, dpi_target=dpi, quality=quality)
-        if strip_metadata:
-            doc.set_metadata({})
-            doc.del_xml_metadata()
-        doc.subset_fonts()
-        return _save(doc, dest)
+# Ever stronger settings tried, in order, when a target size is set.
+_LADDER = [(150, 75), (110, 60), (72, 45), (60, 35), (48, 30)]
+
+
+def compress(
+    src: Path, dest: Path, level: str, strip_metadata: bool, target_bytes: int = 0
+) -> Path:
+    preset = COMPRESS_LEVELS[level]
+    attempts: list[tuple[int, int] | None] = [preset]
+    if target_bytes:
+        attempts += [p for p in _LADDER if preset is None or p[0] < preset[0]]
+    for attempt in attempts:
+        with _open_unlocked(src) as doc:
+            if attempt:
+                dpi, quality = attempt
+                doc.rewrite_images(dpi_threshold=dpi + 10, dpi_target=dpi, quality=quality)
+            if strip_metadata:
+                doc.set_metadata({})
+                doc.del_xml_metadata()
+            doc.subset_fonts()
+            _save(doc, dest)
+        if not target_bytes or dest.stat().st_size <= target_bytes:
+            break
+    return dest  # best effort: the smallest we could get
 
 
 def rotate(src: Path, dest: Path, angle: int, page_range: str) -> Path:
@@ -226,9 +239,14 @@ def organize(src: Path, dest: Path, keep: str, reverse: bool) -> Path:
 
 
 def protect(
-    src: Path, dest: Path, password: str, owner_password: str, allow_print: bool,
-    allow_copy: bool, allow_edit: bool,
-) -> Path:  # fmt: skip
+    src: Path,
+    dest: Path,
+    password: str,
+    owner_password: str,
+    allow_print: bool,
+    allow_copy: bool,
+    allow_edit: bool,
+) -> Path:
     if not password:
         raise ConversionError("Enter a password to protect the PDF with.")
     perms = pymupdf.PDF_PERM_ACCESSIBILITY
@@ -247,9 +265,13 @@ def protect(
         owner_password = secrets.token_urlsafe(24)
     with _open_unlocked(src) as doc:
         return _save(
-            doc, dest, encryption=pymupdf.PDF_ENCRYPT_AES_256, user_pw=password,
-            owner_pw=owner_password, permissions=perms,
-        )  # fmt: skip
+            doc,
+            dest,
+            encryption=pymupdf.PDF_ENCRYPT_AES_256,
+            user_pw=password,
+            owner_pw=owner_password,
+            permissions=perms,
+        )
 
 
 def unlock(src: Path, dest: Path, password: str) -> Path:

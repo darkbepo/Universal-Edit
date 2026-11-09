@@ -22,9 +22,30 @@ def _register_plugins() -> None:
 
 
 RAW_EXTS = {
-    ".cr2", ".cr3", ".crw", ".nef", ".nrw", ".arw", ".srf", ".sr2", ".dng", ".orf", ".raf",
-    ".rw2", ".pef", ".srw", ".x3f", ".3fr", ".iiq", ".mrw", ".kdc", ".dcr", ".erf", ".mef", ".mos",
-}  # fmt: skip
+    ".cr2",
+    ".cr3",
+    ".crw",
+    ".nef",
+    ".nrw",
+    ".arw",
+    ".srf",
+    ".sr2",
+    ".dng",
+    ".orf",
+    ".raf",
+    ".rw2",
+    ".pef",
+    ".srw",
+    ".x3f",
+    ".3fr",
+    ".iiq",
+    ".mrw",
+    ".kdc",
+    ".dcr",
+    ".erf",
+    ".mef",
+    ".mos",
+}
 
 
 def _open_raw(path: Path) -> Image.Image:

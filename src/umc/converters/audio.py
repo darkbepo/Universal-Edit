@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from umc.converters import codecs
+from umc.converters import codecs, sizing
 from umc.converters.base import Converter
 from umc.converters.video import trim_args
 from umc.core.detect import MediaFamily
@@ -38,6 +38,17 @@ class AudioOptions:
         "Bitrate",
         targets=LOSSY,
         choices=[(b, f"{b} kbps") for b in (64, 96, 128, 160, 192, 256, 320)],
+    )
+    target_size_mb: float = opt(
+        0.0,
+        "Target file size",
+        kind="float",
+        min=0,
+        max=100000,
+        decimals=1,
+        unit="MB",
+        targets=LOSSY,
+        help="0 = off. Picks the bitrate that lands just under this size (overrides Bitrate).",
     )
     sample_rate: object = opt(
         "original",
@@ -82,7 +93,10 @@ class _AudioConverter(Converter):
             args = [*seek, "-i", str(f.path), "-vn", "-sn", "-map", "0:a:0", "-c:a", enc]
             args += ["-map_metadata", "0"]
             if ext in LOSSY_EXTS:
-                args += ["-b:a", f"{o.bitrate}k"]
+                kbps = o.bitrate
+                if o.target_size_mb > 0:
+                    kbps = sizing.audio_kbps_for(o.target_size_mb, duration)
+                args += ["-b:a", f"{kbps}k"]
             if o.sample_rate != "original":
                 args += ["-ar", str(o.sample_rate)]
             if o.channels != "original":

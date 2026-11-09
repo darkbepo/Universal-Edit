@@ -15,6 +15,8 @@ const TOOLS: Record<string, [string, string, string]> = {
 
 // Compression presets: [image DPI, JPEG quality]; null = lossless clean-up only.
 const LEVELS: Record<string, [number, number] | null> = { lossless: null, recommended: [150, 75], strong: [110, 60], extreme: [72, 45] };
+// Ever stronger settings tried, in order, when a target size is set.
+const LADDER: [number, number][] = [[150, 75], [110, 60], [72, 45], [60, 35], [48, 30]];
 
 // PDF permission bits (PDF 32000-1, table 22); reserved bits must be set.
 const PERM = { print: 4 | 2048, modify: 8 | 32 | 256 | 1024, copy: 16, accessibility: 512 };
@@ -90,6 +92,7 @@ export const pdfToolsConverter: Converter = {
     opt.choice("order", "File order", "selected", [["selected", "As listed (drag to reorder)"], ["name", "By file name"]], { targets: ["pdf:merge"] }),
     opt.bool("bookmarks", "Add a bookmark for each file", true, { targets: ["pdf:merge"] }),
     opt.choice("level", "Compression", "recommended", [["lossless", "Lossless (clean up only)"], ["recommended", "Recommended (images 150 DPI)"], ["strong", "Strong (images 110 DPI)"], ["extreme", "Extreme (images 72 DPI, lower quality)"]], { targets: ["pdf:compress"] }),
+    opt.float("target_size_mb", "Target file size", 0, { min: 0, step: 0.5, decimals: 1, unit: "MB", targets: ["pdf:compress"], help: "0 = off. Compresses harder until the PDF fits (best effort for text-heavy PDFs)." }),
     opt.choice("angle", "Rotate by", 90, [[90, "90° clockwise"], [180, "180°"], [270, "90° counter-clockwise"]], { targets: ["pdf:rotate"] }),
     opt.text("rotate_pages", "Pages", "all", { targets: ["pdf:rotate"], help: "e.g. 1-3, 5, 8- (all = every page)" }),
     opt.text("keep", "Pages to keep, in order", "all", { targets: ["pdf:organize"], help: "e.g. 3, 1-2, 5- puts page 3 first and drops page 4. Leave out pages to delete them." }),
@@ -141,9 +144,17 @@ export const pdfToolsConverter: Converter = {
       let data: Uint8Array;
       if (tool === "pdf:compress") {
         const preset = LEVELS[String(o.level)];
-        if (preset) recompressImages(mupdf, pdf, preset[0], preset[1]);
-        pdf.subsetFonts();
-        data = save(pdf);
+        const limit = Number(o.target_size_mb) * 1024 * 1024;
+        const attempts: ([number, number] | null)[] = [preset];
+        if (limit) attempts.push(...LADDER.filter((p) => !preset || p[0] < preset[0]));
+        data = new Uint8Array();
+        for (const attempt of attempts) {
+          const fresh = attempt === preset ? pdf : (await openPdf(f)).pdf; // recompress from the original
+          if (attempt) recompressImages(mupdf, fresh, attempt[0], attempt[1]);
+          fresh.subsetFonts();
+          data = save(fresh);
+          if (!limit || data.length <= limit) break;
+        }
       } else if (tool === "pdf:rotate") {
         for (const p of parsePageRange(o.rotate_pages, pdf.countPages())) {
           const page = pdf.loadPage(p).getObject();

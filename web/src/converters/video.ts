@@ -5,6 +5,7 @@ import {
   AUDIO_CODEC_LABELS, AUDIO_ENCODERS, CONTAINERS, pick, qualityArgs, resolveAudioCodec,
   resolveVideoCodec, VIDEO_CODEC_LABELS, VIDEO_ENCODERS, X264_PRESETS,
 } from "./codecs";
+import { audioKbpsFor, TWO_PASS_ENCODERS, videoKbpsFor } from "./sizing";
 import { baseName, MIME, selectExpr, uniqueNamer } from "./util";
 
 type Engine = import("../engines/ffmpeg").Engine;
@@ -68,7 +69,8 @@ export const videoConverter: Converter = {
   family: "video",
   options: [
     opt.choice("video_codec", "Video codec", "auto", [["auto", "Auto (best for format)"], ["copy", "Copy — no re-encode (fastest)"], ...Object.entries(VIDEO_CODEC_LABELS)], { group: "Video", help: "VP9, H.265 and AV1 are only available in the desktop app for now." }),
-    opt.slider("crf", "Quality (CRF)", 23, 0, 51, { group: "Video", showIf: encodes, help: "Lower = better quality and bigger files. 18 ≈ visually lossless, 23 = default, 28+ = small." }),
+    opt.float("target_size_mb", "Target file size", 0, { min: 0, step: 0.5, decimals: 1, unit: "MB", group: "Video", showIf: encodes, help: "0 = off. Encodes (in two passes) to land just under this size — e.g. 25 for Discord, 10 for email. Overrides the quality setting." }),
+    opt.slider("crf", "Quality (CRF)", 23, 0, 51, { group: "Video", showIf: (v) => encodes(v) && !Number(v.target_size_mb), help: "Lower = better quality and bigger files. 18 ≈ visually lossless, 23 = default, 28+ = small." }),
     opt.choice("preset", "Encoding speed", "veryfast", X264_PRESETS.map((p) => [p, p]), { group: "Video", showIf: encodes, help: "Slower = smaller file at the same quality. In the browser, faster presets are recommended." }),
     opt.choice("resolution", "Resolution", "original", [["original", "Original"], [2160, "4K (2160p)"], [1440, "1440p"], [1080, "1080p"], [720, "720p"], [480, "480p"], [360, "360p"]], { group: "Video", showIf: encodes }),
     opt.choice("fps", "Frame rate", "original", [["original", "Original"], [24, "24"], [25, "25"], [30, "30"], [50, "50"], [60, "60"]], { group: "Video", showIf: encodes }),
@@ -92,6 +94,7 @@ export const videoConverter: Converter = {
       if (!info.hasVideo) throw new ConversionError(`“${name}” has no video stream.`);
       const [seek, duration] = trimArgs(o.start, o.end, info.duration);
       const copyVideo = o.video_codec === "copy";
+      let twoPass = false;
       const speed = copyVideo ? 1 : Number(o.speed);
       const args = [...seek, "-i", path, "-map", "0:v:0"];
       if (info.hasAudio && !o.remove_audio) args.push("-map", "0:a:0?");
@@ -109,7 +112,15 @@ export const videoConverter: Converter = {
         if (o.flip_horizontal) vf.push("hflip");
         if (speed !== 1) vf.push(`setpts=PTS/${speed}`);
         vf.push("scale=trunc(iw/2)*2:trunc(ih/2)*2");
-        args.push("-vf", vf.join(","), "-c:v", enc, ...qualityArgs(enc, Number(o.crf), String(o.preset), null), "-pix_fmt", "yuv420p");
+        let bitrate: number | null = null;
+        if (Number(o.target_size_mb) > 0) {
+          const withAudio = info.hasAudio && !o.remove_audio;
+          const audioKbps = withAudio ? (o.audio_codec === "copy" ? 128 : Number(o.audio_bitrate)) : 0;
+          bitrate = videoKbpsFor(Number(o.target_size_mb), duration / speed, audioKbps);
+          twoPass = TWO_PASS_ENCODERS.has(enc);
+        }
+        args.push("-vf", vf.join(","), "-c:v", enc, ...qualityArgs(enc, Number(o.crf), String(o.preset), bitrate), "-pix_fmt", "yuv420p");
+        if (bitrate && !twoPass) args.push("-maxrate", `${bitrate}k`, "-bufsize", `${bitrate * 2}k`);
         if (o.fps !== "original") args.push("-r", String(o.fps));
       }
       if (o.remove_audio || !info.hasAudio) {
@@ -126,7 +137,13 @@ export const videoConverter: Converter = {
       }
       if (["mp4", "m4v", "mov"].includes(container)) args.push("-movflags", "+faststart");
       const dest = `/out.${container}`;
-      await ff.run([...args, dest], duration / speed, progress, `Couldn't convert “${name}”.`);
+      const error = `Couldn't convert “${name}”.`;
+      if (twoPass) {
+        await ff.run([...args, "-pass", "1", "-passlogfile", "/pass", "-an", "-f", "null", "-"], duration / speed, (p) => progress(p / 2), error);
+        await ff.run([...args, "-pass", "2", "-passlogfile", "/pass", dest], duration / speed, (p) => progress(0.5 + p / 2), error);
+      } else {
+        await ff.run([...args, dest], duration / speed, progress, error);
+      }
       return [{ name: unique(`${baseName(name)}.${container}`), data: await ff.readAndDelete(dest), type: MIME[container] ?? "video/*" }];
     });
   },
@@ -217,6 +234,7 @@ function makeAudioConverter(id: string, family: "video" | "audio", idPrefix: str
     family,
     options: [
       opt.choice("bitrate", "Bitrate", 192, [64, 96, 128, 160, 192, 256, 320].map((b) => [b, `${b} kbps`]), { targets: LOSSY_AUDIO }),
+      opt.float("target_size_mb", "Target file size", 0, { min: 0, step: 0.5, decimals: 1, unit: "MB", targets: LOSSY_AUDIO, help: "0 = off. Picks the bitrate that lands just under this size (overrides Bitrate)." }),
       opt.choice("sample_rate", "Sample rate", "original", [["original", "Original"], [22050, "22.05 kHz"], [44100, "44.1 kHz"], [48000, "48 kHz"], [96000, "96 kHz"]]),
       opt.choice("channels", "Channels", "original", [["original", "Original"], [1, "Mono"], [2, "Stereo"]]),
       opt.slider("volume", "Volume", 100, 0, 300, { unit: "%" }),
@@ -240,7 +258,10 @@ function makeAudioConverter(id: string, family: "video" | "audio", idPrefix: str
         // -vn also drops embedded cover art, which most audio containers can't hold.
         const args = [...seek, "-i", path, "-vn", "-sn", "-map", "0:a:0", "-map_metadata", "0",
           "-c:a", pick(ff.encoders, AUDIO_ENCODERS[codec], AUDIO_CODEC_LABELS[codec] ?? codec.toUpperCase())];
-        if (LOSSY_EXTS.includes(ext)) args.push("-b:a", `${o.bitrate}k`);
+        if (LOSSY_EXTS.includes(ext)) {
+          const kbps = Number(o.target_size_mb) > 0 ? audioKbpsFor(Number(o.target_size_mb), duration) : Number(o.bitrate);
+          args.push("-b:a", `${kbps}k`);
+        }
         if (o.sample_rate !== "original") args.push("-ar", String(o.sample_rate));
         if (o.channels !== "original") args.push("-ac", String(o.channels));
         const af = [o.normalize ? "loudnorm" : "", Number(o.volume) !== 100 ? `volume=${(Number(o.volume) / 100).toFixed(2)}` : ""].filter(Boolean);

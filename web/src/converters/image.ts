@@ -26,6 +26,7 @@ export const imageConverter: Converter = {
   family: "image",
   options: [
     opt.slider("quality", "Quality", 90, 1, 100, { unit: "%", targets: LOSSY, help: "Higher = better looking, bigger file." }),
+    opt.int("target_size_kb", "Target file size", 0, { min: 0, max: 1_000_000, unit: "KB", targets: LOSSY, help: "0 = off. Finds the best quality that fits; shrinks the image only if it must." }),
     opt.choice("resize", "Resize", "none", [
       ["none", "Original size"], ["percent", "Scale by percentage"],
       ["fit", "Fit within width × height"], ["exact", "Exact width × height (stretch)"],
@@ -65,7 +66,10 @@ export const imageConverter: Converter = {
             while (images.length > frames.length) images.pop();
             return images.write(format as import("@imagemagick/magick-wasm").MagickFormat, copy);
           }
-          return frames[0].write(format as import("@imagemagick/magick-wasm").MagickFormat, copy);
+          const fmt = format as import("@imagemagick/magick-wasm").MagickFormat;
+          const limit = Number(o.target_size_kb) * 1024;
+          if (limit > 0 && LOSSY.includes(target.id)) return fitToSize(M, frames[0], fmt, limit, copy);
+          return frames[0].write(fmt, copy);
         });
       } catch (e) {
         throw new ConversionError(`Couldn't convert “${f.name}” to ${target.label}.`, String(e));
@@ -78,6 +82,27 @@ export const imageConverter: Converter = {
 };
 
 type M = typeof import("@imagemagick/magick-wasm");
+
+/** Highest quality (binary search) that fits ``limit`` bytes; downscale only if q=10 can't. */
+function fitToSize(M: M, img: Img, fmt: import("@imagemagick/magick-wasm").MagickFormat, limit: number, copy: (d: Uint8Array) => Uint8Array): Uint8Array {
+  for (;;) {
+    let lo = 10;
+    let hi = 95;
+    let best: Uint8Array | null = null;
+    while (lo <= hi) {
+      const q = (lo + hi) >> 1;
+      img.quality = q;
+      const data = img.write(fmt, copy);
+      if (data.length <= limit) {
+        best = data;
+        lo = q + 1;
+      } else hi = q - 1;
+    }
+    if (best) return best;
+    if (Math.min(img.width, img.height) <= 16) throw new ConversionError("The image can't be made that small. Choose a bigger target size.");
+    img.resize(new M.MagickGeometry(Math.max(16, Math.round(img.width * 0.8)), Math.max(16, Math.round(img.height * 0.8))));
+  }
+}
 type Img = import("@imagemagick/magick-wasm").IMagickImage;
 
 function process(M: M, img: Img, o: Values, target: string): void {

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import os
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from umc.converters import codecs
+from umc.converters import codecs, sizing
 from umc.converters.base import Converter
 from umc.core.detect import DetectedFile, MediaFamily
 from umc.core.errors import ConversionError
@@ -67,6 +69,19 @@ def _encodes_video(v) -> bool:
 @dataclass
 class VideoOptions:
     video_codec: str = opt("auto", "Video codec", choices=_vcodec_choices(), group="Video")
+    target_size_mb: float = opt(
+        0.0,
+        "Target file size",
+        kind="float",
+        min=0,
+        max=100000,
+        decimals=1,
+        unit="MB",
+        group="Video",
+        help="0 = off. Encodes (in two passes where possible) to land just under this size — "
+        "e.g. 25 for Discord or 10 for email. Overrides the quality setting.",
+        show_if=_encodes_video,
+    )
     rate_control: str = opt(
         "crf",
         "Rate control",
@@ -83,7 +98,9 @@ class VideoOptions:
         group="Video",
         help="Lower = better quality and bigger files. 18 ≈ visually lossless, "
         "23 = default, 28+ = small.",
-        show_if=lambda v: _encodes_video(v) and v["rate_control"] == "crf",
+        show_if=lambda v: (
+            _encodes_video(v) and v["rate_control"] == "crf" and not v.get("target_size_mb")
+        ),
     )
     video_bitrate: int = opt(
         5000,
@@ -236,6 +253,7 @@ class VideoConverter(Converter):
             raise ConversionError(f"“{src.name}” has no video stream.")
         seek, duration = trim_args(o.start, o.end, info.duration)
         copy_video = o.video_codec == "copy"
+        two_pass = False
 
         args = [*seek, "-i", str(src), "-map", "0:v:0"]
         if info.has_audio and not o.remove_audio:
@@ -253,7 +271,16 @@ class VideoConverter(Converter):
             if not codecs.pixel_format_args(enc)[-1].startswith("yuv422"):
                 vf.append("scale=trunc(iw/2)*2:trunc(ih/2)*2")  # 4:2:0 needs even sizes
             bitrate = o.video_bitrate if o.rate_control == "bitrate" else None
+            if o.target_size_mb > 0:
+                has_audio = info.has_audio and not o.remove_audio
+                audio_kbps = (
+                    0 if not has_audio else (128 if o.audio_codec == "copy" else o.audio_bitrate)
+                )
+                bitrate = sizing.video_kbps_for(o.target_size_mb, duration / o.speed, audio_kbps)
+                two_pass = enc in sizing.TWO_PASS_ENCODERS
             args += ["-c:v", enc, *codecs.video_quality_args(enc, o.crf, o.preset, bitrate)]
+            if o.target_size_mb > 0 and not two_pass:
+                args += ["-maxrate", f"{bitrate}k", "-bufsize", f"{bitrate * 2}k"]
             args += codecs.pixel_format_args(enc)
             if o.fps != "original":
                 fps = o.custom_fps if o.fps == "custom" else float(o.fps)
@@ -283,16 +310,46 @@ class VideoConverter(Converter):
             args += ["-movflags", "+faststart"]
 
         dest = unique_path(job.output_dir_for(src), src.stem, container)
-        args.append(str(dest))
         total = duration / (o.speed if not copy_video else 1.0)
+        error = f"Couldn't convert “{src.name}”."
         try:
-            ffmpeg.run_ffmpeg(
-                args,
-                total_seconds=total,
-                progress=progress,
-                cancel_event=job.cancel_event,
-                error_message=f"Couldn't convert “{src.name}”.",
-            )
+            if two_pass:
+                with tempfile.TemporaryDirectory(prefix="umc-2pass-") as tmp:
+                    log = str(Path(tmp) / "pass")
+                    first = [
+                        *args,
+                        "-pass",
+                        "1",
+                        "-passlogfile",
+                        log,
+                        "-an",
+                        "-f",
+                        "null",
+                        os.devnull,
+                    ]
+                    ffmpeg.run_ffmpeg(
+                        first,
+                        total_seconds=total,
+                        progress=lambda f: progress(f / 2),
+                        cancel_event=job.cancel_event,
+                        error_message=error,
+                    )
+                    second = [*args, "-pass", "2", "-passlogfile", log, str(dest)]
+                    ffmpeg.run_ffmpeg(
+                        second,
+                        total_seconds=total,
+                        progress=lambda f: progress(0.5 + f / 2),
+                        cancel_event=job.cancel_event,
+                        error_message=error,
+                    )
+            else:
+                ffmpeg.run_ffmpeg(
+                    [*args, str(dest)],
+                    total_seconds=total,
+                    progress=progress,
+                    cancel_event=job.cancel_event,
+                    error_message=error,
+                )
         except BaseException:
             dest.unlink(missing_ok=True)
             raise

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from PIL import Image, ImageOps, ImageSequence
 from umc.converters.base import Converter
 from umc.converters.imaging import can_save, flatten, open_image, parse_color
 from umc.core.detect import DetectedFile, MediaFamily
+from umc.core.errors import ConversionError
 from umc.core.job import ConversionJob, unique_path
 from umc.core.options import opt
 
@@ -54,6 +56,15 @@ class ImageOptions:
         help="Higher = better looking, bigger file.",
     )
     lossless: bool = opt(False, "Lossless", targets=("webp", "avif"))
+    target_size_kb: int = opt(
+        0,
+        "Target file size",
+        min=0,
+        max=1_000_000,
+        unit="KB",
+        targets=LOSSY,
+        help="0 = off. Finds the best quality that fits; shrinks the image only if it must.",
+    )
     png_compression: int = opt(
         6,
         "Compression level",
@@ -151,6 +162,36 @@ def _process_frame(img: Image.Image, o: ImageOptions, target: str) -> Image.Imag
     return img
 
 
+def _encode(img: Image.Image, pil_format: str, kw: dict, quality: int) -> bytes:
+    buf = io.BytesIO()
+    img.save(buf, format=pil_format, **{**kw, "quality": quality, "lossless": False})
+    return buf.getvalue()
+
+
+def _fit_to_size(img: Image.Image, pil_format: str, kw: dict, limit: int) -> bytes:
+    """Highest quality (binary search) that fits ``limit`` bytes; downscale only if q=10 can't."""
+    kw = {k: v for k, v in kw.items() if k not in ("quality", "lossless")}
+    while True:
+        lo, hi, best = 10, 95, None
+        while lo <= hi:
+            q = (lo + hi) // 2
+            data = _encode(img, pil_format, kw, q)
+            if len(data) <= limit:
+                best, lo = data, q + 1
+            else:
+                hi = q - 1
+        if best is not None:
+            return best
+        if min(img.size) <= 16:
+            raise ConversionError(
+                "The image can't be made that small. Choose a bigger target size."
+            )
+        img = img.resize(
+            (max(16, round(img.width * 0.8)), max(16, round(img.height * 0.8))),
+            Image.Resampling.LANCZOS,
+        )
+
+
 def _save_kwargs(o: ImageOptions, target: str, src: Image.Image) -> dict:
     kw: dict = {}
     if target in LOSSY:
@@ -238,6 +279,9 @@ class ImageConverter(Converter):
                 kw["disposal"] = 2
         dest = unique_path(job.output_dir_for(src), src.stem, target)
         try:
+            if o.target_size_kb > 0 and not animated and target in LOSSY:
+                dest.write_bytes(_fit_to_size(frames[0], pil_format, kw, o.target_size_kb * 1024))
+                return dest
             frames[0].save(dest, format=pil_format, **kw)
         except Exception as exc:
             from umc.core.errors import ConversionError

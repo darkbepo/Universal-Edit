@@ -69,15 +69,32 @@ IMAGE_EXTS = {
     "dcr",
     "erf",
     "mef",
-    "mos",  # fmt: skip
+    "mos",
     "jp2",
     "qoi",
 }
 
 AUDIO_EXTS = {
-    "mp3", "wav", "flac", "m4a", "aac", "ogg", "oga", "opus", "wma", "aiff", "aif", "ac3",
-    "amr", "mka", "caf", "ape", "wv", "mp2", "au",
-}  # fmt: skip
+    "mp3",
+    "wav",
+    "flac",
+    "m4a",
+    "aac",
+    "ogg",
+    "oga",
+    "opus",
+    "wma",
+    "aiff",
+    "aif",
+    "ac3",
+    "amr",
+    "mka",
+    "caf",
+    "ape",
+    "wv",
+    "mp2",
+    "au",
+}
 
 VIDEO_EXTS = {
     "mp4",

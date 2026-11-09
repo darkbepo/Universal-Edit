@@ -31,6 +31,8 @@ type Extra = Omit<OptionSpec, "name" | "label" | "kind" | "default">;
 export const opt = {
   slider: (name: string, label: string, def: number, min: number, max: number, x: Extra = {}): OptionSpec =>
     ({ name, label, kind: "slider", default: def, min, max, ...x }),
+  float: (name: string, label: string, def: number, x: Extra = {}): OptionSpec =>
+    ({ name, label, kind: "float", default: def, ...x }),
   int: (name: string, label: string, def: number, x: Extra = {}): OptionSpec =>
     ({ name, label, kind: "int", default: def, ...x }),
   choice: (name: string, label: string, def: Value, choices: [Value, string][], x: Extra = {}): OptionSpec =>

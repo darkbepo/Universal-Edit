@@ -57,6 +57,21 @@ export default async function globalSetup() {
   } catch {
     console.warn("python3 not found: RAW/PSD e2e tests will be skipped");
   }
+  if (!existsSync(`${FIXTURES}noise.png`)) {
+    const pix = new mupdf.Pixmap(mupdf.ColorSpace.DeviceRGB, [0, 0, 1200, 900], false);
+    const px = pix.getPixels();
+    for (let k = 0; k < px.length; k++) px[k] = (Math.random() * 256) | 0;
+    writeFileSync(`${FIXTURES}noise.png`, pix.asPNG());
+  }
+  if (!existsSync(`${FIXTURES}noisy.mp4`)) {
+    try {
+      execFileSync("ffmpeg", ["-loglevel", "error", "-y", "-f", "lavfi", "-i",
+        "testsrc2=size=640x360:rate=30:duration=10,noise=alls=40:allf=t", "-f", "lavfi", "-i", "sine=duration=10",
+        "-shortest", "-c:v", "libx264", "-crf", "12", "-pix_fmt", "yuv420p", `${FIXTURES}noisy.mp4`]);
+    } catch {
+      /* skipped like the other video tests */
+    }
+  }
   if (!existsSync(`${FIXTURES}tone.wav`)) {
     try {
       execFileSync("ffmpeg", ["-loglevel", "error", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=3",

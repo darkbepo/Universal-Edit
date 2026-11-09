@@ -276,7 +276,9 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
       mupdf.js, so images are recompressed by hand: loadImage → Pixmap.warp (corners clockwise) →
       asJPEG → writeRawStream). Protect: owner password defaults to a random secret, otherwise the
       permissions are ignored. Option kind "password" exists in both apps.
-   4. Compress to a target size (video, image, PDF, audio)
+   4. ✅ Compress to a target size — `converters/sizing.py` / `sizing.ts`: video two-pass for
+      libx264/libvpx(-vp9) (else ABR + maxrate), audio bitrate from duration, images binary-search
+      quality then downscale, PDF compress walks a stronger-settings ladder (best effort).
    5. Data formats: JSON ↔ CSV ↔ XML ↔ YAML ↔ XLSX
    6. 3D printing: STL, OBJ, 3MF, PLY, GLB/GLTF, STEP/IGES (units, scale, mesh detail)
    7. OCR (tesseract)
