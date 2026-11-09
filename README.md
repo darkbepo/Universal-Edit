@@ -53,7 +53,7 @@ The browser version's source is in [`web/`](web/README.md).
 | PDF → Word keeping the layout | 🔜 | 🔜 |
 | OCR (scanned PDF / photo → text) | 🔜 | 🔜 |
 | Compress to a target size (video, image, PDF, audio) | ✅ | ✅ |
-| Data: JSON ↔ CSV ↔ XML ↔ YAML ↔ XLSX | 🔜 | 🔜 |
+| Data: JSON ↔ CSV ↔ TSV ↔ XML ↔ YAML ↔ XLSX | ✅ | 🔜 |
 | **3D printing**: STL, OBJ, 3MF, PLY, GLB, STEP / IGES | 🔜 | 🔜 |
 | Archives: ZIP, 7Z, RAR, TAR | 🔜 | 🔜 |
 | Subtitles: SRT, VTT, ASS · extract / burn into video | 🔜 | 🔜 |

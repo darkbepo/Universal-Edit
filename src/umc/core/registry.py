@@ -25,6 +25,7 @@ class Target:
 @cache
 def converters() -> tuple[Converter, ...]:
     from umc.converters.audio import AudioConverter, AudioExtractConverter
+    from umc.converters.data import DataConverter
     from umc.converters.document import DocumentConverter
     from umc.converters.document_images import DocumentToImagesConverter
     from umc.converters.gif import VideoToGifConverter
@@ -44,6 +45,7 @@ def converters() -> tuple[Converter, ...]:
         VideoToFramesConverter(),
         AudioExtractConverter(),
         AudioConverter(),
+        DataConverter(),
         DocumentConverter(),
         DocumentToImagesConverter(),
         DocumentSplitConverter(),

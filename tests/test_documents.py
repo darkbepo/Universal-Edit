@@ -53,8 +53,9 @@ def test_txt_to_docx_and_doc(media, tmp_path):
 
 
 @needs_soffice
-def test_csv_to_xlsx(media, tmp_path):
-    [out] = convert([media / "data.csv"], "doc:xlsx", tmp_path)
+def test_csv_to_ods_via_libreoffice(media, tmp_path):
+    # CSV → XLSX is handled by the Data group (no LibreOffice); ODS still goes via LibreOffice.
+    [out] = convert([media / "data.csv"], "doc:ods", tmp_path)
     assert out.stat().st_size > 0
 
 

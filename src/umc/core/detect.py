@@ -24,6 +24,7 @@ ALIASES = {
     "htm": "html",
     "xhtml": "html",
     "markdown": "md",
+    "yml": "yaml",
     "heif": "heic",
     "mpeg": "mpg",
     "text": "txt",
@@ -136,8 +137,9 @@ TEXT_DOCUMENT_EXTS = {
     "wpd",
 }
 SPREADSHEET_EXTS = {"xlsx", "xls", "ods", "csv"}
+DATA_EXTS = {"json", "yaml", "xml", "tsv"}
 PRESENTATION_EXTS = {"pptx", "ppt", "odp"}
-DOCUMENT_EXTS = TEXT_DOCUMENT_EXTS | SPREADSHEET_EXTS | PRESENTATION_EXTS
+DOCUMENT_EXTS = TEXT_DOCUMENT_EXTS | SPREADSHEET_EXTS | PRESENTATION_EXTS | DATA_EXTS
 
 
 @dataclass(frozen=True)

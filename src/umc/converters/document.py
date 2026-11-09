@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from umc.converters.base import Converter
+from umc.converters.data import DATA_READ
 from umc.core.detect import PRESENTATION_EXTS, SPREADSHEET_EXTS, DetectedFile, MediaFamily
 from umc.core.errors import ConversionError
 from umc.core.job import ConversionJob, unique_path
@@ -217,10 +218,15 @@ class DocumentConverter(Converter):
             common = r if common is None else common & r
         common = common or set()
         order = TEXT_TARGETS + [t for t in SHEET_TARGETS + SLIDE_TARGETS if t not in TEXT_TARGETS]
+        skip: set[str] = set()
+        if files and all(f.ext in DATA_READ for f in files):
+            skip = {"csv", "xlsx"}  # the Data group converts these without LibreOffice
+        if len(files) == 1 and files[0].ext != "pdf":
+            skip.add(files[0].ext)  # converting to the same format is pointless
         return [
             self.target(f"doc:{ext}", LABELS.get(ext, ext.upper()), ext, "Document")
             for ext in order
-            if ext in common
+            if ext in common and ext not in skip
         ]
 
     def run(self, job: ConversionJob) -> list[Path]:
