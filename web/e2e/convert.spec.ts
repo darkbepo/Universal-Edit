@@ -90,6 +90,17 @@ test("images → MP4 slideshow", async ({ page }) => {
   expect(data.subarray(4, 8).toString()).toBe("ftyp");
 });
 
+test("crossfade slideshow of 8 pictures → MP4", async ({ page }) => {
+  // One FFmpeg input per picture: with automatic thread counts this needed more than
+  // ffmpeg.wasm's 32 pool workers on many-core PCs and hung after the first frame.
+  await load(page, [...Array(8).keys()].map((i) => fx(`img${i}.png`)));
+  await page.locator(`.pill[data-target="slideshow:mp4"]`).click();
+  await page.getByRole("button", { name: /Settings/ }).click();
+  await page.locator("#opt-transition").selectOption({ label: "Crossfade" });
+  const data = await downloadSingle(page, "slideshow:mp4");
+  expect(data.subarray(4, 8).toString()).toBe("ftyp");
+});
+
 test("PDF split into three documents", async ({ page }) => {
   await load(page, [fx("three.pdf")]);
   await convert(page, "split:pdf");

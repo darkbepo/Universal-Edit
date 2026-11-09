@@ -9,7 +9,11 @@ export const FIXTURES = fileURLToPath(new URL("./fixtures/", import.meta.url));
 export default async function globalSetup() {
   mkdirSync(FIXTURES, { recursive: true });
   const mupdf = await import("mupdf");
-  const colors: [number, number, number][] = [[255, 0, 0], [0, 160, 0], [0, 0, 255]];
+  // img0–img2 for most tests; img3–img7 only for the 8-picture crossfade slideshow.
+  const colors: [number, number, number][] = [
+    [255, 0, 0], [0, 160, 0], [0, 0, 255],
+    [255, 200, 0], [0, 200, 200], [200, 0, 200], [40, 40, 40], [230, 230, 230],
+  ];
   colors.forEach(([r, g, b], i) => {
     const pix = new mupdf.Pixmap(mupdf.ColorSpace.DeviceRGB, [0, 0, 321, 241], false);
     const samples = pix.getPixels();

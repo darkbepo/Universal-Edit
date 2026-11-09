@@ -1,4 +1,4 @@
-﻿// Thread limits for the multi-threaded ffmpeg.wasm core.
+// Thread limits for the multi-threaded ffmpeg.wasm core.
 //
 // @ffmpeg/core-mt starts a fixed pool of 32 Web Workers (one per thread). A thread beyond the
 // pool needs a new Worker, which can only start once FFmpeg yields to the event loop — but
@@ -9,6 +9,11 @@
 //
 // The encoder cap is 4, not higher: with 6 x264 threads a 1080×1920 encode crashed the worker
 // (each frame thread holds whole frames, and the wasm heap is limited).
+//
+// With two or more inputs the decoders and filters get one thread each: crossfade slideshows
+// (one looped PNG input per picture + an xfade chain + x264) hung after frame 1 with 2 pictures
+// at 4 decoder threads, and with 5 pictures at 4 filter threads. FFmpeg uses more pool workers
+// than the flags alone suggest, so stay well below the pool.
 
 /** Workers @ffmpeg/core-mt pre-starts (`pthreadPoolSize` in ffmpeg-core.js). */
 export const POOL_SIZE = 32;
@@ -21,8 +26,8 @@ const MAX_ENCODER = 4;
 export function limitThreads(args: string[], cores: number): string[] {
   const c = Math.max(1, Math.floor(cores) || 1);
   const inputs = args.filter((a) => a === "-i").length;
-  const decoder = String(inputs > 2 ? 1 : Math.min(MAX_DECODER, c));
-  const filter = String(Math.min(MAX_FILTER, c));
+  const decoder = String(inputs > 1 ? 1 : Math.min(MAX_DECODER, c));
+  const filter = String(inputs > 1 ? 1 : Math.min(MAX_FILTER, c));
   const encoder = String(Math.min(MAX_ENCODER, c));
   const out = ["-filter_threads", filter, "-filter_complex_threads", filter];
   for (const a of args.slice(0, -1)) {

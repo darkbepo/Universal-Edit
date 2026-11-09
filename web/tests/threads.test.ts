@@ -34,10 +34,14 @@ describe("FFmpeg thread limits (multi-threaded ffmpeg.wasm)", () => {
     expect(out.at(-2)).toBe("2");
   });
 
-  it("uses one decoder thread per input when there are many inputs", () => {
-    const out = limitThreads(["-i", "a.png", "-i", "b.png", "-i", "c.png", "/o.mp4"], 12);
-    expect(count(out, "-threads")).toBe(4);
-    expect(out.slice(4, 8)).toEqual(["-threads", "1", "-i", "a.png"]);
+  it("uses one decoder and filter thread when there are several inputs", () => {
+    // Crossfade slideshows hung after frame 1: 2 pictures at 4 decoder threads per input,
+    // 5 pictures at 4 filter threads.
+    const two = limitThreads(["-loop", "1", "-i", "a.png", "-loop", "1", "-i", "b.png", "/o.mp4"], 12);
+    expect(two.slice(0, 4)).toEqual(["-filter_threads", "1", "-filter_complex_threads", "1"]);
+    expect(count(two, "-threads")).toBe(3);
+    expect(two.slice(6, 10)).toEqual(["-threads", "1", "-i", "a.png"]);
+    expect(two.slice(12, 16)).toEqual(["-threads", "1", "-i", "b.png"]);
   });
 
   it("leaves the output path last (two-pass null output too)", () => {
