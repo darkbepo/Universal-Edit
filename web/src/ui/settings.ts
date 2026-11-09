@@ -121,7 +121,10 @@ export class SettingsForm {
       cell.append(input);
       field.get = () => input.files?.[0] ?? null;
     } else {
-      const input = Object.assign(document.createElement("input"), { type: "text", id, value: String(value ?? "") });
+      const input = Object.assign(document.createElement("input"), {
+        type: spec.kind === "password" ? "password" : "text", id, value: String(value ?? ""),
+        autocomplete: spec.kind === "password" ? "new-password" : "off",
+      });
       input.placeholder = String(spec.default ?? "");
       input.addEventListener("input", this.changed);
       cell.append(input);

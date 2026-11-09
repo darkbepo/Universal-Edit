@@ -172,8 +172,10 @@ def _make_editor(spec: OptionSpec, on_change):
         edit.setText(spec.default)
         return box, edit.text, edit.setText
 
-    # text
+    # text / password
     w = QLineEdit()
+    if k == "password":
+        w.setEchoMode(QLineEdit.EchoMode.Password)
     w.setText(str(spec.default))
     w.setPlaceholderText(str(spec.default) or "")
     w.textChanged.connect(on_change)

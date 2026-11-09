@@ -124,6 +124,74 @@ const pdfText = async (data: Buffer) => {
   return [...Array(doc.countPages()).keys()].map((i) => doc.loadPage(i).toStructuredText("").asText()).join("\n");
 };
 
+test.describe("PDF tools", () => {
+  const openPdf = async (data: Buffer) => (await import("mupdf")).Document.openDocument(new Uint8Array(data), "application/pdf").asPDF()!;
+  const settings = async (page: Page, target: string) => {
+    await page.locator(`.pill[data-target="${target}"]`).click();
+    if (!(await page.locator(".form").isVisible())) await page.getByRole("button", { name: /Settings/ }).click();
+  };
+
+  test("merge a PDF and a Word file, with bookmarks", async ({ page }) => {
+    await load(page, [fx("three.pdf"), fx("report.docx")]);
+    const pdf = await openPdf(await downloadSingle(page, "pdf:merge"));
+    expect(pdf.countPages()).toBe(4);
+    expect(pdf.loadOutline()?.map((o) => o.title)).toEqual(["three", "report"]);
+  });
+
+  test("compress shrinks a photo PDF", async ({ page }) => {
+    await load(page, [fx("photo.pdf")]);
+    await settings(page, "pdf:compress");
+    await page.locator("#opt-level").selectOption({ label: "Strong (images 110 DPI)" });
+    const data = await downloadSingle(page, "pdf:compress");
+    const before = (await import("node:fs")).statSync(fx("photo.pdf")).size;
+    expect(data.length).toBeLessThan(before / 3);
+    expect((await openPdf(data)).countPages()).toBe(1);
+  });
+
+  test("rotate pages 2 onwards", async ({ page }) => {
+    await load(page, [fx("three.pdf")]);
+    await settings(page, "pdf:rotate");
+    await page.locator("#opt-rotate_pages").fill("2-");
+    const pdf = await openPdf(await downloadSingle(page, "pdf:rotate"));
+    const rot = (i: number) => { const r = pdf.loadPage(i).getObject().getInheritable("Rotate"); return r.isNumber() ? r.asNumber() : 0; };
+    expect([rot(0), rot(1), rot(2)]).toEqual([0, 90, 90]);
+  });
+
+  test("reorder and delete pages", async ({ page }) => {
+    await load(page, [fx("three.pdf")]);
+    await settings(page, "pdf:organize");
+    await page.locator("#opt-keep").fill("3, 1");
+    const pdf = await openPdf(await downloadSingle(page, "pdf:organize"));
+    expect([0, 1].map((i) => pdf.loadPage(i).toStructuredText("").asText().trim())).toEqual(["Page 3", "Page 1"]);
+  });
+
+  test("add a password, then remove it", async ({ page }, testInfo) => {
+    await load(page, [fx("three.pdf")]);
+    await settings(page, "pdf:protect");
+    await page.locator("#opt-password").fill("s3cret");
+    await page.locator("#opt-allow_copy").uncheck();
+    const locked = await downloadSingle(page, "pdf:protect");
+    const pdf = await openPdf(locked);
+    expect(pdf.needsPassword()).toBe(true);
+    expect(pdf.authenticatePassword("s3cret")).not.toBe(0);
+    expect(pdf.hasPermission("copy")).toBe(false);
+
+    const lockedPath = testInfo.outputPath("locked.pdf");
+    (await import("node:fs")).writeFileSync(lockedPath, locked);
+    await load(page, [lockedPath]);
+    await settings(page, "pdf:unlock");
+    await page.locator("#opt-password").fill("wrong");
+    await page.locator('.pill[data-target="pdf:unlock"]').click();
+    await page.getByRole("button", { name: "Convert" }).click();
+    await expect(page.locator(".status")).toHaveClass(/error/, { timeout: 60_000 });
+    await expect(page.locator(".status")).toContainText("password");
+
+    await page.locator("#opt-password").fill("s3cret");
+    const opened = await downloadSingle(page, "pdf:unlock");
+    expect((await openPdf(opened)).needsPassword()).toBe(false);
+  });
+});
+
 test.describe("documents", () => {
   test("tiny TXT → PDF (the owner's “eye effect.txt”)", async ({ page }) => {
     await load(page, [fx("eye effect.txt")]);

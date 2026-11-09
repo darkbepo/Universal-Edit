@@ -155,3 +155,105 @@ def refit_pages(
             new.show_pdf_page(box, doc, page.number, keep_proportion=True)
         out.save(dest, garbage=3, deflate=True)
     return dest
+
+
+# --------------------------------------------------------------------------- PDF toolkit
+
+# Compression presets: (image DPI target, JPEG quality); None = lossless clean-up only.
+COMPRESS_LEVELS = {
+    "lossless": None,
+    "recommended": (150, 75),
+    "strong": (110, 60),
+    "extreme": (72, 45),
+}
+
+
+def _open_unlocked(src: Path) -> pymupdf.Document:
+    doc = open_document(src)
+    if doc.needs_pass:
+        doc.close()
+        raise ConversionError(
+            f"“{src.name}” is password-protected. Use “Remove password” on it first."
+        )
+    return doc
+
+
+def _save(doc: pymupdf.Document, dest: Path, **kw) -> Path:
+    doc.save(dest, garbage=4, deflate=True, clean=True, **kw)
+    return dest
+
+
+def merge(sources: list[Path], dest: Path, bookmarks: bool, titles: list[str]) -> Path:
+    with pymupdf.open() as out:
+        toc = []
+        for src, title in zip(sources, titles, strict=True):
+            with _open_unlocked(src) as doc:
+                toc.append([1, title, out.page_count + 1])
+                out.insert_pdf(doc)
+        if bookmarks:
+            out.set_toc(toc)
+        return _save(out, dest)
+
+
+def compress(src: Path, dest: Path, level: str, strip_metadata: bool) -> Path:
+    with _open_unlocked(src) as doc:
+        preset = COMPRESS_LEVELS[level]
+        if preset:
+            dpi, quality = preset
+            doc.rewrite_images(dpi_threshold=dpi + 10, dpi_target=dpi, quality=quality)
+        if strip_metadata:
+            doc.set_metadata({})
+            doc.del_xml_metadata()
+        doc.subset_fonts()
+        return _save(doc, dest)
+
+
+def rotate(src: Path, dest: Path, angle: int, page_range: str) -> Path:
+    with _open_unlocked(src) as doc:
+        for i in parse_page_range(page_range, doc.page_count):
+            page = doc[i]
+            page.set_rotation((page.rotation + angle) % 360)
+        return _save(doc, dest)
+
+
+def organize(src: Path, dest: Path, keep: str, reverse: bool) -> Path:
+    with _open_unlocked(src) as doc:
+        pages = parse_page_range(keep, doc.page_count)
+        if reverse:
+            pages.reverse()
+        doc.select(pages)
+        return _save(doc, dest)
+
+
+def protect(
+    src: Path, dest: Path, password: str, owner_password: str, allow_print: bool,
+    allow_copy: bool, allow_edit: bool,
+) -> Path:  # fmt: skip
+    if not password:
+        raise ConversionError("Enter a password to protect the PDF with.")
+    perms = pymupdf.PDF_PERM_ACCESSIBILITY
+    if allow_print:
+        perms |= pymupdf.PDF_PERM_PRINT | pymupdf.PDF_PERM_PRINT_HQ
+    if allow_copy:
+        perms |= pymupdf.PDF_PERM_COPY
+    if allow_edit:
+        perms |= pymupdf.PDF_PERM_MODIFY | pymupdf.PDF_PERM_ANNOTATE | pymupdf.PDF_PERM_FORM
+        perms |= pymupdf.PDF_PERM_ASSEMBLE
+    # The owner password unlocks everything, so it must differ from the open password or the
+    # permissions would be ignored. Without one, use a random secret nobody knows.
+    if not owner_password or owner_password == password:
+        import secrets
+
+        owner_password = secrets.token_urlsafe(24)
+    with _open_unlocked(src) as doc:
+        return _save(
+            doc, dest, encryption=pymupdf.PDF_ENCRYPT_AES_256, user_pw=password,
+            owner_pw=owner_password, permissions=perms,
+        )  # fmt: skip
+
+
+def unlock(src: Path, dest: Path, password: str) -> Path:
+    with open_document(src) as doc:
+        if doc.needs_pass and not doc.authenticate(password):
+            raise ConversionError(f"That password doesn't open “{src.name}”.")
+        return _save(doc, dest, encryption=pymupdf.PDF_ENCRYPT_NONE)

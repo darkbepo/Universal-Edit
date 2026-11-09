@@ -2,7 +2,7 @@
 // panel renders them automatically (same idea as the desktop app's opt()).
 import { ConversionError } from "./types";
 
-export type Kind = "slider" | "int" | "float" | "choice" | "bool" | "text" | "color" | "file";
+export type Kind = "slider" | "int" | "float" | "choice" | "bool" | "text" | "password" | "color" | "file";
 export type Value = string | number | boolean | File | null;
 export type Values = Record<string, Value>;
 
@@ -39,6 +39,8 @@ export const opt = {
     ({ name, label, kind: "bool", default: def, ...x }),
   text: (name: string, label: string, def: string, x: Extra = {}): OptionSpec =>
     ({ name, label, kind: "text", default: def, ...x }),
+  password: (name: string, label: string, x: Extra = {}): OptionSpec =>
+    ({ name, label, kind: "password", default: "", ...x }),
   color: (name: string, label: string, def: string, x: Extra = {}): OptionSpec =>
     ({ name, label, kind: "color", default: def, ...x }),
   file: (name: string, label: string, x: Extra = {}): OptionSpec =>

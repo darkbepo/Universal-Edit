@@ -80,7 +80,7 @@ async function runRoute(
 const fileBytes = async (f: InputFile) => new Uint8Array(await f.file.arrayBuffer());
 
 /** Any supported document as PDF bytes (used by page images and split). */
-async function asPdf(f: InputFile, ctx: RunContext): Promise<Uint8Array> {
+export async function asPdf(f: InputFile, ctx: RunContext): Promise<Uint8Array> {
   const bytes = await fileBytes(f);
   if (f.ext === "pdf") return bytes;
   return (await runRoute({ bytes, ext: f.ext }, "pdf", baseName(f.name), ctx, {})).bytes;

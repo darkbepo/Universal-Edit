@@ -141,6 +141,7 @@ src/umc/
     document.py          # document ↔ document via a cheapest-route planner over engine "edges"
     document_images.py   # document → images (via PDF, rendered with PyMuPDF)
     split.py             # document → several PDFs (every page / N pages / custom ranges)
+    pdf_tools.py         # PDF toolkit: merge, compress, rotate, organize, protect, unlock
   tools/                 # wrappers around external programs/libraries
     process.py           # find_executable (bundled → PATH → known install dirs), cancellable run()
     installer.py         # one-click download + verify + install of LibreOffice / Pandoc (Windows)
@@ -270,7 +271,11 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
       needs an explicit format hint for RAW (`engines/magick.ts` readImage/readFrames), and PSD
       layers must not become animation frames. Test samples: `umc/core/samples.py` (DNG + PSD
       written from scratch; the web e2e setup calls it via python3).
-   3. PDF toolkit: merge, compress, rotate, protect/unlock, reorder/delete pages
+   3. ✅ PDF toolkit: merge, compress, rotate, protect/unlock, reorder/delete pages — desktop
+      `converters/pdf_tools.py` + `tools/pdf.py`; web `converters/pdftools.ts` (no rewriteImages in
+      mupdf.js, so images are recompressed by hand: loadImage → Pixmap.warp (corners clockwise) →
+      asJPEG → writeRawStream). Protect: owner password defaults to a random secret, otherwise the
+      permissions are ignored. Option kind "password" exists in both apps.
    4. Compress to a target size (video, image, PDF, audio)
    5. Data formats: JSON ↔ CSV ↔ XML ↔ YAML ↔ XLSX
    6. 3D printing: STL, OBJ, 3MF, PLY, GLB/GLTF, STEP/IGES (units, scale, mesh detail)

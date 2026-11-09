@@ -49,7 +49,7 @@ The browser version's source is in [`web/`](web/README.md).
 | Save as PowerPoint (PPTX) | ❌ | ✅ |
 | Documents → images (one per page) | ✅ | ✅ |
 | PDF: page range, paper size, margins, split | ✅ | ✅ |
-| PDF: merge, compress, rotate, protect / unlock, reorder pages | 🔜 | 🔜 |
+| PDF: merge, compress, rotate, add / remove password, reorder / delete pages | ✅ | ✅ |
 | PDF → Word keeping the layout | 🔜 | 🔜 |
 | OCR (scanned PDF / photo → text) | 🔜 | 🔜 |
 | Compress to a target size (video, image, PDF, audio) | 🔜 | 🔜 |

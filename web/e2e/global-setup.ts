@@ -24,6 +24,17 @@ export default async function globalSetup() {
     doc.insertPage(-1, page);
   }
   writeFileSync(`${FIXTURES}three.pdf`, doc.saveToBuffer("compress").asUint8Array());
+  // One page holding a large, noisy (hard to compress) photo, for "Compress".
+  if (!existsSync(`${FIXTURES}photo.pdf`)) {
+    const photo = new mupdf.PDFDocument();
+    const pix = new mupdf.Pixmap(mupdf.ColorSpace.DeviceRGB, [0, 0, 1600, 1200], false);
+    const px = pix.getPixels();
+    for (let k = 0; k < px.length; k++) px[k] = (Math.random() * 256) | 0;
+    const img = photo.addImage(new mupdf.Image(pix));
+    const res = photo.addObject({ XObject: { I0: img } });
+    photo.insertPage(-1, photo.addPage([0, 0, 595, 842], 0, res, "q 595 0 0 842 0 0 cm /I0 Do Q"));
+    writeFileSync(`${FIXTURES}photo.pdf`, photo.saveToBuffer("compress").asUint8Array());
+  }
   writeFileSync(`${FIXTURES}letter.doc`, "old binary Word file");
   writeFileSync(`${FIXTURES}eye effect.txt`, "Hi\n"); // the 3-byte file from the owner's test
   writeFileSync(`${FIXTURES}notes.txt`, "Plain text line 1\nLine 2 with ÆØÅ\n");

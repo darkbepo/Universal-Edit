@@ -2,6 +2,7 @@
 // Converter modules only *declare* engines; the heavy WebAssembly loads lazily in the worker.
 import { imageConverter, imagesToPdfConverter } from "../converters/image";
 import { documentConverter, pagesConverter, splitConverter } from "../converters/pdf";
+import { pdfToolsConverter } from "../converters/pdftools";
 import { slideshowConverter } from "../converters/slideshow";
 import { audioConverter, audioFileConverter, framesConverter, gifConverter, videoConverter } from "../converters/video";
 import { DESKTOP_ONLY_DOCUMENT_EXTS } from "./detect";
@@ -19,6 +20,7 @@ export const CONVERTERS: Converter[] = [
   documentConverter,
   pagesConverter,
   splitConverter,
+  pdfToolsConverter,
 ];
 
 export const converterById = (id: string) => CONVERTERS.find((c) => c.id === id)!;
