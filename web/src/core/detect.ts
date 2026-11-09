@@ -4,12 +4,12 @@ import type { Family, InputFile } from "./types";
 const ALIASES: Record<string, string> = {
   jpeg: "jpg", jpe: "jpg", jfif: "jpg", tif: "tiff", htm: "html", markdown: "md",
   heif: "heic", mpeg: "mpg", text: "txt", yml: "yaml", stp: "step", igs: "iges",
-  webvtt: "vtt", sami: "smi", tgz: "tar.gz", txz: "tar.xz", tbz2: "tar.bz2", tbz: "tar.bz2",
+  webvtt: "vtt", sami: "smi", epsf: "eps", epsi: "eps", tgz: "tar.gz", txz: "tar.xz", tbz2: "tar.bz2", tbz: "tar.bz2",
 };
 
 export const IMAGE_EXTS = new Set([
   "png", "jpg", "webp", "bmp", "tiff", "gif", "ico", "heic", "avif", "tga", "ppm", "pgm",
-  "pbm", "pcx", "dds", "psd", "jp2", "qoi", "jxl", "svg",
+  "pbm", "pcx", "dds", "psd", "jp2", "qoi", "jxl",
   // camera RAW
   "cr2", "cr3", "crw", "nef", "nrw", "arw", "srf", "sr2", "dng", "orf", "raf", "rw2", "pef",
   "srw", "x3f", "3fr", "iiq", "mrw", "kdc", "dcr", "erf", "mef", "mos",
@@ -31,6 +31,7 @@ export const WEB_DOCUMENT_EXTS = new Set([
 /** Documents recognised but only convertible in the desktop app (they need LibreOffice). */
 export const DESKTOP_ONLY_DOCUMENT_EXTS = new Set(["doc", "xls", "ppt", "ods", "odp", "wpd"]);
 
+export const VECTOR_EXTS = new Set(["svg", "eps", "ps", "ai"]);
 export const FONT_EXTS = new Set(["ttf", "otf", "woff", "woff2"]);
 export const SUBTITLE_EXTS = new Set(["srt", "vtt", "ass", "ssa", "smi", "lrc"]);
 export const ARCHIVE_EXTS = new Set(["zip", "7z", "rar", "tar", "tar.gz", "tar.xz", "tar.bz2"]);
@@ -53,6 +54,7 @@ export function familyOfExt(ext: string): Family | null {
   if (ARCHIVE_EXTS.has(ext)) return "archive";
   if (SUBTITLE_EXTS.has(ext)) return "subtitle";
   if (FONT_EXTS.has(ext)) return "font";
+  if (VECTOR_EXTS.has(ext)) return "vector";
   if (WEB_DOCUMENT_EXTS.has(ext) || DESKTOP_ONLY_DOCUMENT_EXTS.has(ext)) return "document";
   return null;
 }
@@ -60,6 +62,8 @@ export function familyOfExt(ext: string): Family | null {
 export function sniff(head: Uint8Array): string | null {
   const s = (a: number, b: number) => String.fromCharCode(...head.slice(a, b));
   if (s(0, 4) === "%PDF") return "pdf";
+  if (s(0, 10) === "%!PS-Adobe" && s(0, 40).includes("EPSF")) return "eps";
+  if (s(0, 2) === "%!") return "ps";
   if (s(0, 4) === "wOFF") return "woff";
   if (s(0, 4) === "wOF2") return "woff2";
   if (s(0, 4) === "OTTO") return "otf";

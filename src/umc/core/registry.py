@@ -42,6 +42,7 @@ def converters() -> tuple[Converter, ...]:
         SubtitleExtractConverter,
         SubtitleVideoConverter,
     )
+    from umc.converters.vector import PdfToSvgConverter, TraceConverter, VectorConverter
     from umc.converters.video import VideoConverter
     from umc.converters.video_frames import VideoToFramesConverter
 
@@ -64,6 +65,9 @@ def converters() -> tuple[Converter, ...]:
         ModelConverter(),
         ArchiveConverter(),
         FontConverter(),
+        VectorConverter(),
+        PdfToSvgConverter(),
+        TraceConverter(),
         SubtitleConverter(),
         SubtitleExtractConverter(),
         SubtitleVideoConverter(),

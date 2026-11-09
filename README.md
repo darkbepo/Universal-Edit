@@ -60,7 +60,9 @@ The browser version's source is in [`web/`](web/README.md).
 | Subtitles: SRT ↔ VTT ↔ ASS ↔ TTML ↔ LRC, shift timing, fix old encodings · extract from video · burn in · add as track | ✅ | ✅ |
 | Fonts: TTF / OTF ↔ WOFF ↔ WOFF2 · subset (Latin, Cyrillic, Greek or your own characters) | ✅ | ✅ |
 | Fonts: TTF ↔ OTF (changes the outline type) | ✅ | ❌ |
-| Vector: SVG, EPS, AI · image → SVG tracing | 🔜 | 🔜 |
+| Vector: SVG / AI → PNG, JPG, WEBP, TIFF · AI → SVG / PDF · PDF pages → SVG | ✅ | ✅ |
+| Vector: trace images into SVG (colour or black & white) | ✅ | ✅ |
+| Vector: SVG → PDF, EPS / PostScript in and out | ✅ | ❌ |
 | eBooks: save as MOBI / AZW3 (Kindle) | 🔜 | — |
 | CAD drawings: DXF (DWG if feasible) | 🔜 | 🔜 |
 | Files never leave your computer | ✅ | ✅ |

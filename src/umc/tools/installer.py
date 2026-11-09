@@ -1,4 +1,4 @@
-"""One-click installation of LibreOffice and Pandoc (Windows).
+"""One-click installation of LibreOffice, Pandoc and Ghostscript (Windows).
 
 Both are installed *privately* into the app's tools folder (see :func:`paths.tools_dir`):
 
@@ -322,7 +322,84 @@ def _works(soffice: str, cancel_event: threading.Event) -> bool:
     return True
 
 
+# --------------------------------------------------------------------------- Ghostscript
+
+GS_LATEST = "https://api.github.com/repos/ArtifexSoftware/ghostpdl-downloads/releases/latest"
+GS_PUBLISHER = "Artifex Software"
+GS_SPACE_BYTES = 300_000_000
+
+
+def pick_ghostscript_asset(release: dict) -> tuple[str, str, str | None]:
+    """``(version, url, sha256_or_None)`` of the 64-bit Windows installer (gsNNNNNw64.exe)."""
+    version = str(release.get("tag_name", "")).removeprefix("gs")
+    for asset in release.get("assets", []):
+        name = asset.get("name", "")
+        if re.fullmatch(r"gs\d+w64\.exe", name):
+            digest = asset.get("digest") or ""
+            sha = digest.split(":", 1)[1] if digest.startswith("sha256:") else None
+            return version, asset["browser_download_url"], sha
+    raise InstallError(
+        "Couldn't find a Windows download of Ghostscript.", details=json.dumps(release)[:500]
+    )
+
+
+def install_ghostscript(progress: Progress, cancel_event: threading.Event) -> str:
+    """Silent NSIS install into the private tools folder. Windows may ask for permission once."""
+    from umc.tools import ghostscript
+
+    root = tools_dir()
+    _check_space(root, GS_SPACE_BYTES, "Ghostscript")
+    progress(0.0, "Finding the latest Ghostscript…")
+    with _get(GS_LATEST) as resp:
+        version, url, sha = pick_ghostscript_asset(json.load(resp))
+    downloads = root / "downloads"
+    downloads.mkdir(exist_ok=True)
+    exe = downloads / url.rsplit("/", 1)[1]
+    target = root / "ghostscript"
+    try:
+        download(
+            url,
+            exe,
+            label=f"Ghostscript {version}",
+            expected_sha256=sha,
+            progress=lambda f, m: progress(0.7 * f, m),
+            cancel_event=cancel_event,
+        )
+        progress(0.72, "Checking the installer's signature…")
+        verify_authenticode(exe, GS_PUBLISHER)
+        progress(0.75, "Installing Ghostscript — please allow it if Windows asks…")
+        shutil.rmtree(target, ignore_errors=True)
+        # NSIS: /S = silent, /D= must be last and unquoted.
+        args = f"/S /D={target}"
+        try:
+            process.run(
+                f'"{exe}" {args}',
+                cancel_event=cancel_event,
+                timeout=900,
+                error_message="Ghostscript couldn't be installed.",
+            )
+        except OSError as exc:  # 740 = the installer needs admin rights: ask Windows to elevate
+            if getattr(exc, "winerror", None) != 740:
+                raise
+            ps = f"Start-Process -FilePath '{exe}' -ArgumentList '{args}' -Verb RunAs -Wait"
+            process.run(
+                ["powershell", "-NoProfile", "-Command", ps],
+                cancel_event=cancel_event,
+                timeout=900,
+                error_message="Ghostscript couldn't be installed. "
+                "If Windows asked for permission, please allow it.",
+            )
+        found = ghostscript.gs_path()
+        if found is None:
+            raise InstallError("Ghostscript was installed but gswin64c.exe wasn't found.")
+        progress(1.0, f"Ghostscript {version} installed.")
+        return found
+    finally:
+        exe.unlink(missing_ok=True)
+
+
 INSTALLERS: dict[str, Callable[[Progress, threading.Event], str]] = {
+    "Ghostscript": install_ghostscript,
     "LibreOffice": install_libreoffice,
     "Pandoc": install_pandoc,
 }

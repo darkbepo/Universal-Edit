@@ -1,6 +1,6 @@
 name: Test one-click installers
 
-# Downloads and installs the real LibreOffice and Pandoc into a private folder,
+# Downloads and installs the real LibreOffice, Pandoc and Ghostscript into a private folder,
 # then converts documents with them. Slow (~350 MB download), so it runs on demand.
 on:
   workflow_dispatch:
@@ -25,7 +25,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
-      - name: Install LibreOffice and Pandoc with the app's installer, then convert
+      - name: Install LibreOffice, Pandoc and Ghostscript with the app's installer, then convert
         env:
           UMC_LIVE_INSTALL: "1"
           UMC_TOOLS_DIR: ${{ runner.temp }}\umc-tools

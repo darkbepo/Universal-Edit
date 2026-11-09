@@ -66,6 +66,26 @@ export default async function globalSetup() {
   }
   // Fonts: DejaVu Sans (also the subtitle font) as a real-world TTF with thousands of glyphs.
   copyFileSync(fileURLToPath(new URL("../node_modules/dejavu-fonts-ttf/ttf/DejaVuSans.ttf", import.meta.url)), `${FIXTURES}DejaVuSans.ttf`);
+  // Vector: an SVG, an Illustrator file (modern .ai = a PDF inside), a PostScript EPS and a flat
+  // two-colour picture to trace.
+  {
+    writeFileSync(`${FIXTURES}logo.svg`, '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100" viewBox="0 0 200 100">' +
+      '<rect x="10" y="10" width="80" height="80" fill="#ff0000"/><circle cx="150" cy="50" r="40" fill="#0000ff"/></svg>');
+    const ai = new mupdf.PDFDocument();
+    const font = ai.addSimpleFont(new mupdf.Font("Helvetica"));
+    ai.insertPage(-1, ai.addPage([0, 0, 300, 150], 0, ai.addObject({ Font: { F1: font } }),
+      "0 0.6 0 rg 10 10 130 130 re f BT /F1 20 Tf 0 g 160 70 Td (Illustrator) Tj ET"));
+    writeFileSync(`${FIXTURES}poster.ai`, ai.saveToBuffer("compress").asUint8Array());
+    writeFileSync(`${FIXTURES}art.eps`, "%!PS-Adobe-3.0 EPSF-3.0\n%%BoundingBox: 0 0 200 100\n1 0 0 setrgbcolor 10 10 80 80 rectfill showpage\n");
+    const shapes = new mupdf.Pixmap(mupdf.ColorSpace.DeviceRGB, [0, 0, 300, 200], false);
+    const px = shapes.getPixels();
+    for (let y = 0; y < 200; y++) for (let x = 0; x < 300; x++) {
+      const i = (y * 300 + x) * 3;
+      const c = x >= 20 && x < 120 && y >= 20 && y < 180 ? [255, 0, 0] : (x - 215) ** 2 + (y - 105) ** 2 < 65 ** 2 ? [0, 0, 128] : [255, 255, 255];
+      px.set(c, i);
+    }
+    writeFileSync(`${FIXTURES}shapes.png`, shapes.asPNG());
+  }
   // OCR language data (served to the page by a route in the tests, unless run against the live
   // site). Taken from packaging/tessdata (scripts/fetch_tessdata.py eng dan) or downloaded.
   for (const code of ["eng", "dan"]) {

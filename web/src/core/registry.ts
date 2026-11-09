@@ -6,6 +6,7 @@ import { modelConverter } from "../converters/model3d";
 import { ocrImageConverter, ocrPdfConverter } from "../converters/ocr";
 import { archiveConverter, packConverter } from "../converters/archive";
 import { fontConverter } from "../converters/fonts";
+import { pdfToSvgConverter, traceConverter, vectorConverter } from "../converters/vector";
 import { subtitleConverter, subtitleExtractConverter, subtitleVideoConverter } from "../converters/subtitles";
 import { documentConverter, pagesConverter, splitConverter } from "../converters/pdf";
 import { pdfToolsConverter } from "../converters/pdftools";
@@ -33,6 +34,9 @@ export const CONVERTERS: Converter[] = [
   ocrPdfConverter,
   archiveConverter,
   fontConverter,
+  vectorConverter,
+  pdfToSvgConverter,
+  traceConverter,
   subtitleConverter,
   subtitleExtractConverter,
   subtitleVideoConverter,
@@ -57,6 +61,10 @@ export function targetsFor(files: InputFile[]): TargetResult {
       targets: [],
       note: `${kinds} files can't be converted in the browser — they need LibreOffice, which only the desktop app can install. Newer formats (DOCX, XLSX, PPTX) work here.`,
     };
+  }
+  const postscript = files.filter((f) => f.ext === "eps" || f.ext === "ps");
+  if (postscript.length && postscript.length === files.length) {
+    return { targets: [], note: "EPS and PostScript files need Ghostscript, which only the desktop app can install. SVG and Illustrator (.ai) files work here." };
   }
   const family = families.size === 1 ? [...families][0] : null; // null = mixed: only "pack" targets
   const seen = new Set<string>();

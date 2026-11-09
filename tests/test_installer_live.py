@@ -1,4 +1,7 @@
-"""Real downloads + installs. Only runs when UMC_LIVE_INSTALL=1 (CI on windows-latest)."""
+"""Real downloads + installs (LibreOffice, Pandoc, Ghostscript).
+
+Only runs when UMC_LIVE_INSTALL=1 (CI on windows-latest).
+"""
 
 import os
 import sys
@@ -64,6 +67,29 @@ def test_install_libreoffice_and_convert(media, tmp_path):
     [pdf] = convert([docx], "doc:pdf", tmp_path)
     with pymupdf.open(pdf) as doc:
         assert "Plain text line 1" in doc[0].get_text()
+
+
+def test_install_ghostscript_and_convert(tmp_path):
+    import pymupdf
+
+    from umc.core.errors import ConversionError
+    from umc.tools import ghostscript, installer
+
+    try:
+        exe = installer.install_ghostscript(_progress, threading.Event())
+    except ConversionError as exc:
+        pytest.fail(f"{exc}\nDETAILS: {exc.details}")
+    print("gs:", exe, flush=True)
+    assert ghostscript.gs_path() == exe
+    eps = tmp_path / "t.eps"
+    eps.write_text(
+        "%!PS-Adobe-3.0 EPSF-3.0\n%%BoundingBox: 0 0 100 50\n/Helvetica findfont 12 scalefont "
+        "setfont 10 20 moveto (Hello EPS) show showpage\n",
+        encoding="ascii",
+    )
+    [pdf] = convert([eps], "vec:pdf", tmp_path / "out")
+    with pymupdf.open(pdf) as doc:
+        assert "Hello EPS" in doc[0].get_text()
 
 
 def test_signature_check_rejects_unsigned_and_tampered(tmp_path):

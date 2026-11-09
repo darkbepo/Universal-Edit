@@ -345,3 +345,52 @@ def ocr_save(out: pymupdf.Document, dest: Path) -> Path:
 def ocr_text(out: pymupdf.Document) -> str:
     """Plain text of every page, pages separated by a blank line."""
     return "\n\n".join(page.get_text().strip() for page in out) + "\n"
+
+
+# --------------------------------------------------------------------------- vector files
+
+
+def vector_to_pdf(src: Path, ext: str, dest: Path) -> Path | None:
+    """SVG or PDF-compatible Illustrator (.ai) → PDF. ``None`` if MuPDF can't read it (old AI)."""
+    try:
+        if ext == "svg":
+            with pymupdf.open(src, filetype="svg") as doc:
+                dest.write_bytes(doc.convert_to_pdf())
+            return dest
+        with pymupdf.open(src, filetype="pdf") as doc:  # Illustrator 9+ saves a PDF inside .ai
+            if doc.needs_pass:
+                raise ConversionError(f"“{src.name}” is password-protected.")
+            doc.save(dest, garbage=3, deflate=True)
+        return dest
+    except ConversionError:
+        raise
+    except (RuntimeError, ValueError, pymupdf.FileDataError) as exc:
+        if ext == "svg":
+            raise ConversionError(
+                f"Couldn't read “{src.name}”. Is it a valid SVG?", details=repr(exc)
+            ) from exc
+        return None
+
+
+def pdf_page_count(src: Path) -> int:
+    with pymupdf.open(src) as doc:
+        return doc.page_count
+
+
+def page_to_svg(src: Path, index: int, text_as_paths: bool) -> str:
+    with pymupdf.open(src) as doc:
+        return doc[index].get_svg_image(text_as_path=text_as_paths)
+
+
+def render_page(src: Path, index: int, width_px: int, default_dpi: int, alpha: bool):
+    """Render one page to a PIL image, ``width_px`` wide (0 = at ``default_dpi``)."""
+    from PIL import Image
+
+    with pymupdf.open(src) as doc:
+        page = doc[index]
+        zoom = width_px / page.rect.width if width_px else default_dpi / 72
+        if page.rect.width * zoom * page.rect.height * zoom > 400_000_000:
+            raise ConversionError("That output size is too large. Choose a smaller width.")
+        pix = page.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom), alpha=alpha)
+        mode = "RGBA" if pix.alpha else "RGB"
+        return Image.frombytes(mode, (pix.width, pix.height), pix.samples)

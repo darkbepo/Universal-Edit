@@ -94,6 +94,20 @@ def _font_check(d: Path, out: Path) -> list[Path]:
     return [woff2, otf, back]
 
 
+def _vector_check(d: Path, out: Path, imgs: list[Path]) -> list[Path]:
+    svg = d / "logo.svg"
+    svg.write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="60">'
+        '<rect width="60" height="60" fill="red"/>'
+        '<circle cx="90" cy="30" r="25" fill="blue"/></svg>',
+        encoding="utf-8",
+    )
+    [png] = _convert([svg], "vec:png", out)
+    [pdf_out] = _convert([svg], "vec:pdf", out)
+    [traced] = _convert(imgs[:1], "trace:svg", out)
+    return [png, pdf_out, traced]
+
+
 def run(report: Path) -> int:
     from PIL import Image
 
@@ -134,6 +148,7 @@ def run(report: Path) -> int:
             ),
             ("subtitles: srt -> vtt, burn in, add track, extract", lambda: _subtitle_check(d, out)),
             ("fonts: ttf -> woff2 -> otf -> ttf (subset)", lambda: _font_check(d, out)),
+            ("vector: svg -> png/pdf, trace png -> svg", lambda: _vector_check(d, out, imgs)),
             ("mp4 -> webm", lambda: _convert([out / "img0 slideshow.mp4"], "webm", out)),
             ("mp4 -> gif", lambda: _convert([out / "img0 slideshow.mp4"], "video:gif", out)),
             ("mp4 -> frames", lambda: _convert([out / "img0 slideshow.mp4"], "frames:png", out)),

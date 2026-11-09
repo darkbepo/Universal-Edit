@@ -17,6 +17,7 @@ class MediaFamily(StrEnum):
     ARCHIVE = "archive"
     SUBTITLE = "subtitle"
     FONT = "font"
+    VECTOR = "vector"
 
 
 # Aliases → canonical extension.
@@ -33,6 +34,8 @@ ALIASES = {
     "tgz": "tar.gz",
     "webvtt": "vtt",
     "sami": "smi",
+    "epsf": "eps",
+    "epsi": "eps",
     "txz": "tar.xz",
     "tbz2": "tar.bz2",
     "tbz": "tar.bz2",
@@ -154,6 +157,7 @@ MODEL_EXTS = {"stl", "obj", "ply", "glb", "3mf", "off", "step", "iges"}
 ARCHIVE_EXTS = {"zip", "7z", "rar", "tar", "tar.gz", "tar.xz", "tar.bz2"}
 SUBTITLE_EXTS = {"srt", "vtt", "ass", "ssa", "smi", "lrc"}
 FONT_EXTS = {"ttf", "otf", "woff", "woff2"}
+VECTOR_EXTS = {"svg", "eps", "ps", "ai"}
 COMPOUND_EXTS = ("tar.gz", "tar.xz", "tar.bz2")
 PRESENTATION_EXTS = {"pptx", "ppt", "odp"}
 DOCUMENT_EXTS = TEXT_DOCUMENT_EXTS | SPREADSHEET_EXTS | PRESENTATION_EXTS | DATA_EXTS
@@ -199,6 +203,8 @@ def family_of_ext(ext: str) -> MediaFamily | None:
         return MediaFamily.SUBTITLE
     if ext in FONT_EXTS:
         return MediaFamily.FONT
+    if ext in VECTOR_EXTS:
+        return MediaFamily.VECTOR
     if ext in DOCUMENT_EXTS:
         return MediaFamily.DOCUMENT
     return None
@@ -260,6 +266,10 @@ def _sniff(path: Path) -> str | None:
         return _sniff_zip(path)
     if head[:4] in (b"wOFF", b"wOF2"):
         return "woff" if head[:4] == b"wOFF" else "woff2"
+    if head.startswith(b"%!PS-Adobe") and b"EPSF" in head[:40]:
+        return "eps"
+    if head.startswith(b"%!"):
+        return "ps"
     if head[:4] == b"OTTO":
         return "otf"
     if head[:4] in (b"\x00\x01\x00\x00", b"true"):

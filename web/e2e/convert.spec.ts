@@ -603,3 +603,83 @@ test.describe("fonts", () => {
     await expect(page.locator(".status")).toContainText("desktop app");
   });
 });
+
+test.describe("vector", () => {
+  /** Decode an image (PNG/JPG/SVG…) in the page; return its size and the RGBA at relative points. */
+  const inspect = (page: Page, data: Buffer, type: string, points: [number, number][]) =>
+    page.evaluate(async ({ b64, type, points }) => {
+      const blob = new Blob([Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))], { type });
+      const img = new Image();
+      img.src = URL.createObjectURL(blob);
+      await img.decode();
+      const w = img.naturalWidth || 300, h = img.naturalHeight || 200;
+      const canvas = new OffscreenCanvas(w, h);
+      const g = canvas.getContext("2d")!;
+      g.drawImage(img, 0, 0, w, h);
+      return { w, h, px: points.map(([x, y]) => [...g.getImageData(Math.floor(x * w), Math.floor(y * h), 1, 1).data]) };
+    }, { b64: data.toString("base64"), type, points });
+
+  test("SVG → PNG keeps size, colours and transparency", async ({ page }) => {
+    await load(page, [fx("logo.svg")]);
+    const png = await downloadSingle(page, "vec:png");
+    const r = await inspect(page, png, "image/png", [[0.25, 0.5], [0.75, 0.5], [0.98, 0.02]]);
+    expect([r.w, r.h]).toEqual([200, 100]);
+    expect(r.px[0].slice(0, 3)).toEqual([255, 0, 0]);
+    expect(r.px[1].slice(0, 3)).toEqual([0, 0, 255]);
+    expect(r.px[2][3]).toBe(0);
+    await expect(page.locator('.pill[data-target="vec:pdf"]')).toHaveCount(0); // desktop only
+  });
+
+  test("Illustrator → PDF stays vector", async ({ page }) => {
+    await load(page, [fx("poster.ai")]);
+    const pdf = await downloadSingle(page, "vec:pdf");
+    const mupdf = await import("mupdf");
+    const doc = mupdf.Document.openDocument(new Uint8Array(pdf), "application/pdf");
+    expect(Math.round(doc.loadPage(0).getBounds()[2])).toBe(300);
+    expect(doc.loadPage(0).toStructuredText("").asText()).toContain("Illustrator");
+  });
+
+  test("Illustrator → SVG and JPG at a chosen width", async ({ page }) => {
+    await load(page, [fx("poster.ai")]);
+    const svg = (await downloadSingle(page, "svg")).toString("utf8");
+    expect(svg).toContain("<svg");
+    expect(svg).toContain("<path");
+    await page.locator('.pill[data-target="vec:jpg"]').click();
+    await page.getByRole("button", { name: /Settings/ }).click();
+    await page.locator("#opt-width_px").fill("600");
+    const jpg = await downloadSingle(page, "vec:jpg");
+    const r = await inspect(page, jpg, "image/jpeg", [[0.2, 0.5]]);
+    expect([r.w, r.h]).toEqual([600, 300]);
+    expect(r.px[0][1]).toBeGreaterThan(120); // green square
+  });
+
+  test("PDF pages → SVG", async ({ page }) => {
+    await load(page, [fx("three.pdf")]);
+    await convert(page, "pages:svg");
+    expect(await page.locator(".results a.fname").allTextContents()).toEqual(["three_1.svg", "three_2.svg", "three_3.svg"]);
+  });
+
+  for (const mode of ["color", "binary"]) {
+    test(`trace a picture to SVG (${mode})`, async ({ page }) => {
+      await load(page, [fx("shapes.png")]);
+      await page.locator('.pill[data-target="trace:svg"]').click();
+      await page.getByRole("button", { name: /Settings/ }).click();
+      await page.locator("#opt-colour_mode").selectOption({ label: mode === "color" ? "Full colour" : "Black & white" });
+      const svg = await downloadSingle(page, "trace:svg");
+      expect(svg.toString("utf8")).toContain("<path");
+      const r = await inspect(page, svg, "image/svg+xml", [[70 / 300, 0.5], [215 / 300, 105 / 200], [0.02, 0.02]]);
+      expect([r.w, r.h]).toEqual([300, 200]);
+      if (mode === "color") {
+        expect(r.px[0].slice(0, 3)).toEqual([255, 0, 0]);
+        expect(r.px[1].slice(0, 3)).toEqual([0, 0, 128]);
+      } else {
+        expect(r.px[0].slice(0, 3)).toEqual([0, 0, 0]); // red is dark enough to become black
+      }
+    });
+  }
+
+  test("EPS explains it needs the desktop app", async ({ page }) => {
+    await load(page, [fx("art.eps")]);
+    await expect(page.getByText("need Ghostscript")).toBeVisible();
+  });
+});

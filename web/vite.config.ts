@@ -65,6 +65,9 @@ export default defineConfig({
   plugins: [coiServiceWorker(), libarchiveAssets()],
   resolve: {
     alias: [
+      // vectortracer (MIT) is built for bundlers that import .wasm as ES modules; we instantiate it ourselves
+      { find: /^vectortracer-bg$/, replacement: fileURLToPath(new URL("./node_modules/vectortracer/pkg/vectortracer_bg.js", import.meta.url)) },
+      { find: /^vectortracer-wasm/, replacement: fileURLToPath(new URL("./node_modules/vectortracer/pkg/vectortracer_bg.wasm", import.meta.url)) },
       { find: /^pandoc-wasm-core$/, replacement: fileURLToPath(new URL("./node_modules/pandoc-wasm/src/core.js", import.meta.url)) },
       { find: /^pandoc-wasm-binary/, replacement: fileURLToPath(new URL("./node_modules/pandoc-wasm/src/pandoc.wasm", import.meta.url)) },
     ],

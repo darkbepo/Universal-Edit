@@ -19,3 +19,18 @@ declare module "occt-import-js" {
   const init: (opts?: { locateFile?: (path: string) => string }) => Promise<any>;
   export default init;
 }
+declare module "vectortracer-bg" {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  export function __wbg_set_wasm(exports: any): void;
+  export class BinaryImageConverter {
+    constructor(image: ImageData, params: Record<string, unknown>, options: Record<string, unknown>);
+    init(): void;
+    tick(): boolean;
+    getResult(): string;
+    free(): void;
+  }
+}
+declare module "vectortracer-wasm?url" {
+  const url: string;
+  export default url;
+}

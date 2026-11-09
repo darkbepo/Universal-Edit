@@ -69,7 +69,7 @@ See `web/README.md` for commands and deployment.
 
 - **Stack:** TypeScript + Vite, no UI framework. Engines are WebAssembly, loaded lazily inside one
   long-lived module Worker (`src/worker/jobWorker.ts`): ffmpeg.wasm (`@ffmpeg/core`, multi-threaded
-  `core-mt` when cross-origin isolated), ImageMagick (`@imagemagick/magick-wasm`), MuPDF (`mupdf`), three.js + occt-import-js (3D), tesseract.js (OCR), libarchive.js (archives), HarfBuzz hb-subset + woff2-encoder (fonts),
+  `core-mt` when cross-origin isolated), ImageMagick (`@imagemagick/magick-wasm`), MuPDF (`mupdf`), three.js + occt-import-js (3D), tesseract.js (OCR), libarchive.js (archives), HarfBuzz hb-subset + woff2-encoder (fonts), resvg + vectortracer (vector),
   Pandoc (official `pandoc-wasm`, ~16 MB gz; wired via `pandoc-wasm-core` / `pandoc-wasm-binary`
   aliases in `vite.config.ts` because the package only exports a browser entry Vite can't bundle).
 - **Documents:** `converters/docroute.ts` is a port of the desktop route planner (pandoc edges +
@@ -78,7 +78,7 @@ See `web/README.md` for commands and deployment.
   collapse). TXT → PDF wraps the text in `<pre>` HTML (UTF-8, falling back to Windows-1252).
 - **Same architecture as the desktop app:** `core/` (detect, options schema → auto form, registry,
   types — no DOM/WASM), `converters/` (declare options + targets; `run()` imports engines dynamically
-  so the page bundle stays under ~100 KB), `engines/`, `ui/`. Target ids match the desktop ones.
+  so the page bundle stays around ~100 KB), `engines/`, `ui/`. Target ids match the desktop ones.
 - **Cancel** = terminate the worker (kills FFmpeg's nested worker too); a new worker starts next run.
 - **Must be cross-origin isolated** (COOP/COEP): headers in `vite.config.ts` / `public/_headers`;
   where a host can't send them (GitHub Pages) `coi-serviceworker.js` (emitted by a plugin in
@@ -148,10 +148,12 @@ src/umc/
     archive.py           # archives: extract / repack, and pack any files into ZIP/7Z/TAR.GZ
     subtitles.py         # subtitles ↔ subtitles, extract from video, burn in / add as track
     fonts.py             # fonts: TTF ↔ OTF ↔ WOFF ↔ WOFF2, subsetting (fontTools)
+    vector.py            # SVG/EPS/PS/AI ↔ each other / PDF / images; PDF → SVG; image tracing
   tools/                 # wrappers around external programs/libraries
     process.py           # find_executable (bundled → PATH → known install dirs), cancellable run()
     installer.py         # one-click download + verify + install of LibreOffice / Pandoc (Windows)
     archive.py           # ZIP (pyzipper) / 7Z (py7zr) / TAR / RAR (bsdtar) read + write, safe extraction
+    ghostscript.py       # EPS/PS via Ghostscript (-dSAFER), found or one-click installed
     tessdata.py          # OCR language files: bundled English, pinned SHA-256 downloads
     winsign.py           # Authenticode check via WinVerifyTrust/crypt32 (PowerShell's module is unreliable)
     ffmpeg.py, libreoffice.py, pandoc.py, pdf.py
@@ -327,7 +329,14 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
       woff2-encoder for WOFF2, HarfBuzz `harfbuzz-subset.wasm` driven through its C exports
       (keeps GSUB/GPOS) — fonteditor-core was rejected because it drops OpenType layout. No
       TTF ↔ OTF on the web (no JS CFF writer that keeps layout).
-   11. Vector: SVG/EPS/AI, image → SVG tracing
+   11. ✅ Vector (family "vector": svg, eps, ps, ai): → `svg|eps|ps`, `vec:pdf|png|jpg|webp|tiff`;
+      PDF → `pages:svg`; images → `trace:svg`. Desktop `converters/vector.py` goes through PDF:
+      SVG / modern AI via PyMuPDF (`tools/pdf.py`), EPS / PS / old AI via Ghostscript
+      (`tools/ghostscript.py`, always `-dSAFER`; one-click NSIS install, signed by Artifex, may need
+      UAC once — covered by `test-installers.yml`), tracing with vtracer (MIT). Web: MuPDF.js has
+      no SVG reader, so SVG → images uses resvg-wasm (MPL-2.0, DejaVu font); AI and PDF via MuPDF
+      (DocumentWriter "svg"/"pdf"); colour tracing = ImageMagick quantize + vectortracer's binary
+      tracer per colour, stacked (vectortracer has no colour mode). EPS/PS, SVG → PDF/SVG desktop only.
    12. PDF → Word keeping layout
    13. eBooks: MOBI/AZW3 output (desktop, Calibre one-click install)
    14. CAD: DXF (DWG if feasible)
