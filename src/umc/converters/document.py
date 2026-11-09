@@ -20,12 +20,31 @@ from umc.core.detect import PRESENTATION_EXTS, SPREADSHEET_EXTS, DetectedFile, M
 from umc.core.errors import ConversionError
 from umc.core.job import ConversionJob, unique_path
 from umc.core.options import opt
-from umc.tools import libreoffice, pandoc, pdf
+from umc.tools import calibre, libreoffice, pandoc, pdf
 
 PYMUPDF, PANDOC, SOFFICE = "pymupdf", "pandoc", "libreoffice"
 PDF2DOCX = "pdf2docx"
+CALIBRE = "calibre"
+# Calibre reads these and writes the e-book formats below (Kindle formats only through it)
+CALIBRE_IN = ("epub", "mobi", "azw3", "fb2", "docx", "odt", "html", "txt", "md", "rtf")
+EBOOK_OUT = ("mobi", "azw3", "epub", "fb2")
 
-TEXT_TARGETS = ["pdf", "docx", "doc", "odt", "rtf", "txt", "md", "html", "epub", "rst", "tex"]
+TEXT_TARGETS = [
+    "pdf",
+    "docx",
+    "doc",
+    "odt",
+    "rtf",
+    "txt",
+    "md",
+    "html",
+    "epub",
+    "mobi",
+    "azw3",
+    "fb2",
+    "rst",
+    "tex",
+]
 SHEET_TARGETS = ["xlsx", "xls", "ods", "csv", "pdf", "html"]
 SLIDE_TARGETS = ["pptx", "ppt", "odp", "pdf"]
 
@@ -94,6 +113,15 @@ def _edges() -> list[Edge]:
     # pdf2docx rebuilds the page layout (text boxes, tables, columns, images) as an editable DOCX;
     # cheaper than LibreOffice's PDF import, so PDF → ODT/DOC/RTF also go through it.
     e.append(Edge(PDF2DOCX, "pdf", "docx", 1))
+    # Calibre: the only route to MOBI / AZW3; also reads Kindle files (→ EPUB opens up the rest).
+    for s in CALIBRE_IN:
+        for d in EBOOK_OUT:
+            if s != d:
+                e.append(
+                    Edge(
+                        CALIBRE, s, d, 1.2 if d in ("mobi", "azw3") or s in ("mobi", "azw3") else 3
+                    )
+                )
     # LibreOffice Calc / Impress.
     for s in SPREADSHEET_EXTS:
         for d in SHEET_TARGETS:
@@ -115,6 +143,8 @@ def _engine_available(engine: str) -> bool:
         return pandoc.is_available()
     if engine == SOFFICE:
         return libreoffice.is_available()
+    if engine == CALIBRE:
+        return calibre.is_available()
     return True
 
 
@@ -122,7 +152,9 @@ def plan(src: str, dst: str, available: dict[str, bool] | None = None) -> list[E
     """Cheapest list of edges converting ``src`` to ``dst`` (``[]`` if they're equal)."""
     if src == dst:
         return []
-    avail = available or {eng: _engine_available(eng) for eng in (PYMUPDF, PANDOC, SOFFICE)}
+    avail = available or {
+        eng: _engine_available(eng) for eng in (PYMUPDF, PANDOC, SOFFICE, CALIBRE)
+    }
     best: dict[str, float] = {src: 0.0}
     prev: dict[str, Edge] = {}
     heap = [(0.0, src)]
@@ -168,6 +200,13 @@ class DocumentOptions:
     page_range: str = opt(
         "all", "Pages", help="For PDF sources. e.g. 1-3, 5, 8- (all = every page)"
     )
+    ebook_title: str = opt(
+        "",
+        "Book title",
+        targets=("doc:mobi", "doc:azw3", "doc:epub", "doc:fb2"),
+        help="Shown in the e-reader's library. Empty = taken from the file.",
+    )
+    ebook_author: str = opt("", "Author", targets=("doc:mobi", "doc:azw3", "doc:epub", "doc:fb2"))
     toc: bool = opt(
         False,
         "Add a table of contents",
@@ -295,6 +334,15 @@ def convert_document(
 def _run_edge(edge: Edge, src: Path, src_ext: str, out: Path, job: ConversionJob, toc: bool):
     if edge.engine == PDF2DOCX:
         pdf.pdf_to_docx(src, out)
+    elif edge.engine == CALIBRE:
+        o = job.options
+        calibre.convert(
+            src,
+            out,
+            cancel_event=job.cancel_event,
+            title=getattr(o, "ebook_title", ""),
+            authors=getattr(o, "ebook_author", ""),
+        )
     elif edge.engine == PYMUPDF:
         if edge.dst == "pdf":
             pdf.to_pdf(src, out)

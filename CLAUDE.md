@@ -154,6 +154,7 @@ src/umc/
     installer.py         # one-click download + verify + install of LibreOffice / Pandoc (Windows)
     archive.py           # ZIP (pyzipper) / 7Z (py7zr) / TAR / RAR (bsdtar) read + write, safe extraction
     ghostscript.py       # EPS/PS via Ghostscript (-dSAFER), found or one-click installed
+    calibre.py           # Kindle MOBI/AZW3 via Calibre's ebook-convert, found or one-click installed
     tessdata.py          # OCR language files: bundled English, pinned SHA-256 downloads
     winsign.py           # Authenticode check via WinVerifyTrust/crypt32 (PowerShell's module is unreliable)
     ffmpeg.py, libreoffice.py, pandoc.py, pdf.py
@@ -341,7 +342,10 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
       `tools/pdf.py`) is a `pdf → docx` edge in the document route planner (cost 1, below
       LibreOffice's PDF import), so PDF → ODT/DOC/RTF also go via it. Scans without text are
       sent to OCR first. The web keeps its flowing-text route (MuPDF HTML → Pandoc).
-   13. eBooks: MOBI/AZW3 output (desktop, Calibre one-click install)
+   13. ✅ eBooks (desktop): Calibre's `ebook-convert` (GPL-3, separate program, `tools/calibre.py`)
+      is a document-route engine: Kindle MOBI/AZW3 in and out, plus EPUB/FB2 (expensive edges, so
+      Pandoc keeps those routes). One-click install = the signed Calibre MSI (Kovid Goyal) unpacked
+      with `msiexec /a` like LibreOffice, then a test conversion. Title / author options. Web: —.
    14. CAD: DXF (DWG if feasible)
    15. Close web gaps: WebCodecs for H.265/VP9/AV1, LibreOffice-wasm for DOC/XLS/PPT
 10. **Editor** (only after 9 is done): image editor (paint/photoshop-like), video timeline

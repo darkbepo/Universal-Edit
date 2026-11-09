@@ -63,7 +63,7 @@ The browser version's source is in [`web/`](web/README.md).
 | Vector: SVG / AI → PNG, JPG, WEBP, TIFF · AI → SVG / PDF · PDF pages → SVG | ✅ | ✅ |
 | Vector: trace images into SVG (colour or black & white) | ✅ | ✅ |
 | Vector: SVG → PDF, EPS / PostScript in and out | ✅ | ❌ |
-| eBooks: save as MOBI / AZW3 (Kindle) | 🔜 | — |
+| eBooks: save as MOBI / AZW3 (Kindle), read Kindle books (one-click Calibre install) | ✅ | — |
 | CAD drawings: DXF (DWG if feasible) | 🔜 | 🔜 |
 | Files never leave your computer | ✅ | ✅ |
 | No install needed | ❌ | ✅ |

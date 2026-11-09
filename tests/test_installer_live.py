@@ -1,4 +1,4 @@
-"""Real downloads + installs (LibreOffice, Pandoc, Ghostscript).
+"""Real downloads + installs (LibreOffice, Pandoc, Ghostscript, Calibre).
 
 Only runs when UMC_LIVE_INSTALL=1 (CI on windows-latest).
 """
@@ -90,6 +90,20 @@ def test_install_ghostscript_and_convert(tmp_path):
     [pdf] = convert([eps], "vec:pdf", tmp_path / "out")
     with pymupdf.open(pdf) as doc:
         assert "Hello EPS" in doc[0].get_text()
+
+
+def test_install_calibre_and_convert(media, tmp_path):
+    from umc.core.errors import ConversionError
+    from umc.tools import calibre, installer
+
+    try:
+        exe = installer.install_calibre(_progress, threading.Event())
+    except ConversionError as exc:
+        pytest.fail(f"{exc}\nDETAILS: {exc.details}")
+    print("ebook-convert:", exe, flush=True)
+    assert calibre.ebook_convert_path() == exe
+    [azw3] = convert([media / "doc.md"], "doc:azw3", tmp_path)
+    assert azw3.read_bytes()[60:68] == b"BOOKMOBI"
 
 
 def test_signature_check_rejects_unsigned_and_tampered(tmp_path):

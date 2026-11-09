@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from umc.core.errors import ConversionCancelled, ConversionError
-from umc.tools import ffmpeg, ghostscript, installer, libreoffice, pandoc
+from umc.tools import calibre, ffmpeg, ghostscript, installer, libreoffice, pandoc
 
 log = logging.getLogger(__name__)
 
@@ -31,6 +31,7 @@ _CHECKS = {
     "LibreOffice": libreoffice.is_available,
     "Pandoc": pandoc.is_available,
     "Ghostscript": ghostscript.is_available,
+    "Calibre": calibre.is_available,
     "FFmpeg": ffmpeg.is_available,
     "FFmpeg (ffprobe)": ffmpeg.is_available,
 }
@@ -42,6 +43,8 @@ _WHY = {
     "formats.",
     "Ghostscript": "Ghostscript is a free PostScript interpreter. Universal Media Converter uses "
     "it to open and write EPS and PostScript (.ps) files.",
+    "Calibre": "Calibre is a free e-book manager. Universal Media Converter uses its converter "
+    "to make Kindle e-books (MOBI and AZW3).",
     "FFmpeg": "FFmpeg is a free video toolkit used for every video and audio conversion.",
 }
 
@@ -49,6 +52,7 @@ _SIZE = {
     "LibreOffice": "about a 350 MB download, roughly 1 GB on disk, and a few minutes",
     "Pandoc": "about a 40 MB download",
     "Ghostscript": "about a 50 MB download",
+    "Calibre": "about a 200 MB download, roughly 600 MB on disk",
 }
 
 

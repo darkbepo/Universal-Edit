@@ -147,6 +147,7 @@ TEXT_DOCUMENT_EXTS = {
     "org",
     "xps",
     "mobi",
+    "azw3",
     "fb2",
     "cbz",
     "wpd",

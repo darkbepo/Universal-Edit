@@ -1,4 +1,4 @@
-"""One-click installation of LibreOffice, Pandoc and Ghostscript (Windows).
+"""One-click installation of LibreOffice, Pandoc, Ghostscript and Calibre (Windows).
 
 Both are installed *privately* into the app's tools folder (see :func:`paths.tools_dir`):
 
@@ -398,7 +398,71 @@ def install_ghostscript(progress: Progress, cancel_event: threading.Event) -> st
         exe.unlink(missing_ok=True)
 
 
+# --------------------------------------------------------------------------- Calibre
+
+CALIBRE_LATEST = "https://code.calibre-ebook.com/latest"
+CALIBRE_MSI = "https://download.calibre-ebook.com/{v}/calibre-64bit-{v}.msi"
+CALIBRE_PUBLISHER = "Kovid Goyal"
+CALIBRE_SPACE_BYTES = 1_200_000_000
+
+
+def latest_calibre() -> tuple[str, str]:
+    with _get(CALIBRE_LATEST) as resp:
+        version = resp.read().decode("ascii", "replace").strip()
+    if not re.fullmatch(r"\d+(\.\d+){1,3}", version):
+        raise InstallError("Couldn't find the latest Calibre version.", details=version[:200])
+    return version, CALIBRE_MSI.format(v=version)
+
+
+def install_calibre(progress: Progress, cancel_event: threading.Event) -> str:
+    """Unpack the signed Calibre MSI privately (``msiexec /a``: no admin), then test it."""
+    from umc.core.paths import find_in_tools
+    from umc.tools import calibre
+
+    root = tools_dir()
+    _check_space(root, CALIBRE_SPACE_BYTES, "Calibre")
+    progress(0.0, "Finding the latest Calibre…")
+    version, url = latest_calibre()
+    downloads = root / "downloads"
+    downloads.mkdir(exist_ok=True)
+    msi = downloads / url.rsplit("/", 1)[1]
+    target = root / "calibre"
+    try:
+        download(
+            url,
+            msi,
+            label=f"Calibre {version}",
+            progress=lambda f, m: progress(0.7 * f, m),
+            cancel_event=cancel_event,
+        )
+        progress(0.71, "Checking the installer's signature…")
+        _require_msi(msi)
+        verify_authenticode(msi, CALIBRE_PUBLISHER)
+        progress(0.73, "Installing Calibre (this takes a minute)…")
+        shutil.rmtree(target, ignore_errors=True)
+        target.mkdir(parents=True)
+        _msiexec(
+            f'/a "{msi}" /qn TARGETDIR="{target}"',
+            root / "calibre-unpack.log",
+            cancel_event,
+            "Unpacking Calibre failed.",
+        )
+        exe = find_in_tools("calibre", "ebook-convert.exe")
+        if exe is None:
+            raise InstallError("Calibre was unpacked but ebook-convert.exe wasn't found.")
+        progress(0.95, "Testing Calibre…")
+        with tempfile.TemporaryDirectory(prefix="umc-calibre-test-") as tmp:
+            src = Path(tmp) / "test.txt"
+            src.write_text("Universal Media Converter test\n", encoding="utf-8")
+            calibre.convert(src, Path(tmp) / "test.epub", cancel_event=cancel_event, exe=exe)
+        progress(1.0, f"Calibre {version} installed.")
+        return exe
+    finally:
+        msi.unlink(missing_ok=True)
+
+
 INSTALLERS: dict[str, Callable[[Progress, threading.Event], str]] = {
+    "Calibre": install_calibre,
     "Ghostscript": install_ghostscript,
     "LibreOffice": install_libreoffice,
     "Pandoc": install_pandoc,
