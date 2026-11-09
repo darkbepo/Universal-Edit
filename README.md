@@ -18,7 +18,8 @@ Drop files in, pick an output format, (optionally) tweak settings, press **Conve
 
 Prefer a program on your PC, or need something the browser can't do? The **Windows desktop app**
 adds old Office formats (DOC, XLS, PPT and OpenDocument spreadsheets/presentations), VP9 / H.265 /
-AV1 video and very large files. It installs LibreOffice and Pandoc for you with one click when a
+AV1 video and very large files, and it converts video much faster because it uses your whole
+processor (the browser version is limited to a few threads). It installs LibreOffice and Pandoc for you with one click when a
 conversion needs them.
 
 Get it from **Actions → Build Windows executable** → latest successful run → download

@@ -19,7 +19,12 @@ const h = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLEle
   return el;
 };
 
-const fmtSize = (n: number) => (n < 1024 ? `${n} B` : n < 1 << 20 ? `${(n / 1024).toFixed(0)} KB` : `${(n / (1 << 20)).toFixed(1)} MB`);
+// Video encoding in the browser is capped at a few threads (engines/threads.ts), so point out
+// that the desktop app is much faster for these.
+const SLOW_IN_BROWSER = new Set(["video", "gif", "frames", "slideshow", "subtitles-video"]);
+const DESKTOP_URL = "https://github.com/darkbepo/Universal-Media-Converter#desktop-app-for-the-heavy-stuff";
+
+const fmtSize =(n: number) => (n < 1024 ? `${n} B` : n < 1 << 20 ? `${(n / 1024).toFixed(0)} KB` : `${(n / (1 << 20)).toFixed(1)} MB`);
 
 export function mountApp(root: HTMLElement): void {
   const client = new ConversionClient();
@@ -43,6 +48,10 @@ export function mountApp(root: HTMLElement): void {
   const note = h("div", { class: "note", hidden: true });
   const formatSection = h("div", { class: "section", hidden: true }, "Convert to");
   const formats = h("div");
+  const speedTip = h("div", { class: "hint speed-tip", hidden: true },
+    "Video is slower in the browser. The ",
+    h("a", { href: DESKTOP_URL, target: "_blank", rel: "noopener" }, "Windows desktop app"),
+    " uses your whole processor and converts video much faster.");
   const disclosure = h("button", { class: "disclosure", hidden: true });
   const form = new SettingsForm(() => {
     if (target) remembered[target.converterId] = form.values();
@@ -65,7 +74,7 @@ export function mountApp(root: HTMLElement): void {
       h("div", { class: "header" },
         h("div", {}, h("h1", {}, "Universal Media Converter"), h("p", { class: "subtitle" }, "Images, video, audio and documents — drop it in, pick a format.")),
         h("span", { class: "badge", title: "Everything is processed in your browser. Nothing is uploaded." }, "🔒 Files never leave your device")),
-      picker, drop, filesCard, note, formatSection, formats, disclosure, settingsCard, resultsCard),
+      picker, drop, filesCard, note, formatSection, formats, speedTip, disclosure, settingsCard, resultsCard),
     bar,
   );
 
@@ -188,6 +197,7 @@ export function mountApp(root: HTMLElement): void {
       sticky = false;
     }
     target = t;
+    speedTip.hidden = !(t && SLOW_IN_BROWSER.has(t.converterId));
     for (const b of formats.querySelectorAll<HTMLButtonElement>(".pill")) b.setAttribute("aria-pressed", String(b.dataset.target === t?.id));
     if (t) {
       localStorageSet("last-target", t.id);

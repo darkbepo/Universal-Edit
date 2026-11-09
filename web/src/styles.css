@@ -83,6 +83,8 @@ h1 { font-size: 22px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.01em
 .icon-btn:hover { color: var(--danger); background: var(--surface-alt); }
 .hint { color: var(--muted); font-size: 12px; margin-top: 4px; }
 .note { color: var(--danger); margin-top: 10px; }
+.speed-tip { margin-top: 10px; font-size: 13px; }
+.speed-tip a { color: var(--accent); }
 
 .pills { display: flex; flex-wrap: wrap; gap: 6px; }
 .pill {
