@@ -190,3 +190,43 @@ def test_dialog_shows_error_when_install_fails(qtbot, monkeypatch):
     )
     assert dlg.install_button.isEnabled()
     assert dlg.result() == 0  # still open, not accepted
+
+
+def test_pick_calibre_asset_prefers_github_msi_with_digest():
+    from umc.tools import installer
+
+    release = {
+        "tag_name": "v8.14.0",
+        "assets": [
+            {"name": "calibre-8.14.0.tar.xz", "browser_download_url": "x"},
+            {
+                "name": "calibre-64bit-8.14.0.msi",
+                "browser_download_url": "https://github.com/x.msi",
+                "digest": "sha256:" + "a" * 64,
+            },
+        ],
+    }
+    assert installer.pick_calibre_asset(release) == ("8.14.0", "https://github.com/x.msi", "a" * 64)
+    no_msi = {"tag_name": "v8.14.0", "assets": []}
+    assert installer.pick_calibre_asset(no_msi) == (
+        "8.14.0",
+        "https://download.calibre-ebook.com/8.14.0/calibre-64bit-8.14.0.msi",
+        None,
+    )
+
+
+def test_pick_libredwg_and_ghostscript_assets():
+    from umc.tools import installer
+
+    gs = {
+        "tag_name": "gs10051",
+        "assets": [
+            {"name": "gs10051w64.exe", "browser_download_url": "u", "digest": "sha256:" + "b" * 64}
+        ],
+    }
+    assert installer.pick_ghostscript_asset(gs) == ("10051", "u", "b" * 64)
+    dwg = {
+        "tag_name": "0.13.3",
+        "assets": [{"name": "libredwg-0.13.3-win64.zip", "browser_download_url": "z"}],
+    }
+    assert installer.pick_libredwg_asset(dwg) == ("0.13.3", "z", None)

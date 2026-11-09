@@ -400,18 +400,33 @@ def install_ghostscript(progress: Progress, cancel_event: threading.Event) -> st
 
 # --------------------------------------------------------------------------- Calibre
 
-CALIBRE_LATEST = "https://code.calibre-ebook.com/latest"
+# code.calibre-ebook.com serves an incomplete TLS chain (Python can't verify it), so the
+# version comes from the GitHub releases API; the MSI from the release if attached, else from
+# download.calibre-ebook.com. Either way its Authenticode signature is checked.
+CALIBRE_LATEST = "https://api.github.com/repos/kovidgoyal/calibre/releases/latest"
 CALIBRE_MSI = "https://download.calibre-ebook.com/{v}/calibre-64bit-{v}.msi"
 CALIBRE_PUBLISHER = "Kovid Goyal"
 CALIBRE_SPACE_BYTES = 1_200_000_000
 
 
-def latest_calibre() -> tuple[str, str]:
-    with _get(CALIBRE_LATEST) as resp:
-        version = resp.read().decode("ascii", "replace").strip()
+def pick_calibre_asset(release: dict) -> tuple[str, str, str | None]:
+    """``(version, msi_url, sha256_or_None)`` from a GitHub release of kovidgoyal/calibre."""
+    version = str(release.get("tag_name", "")).lstrip("v")
     if not re.fullmatch(r"\d+(\.\d+){1,3}", version):
-        raise InstallError("Couldn't find the latest Calibre version.", details=version[:200])
-    return version, CALIBRE_MSI.format(v=version)
+        raise InstallError(
+            "Couldn't find the latest Calibre version.", details=json.dumps(release)[:300]
+        )
+    for asset in release.get("assets", []):
+        if asset.get("name") == f"calibre-64bit-{version}.msi":
+            digest = asset.get("digest") or ""
+            sha = digest.split(":", 1)[1] if digest.startswith("sha256:") else None
+            return version, asset["browser_download_url"], sha
+    return version, CALIBRE_MSI.format(v=version), None
+
+
+def latest_calibre() -> tuple[str, str, str | None]:
+    with _get(CALIBRE_LATEST) as resp:
+        return pick_calibre_asset(json.load(resp))
 
 
 def install_calibre(progress: Progress, cancel_event: threading.Event) -> str:
