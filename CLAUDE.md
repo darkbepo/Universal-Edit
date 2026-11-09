@@ -246,7 +246,8 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
 
 - PyInstaller one-folder build is the default (faster startup than one-file, easier to bundle binaries).
 - FFmpeg/ffprobe are bundled under `bin/` (GPL build, includes x264/x265) together with its
-  licence text (`FFMPEG-LICENSE.txt`).
+  licence text (`FFMPEG-LICENSE.txt`). It's the BtbN **shared** build: two tiny exes + one set of
+  FFmpeg DLLs = 194 MB, instead of two self-contained 162 MB exes (324 MB). `--static` restores those.
 - LibreOffice (~1 GB installed) and Pandoc are **not bundled**. Lookup order: the app's private
   tools folder (`%LOCALAPPDATA%\UniversalMediaConverter\tools`) → bundled → `PATH` → standard
   install locations (e.g. `C:\Program Files\LibreOffice\program\soffice.exe`).
