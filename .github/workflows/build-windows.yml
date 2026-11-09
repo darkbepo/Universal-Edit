@@ -24,6 +24,18 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
+      # The prebuilt PyInstaller launcher is shared with a lot of malware, so antivirus
+      # machine-learning scanners (e.g. Defender's "Bearfoos.B!ml") flag apps that use it.
+      # Compiling our own launcher from source avoids that false positive.
+      - name: Rebuild PyInstaller with a locally compiled bootloader
+        env:
+          PYINSTALLER_COMPILE_BOOTLOADER: "1"
+        run: |
+          $v = python -c "import importlib.metadata as m; print(m.version('pyinstaller'))"
+          pip uninstall -y pyinstaller
+          pip install --no-cache-dir --no-binary pyinstaller "pyinstaller==$v"
+          python -c "import PyInstaller, pathlib; p = pathlib.Path(PyInstaller.__file__).parent / 'bootloader' / 'Windows-64bit-intel' / 'runw.exe'; print(p, p.stat().st_size)"
+
       - name: Fetch FFmpeg (GPL build with x264/x265)
         run: |
           python scripts/fetch_ffmpeg.py
@@ -41,6 +53,9 @@ jobs:
                 -ArgumentList "--self-test", "$PWD\selftest.txt" -Wait -PassThru
           Get-Content selftest.txt
           if ($p.ExitCode -ne 0) { exit 1 }
+          $info = (Get-Item "dist\UniversalMediaConverter\UniversalMediaConverter.exe").VersionInfo
+          $info | Format-List ProductName, FileDescription, FileVersion, LegalCopyright
+          if ($info.ProductName -ne "Universal Media Converter") { throw "version info missing" }
 
       - name: Zip
         run: Compress-Archive -Path dist/UniversalMediaConverter -DestinationPath UniversalMediaConverter-windows.zip

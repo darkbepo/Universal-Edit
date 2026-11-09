@@ -184,6 +184,11 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
   - Disk space is checked first; the MSI is deleted afterwards; msiexec logs go next to the tools.
 - Conversions that don't need LibreOffice (images, video, PDF → images, Pandoc formats) must keep
   working when it is absent.
+- **Antivirus false positives** (e.g. Defender `Trojan:Win32/Bearfoos.B!ml`, where `!ml` means a
+  machine-learning guess): the prebuilt PyInstaller bootloader is shared with malware, so CI
+  recompiles the bootloader from source (`PYINSTALLER_COMPILE_BOOTLOADER=1`), and the spec embeds
+  Windows version info. Keep `upx=False` (UPX packing makes it worse). The real fix is code
+  signing — not set up yet (needs the owner's decision; SignPath.io is free for open source).
 - The Windows build is produced by `.github/workflows/build-windows.yml` (Actions → "Build Windows
   executable" → Run workflow, or push a `v*` tag); download the zip from the run's artifacts.
 
