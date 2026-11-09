@@ -137,7 +137,7 @@ src/umc/
     codecs.py            # codec → encoder fallback lists, container rules, rate-control args
     video_frames.py      # video → image sequence ("N frames per 30" select filter)
     gif.py               # video → GIF (palettegen/paletteuse)
-    audio.py             # video → audio only
+    audio.py             # audio ↔ audio, and video → audio only (shared _AudioConverter)
     document.py          # document ↔ document via a cheapest-route planner over engine "edges"
     document_images.py   # document → images (via PDF, rendered with PyMuPDF)
     split.py             # document → several PDFs (every page / N pages / custom ranges)
@@ -265,7 +265,7 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
 9. **Converter parity with the big online converters** (owner wants all of these, in this order;
    each lands in BOTH apps where possible, and the "What works where" table in README.md must be
    updated in the same commit):
-   1. Audio files as input (MP3/WAV/FLAC/M4A/OGG… ↔ each other)
+   1. ✅ Audio files as input (MP3/WAV/FLAC/M4A/OGG… ↔ each other) — `MediaFamily.AUDIO` / family "audio"
    2. Camera RAW + PSD input
    3. PDF toolkit: merge, compress, rotate, protect/unlock, reorder/delete pages
    4. Compress to a target size (video, image, PDF, audio)

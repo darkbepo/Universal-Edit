@@ -3,7 +3,7 @@
 import { imageConverter, imagesToPdfConverter } from "../converters/image";
 import { documentConverter, pagesConverter, splitConverter } from "../converters/pdf";
 import { slideshowConverter } from "../converters/slideshow";
-import { audioConverter, framesConverter, gifConverter, videoConverter } from "../converters/video";
+import { audioConverter, audioFileConverter, framesConverter, gifConverter, videoConverter } from "../converters/video";
 import { DESKTOP_ONLY_DOCUMENT_EXTS } from "./detect";
 import type { Converter, InputFile, Target } from "./types";
 
@@ -15,6 +15,7 @@ export const CONVERTERS: Converter[] = [
   gifConverter,
   framesConverter,
   audioConverter,
+  audioFileConverter,
   documentConverter,
   pagesConverter,
   splitConverter,
@@ -32,7 +33,7 @@ export function targetsFor(files: InputFile[]): TargetResult {
   if (!files.length) return { targets: [], note: "" };
   const families = new Set(files.map((f) => f.family));
   if (families.size > 1) {
-    return { targets: [], note: "Please add files of one kind at a time (only images, only videos or only documents)." };
+    return { targets: [], note: "Please add files of one kind at a time (only images, only videos, only audio or only documents)." };
   }
   const desktopOnly = files.filter((f) => DESKTOP_ONLY_DOCUMENT_EXTS.has(f.ext));
   if (desktopOnly.length) {

@@ -192,6 +192,27 @@ test.describe("video", () => {
     expect(data.length).toBeGreaterThan(1000);
   });
 
+  for (const [fmt, magic] of [["mp3", null], ["flac", "fLaC"], ["ogg", "OggS"], ["m4a", "ftyp"], ["aiff", "FORM"], ["wma", null]] as const) {
+    test(`WAV → ${fmt.toUpperCase()}`, async ({ page }) => {
+      await load(page, [fx("tone.wav")]);
+      await expect(page.locator(".files-head")).toContainText("1 audio file");
+      const data = await downloadSingle(page, fmt);
+      expect(data.length).toBeGreaterThan(1000);
+      if (magic) expect(data.toString("latin1", 0, 12)).toContain(magic);
+    });
+  }
+
+  test("audio settings: mono, trimmed", async ({ page }) => {
+    await load(page, [fx("tone.wav")]);
+    await page.locator('.pill[data-target="wav"]').click();
+    await page.getByRole("button", { name: /Settings/ }).click();
+    await page.locator("#opt-channels").selectOption({ label: "Mono" });
+    await page.locator("#opt-end").fill("1");
+    const data = await downloadSingle(page, "wav");
+    expect(data.readUInt16LE(22)).toBe(1); // WAV header: channel count
+    expect(data.length).toBeLessThan(150_000); // ~1 s of 16-bit mono 44.1/48 kHz
+  });
+
   test("cancel stops a conversion", async ({ page }) => {
     await load(page, [fx("clip.mp4")]);
     await page.locator(`.pill[data-target="mkv"]`).click();

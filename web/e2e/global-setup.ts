@@ -36,12 +36,20 @@ export default async function globalSetup() {
   const r = await pandoc.convert({ from: "markdown", to: "docx", "output-file": "out.docx" },
     "# Report\n\nFirst paragraph with **bold**.\n\n- one\n- two\n", {});
   writeFileSync(`${FIXTURES}report.docx`, Buffer.from(await (r.files["out.docx"] as Blob).arrayBuffer()));
+  if (!existsSync(`${FIXTURES}tone.wav`)) {
+    try {
+      execFileSync("ffmpeg", ["-loglevel", "error", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=3",
+        "-ac", "2", `${FIXTURES}tone.wav`]);
+    } catch {
+      /* skipped like the video tests */
+    }
+  }
   if (!existsSync(`${FIXTURES}clip.mp4`)) {
     try {
       execFileSync("ffmpeg", ["-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc=duration=2:size=320x240:rate=30",
         "-f", "lavfi", "-i", "sine=duration=2", "-shortest", "-pix_fmt", "yuv420p", `${FIXTURES}clip.mp4`]);
     } catch {
-      console.warn("ffmpeg not found: video e2e tests will be skipped");
+      console.warn("ffmpeg not found: video and audio e2e tests will be skipped");
     }
   }
 }

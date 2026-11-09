@@ -6,6 +6,7 @@ device** (WebAssembly in a Web Worker) — files are never uploaded.
 | From | To |
 |---|---|
 | Images (PNG, JPG, WEBP, AVIF, HEIC*, GIF, BMP, TIFF, ICO, TGA, QOI, JXL…) | any image format · slideshow video (MP4/WebM/MKV/MOV) or GIF · PDF |
+| Audio (MP3, WAV, FLAC, M4A, OGG, OPUS, AIFF, WMA…) | any other audio format, with bitrate, sample rate, channels, volume, normalise and trim |
 | Videos (MP4, MKV, MOV, AVI, WebM…) | MP4, WebM, MKV, MOV, AVI · GIF · frames (N per 30) · audio (MP3, M4A, WAV, FLAC, OGG, OPUS) |
 | Documents: PDF, DOCX, ODT, RTF, TXT, Markdown, HTML, EPUB, CSV, XLSX, PPTX, XPS… | PDF (page range, paper size) · DOCX · ODT · RTF · TXT · Markdown · HTML · EPUB · PPTX · images per page · split into several PDFs |
 

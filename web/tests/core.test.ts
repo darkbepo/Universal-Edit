@@ -77,6 +77,14 @@ describe("registry", () => {
     expect(ids).toEqual(expect.arrayContaining(["jpg", "webp", "avif", "slideshow:mp4", "slideshow:gif", "images:pdf"]));
     expect(targetsFor([input("a.png", "image")]).targets.map((t) => t.id)).not.toContain("slideshow:gif");
   });
+  it("offers audio targets for audio files", () => {
+    expect(familyOfExt("flac")).toBe("audio");
+    const ids = targetsFor([input("song.wav", "audio")]).targets.map((t) => t.id);
+    expect(ids).toEqual(expect.arrayContaining(["mp3", "m4a", "flac", "ogg", "opus", "aiff", "wma", "ac3"]));
+    expect(sniff(new TextEncoder().encode("RIFF\0\0\0\0WAVEfmt "))).toBe("wav");
+    expect(sniff(new TextEncoder().encode("ID3\x04"))).toBe("mp3");
+    expect(sniff(new TextEncoder().encode("fLaC"))).toBe("flac");
+  });
   it("offers video targets", () => {
     const ids = targetsFor([input("a.mp4", "video")]).targets.map((t) => t.id);
     expect(ids).toEqual(expect.arrayContaining(["webm", "mkv", "video:gif", "frames:png", "audio:mp3"]));

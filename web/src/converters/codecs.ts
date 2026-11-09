@@ -18,6 +18,9 @@ export const AUDIO_ENCODERS: Record<string, string[]> = {
   vorbis: ["libvorbis", "vorbis"],
   flac: ["flac"],
   pcm: ["pcm_s16le"],
+  pcm_be: ["pcm_s16be"],
+  wma: ["wmav2"],
+  ac3: ["ac3"],
 };
 export const VIDEO_CODEC_LABELS: Record<string, string> = {
   h264: "H.264 (most compatible)", vp8: "VP8", mpeg4: "MPEG-4 Part 2",

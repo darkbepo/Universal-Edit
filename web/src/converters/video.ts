@@ -204,41 +204,56 @@ export const framesConverter: Converter = {
 };
 
 const AUDIO_TARGETS: Record<string, [string, string]> = {
-  mp3: ["MP3", "mp3"], m4a: ["M4A (AAC)", "aac"], wav: ["WAV", "pcm"], flac: ["FLAC", "flac"], ogg: ["OGG", "vorbis"], opus: ["OPUS", "opus"],
+  mp3: ["MP3", "mp3"], m4a: ["M4A (AAC)", "aac"], wav: ["WAV", "pcm"], flac: ["FLAC", "flac"],
+  ogg: ["OGG", "vorbis"], opus: ["OPUS", "opus"], aiff: ["AIFF", "pcm_be"], wma: ["WMA", "wma"], ac3: ["AC-3", "ac3"],
 };
-const LOSSY_AUDIO = ["audio:mp3", "audio:m4a", "audio:ogg", "audio:opus"];
+const LOSSY_EXTS = ["mp3", "m4a", "ogg", "opus", "wma", "ac3"];
+// Option targets cover both id styles: video → audio ("audio:mp3") and audio → audio ("mp3").
+const LOSSY_AUDIO = [...LOSSY_EXTS.map((e) => `audio:${e}`), ...LOSSY_EXTS];
 
-export const audioConverter: Converter = {
-  id: "audio",
-  family: "video",
-  options: [
-    opt.choice("bitrate", "Bitrate", 192, [64, 96, 128, 160, 192, 256, 320].map((b) => [b, `${b} kbps`]), { targets: LOSSY_AUDIO }),
-    opt.choice("channels", "Channels", "original", [["original", "Original"], [1, "Mono"], [2, "Stereo"]]),
-    opt.slider("volume", "Volume", 100, 0, 300, { unit: "%" }),
-    opt.bool("normalize", "Normalise loudness", false, { help: "EBU R128 loudness normalisation." }),
-    opt.text("start", "Start at", "", { help: "Seconds or mm:ss. Empty = beginning." }),
-    opt.text("end", "End at", "", { help: "Seconds or mm:ss. Empty = until the end." }),
-  ],
-  targets() {
-    return Object.entries(AUDIO_TARGETS).map(([ext, [label]]) => ({
-      id: `audio:${ext}`, label, ext, group: "Audio only", converterId: "audio", hint: "Extract the soundtrack",
-    }));
-  },
-  async run(files, target, o, ctx) {
-    const unique = uniqueNamer();
-    const ext = target.ext;
-    const codec = AUDIO_TARGETS[ext][1];
-    return eachVideo(files, ctx, "Extracting audio from", async (ff, path, info, name, progress) => {
-      if (!info.hasAudio) throw new ConversionError(`“${name}” has no audio track.`);
-      const [seek, duration] = trimArgs(o.start, o.end, info.duration);
-      const args = [...seek, "-i", path, "-vn", "-sn", "-map", "0:a:0", "-c:a", pick(ff.encoders, AUDIO_ENCODERS[codec], AUDIO_CODEC_LABELS[codec])];
-      if (LOSSY_AUDIO.includes(target.id)) args.push("-b:a", `${o.bitrate}k`);
-      if (o.channels !== "original") args.push("-ac", String(o.channels));
-      const af = [o.normalize ? "loudnorm" : "", Number(o.volume) !== 100 ? `volume=${(Number(o.volume) / 100).toFixed(2)}` : ""].filter(Boolean);
-      if (af.length) args.push("-af", af.join(","));
-      const dest = `/out.${ext}`;
-      await ff.run([...args, dest], duration, progress, `Couldn't extract audio from “${name}”.`);
-      return [{ name: unique(`${baseName(name)}.${ext}`), data: await ff.readAndDelete(dest), type: MIME[ext] ?? "audio/*" }];
-    });
-  },
-};
+function makeAudioConverter(id: string, family: "video" | "audio", idPrefix: string, group: string, verb: string): Converter {
+  return {
+    id,
+    family,
+    options: [
+      opt.choice("bitrate", "Bitrate", 192, [64, 96, 128, 160, 192, 256, 320].map((b) => [b, `${b} kbps`]), { targets: LOSSY_AUDIO }),
+      opt.choice("sample_rate", "Sample rate", "original", [["original", "Original"], [22050, "22.05 kHz"], [44100, "44.1 kHz"], [48000, "48 kHz"], [96000, "96 kHz"]]),
+      opt.choice("channels", "Channels", "original", [["original", "Original"], [1, "Mono"], [2, "Stereo"]]),
+      opt.slider("volume", "Volume", 100, 0, 300, { unit: "%" }),
+      opt.bool("normalize", "Normalise loudness", false, { help: "EBU R128 loudness normalisation." }),
+      opt.text("start", "Start at", "", { help: "Seconds or mm:ss. Empty = beginning." }),
+      opt.text("end", "End at", "", { help: "Seconds or mm:ss. Empty = until the end." }),
+    ],
+    targets() {
+      return Object.entries(AUDIO_TARGETS).map(([ext, [label]]) => ({
+        id: `${idPrefix}${ext}`, label, ext, group, converterId: id,
+        hint: family === "video" ? "Extract the soundtrack" : undefined,
+      }));
+    },
+    async run(files, target, o, ctx) {
+      const unique = uniqueNamer();
+      const ext = target.ext;
+      const codec = AUDIO_TARGETS[ext][1];
+      return eachVideo(files, ctx, verb, async (ff, path, info, name, progress) => {
+        if (!info.hasAudio) throw new ConversionError(`“${name}” has no audio track.`);
+        const [seek, duration] = trimArgs(o.start, o.end, info.duration);
+        // -vn also drops embedded cover art, which most audio containers can't hold.
+        const args = [...seek, "-i", path, "-vn", "-sn", "-map", "0:a:0", "-map_metadata", "0",
+          "-c:a", pick(ff.encoders, AUDIO_ENCODERS[codec], AUDIO_CODEC_LABELS[codec] ?? codec.toUpperCase())];
+        if (LOSSY_EXTS.includes(ext)) args.push("-b:a", `${o.bitrate}k`);
+        if (o.sample_rate !== "original") args.push("-ar", String(o.sample_rate));
+        if (o.channels !== "original") args.push("-ac", String(o.channels));
+        const af = [o.normalize ? "loudnorm" : "", Number(o.volume) !== 100 ? `volume=${(Number(o.volume) / 100).toFixed(2)}` : ""].filter(Boolean);
+        if (af.length) args.push("-af", af.join(","));
+        const dest = `/out.${ext}`;
+        await ff.run([...args, dest], duration, progress, `Couldn't convert the audio of “${name}”.`);
+        return [{ name: unique(`${baseName(name)}.${ext}`), data: await ff.readAndDelete(dest), type: MIME[ext] ?? "audio/*" }];
+      });
+    },
+  };
+}
+
+/** Video → audio only. */
+export const audioConverter = makeAudioConverter("audio", "video", "audio:", "Audio only", "Extracting audio from");
+/** Audio ↔ audio. */
+export const audioFileConverter = makeAudioConverter("audio-file", "audio", "", "Audio", "Converting");
