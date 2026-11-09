@@ -87,6 +87,11 @@ See `web/README.md` for commands and deployment.
   / `serve.ps1` (Windows) and `serve.py`, all localhost-only. Keep `.bat` files CRLF.
 - **Keep `build.assetsInlineLimit: 0`** — an inlined (data:) FFmpeg thread worker can't load the
   engine and every video conversion crashes.
+- **Thread limits (`engines/threads.ts`):** every `Engine.run` gets explicit `-threads` /
+  `-filter_threads` (decoder ≤ 4, 1 with 3+ inputs; filters ≤ 4; encoder ≤ 4). `core-mt` has a fixed
+  pool of 32 workers and FFmpeg's automatic counts scale with the CPU, so on a 12-core PC an H.264
+  re-encode hung at 0 % (CI runners have few cores and never showed it). Encoder 6 crashed a
+  1080×1920 encode (wasm memory). Crossfade slideshows still use one input (thread) per image.
 - **Codecs:** ffmpeg.wasm encodes H.264, VP8 and MPEG-4 only (in @ffmpeg/core 0.12.10
   libvpx-vp9 crashes the tab, libx265 hangs, no AV1 encoder). VP9 / AV1 / H.265 go through the
   browser's WebCodecs encoders via Mediabunny (`engines/webcodecs.ts`, `WEBCODECS_VIDEO` in

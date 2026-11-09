@@ -7,6 +7,7 @@ import mtCoreURL from "@ffmpeg/core-mt?url";
 import mtWasmURL from "@ffmpeg/core-mt/wasm?url";
 import mtWorkerURL from "@ffmpeg/core-mt/worker?url";
 import { ConversionError } from "../core/types";
+import { limitThreads } from "./threads";
 
 export interface MediaInfo {
   duration: number;
@@ -121,7 +122,8 @@ export class Engine {
     this.ff.on("progress", onProgress);
     let code: number;
     try {
-      code = await this.ff.exec(["-hide_banner", "-nostdin", "-y", ...args]);
+      const cmd = this.threaded ? limitThreads(args, navigator.hardwareConcurrency) : args;
+      code = await this.ff.exec(["-hide_banner", "-nostdin", "-y", ...cmd]);
     } finally {
       this.ff.off("progress", onProgress);
     }
