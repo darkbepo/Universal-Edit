@@ -51,3 +51,8 @@ def test_scanned_pdf_points_to_ocr(tmp_path):
         doc.save(scan)
     with pytest.raises(ConversionError, match="OCR"):
         convert([scan], "doc:docx", tmp_path / "o")
+    # Text and Markdown used to save an empty file instead.
+    for fmt in ("txt", "md"):
+        with pytest.raises(ConversionError, match="OCR"):
+            convert([scan], f"doc:{fmt}", tmp_path / fmt)
+        assert not list((tmp_path / fmt).glob(f"*.{fmt}"))

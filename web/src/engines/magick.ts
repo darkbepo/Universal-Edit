@@ -28,15 +28,36 @@ type IMagickImage = import("@imagemagick/magick-wasm").IMagickImage;
 type IMagickImageCollection = import("@imagemagick/magick-wasm").IMagickImageCollection;
 type Fmt = import("@imagemagick/magick-wasm").MagickFormat;
 
+// Formats without a reliable signature: ImageMagick only recognises them from the file name,
+// which it never sees here, so every ICO failed to open until the format was passed explicitly.
+const NO_MAGIC_EXTS = new Set(["ico", "cur", "tga"]);
+
+/** The explicit ImageMagick format for ``ext``, or null to let it sniff the bytes. */
+export function formatHint(ext: string): string | null {
+  return RAW_EXTS.has(ext) || NO_MAGIC_EXTS.has(ext) ? ext.toUpperCase() : null;
+}
+
 /** Read one image (RAW developed; PSD/layered files give their flattened composite). */
 export function readImage<T>(M: typeof Magick, bytes: Uint8Array, ext: string, cb: (img: IMagickImage) => T): T {
-  if (RAW_EXTS.has(ext)) return M.ImageMagick.read(bytes, ext.toUpperCase() as Fmt, cb);
+  const hint = formatHint(ext);
+  if (hint === "ICO" || hint === "CUR") return readFrames(M, bytes, ext, (imgs) => cb(imgs[0]));
+  if (hint) return M.ImageMagick.read(bytes, hint as Fmt, cb);
   return M.ImageMagick.read(bytes, cb);
 }
 
 /** Read all frames (animations). PSD layers are not frames: only the composite is kept. */
 export function readFrames<T>(M: typeof Magick, bytes: Uint8Array, ext: string, cb: (imgs: IMagickImageCollection) => T): T {
-  if (RAW_EXTS.has(ext)) return M.ImageMagick.readCollection(bytes, ext.toUpperCase() as Fmt, cb);
+  const hint = formatHint(ext);
+  if (hint === "ICO" || hint === "CUR") {
+    // An icon's entries are sizes, not animation frames: keep the largest one.
+    return M.ImageMagick.readCollection(bytes, hint as Fmt, (imgs) => {
+      let best = 0;
+      imgs.forEach((img, i) => { if (img.width * img.height > imgs[best].width * imgs[best].height) best = i; });
+      for (let i = imgs.length - 1; i >= 0; i--) if (i !== best) imgs.splice(i, 1)[0]?.dispose();
+      return cb(imgs);
+    });
+  }
+  if (hint) return M.ImageMagick.readCollection(bytes, hint as Fmt, cb);
   return M.ImageMagick.readCollection(bytes, (imgs) => {
     if (ext === "psd") while (imgs.length > 1) imgs.pop()?.dispose();
     return cb(imgs);

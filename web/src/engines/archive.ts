@@ -57,7 +57,9 @@ export async function readArchive(file: File, password: string, onStatus: (m: st
 }
 
 const LEVEL: Record<string, number> = { store: 0, fast: 1, normal: 6, maximum: 9 };
-const TAR: Record<string, string> = { tar: "none", "tar.gz": "gzip", "tar.xz": "xz", "tar.bz2": "bzip2" };
+// Plain TAR: libarchive.js passes "none" to archive_write_add_filter_by_name, which has no such
+// filter, so it silently wrote 0 bytes. Write TAR.GZ and gunzip it instead (see writeArchive).
+const TAR: Record<string, string> = { tar: "gzip", "tar.gz": "gzip", "tar.xz": "xz", "tar.bz2": "bzip2" };
 
 export async function writeArchive(entries: Entry[], ext: string, level: string, onStatus: (m: string) => void): Promise<Uint8Array> {
   if (ext === "zip") {
@@ -71,10 +73,14 @@ export async function writeArchive(entries: Entry[], ext: string, level: string,
   const out = await Archive.write({
     // libarchive.js types say file: ArchiveEntryFile (a typo for File)
     files: entries.map((e) => ({ file: new File([e.data as BlobPart], e.path.split("/").pop()!), pathname: e.path })) as never,
-    outputFileName: `archive.${ext}`,
+    outputFileName: `archive.${ext === "tar" ? "tar.gz" : ext}`,
     compression: TAR[ext] as never,
     format: "pax" as never,
     passphrase: null,
   });
-  return new Uint8Array(await out.arrayBuffer());
+  const data = new Uint8Array(await out.arrayBuffer());
+  if (!data.length) throw new ConversionError(`Couldn't write the ${ext.toUpperCase()} archive.`);
+  if (ext !== "tar") return data;
+  const { gunzipSync } = await import("fflate");
+  return gunzipSync(data);
 }

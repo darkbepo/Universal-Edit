@@ -105,6 +105,69 @@ def probe(path: Path) -> MediaInfo:
     )
 
 
+@dataclass(frozen=True)
+class StreamSummary:
+    has_video: bool
+    has_audio: bool
+    text_subtitles: int
+    picture_subtitles: int
+
+
+_summaries: dict[tuple[str, int, int], StreamSummary | None] = {}
+
+
+def stream_summary(path: Path) -> StreamSummary | None:
+    """Which kinds of streams a file has, for deciding which targets to offer.
+
+    One quick ffprobe call, cached per file (path, size, mtime). ``None`` when it can't be read
+    (no ffprobe, damaged file): callers should then offer everything and let the conversion
+    explain the problem.
+    """
+    try:
+        st = path.stat()
+    except OSError:
+        return None
+    key = (str(path), st.st_size, st.st_mtime_ns)
+    if key in _summaries:
+        return _summaries[key]
+    summary = None
+    try:
+        cmd = [ffprobe_path(), "-v", "error", "-print_format", "json", "-show_streams", str(path)]
+        out = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=15,
+            creationflags=process._creationflags(),
+        ).stdout
+        streams = json.loads(out).get("streams", [])
+        subs = [s.get("codec_name", "") for s in streams if s.get("codec_type") == "subtitle"]
+        text = sum(1 for c in subs if c in TEXT_SUBTITLE_CODECS)
+        summary = StreamSummary(
+            has_video=any(
+                s.get("codec_type") == "video" and not s.get("disposition", {}).get("attached_pic")
+                for s in streams
+            ),
+            has_audio=any(s.get("codec_type") == "audio" for s in streams),
+            text_subtitles=text,
+            picture_subtitles=len(subs) - text,
+        )
+    except (subprocess.SubprocessError, json.JSONDecodeError, ToolMissingError, OSError):
+        summary = None
+    _summaries[key] = summary
+    return summary
+
+
+def all_have(paths: Sequence[Path], has: Callable[[StreamSummary], bool]) -> bool:
+    """True unless some file is known (read successfully) to lack what ``has`` checks for."""
+    for p in paths:
+        s = stream_summary(p)
+        if s is not None and not has(s):
+            return False
+    return True
+
+
 @cache
 def encoders() -> frozenset[str]:
     try:

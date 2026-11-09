@@ -3,6 +3,7 @@
 import { createPandocInstance } from "pandoc-wasm-core";
 import wasmURL from "pandoc-wasm-binary?url";
 import { ConversionError } from "../core/types";
+import { relativeOfficeRels } from "./officezip";
 
 type Pandoc = Awaited<ReturnType<typeof createPandocInstance>>;
 let ready: Promise<Pandoc> | null = null;
@@ -63,6 +64,7 @@ export async function runPandoc(
   if (opts.keepMedia && MEDIA_OUT.has(to)) options["extract-media"] = `${opts.stem}_media`;
   if (opts.toc) options["table-of-contents"] = true;
 
+  if (from === "xlsx" || from === "pptx" || from === "docx") input = relativeOfficeRels(input);
   const result = await pandoc.convert(options, null, { [inName]: new Blob([input as BlobPart]) });
   const errors = result.stderr
     .split("\n")

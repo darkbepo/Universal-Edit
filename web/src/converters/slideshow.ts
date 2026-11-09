@@ -2,7 +2,7 @@
 // HEIC, transparency, fit mode) and then encoded with FFmpeg — same approach as the desktop app.
 import { opt, type Values } from "../core/options";
 import { ConversionError, type Converter, type InputFile } from "../core/types";
-import { pick, qualityArgs, resolveVideoCodec, VIDEO_CODEC_LABELS, VIDEO_ENCODERS, AUDIO_ENCODERS, CONTAINERS } from "./codecs";
+import { audioEncoderArgs, pick, qualityArgs, resolveVideoCodec, VIDEO_CODEC_LABELS, VIDEO_ENCODERS, CONTAINERS } from "./codecs";
 import { baseName, MIME } from "./util";
 
 const CONTAINER_TARGETS = ["mp4", "webm", "mkv", "mov"];
@@ -188,7 +188,7 @@ export const slideshowConverter: Converter = {
     args.push("-filter_complex", graph, "-map", vmap);
     if (release) {
       const acodec = CONTAINERS[container][1];
-      args.push("-map", "[a]", "-c:a", pick(ff.encoders, AUDIO_ENCODERS[acodec], acodec), "-b:a", "192k");
+      args.push("-map", "[a]", ...audioEncoderArgs(ff.encoders, acodec, acodec), "-b:a", "192k");
     }
     args.push("-c:v", enc, ...qualityArgs(enc, Number(o.crf), "veryfast", null), "-pix_fmt", "yuv420p", "-r", String(fps), "-t", total.toFixed(3));
     if (container === "mp4" || container === "mov") args.push("-movflags", "+faststart");

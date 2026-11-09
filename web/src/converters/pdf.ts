@@ -69,7 +69,11 @@ async function runRoute(
         out = mu.writePages(mupdf, doc, null, null);
       } else {
         const text = [...Array(doc.countPages()).keys()].map((p) => doc.loadPage(p).toStructuredText("preserve-whitespace").asText()).join("\n\f");
-        out = new TextEncoder().encode(edge.dst === "html" ? mu.textToParagraphHtml(text, stem) : text);
+        if (edge.src === "pdf" && !text.trim()) {
+          // A scan: every text route out of it would produce an empty document.
+          throw new ConversionError(`“${stem}.pdf” has no text (it's a scan). Run “Searchable PDF” (OCR) on it first.`);
+        }
+        out =new TextEncoder().encode(edge.dst === "html" ? mu.textToParagraphHtml(text, stem) : text);
       }
     }
     cur = { bytes: out, ext: edge.dst };

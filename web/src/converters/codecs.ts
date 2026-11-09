@@ -14,7 +14,9 @@ export const VIDEO_ENCODERS: Record<string, string[]> = {
 export const AUDIO_ENCODERS: Record<string, string[]> = {
   aac: ["aac"],
   mp3: ["libmp3lame"],
-  opus: ["libopus", "opus"],
+  // libopus in @ffmpeg/core 0.12.10 hangs after the first packet (0 %, forever); FFmpeg's own
+  // Opus encoder works (it's flagged experimental, hence audioEncoderArgs' "-strict -2").
+  opus: ["opus"],
   vorbis: ["libvorbis", "vorbis"],
   flac: ["flac"],
   pcm: ["pcm_s16le"],
@@ -69,6 +71,12 @@ export function pick(available: Set<string>, candidates: string[], label: string
   const enc = candidates.find((c) => available.has(c));
   if (!enc) throw new ConversionError(`The browser version has no encoder for ${label}. Choose another codec.`);
   return enc;
+}
+
+/** ``-c:a <encoder>`` plus anything that encoder needs (FFmpeg's own Opus is "experimental"). */
+export function audioEncoderArgs(available: Set<string>, codec: string, label: string): string[] {
+  const enc = pick(available, AUDIO_ENCODERS[codec], label);
+  return enc === "opus" ? ["-c:a", enc, "-strict", "-2"] : ["-c:a", enc];
 }
 
 /** Rate control. ``crf`` is on the x264 scale (0 best … 51 worst). */

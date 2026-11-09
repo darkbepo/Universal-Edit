@@ -112,5 +112,10 @@ export async function detect(file: File): Promise<InputFile | null> {
     family = familyOfExt(sniffed);
     if (!family) return null;
   }
+  if (family === "video") {
+    const { probeTracks } = await import("./tracks");
+    const tracks = await probeTracks(file, ext).catch(() => ({ audio: null, textSubs: null }));
+    return { file, name: file.name, ext, family, tracks };
+  }
   return { file, name: file.name, ext, family };
 }

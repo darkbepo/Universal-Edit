@@ -304,6 +304,8 @@ class SubtitleExtractConverter(Converter):
     options_cls = SubtitleOptions
 
     def targets(self, files):
+        if not ffmpeg.all_have([f.path for f in files], lambda s: s.text_subtitles > 0):
+            return []  # no text subtitle tracks to save (picture subtitles can't become text)
         return [
             self.target(
                 f"subs:{e}",

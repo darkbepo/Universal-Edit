@@ -133,6 +133,8 @@ class AudioExtractConverter(_AudioConverter):
     verb = "Extracting audio from"
 
     def targets(self, files):
+        if not ffmpeg.all_have([f.path for f in files], lambda s: s.has_audio):
+            return []  # a silent video: nothing to extract
         return [
             self.target(f"audio:{ext}", label, ext, "Audio only", "Extract the soundtrack")
             for ext, (label, _) in AUDIO_TARGETS.items()

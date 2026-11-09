@@ -17,6 +17,25 @@ def test_audio_detected_by_content(media, tmp_path):
     assert detect(renamed).ext == "wav"
 
 
+def test_audio_only_is_not_offered_for_a_silent_video(media, tmp_path):
+    import subprocess
+
+    from umc.core.registry import targets_for
+
+    silent = tmp_path / "silent.mp4"
+    subprocess.run(
+        ["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i",
+         "testsrc=duration=1:size=160x120:rate=10", "-pix_fmt", "yuv420p", str(silent)],
+        check=True,
+    )  # fmt: skip
+    silent_ids = {t.id for t in targets_for([detect(silent)])}
+    assert "mp4" in silent_ids and not any(i.startswith("audio:") for i in silent_ids)
+    assert "audio:mp3" in {t.id for t in targets_for([detect(media / "clip.mp4")])}
+    assert "audio:mp3" not in {
+        t.id for t in targets_for([detect(media / "clip.mp4"), detect(silent)])
+    }
+
+
 def test_audio_targets(media):
     from umc.core.registry import targets_for
 

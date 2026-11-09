@@ -80,6 +80,11 @@ def extract_text(src: Path, dest: Path, pages: list[int] | None, mode: str) -> P
     """mode: "txt" | "html" | "md"."""
     with open_document(src) as doc:
         idx = pages if pages is not None else range(doc.page_count)
+        # A scan would give an empty file. (HTML is fine: it keeps the page images.)
+        if mode in ("txt", "md") and not any(doc[i].get_text().strip() for i in idx):
+            raise ConversionError(
+                f"“{src.name}” has no text (it's a scan). Run “Searchable PDF” (OCR) on it first."
+            )
         if mode == "md":
             try:
                 import pymupdf4llm  # optional, gives much nicer Markdown

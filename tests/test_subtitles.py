@@ -106,11 +106,31 @@ def test_add_tracks_and_extract_them(subs, media, tmp_path):
     assert any(x["codec_name"] == "mov_text" for x in _ffprobe(mp4))
 
 
-def test_extract_without_subtitles_explains(media, tmp_path):
-    from umc.core.errors import ConversionError
+def test_extract_is_only_offered_for_videos_with_text_subtitles(subs, media, tmp_path):
+    from umc.core.detect import detect
+    from umc.core.registry import targets_for
 
+    def ids(*paths):
+        return {t.id for t in targets_for([detect(p) for p in paths])}
+
+    assert not {"subs:srt", "subs:vtt", "subs:ass"} & ids(media / "clip.mp4")
+    [mkv] = convert([media / "clip.mp4", subs["utf8"]], "subtrack:mkv", tmp_path)
+    assert {"subs:srt", "subs:vtt", "subs:ass"} <= ids(mkv)
+    assert "subs:srt" not in ids(mkv, media / "clip.mp4")  # one of them has none
+
+
+def test_extract_without_subtitles_still_explains(media, tmp_path):
+    # If a file slips through (e.g. it couldn't be read when the targets were listed).
+    from umc.converters.subtitles import SubtitleExtractConverter, SubtitleOptions
+    from umc.core.detect import detect
+    from umc.core.errors import ConversionError
+    from umc.core.job import ConversionJob
+
+    conv = SubtitleExtractConverter()
+    target = conv.target("subs:srt", "SRT", "srt", "Subtitles")
+    job = ConversionJob([detect(media / "clip.mp4")], target, SubtitleOptions(), tmp_path)
     with pytest.raises(ConversionError, match="no text subtitles"):
-        convert([media / "clip.mp4"], "subs:srt", tmp_path)
+        conv.run(job)
 
 
 def test_burn_changes_only_the_subtitle_area(subs, media, tmp_path):

@@ -480,6 +480,17 @@ test.describe("archives", () => {
     expect(z.text("readme.txt")).toBe("hello ÆØÅ\n");
   });
 
+  test("ZIP → plain TAR → ZIP keeps every file", async ({ page }) => {
+    // Plain TAR used to come out as an empty (0 B) file.
+    await load(page, [fx("bundle.zip")]);
+    const tar = await downloadSingle(page, "tar");
+    expect(tar.subarray(257, 262).toString("latin1")).toBe("ustar"); // tar header magic
+    const { writeFileSync } = await import("node:fs");
+    writeFileSync(fx("bundle.tar"), tar);
+    await load(page, [fx("bundle.tar")]);
+    expect((await unzip(await downloadSingle(page, "zip"))).names).toEqual(["readme.txt", "sub/deep/data.bin"]);
+  });
+
   test("RAR → ZIP", async ({ page }) => {
     await load(page, [fx("sample-rar5.rar")]);
     await expect(page.locator('.pill[data-target="rar"]')).toHaveCount(0); // RAR can't be written

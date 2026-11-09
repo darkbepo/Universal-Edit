@@ -148,8 +148,10 @@ def _process_frame(img: Image.Image, o: ImageOptions, target: str) -> Image.Imag
             img = img.convert("L")
     elif img.mode not in ("RGB", "RGBA", "L", "LA", "P", "1", "I;16") or img.mode == "CMYK":
         img = img.convert("RGBA" if "A" in img.getbands() else "RGB")
-    if target in ("heic", "avif") and img.mode not in ("RGB", "RGBA"):
-        img = img.convert("RGBA" if "A" in img.getbands() else "RGB")
+    if target in ("heic", "avif", "qoi") and img.mode not in ("RGB", "RGBA"):
+        # These encoders only take RGB(A). Palette images (GIF/PNG-8) keep their transparency.
+        alpha = "A" in img.getbands() or "transparency" in img.info
+        img = img.convert("RGBA" if alpha else "RGB")
     if target == "webp" and img.mode in ("LA", "I;16"):
         img = img.convert("RGBA")
     if target == "ico":

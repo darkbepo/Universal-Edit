@@ -9,6 +9,8 @@ export interface InputFile {
   name: string;
   ext: string; // canonical, lowercase, no dot
   family: Family;
+  /** Videos only: which tracks it has (null = unknown). Used to hide targets that can't work. */
+  tracks?: import("./tracks").TrackInfo;
 }
 
 export interface OutputFile {

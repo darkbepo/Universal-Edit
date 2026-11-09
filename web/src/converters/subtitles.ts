@@ -153,7 +153,8 @@ export const subtitleExtractConverter: Converter = {
   id: "subtitles-extract",
   family: "video",
   options,
-  targets() {
+  targets(files) {
+    if (files.some((f) => f.tracks?.textSubs === false)) return []; // nothing to save
     return ["srt", "vtt", "ass"].map((e) => ({ id: `subs:${e}`, label: OUT[e], ext: e, group: "Subtitles", converterId: "subtitles-extract", hint: "Save the subtitle tracks inside the video" }));
   },
   async run(files, target, o, ctx) {

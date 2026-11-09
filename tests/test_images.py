@@ -14,6 +14,21 @@ def test_image_to_image(media, tmp_path, fmt):
     assert img.size[0] > 0
 
 
+@pytest.mark.parametrize("fmt", ["qoi", "avif", "heic"])
+def test_palette_gif_to_rgb_only_formats_keeps_transparency(tmp_path, fmt):
+    # QOI / AVIF / HEIC encoders only take RGB(A); a palette GIF used to fail for QOI.
+    from umc.converters.imaging import open_image
+
+    src = tmp_path / "pal.gif"
+    img = Image.new("P", (40, 30), 1)
+    img.putpalette([0, 0, 0, 255, 0, 0] + [0] * 762)
+    img.putpixel((0, 0), 0)
+    img.save(src, transparency=0)
+    [out] = convert([src], fmt, tmp_path / "out")
+    back = open_image(out).convert("RGBA")
+    assert back.getpixel((0, 0))[3] == 0 and back.getpixel((20, 15))[:3][0] > 200
+
+
 def test_png_to_jpg_flattens_transparency_on_background(media, tmp_path):
     [out] = convert([media / "img0.png"], "jpg", tmp_path, background="#00ff00")
     px = Image.open(out).convert("RGB").getpixel((0, 0))

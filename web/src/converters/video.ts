@@ -2,7 +2,7 @@
 import { opt, parseTime, type Values } from "../core/options";
 import { ConversionError, type Converter, type OutputFile, type RunContext } from "../core/types";
 import {
-  AUDIO_CODEC_LABELS, AUDIO_ENCODERS, CONTAINERS, pick, qualityArgs, resolveAudioCodec,
+  AUDIO_CODEC_LABELS, audioEncoderArgs, CONTAINERS, pick, qualityArgs, resolveAudioCodec,
   resolveVideoCodec, VIDEO_CODEC_LABELS, VIDEO_ENCODERS, X264_PRESETS,
 } from "./codecs";
 import { audioKbpsFor, TWO_PASS_ENCODERS, videoKbpsFor } from "./sizing";
@@ -193,7 +193,7 @@ export const videoConverter: Converter = {
         args.push("-c:a", "copy");
       } else {
         const acodec = resolveAudioCodec(container, String(o.audio_codec));
-        args.push("-c:a", pick(ff.encoders, AUDIO_ENCODERS[acodec], AUDIO_CODEC_LABELS[acodec]));
+        args.push(...audioEncoderArgs(ff.encoders, acodec, AUDIO_CODEC_LABELS[acodec]));
         if (!["flac", "pcm"].includes(acodec)) args.push("-b:a", `${o.audio_bitrate}k`);
         const af = speed !== 1 ? atempoChain(speed) : [];
         if (Number(o.volume) !== 100) af.push(`volume=${(Number(o.volume) / 100).toFixed(2)}`);
@@ -306,7 +306,8 @@ function makeAudioConverter(id: string, family: "video" | "audio", idPrefix: str
       opt.text("start", "Start at", "", { help: "Seconds or mm:ss. Empty = beginning." }),
       opt.text("end", "End at", "", { help: "Seconds or mm:ss. Empty = until the end." }),
     ],
-    targets() {
+    targets(files) {
+      if (family === "video" && files.some((f) => f.tracks?.audio === false)) return []; // silent video
       return Object.entries(AUDIO_TARGETS).map(([ext, [label]]) => ({
         id: `${idPrefix}${ext}`, label, ext, group, converterId: id,
         hint: family === "video" ? "Extract the soundtrack" : undefined,
@@ -321,7 +322,7 @@ function makeAudioConverter(id: string, family: "video" | "audio", idPrefix: str
         const [seek, duration] = trimArgs(o.start, o.end, info.duration);
         // -vn also drops embedded cover art, which most audio containers can't hold.
         const args = [...seek, "-i", path, "-vn", "-sn", "-map", "0:a:0", "-map_metadata", "0",
-          "-c:a", pick(ff.encoders, AUDIO_ENCODERS[codec], AUDIO_CODEC_LABELS[codec] ?? codec.toUpperCase())];
+          ...audioEncoderArgs(ff.encoders, codec, AUDIO_CODEC_LABELS[codec] ?? codec.toUpperCase())];
         if (LOSSY_EXTS.includes(ext)) {
           const kbps = Number(o.target_size_mb) > 0 ? audioKbpsFor(Number(o.target_size_mb), duration) : Number(o.bitrate);
           args.push("-b:a", `${kbps}k`);
