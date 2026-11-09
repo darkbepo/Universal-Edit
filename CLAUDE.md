@@ -141,6 +141,7 @@ src/umc/
     document.py          # document ↔ document via a cheapest-route planner over engine "edges"
     document_images.py   # document → images (via PDF, rendered with PyMuPDF)
     split.py             # document → several PDFs (every page / N pages / custom ranges)
+    data.py              # JSON ↔ YAML ↔ XML ↔ CSV/TSV/XLSX
     pdf_tools.py         # PDF toolkit: merge, compress, rotate, organize, protect, unlock
   tools/                 # wrappers around external programs/libraries
     process.py           # find_executable (bundled → PATH → known install dirs), cancellable run()
@@ -279,7 +280,11 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
    4. ✅ Compress to a target size — `converters/sizing.py` / `sizing.ts`: video two-pass for
       libx264/libvpx(-vp9) (else ABR + maxrate), audio bitrate from duration, images binary-search
       quality then downscale, PDF compress walks a stronger-settings ladder (best effort).
-   5. Data formats: JSON ↔ CSV ↔ XML ↔ YAML ↔ XLSX
+   5. ✅ Data formats: JSON ↔ CSV ↔ TSV ↔ XML ↔ YAML ↔ XLSX — desktop `converters/data.py`
+      (openpyxl, PyYAML, ElementTree); web `converters/data.ts` (yaml, fast-xml-parser, and a
+      hand-written XLSX reader/writer on fflate — SheetJS is only on its own CDN, npm copy is stale).
+      Same conventions in both: XML attributes "@name", text "#text", nesting ↔ "a.b" columns.
+      Group "Data" replaces doc:csv/doc:xlsx for data-readable inputs (no LibreOffice needed).
    6. 3D printing: STL, OBJ, 3MF, PLY, GLB/GLTF, STEP/IGES (units, scale, mesh detail)
    7. OCR (tesseract)
    8. Archives: ZIP, 7Z, RAR, TAR

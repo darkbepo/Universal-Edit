@@ -124,6 +124,21 @@ const pdfText = async (data: Buffer) => {
   return [...Array(doc.countPages()).keys()].map((i) => doc.loadPage(i).toStructuredText("").asText()).join("\n");
 };
 
+test.describe("data formats", () => {
+  test("CSV → JSON with real numbers", async ({ page }) => {
+    await load(page, [fx("data.csv")]);
+    const json = JSON.parse((await downloadSingle(page, "data:json")).toString());
+    expect(json).toEqual([{ name: "Ada", score: 10 }, { name: "Lin", score: 7 }]);
+  });
+
+  test("CSV → XLSX", async ({ page }) => {
+    await load(page, [fx("data.csv")]);
+    await expect(page.locator('.pill[data-target="data:xlsx"]')).toBeVisible();
+    const data = await downloadSingle(page, "data:xlsx");
+    expect(data.subarray(0, 2).toString()).toBe("PK");
+  });
+});
+
 test.describe("target file size", () => {
   const MB = 1024 * 1024;
   const setTarget = async (page: Page, target: string, value: string) => {

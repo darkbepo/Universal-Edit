@@ -3,7 +3,7 @@ import type { Family, InputFile } from "./types";
 
 const ALIASES: Record<string, string> = {
   jpeg: "jpg", jpe: "jpg", jfif: "jpg", tif: "tiff", htm: "html", markdown: "md",
-  heif: "heic", mpeg: "mpg", text: "txt",
+  heif: "heic", mpeg: "mpg", text: "txt", yml: "yaml",
 };
 
 export const IMAGE_EXTS = new Set([
@@ -24,7 +24,7 @@ export const AUDIO_EXTS = new Set([
 /** Documents the web version converts itself (MuPDF + Pandoc). */
 export const WEB_DOCUMENT_EXTS = new Set([
   "pdf", "epub", "xps", "mobi", "fb2", "cbz", "docx", "odt", "rtf", "txt", "md", "html", "rst",
-  "tex", "org", "csv", "tsv", "xlsx", "pptx", "ipynb",
+  "tex", "org", "csv", "tsv", "xlsx", "pptx", "ipynb", "json", "yaml", "xml",
 ]);
 /** Documents recognised but only convertible in the desktop app (they need LibreOffice). */
 export const DESKTOP_ONLY_DOCUMENT_EXTS = new Set(["doc", "xls", "ppt", "ods", "odp", "wpd"]);

@@ -1,6 +1,7 @@
 // All converters, and which targets a set of input files can be turned into.
 // Converter modules only *declare* engines; the heavy WebAssembly loads lazily in the worker.
 import { imageConverter, imagesToPdfConverter } from "../converters/image";
+import { dataConverter } from "../converters/data";
 import { documentConverter, pagesConverter, splitConverter } from "../converters/pdf";
 import { pdfToolsConverter } from "../converters/pdftools";
 import { slideshowConverter } from "../converters/slideshow";
@@ -17,6 +18,7 @@ export const CONVERTERS: Converter[] = [
   framesConverter,
   audioConverter,
   audioFileConverter,
+  dataConverter,
   documentConverter,
   pagesConverter,
   splitConverter,
