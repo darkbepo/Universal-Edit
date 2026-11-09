@@ -4,7 +4,7 @@ from pathlib import Path
 
 import sys
 
-from PyInstaller.utils.hooks import collect_data_files
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 ROOT = Path(SPECPATH).parent
 BIN = ROOT / "packaging" / "bin"
@@ -59,7 +59,7 @@ a = Analysis(
     pathex=[str(ROOT / "src")],
     binaries=binaries,
     datas=datas,
-    hiddenimports=["pillow_heif", "rawpy", "cascadio", "py7zr", "pyzipper", "umc.gui", "umc.converters"],
+    hiddenimports=["pillow_heif", "rawpy", "cascadio", "py7zr", "pyzipper", "brotli", *collect_submodules("fontTools.ttLib.tables"), "umc.gui", "umc.converters"],
     excludes=["tkinter", "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets", "PySide6.Qt3DCore",
               "PySide6.QtQuick", "PySide6.QtQml", "PySide6.QtMultimedia", "PySide6.QtPdf",
               "pymupdf4llm", "pytest"],

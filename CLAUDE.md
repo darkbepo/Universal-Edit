@@ -69,7 +69,7 @@ See `web/README.md` for commands and deployment.
 
 - **Stack:** TypeScript + Vite, no UI framework. Engines are WebAssembly, loaded lazily inside one
   long-lived module Worker (`src/worker/jobWorker.ts`): ffmpeg.wasm (`@ffmpeg/core`, multi-threaded
-  `core-mt` when cross-origin isolated), ImageMagick (`@imagemagick/magick-wasm`), MuPDF (`mupdf`), three.js + occt-import-js (3D), tesseract.js (OCR), libarchive.js (archives),
+  `core-mt` when cross-origin isolated), ImageMagick (`@imagemagick/magick-wasm`), MuPDF (`mupdf`), three.js + occt-import-js (3D), tesseract.js (OCR), libarchive.js (archives), HarfBuzz hb-subset + woff2-encoder (fonts),
   Pandoc (official `pandoc-wasm`, ~16 MB gz; wired via `pandoc-wasm-core` / `pandoc-wasm-binary`
   aliases in `vite.config.ts` because the package only exports a browser entry Vite can't bundle).
 - **Documents:** `converters/docroute.ts` is a port of the desktop route planner (pandoc edges +
@@ -147,6 +147,7 @@ src/umc/
     model3d.py           # 3D models: STL/3MF/OBJ/PLY/GLB, STEP/IGES via OpenCASCADE
     archive.py           # archives: extract / repack, and pack any files into ZIP/7Z/TAR.GZ
     subtitles.py         # subtitles ↔ subtitles, extract from video, burn in / add as track
+    fonts.py             # fonts: TTF ↔ OTF ↔ WOFF ↔ WOFF2, subsetting (fontTools)
   tools/                 # wrappers around external programs/libraries
     process.py           # find_executable (bundled → PATH → known install dirs), cancellable run()
     installer.py         # one-click download + verify + install of LibreOffice / Pandoc (Windows)
@@ -319,7 +320,13 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
       `subtrack:mkv|mp4` (language from `name.da.srt` → ISO 639-2/B `dan`). Font: desktop
       `scripts/fetch_font.py` (npm tarball, SHA-256 pinned) → `packaging/fonts`; web imports
       `dejavu-fonts-ttf` with `?url` and writes it to /fonts in FFmpeg's file system.
-   10. Fonts: TTF/OTF/WOFF/WOFF2
+   10. ✅ Fonts: TTF/OTF ↔ WOFF ↔ WOFF2 + subsetting (Latin / Latin-ext / Cyrillic / Greek ranges —
+      the same strings in both apps, checked by `web/tests/fonts.test.ts` — or typed characters).
+      Desktop `converters/fonts.py` (fontTools; TTF ↔ OTF via cu2qu / T2CharStringPen, variable
+      fonts refused for outline changes). Web `engines/fonts.ts`: WOFF1 codec on fflate,
+      woff2-encoder for WOFF2, HarfBuzz `harfbuzz-subset.wasm` driven through its C exports
+      (keeps GSUB/GPOS) — fonteditor-core was rejected because it drops OpenType layout. No
+      TTF ↔ OTF on the web (no JS CFF writer that keeps layout).
    11. Vector: SVG/EPS/AI, image → SVG tracing
    12. PDF → Word keeping layout
    13. eBooks: MOBI/AZW3 output (desktop, Calibre one-click install)

@@ -125,3 +125,45 @@ def write_test_rar(path: Path, version: int = 5) -> Path:
 
     path.write_bytes(base64.b64decode(RAR5_B64 if version == 5 else RAR4_B64))
     return path
+
+
+def write_test_font(path: Path) -> Path:
+    """A tiny TrueType font: .notdef, space, A, B, f, i and an "fi" ligature (GSUB liga)."""
+    from fontTools.feaLib.builder import addOpenTypeFeaturesFromString
+    from fontTools.fontBuilder import FontBuilder
+    from fontTools.pens.ttGlyphPen import TTGlyphPen
+
+    def box(x0: int, y0: int, x1: int, y1: int, curve: bool = False):
+        pen = TTGlyphPen(None)
+        pen.moveTo((x0, y0))
+        if curve:  # a quadratic bump, so outline conversion has curves to deal with
+            pen.qCurveTo(((x0 + x1) // 2, y1 + 200), (x1, y0))
+        else:
+            pen.lineTo((x0, y1))
+            pen.lineTo((x1, y1))
+            pen.lineTo((x1, y0))
+        pen.closePath()
+        return pen.glyph()
+
+    order = [".notdef", "space", "A", "B", "f", "i", "f_i"]
+    fb = FontBuilder(1000, isTTF=True)
+    fb.setupGlyphOrder(order)
+    fb.setupCharacterMap({0x20: "space", 0x41: "A", 0x42: "B", 0x66: "f", 0x69: "i"})
+    glyphs = {
+        ".notdef": box(50, 0, 450, 700),
+        "space": TTGlyphPen(None).glyph(),
+        "A": box(50, 0, 550, 700, curve=True),
+        "B": box(60, 0, 540, 700),
+        "f": box(50, 0, 300, 750),
+        "i": box(50, 0, 200, 500),
+        "f_i": box(50, 0, 500, 750, curve=True),
+    }
+    fb.setupGlyf(glyphs)
+    fb.setupHorizontalMetrics({n: (600, getattr(glyphs[n], "xMin", 0)) for n in order})
+    fb.setupHorizontalHeader(ascent=800, descent=-200)
+    fb.setupNameTable({"familyName": "UMC Test", "styleName": "Regular"})
+    fb.setupOS2(sTypoAscender=800, sTypoDescender=-200, usWinAscent=800, usWinDescent=200)
+    fb.setupPost()
+    addOpenTypeFeaturesFromString(fb.font, "feature liga { sub f i by f_i; } liga;")
+    fb.save(path)
+    return path

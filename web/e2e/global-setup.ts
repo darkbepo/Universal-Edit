@@ -64,6 +64,8 @@ export default async function globalSetup() {
     writeFileSync(`${FIXTURES}movie.da.srt`, srt, "utf8");
     writeFileSync(`${FIXTURES}old.srt`, Buffer.from(srt, "latin1")); // ÆØÅ are the same bytes in Windows-1252
   }
+  // Fonts: DejaVu Sans (also the subtitle font) as a real-world TTF with thousands of glyphs.
+  copyFileSync(fileURLToPath(new URL("../node_modules/dejavu-fonts-ttf/ttf/DejaVuSans.ttf", import.meta.url)), `${FIXTURES}DejaVuSans.ttf`);
   // OCR language data (served to the page by a route in the tests, unless run against the live
   // site). Taken from packaging/tessdata (scripts/fetch_tessdata.py eng dan) or downloaded.
   for (const code of ["eng", "dan"]) {

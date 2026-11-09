@@ -31,6 +31,7 @@ export const WEB_DOCUMENT_EXTS = new Set([
 /** Documents recognised but only convertible in the desktop app (they need LibreOffice). */
 export const DESKTOP_ONLY_DOCUMENT_EXTS = new Set(["doc", "xls", "ppt", "ods", "odp", "wpd"]);
 
+export const FONT_EXTS = new Set(["ttf", "otf", "woff", "woff2"]);
 export const SUBTITLE_EXTS = new Set(["srt", "vtt", "ass", "ssa", "smi", "lrc"]);
 export const ARCHIVE_EXTS = new Set(["zip", "7z", "rar", "tar", "tar.gz", "tar.xz", "tar.bz2"]);
 const COMPOUND_EXTS = ["tar.gz", "tar.xz", "tar.bz2"];
@@ -51,6 +52,7 @@ export function familyOfExt(ext: string): Family | null {
   if (MODEL_EXTS.has(ext)) return "model";
   if (ARCHIVE_EXTS.has(ext)) return "archive";
   if (SUBTITLE_EXTS.has(ext)) return "subtitle";
+  if (FONT_EXTS.has(ext)) return "font";
   if (WEB_DOCUMENT_EXTS.has(ext) || DESKTOP_ONLY_DOCUMENT_EXTS.has(ext)) return "document";
   return null;
 }
@@ -58,6 +60,10 @@ export function familyOfExt(ext: string): Family | null {
 export function sniff(head: Uint8Array): string | null {
   const s = (a: number, b: number) => String.fromCharCode(...head.slice(a, b));
   if (s(0, 4) === "%PDF") return "pdf";
+  if (s(0, 4) === "wOFF") return "woff";
+  if (s(0, 4) === "wOF2") return "woff2";
+  if (s(0, 4) === "OTTO") return "otf";
+  if (s(0, 4) === "\x00\x01\x00\x00" || s(0, 4) === "true") return "ttf";
   if (s(0, 4) === "PK\x03\x04") return "zip"; // only reached for unknown extensions
   if (head[0] === 0x37 && head[1] === 0x7a && head[2] === 0xbc && head[3] === 0xaf) return "7z";
   if (s(0, 7) === "Rar!\x1a\x07") return "rar";

@@ -16,6 +16,7 @@ class MediaFamily(StrEnum):
     MODEL = "model"
     ARCHIVE = "archive"
     SUBTITLE = "subtitle"
+    FONT = "font"
 
 
 # Aliases → canonical extension.
@@ -152,6 +153,7 @@ DATA_EXTS = {"json", "yaml", "xml", "tsv"}
 MODEL_EXTS = {"stl", "obj", "ply", "glb", "3mf", "off", "step", "iges"}
 ARCHIVE_EXTS = {"zip", "7z", "rar", "tar", "tar.gz", "tar.xz", "tar.bz2"}
 SUBTITLE_EXTS = {"srt", "vtt", "ass", "ssa", "smi", "lrc"}
+FONT_EXTS = {"ttf", "otf", "woff", "woff2"}
 COMPOUND_EXTS = ("tar.gz", "tar.xz", "tar.bz2")
 PRESENTATION_EXTS = {"pptx", "ppt", "odp"}
 DOCUMENT_EXTS = TEXT_DOCUMENT_EXTS | SPREADSHEET_EXTS | PRESENTATION_EXTS | DATA_EXTS
@@ -195,6 +197,8 @@ def family_of_ext(ext: str) -> MediaFamily | None:
         return MediaFamily.ARCHIVE
     if ext in SUBTITLE_EXTS:
         return MediaFamily.SUBTITLE
+    if ext in FONT_EXTS:
+        return MediaFamily.FONT
     if ext in DOCUMENT_EXTS:
         return MediaFamily.DOCUMENT
     return None
@@ -254,6 +258,12 @@ def _sniff(path: Path) -> str | None:
         return "doc"  # OLE container; could also be xls/ppt
     if head.startswith(b"PK\x03\x04"):
         return _sniff_zip(path)
+    if head[:4] in (b"wOFF", b"wOF2"):
+        return "woff" if head[:4] == b"wOFF" else "woff2"
+    if head[:4] == b"OTTO":
+        return "otf"
+    if head[:4] in (b"\x00\x01\x00\x00", b"true"):
+        return "ttf"
     if head.startswith(b"7z\xbc\xaf\x27\x1c"):
         return "7z"
     if head.startswith(b"Rar!\x1a\x07"):

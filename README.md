@@ -58,7 +58,8 @@ The browser version's source is in [`web/`](web/README.md).
 | Archives: open ZIP, 7Z, RAR, TAR(.GZ/.XZ/.BZ2) · extract · repack · pack any files | ✅ | ✅ |
 | Archives: create 7Z, password-protect (AES-256) | ✅ | ❌ |
 | Subtitles: SRT ↔ VTT ↔ ASS ↔ TTML ↔ LRC, shift timing, fix old encodings · extract from video · burn in · add as track | ✅ | ✅ |
-| Fonts: TTF, OTF, WOFF, WOFF2 | 🔜 | 🔜 |
+| Fonts: TTF / OTF ↔ WOFF ↔ WOFF2 · subset (Latin, Cyrillic, Greek or your own characters) | ✅ | ✅ |
+| Fonts: TTF ↔ OTF (changes the outline type) | ✅ | ❌ |
 | Vector: SVG, EPS, AI · image → SVG tracing | 🔜 | 🔜 |
 | eBooks: save as MOBI / AZW3 (Kindle) | 🔜 | — |
 | CAD drawings: DXF (DWG if feasible) | 🔜 | 🔜 |

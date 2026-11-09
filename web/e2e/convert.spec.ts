@@ -549,3 +549,57 @@ test.describe("subtitles", () => {
     expect(top).toBeLessThan(50);
   });
 });
+
+test.describe("fonts", () => {
+  /** Load the font in the page: Chrome runs every web font through its strict OTS sanitizer. */
+  const loads = (page: Page, data: Buffer) =>
+    page.evaluate(async (b64) => {
+      const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+      const face = new FontFace("check", bytes);
+      await face.load();
+      return face.status;
+    }, data.toString("base64"));
+
+  test("TTF → WOFF2 → WOFF → TTF", async ({ page }) => {
+    const { writeFileSync } = await import("node:fs");
+    await load(page, [fx("DejaVuSans.ttf")]);
+    await expect(page.locator('.pill[data-target="otf"]')).toHaveCount(0); // outline change: desktop only
+    const woff2 = await downloadSingle(page, "woff2");
+    expect(woff2.subarray(0, 4).toString()).toBe("wOF2");
+    expect(woff2.length).toBeLessThan(300_000);
+    expect(await loads(page, woff2)).toBe("loaded");
+    writeFileSync(fx("DejaVuSans.woff2"), woff2);
+    await load(page, [fx("DejaVuSans.woff2")]);
+    const woff = await downloadSingle(page, "woff");
+    expect(woff.subarray(0, 4).toString()).toBe("wOFF");
+    writeFileSync(fx("DejaVuSans.woff"), woff);
+    await load(page, [fx("DejaVuSans.woff")]);
+    const ttf = await downloadSingle(page, "ttf");
+    expect([...ttf.subarray(0, 4)]).toEqual([0, 1, 0, 0]);
+    expect(Math.abs(ttf.length - readFileSync(fx("DejaVuSans.ttf")).length)).toBeLessThan(2000);
+    expect(await loads(page, ttf)).toBe("loaded");
+  });
+
+  test("subset to Latin and to typed characters", async ({ page }) => {
+    await load(page, [fx("DejaVuSans.ttf")]);
+    await page.locator('.pill[data-target="woff2"]').click();
+    await page.getByRole("button", { name: /Settings/ }).click();
+    await page.locator("#opt-subset").selectOption({ label: "Latin (English, Western Europe)" });
+    const latin = await downloadSingle(page, "woff2");
+    expect(latin.length).toBeLessThan(40_000);
+    expect(await loads(page, latin)).toBe("loaded");
+    await page.locator("#opt-subset").selectOption({ label: "Only the characters I type…" });
+    await page.locator("#opt-custom_text").fill("Hej ÆØÅ");
+    const tiny = await downloadSingle(page, "woff2");
+    expect(tiny.length).toBeLessThan(latin.length);
+    expect(await loads(page, tiny)).toBe("loaded");
+  });
+
+  test("WOFF2 with TrueType outlines → OTF explains it needs the desktop app", async ({ page }) => {
+    await load(page, [fx("DejaVuSans.woff2")]);
+    await page.locator('.pill[data-target="otf"]').click();
+    await page.getByRole("button", { name: "Convert" }).click();
+    await expect(page.locator(".status")).toHaveClass(/error/, { timeout: 60_000 });
+    await expect(page.locator(".status")).toContainText("desktop app");
+  });
+});

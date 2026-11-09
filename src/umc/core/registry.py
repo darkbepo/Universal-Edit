@@ -29,6 +29,7 @@ def converters() -> tuple[Converter, ...]:
     from umc.converters.data import DataConverter
     from umc.converters.document import DocumentConverter
     from umc.converters.document_images import DocumentToImagesConverter
+    from umc.converters.fonts import FontConverter
     from umc.converters.gif import VideoToGifConverter
     from umc.converters.image import ImageConverter, ImagesToPdfConverter
     from umc.converters.model3d import ModelConverter
@@ -62,6 +63,7 @@ def converters() -> tuple[Converter, ...]:
         PdfOcrConverter(),
         ModelConverter(),
         ArchiveConverter(),
+        FontConverter(),
         SubtitleConverter(),
         SubtitleExtractConverter(),
         SubtitleVideoConverter(),

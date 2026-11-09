@@ -84,6 +84,16 @@ def _subtitle_check(d: Path, out: Path) -> list[Path]:
     return [vtt, burned, mkv, *extracted]
 
 
+def _font_check(d: Path, out: Path) -> list[Path]:
+    from umc.core.samples import write_test_font
+
+    ttf = write_test_font(d / "UMC Test.ttf")
+    [woff2] = _convert([ttf], "woff2", out)
+    [otf] = _convert([woff2], "otf", out)
+    [back] = _convert([otf], "ttf", out / "back", subset="latin")
+    return [woff2, otf, back]
+
+
 def run(report: Path) -> int:
     from PIL import Image
 
@@ -123,6 +133,7 @@ def run(report: Path) -> int:
                 lambda: _convert(imgs, "slideshow:mp4", out, seconds_per_image=0.5),
             ),
             ("subtitles: srt -> vtt, burn in, add track, extract", lambda: _subtitle_check(d, out)),
+            ("fonts: ttf -> woff2 -> otf -> ttf (subset)", lambda: _font_check(d, out)),
             ("mp4 -> webm", lambda: _convert([out / "img0 slideshow.mp4"], "webm", out)),
             ("mp4 -> gif", lambda: _convert([out / "img0 slideshow.mp4"], "video:gif", out)),
             ("mp4 -> frames", lambda: _convert([out / "img0 slideshow.mp4"], "frames:png", out)),

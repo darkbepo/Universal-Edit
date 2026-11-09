@@ -24,6 +24,7 @@ dependencies = [
     "networkx>=3.0",
     "py7zr>=1.0",
     "pyzipper>=0.3.6",
+    "fonttools[woff]>=4.50",
 ]
 
 [project.optional-dependencies]
