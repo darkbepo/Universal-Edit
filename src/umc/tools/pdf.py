@@ -394,3 +394,45 @@ def render_page(src: Path, index: int, width_px: int, default_dpi: int, alpha: b
         pix = page.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom), alpha=alpha)
         mode = "RGBA" if pix.alpha else "RGB"
         return Image.frombytes(mode, (pix.width, pix.height), pix.samples)
+
+
+# --------------------------------------------------------------------------- PDF → Word
+
+
+def pdf_to_docx(src: Path, dest: Path) -> Path:
+    """PDF → DOCX keeping the layout (text boxes, tables, images, columns) with pdf2docx."""
+    import logging
+
+    from pdf2docx import Converter
+
+    logging.getLogger("pdf2docx").setLevel(logging.WARNING)
+    with pymupdf.open(src) as doc:
+        if doc.needs_pass:
+            raise ConversionError(
+                f"“{src.name}” is password-protected. Use “Remove password” on it first."
+            )
+        if not any(page.get_text().strip() for page in doc):
+            raise ConversionError(
+                f"“{src.name}” has no text (it's a scan). Run “Searchable PDF” (OCR) on it first."
+            )
+    cv = Converter(str(src))
+    try:
+        cv.convert(str(dest), multi_processing=False)
+    except Exception as exc:  # pdf2docx raises many kinds of errors on unusual PDFs
+        dest.unlink(missing_ok=True)
+        raise ConversionError(
+            f"Couldn't turn “{src.name}” into a Word document.", details=repr(exc)
+        ) from exc
+    finally:
+        cv.close()
+    return dest
+
+
+def write_sample_pdf(dest: Path, lines: list[str]) -> Path:
+    """A one-page text PDF (used by the self-test)."""
+    with pymupdf.open() as doc:
+        page = doc.new_page()
+        for i, line in enumerate(lines):
+            page.insert_text((72, 80 + 24 * i), line, fontsize=14)
+        doc.save(dest)
+    return dest

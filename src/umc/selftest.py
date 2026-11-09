@@ -108,6 +108,19 @@ def _vector_check(d: Path, out: Path, imgs: list[Path]) -> list[Path]:
     return [png, pdf_out, traced]
 
 
+def _pdf_to_word_check(d: Path, out: Path) -> list[Path]:
+    from umc.tools import pdf
+
+    src = pdf.write_sample_pdf(d / "letter.pdf", ["Dear reader,", "This came from a PDF."])
+    [docx] = _convert([src], "doc:docx", out)
+    import docx as python_docx
+
+    text = "\n".join(p.text for p in python_docx.Document(docx).paragraphs)
+    if "This came from a PDF." not in text:
+        raise AssertionError(f"PDF → Word text was {text!r}")
+    return [docx]
+
+
 def run(report: Path) -> int:
     from PIL import Image
 
@@ -149,6 +162,7 @@ def run(report: Path) -> int:
             ("subtitles: srt -> vtt, burn in, add track, extract", lambda: _subtitle_check(d, out)),
             ("fonts: ttf -> woff2 -> otf -> ttf (subset)", lambda: _font_check(d, out)),
             ("vector: svg -> png/pdf, trace png -> svg", lambda: _vector_check(d, out, imgs)),
+            ("PDF -> Word keeping layout (pdf2docx)", lambda: _pdf_to_word_check(d, out)),
             ("mp4 -> webm", lambda: _convert([out / "img0 slideshow.mp4"], "webm", out)),
             ("mp4 -> gif", lambda: _convert([out / "img0 slideshow.mp4"], "video:gif", out)),
             ("mp4 -> frames", lambda: _convert([out / "img0 slideshow.mp4"], "frames:png", out)),

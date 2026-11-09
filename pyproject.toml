@@ -26,6 +26,7 @@ dependencies = [
     "pyzipper>=0.3.6",
     "fonttools[woff]>=4.50",
     "vtracer>=0.6",
+    "pdf2docx>=0.5.8",
 ]
 
 [project.optional-dependencies]

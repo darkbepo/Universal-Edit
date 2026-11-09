@@ -23,6 +23,7 @@ from umc.core.options import opt
 from umc.tools import libreoffice, pandoc, pdf
 
 PYMUPDF, PANDOC, SOFFICE = "pymupdf", "pandoc", "libreoffice"
+PDF2DOCX = "pdf2docx"
 
 TEXT_TARGETS = ["pdf", "docx", "doc", "odt", "rtf", "txt", "md", "html", "epub", "rst", "tex"]
 SHEET_TARGETS = ["xlsx", "xls", "ods", "csv", "pdf", "html"]
@@ -90,6 +91,9 @@ def _edges() -> list[Edge]:
             if s != d:
                 e.append(Edge(SOFFICE, s, d, 1.5 if "html" in (s, d) else 1.0))
     e += [Edge(SOFFICE, "pdf", d, 3.5) for d in ("docx", "odt", "doc", "rtf")]
+    # pdf2docx rebuilds the page layout (text boxes, tables, columns, images) as an editable DOCX;
+    # cheaper than LibreOffice's PDF import, so PDF → ODT/DOC/RTF also go through it.
+    e.append(Edge(PDF2DOCX, "pdf", "docx", 1))
     # LibreOffice Calc / Impress.
     for s in SPREADSHEET_EXTS:
         for d in SHEET_TARGETS:
@@ -289,7 +293,9 @@ def convert_document(
 
 
 def _run_edge(edge: Edge, src: Path, src_ext: str, out: Path, job: ConversionJob, toc: bool):
-    if edge.engine == PYMUPDF:
+    if edge.engine == PDF2DOCX:
+        pdf.pdf_to_docx(src, out)
+    elif edge.engine == PYMUPDF:
         if edge.dst == "pdf":
             pdf.to_pdf(src, out)
         else:

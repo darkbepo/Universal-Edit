@@ -50,6 +50,7 @@ binaries = [(str(p), "bin") for p in BIN.glob("*") if p.is_file()] if BIN.is_dir
 datas = [(str(ROOT / "src" / "umc" / "gui" / "style.qss"), "umc/gui"), (str(ROOT / "LICENSE"), ".")]
 datas += collect_data_files("pymupdf")
 datas += collect_data_files("trimesh")
+datas += collect_data_files("docx")  # python-docx templates (pdf2docx)
 TESSDATA = ROOT / "packaging" / "tessdata"
 datas += [(str(p), "tessdata") for p in TESSDATA.glob("*.traineddata")]
 datas += [(str(p), "fonts") for p in (ROOT / "packaging" / "fonts").glob("*") if p.is_file()]
@@ -59,7 +60,7 @@ a = Analysis(
     pathex=[str(ROOT / "src")],
     binaries=binaries,
     datas=datas,
-    hiddenimports=["pillow_heif", "rawpy", "cascadio", "py7zr", "pyzipper", "brotli", "vtracer", *collect_submodules("fontTools.ttLib.tables"), "umc.gui", "umc.converters"],
+    hiddenimports=["pillow_heif", "rawpy", "cascadio", "py7zr", "pyzipper", "brotli", "vtracer", "pdf2docx", "docx", *collect_submodules("fontTools.ttLib.tables"), "umc.gui", "umc.converters"],
     excludes=["tkinter", "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets", "PySide6.Qt3DCore",
               "PySide6.QtQuick", "PySide6.QtQml", "PySide6.QtMultimedia", "PySide6.QtPdf",
               "pymupdf4llm", "pytest"],

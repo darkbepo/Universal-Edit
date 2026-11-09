@@ -337,7 +337,10 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
       no SVG reader, so SVG → images uses resvg-wasm (MPL-2.0, DejaVu font); AI and PDF via MuPDF
       (DocumentWriter "svg"/"pdf"); colour tracing = ImageMagick quantize + vectortracer's binary
       tracer per colour, stacked (vectortracer has no colour mode). EPS/PS, SVG → PDF/SVG desktop only.
-   12. PDF → Word keeping layout
+   12. ✅ PDF → Word keeping layout (desktop): pdf2docx (MIT; builds on PyMuPDF, wrapped in
+      `tools/pdf.py`) is a `pdf → docx` edge in the document route planner (cost 1, below
+      LibreOffice's PDF import), so PDF → ODT/DOC/RTF also go via it. Scans without text are
+      sent to OCR first. The web keeps its flowing-text route (MuPDF HTML → Pandoc).
    13. eBooks: MOBI/AZW3 output (desktop, Calibre one-click install)
    14. CAD: DXF (DWG if feasible)
    15. Close web gaps: WebCodecs for H.265/VP9/AV1, LibreOffice-wasm for DOC/XLS/PPT
