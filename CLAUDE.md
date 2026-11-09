@@ -262,4 +262,24 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
    https://darkbepo.github.io/Universal-Media-Converter/ — `.github/workflows/pages.yml` publishes
    on every push to `main` that touches `web/` and then runs all browser tests against the live site.
    Next: WebCodecs for VP9/AV1, PWA/offline.
-9. Ideas: merge documents, installer for the app itself (Inno Setup), presets, batch queue.
+9. **Converter parity with the big online converters** (owner wants all of these, in this order;
+   each lands in BOTH apps where possible, and the "What works where" table in README.md must be
+   updated in the same commit):
+   1. Audio files as input (MP3/WAV/FLAC/M4A/OGG… ↔ each other)
+   2. Camera RAW + PSD input
+   3. PDF toolkit: merge, compress, rotate, protect/unlock, reorder/delete pages
+   4. Compress to a target size (video, image, PDF, audio)
+   5. Data formats: JSON ↔ CSV ↔ XML ↔ YAML ↔ XLSX
+   6. 3D printing: STL, OBJ, 3MF, PLY, GLB/GLTF, STEP/IGES (units, scale, mesh detail)
+   7. OCR (tesseract)
+   8. Archives: ZIP, 7Z, RAR, TAR
+   9. Subtitles: SRT/VTT/ASS, extract from / burn into video
+   10. Fonts: TTF/OTF/WOFF/WOFF2
+   11. Vector: SVG/EPS/AI, image → SVG tracing
+   12. PDF → Word keeping layout
+   13. eBooks: MOBI/AZW3 output (desktop, Calibre one-click install)
+   14. CAD: DXF (DWG if feasible)
+   15. Close web gaps: WebCodecs for H.265/VP9/AV1, LibreOffice-wasm for DOC/XLS/PPT
+10. **Editor** (only after 9 is done): image editor (paint/photoshop-like), video timeline
+    (trim, join, mix video + images + music), text/document editing and saving.
+11. Ideas: installer for the app itself (Inno Setup), presets, batch queue.

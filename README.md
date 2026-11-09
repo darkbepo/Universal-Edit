@@ -26,6 +26,49 @@ Get it from **Actions → Build Windows executable** → latest successful run �
 
 The browser version's source is in [`web/`](web/README.md).
 
+## What works where
+
+✅ = works now · ❌ = not yet · 🔜 = planned (on the roadmap) · — = not possible there (reason below)
+
+| Feature | Desktop app | Website |
+|---|:---:|:---:|
+| **Images** ↔ each other (PNG, JPG, WEBP, AVIF, HEIC, GIF, BMP, TIFF, ICO…) | ✅ | ✅ |
+| Save as HEIC | ✅ | ❌ |
+| Save as JPEG XL (JXL) | ❌ | ✅ |
+| Images → slideshow video / animated GIF / PDF | ✅ | ✅ |
+| Camera RAW (CR2, NEF, ARW, DNG…) and Photoshop PSD as input | 🔜 | 🔜 |
+| **Video** ↔ each other (MP4, MKV, MOV, WEBM, AVI…) | ✅ | ✅ |
+| Video codecs H.264 · VP8 · MPEG-4 | ✅ | ✅ |
+| Video codecs H.265 · VP9 · AV1 | ✅ | 🔜 |
+| Video → GIF · frames (N per 30) · audio only | ✅ | ✅ |
+| Very large videos (several GB) | ✅ | ❌ |
+| **Audio** ↔ each other (MP3, WAV, FLAC, M4A, OGG…) | 🔜 | 🔜 |
+| **Documents** ↔ each other (DOCX, ODT, RTF, TXT, Markdown, HTML, EPUB, PDF) | ✅ | ✅ |
+| Old Office formats (DOC, XLS, PPT) and ODS / ODP | ✅ | 🔜 |
+| Spreadsheets & slides as input (XLSX, CSV, PPTX) | ✅ | ✅ |
+| Save as PowerPoint (PPTX) | ❌ | ✅ |
+| Documents → images (one per page) | ✅ | ✅ |
+| PDF: page range, paper size, margins, split | ✅ | ✅ |
+| PDF: merge, compress, rotate, protect / unlock, reorder pages | 🔜 | 🔜 |
+| PDF → Word keeping the layout | 🔜 | 🔜 |
+| OCR (scanned PDF / photo → text) | 🔜 | 🔜 |
+| Compress to a target size (video, image, PDF, audio) | 🔜 | 🔜 |
+| Data: JSON ↔ CSV ↔ XML ↔ YAML ↔ XLSX | 🔜 | 🔜 |
+| **3D printing**: STL, OBJ, 3MF, PLY, GLB, STEP / IGES | 🔜 | 🔜 |
+| Archives: ZIP, 7Z, RAR, TAR | 🔜 | 🔜 |
+| Subtitles: SRT, VTT, ASS · extract / burn into video | 🔜 | 🔜 |
+| Fonts: TTF, OTF, WOFF, WOFF2 | 🔜 | 🔜 |
+| Vector: SVG, EPS, AI · image → SVG tracing | 🔜 | 🔜 |
+| eBooks: save as MOBI / AZW3 (Kindle) | 🔜 | — |
+| CAD drawings: DXF (DWG if feasible) | 🔜 | 🔜 |
+| Files never leave your computer | ✅ | ✅ |
+| No install needed | ❌ | ✅ |
+| Save straight into a folder | ✅ | ✅ Chrome/Edge · ❌ Firefox/Safari (zip instead) |
+
+**Why some things stay desktop-only:** the website runs inside the browser, which limits memory
+to a few GB per tab (so huge videos can fail) and can't run desktop programs. Kindle formats
+need Calibre, a large desktop program with no browser version.
+
 ## Running from source
 
 ```bash
