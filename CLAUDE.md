@@ -2,6 +2,37 @@
 
 Guidance for Claude (and humans) working in this repository.
 
+## Start here: every session works in its own worktree
+
+Several Claude sessions work on this project at the same time, so **never edit files in the main
+checkout** (`G:\Claude\Universal-Media-Converter`). It only holds `main`, for merging and pushing.
+If your session starts there, do this before anything else:
+
+1. Pick a short name for the task (letters, digits, dashes, e.g. `video-timeline`) and create a
+   worktree + branch from the current local `main`, then set it up:
+   ```powershell
+   git -C G:\Claude\Universal-Media-Converter worktree add -b <name> .claude\worktrees\<name> main
+   powershell -ExecutionPolicy Bypass -File G:\Claude\Universal-Media-Converter\scripts\setup_worktree.ps1 -Worktree G:\Claude\Universal-Media-Converter\.claude\worktrees\<name>
+   ```
+   The script gives the worktree its own `.venv` (an editable install of *that* worktree's code;
+   a shared venv would silently run another checkout's code), `web/node_modules`, and copies the
+   git-ignored `packaging/bin`, `tessdata` and `fonts` from the main checkout.
+2. Switch the session into it (EnterWorktree with `path` = the worktree folder). Edit and test only
+   there, with its `.venv`.
+3. Check `git worktree list` for the other sessions' branches. If your task touches files another
+   one is clearly changing, tell the owner before starting.
+
+When a task is finished and verified, land it on `main` and push:
+```powershell
+git rebase main                                                   # in your worktree
+git -C G:\Claude\Universal-Media-Converter merge --ff-only <name>
+git -C G:\Claude\Universal-Media-Converter push origin main
+```
+If the fast-forward fails because `main` moved, rebase again and retry. Never force-push, never
+commit in the main checkout, never use a bare `git stash` (the stash is shared by all worktrees).
+Keep the worktree for the next task on the same topic; remove it when the work is done
+(`git worktree remove .claude\worktrees\<name>` from the main checkout, then delete the branch).
+
 ## Project overview
 
 Universal Media Converter is a **desktop application shipped as a standalone executable**.
@@ -302,8 +333,8 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
 - Long operations must report progress (0–100) and honour cancellation.
 - Log to a rotating file in the user's app-data folder; the UI shows friendly messages.
 - Commit messages: imperative mood, short subject line (`Add video to GIF converter`).
-- Work on `main`. Commits are authored as `darkbepo` with no co-author or session trailers
-  (the owner asked for this).
+- Work in your own worktree/branch and land finished tasks on `main` (see "Start here"). Commits
+  are authored as `darkbepo` with no co-author or session trailers (the owner asked for this).
 
 ## Roadmap
 
@@ -419,8 +450,8 @@ LibreOffice-wasm). The owner hands the project over at this point; the next phas
 ### How the owner likes to work
 - Plain, non-technical language in replies. One task at a time, then **stop and summarise**
   (what changed, what was verified, what's next) and list every file created/modified.
-- Commits: on `main`, authored as `darkbepo`, imperative subject, **no co-author or session
-  trailers**. Push after each finished task. Update the README "What works where" table and the
+- Commits: on your worktree's branch, authored as `darkbepo`, imperative subject, **no co-author
+  or session trailers**. Merge into `main` and push after each finished task (see "Start here"). Update the README "What works where" table and the
   roadmap here in the same commit as the feature.
 - New dependencies must be AGPL-3.0-compatible (MIT/BSD/Apache/MPL/LGPL/GPL-3/AGPL). Big external
   programs are never bundled: detect + "Install it for me" (signed MSI/NSIS or SHA-256-checked
