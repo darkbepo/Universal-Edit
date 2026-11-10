@@ -1,0 +1,75 @@
+"""The editor document: a canvas size plus a stack of layers (index 0 = bottom)."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+from PIL import Image
+
+from umc.core.errors import ConversionError
+from umc.editor.geometry import Rect
+from umc.editor.layer import Layer
+
+MAX_SIDE = 16_000
+MAX_PIXELS = 250_000_000
+TOO_LARGE = "This image is too large to edit (max 16 000 px per side)."
+
+
+def check_size(width: int, height: int) -> None:
+    if width < 1 or height < 1:
+        raise ConversionError("The image size must be at least 1 × 1 pixel.")
+    if width > MAX_SIDE or height > MAX_SIDE or width * height > MAX_PIXELS:
+        raise ConversionError(TOO_LARGE)
+
+
+def with_opacity(img: Image.Image, opacity: float) -> Image.Image:
+    if opacity >= 1.0:
+        return img
+    r, g, b, a = img.split()
+    a = a.point(lambda v: round(v * max(0.0, opacity)))
+    return Image.merge("RGBA", (r, g, b, a))
+
+
+@dataclass(eq=False)
+class Document:
+    width: int
+    height: int
+    layers: list[Layer]
+    active: int = 0
+    selection: Rect | None = None
+    dirty: bool = field(default=False)
+
+    @classmethod
+    def new(cls, width: int, height: int) -> Document:
+        check_size(width, height)
+        return cls(width, height, [Layer("Background", Image.new("RGBA", (width, height)))])
+
+    @property
+    def active_layer(self) -> Layer:
+        return self.layers[self.active]
+
+    @property
+    def bounds(self) -> Rect:
+        return Rect(0, 0, self.width, self.height)
+
+    def composite(self, rect: Rect | None = None, *, override: dict | None = None) -> Image.Image:
+        """Flatten the visible layers (normal blending, layer opacity).
+
+        ``override`` maps a layer index to a replacement image (used for live previews).
+        """
+        rect = self.bounds if rect is None else rect.intersect(self.bounds)
+        out = Image.new("RGBA", (max(rect.width, 0), max(rect.height, 0)))
+        if rect.empty:
+            return out
+        for i, layer in enumerate(self.layers):
+            if not layer.visible or layer.opacity <= 0:
+                continue
+            image = (override or {}).get(i, layer.image)
+            lb = Rect(layer.x, layer.y, layer.x + image.width, layer.y + image.height)
+            part = lb.intersect(rect)
+            if part.empty:
+                continue
+            src = image.crop(part.offset(-layer.x, -layer.y).box)
+            src = with_opacity(src, layer.opacity)
+            out.alpha_composite(src, (part.x0 - rect.x0, part.y0 - rect.y0))
+        return out
