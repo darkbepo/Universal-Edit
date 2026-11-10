@@ -1,0 +1,267 @@
+{
+ "normalise": [
+  {
+   "in": "<html><body><h1 class=\"x\">T</h1><script>bad()</script><p style=\"text-align:center;color:red;margin-top:3px\">a <strong>b</strong> <span style=\"color:RGB(255,0,0);font-size:12pt;position:absolute\">c</span><font face=\"Arial\">d</font></p><div>e</div><h4>f</h4></body></html>",
+   "out": "<h1>T</h1><p style=\"text-align:center\">a <b>b</b> <span style=\"font-size:12pt;color:#ff0000\">c</span><span style=\"font-family:Arial\">d</span></p><p>e</p><h3>f</h3>",
+   "warnings": [
+    "page styles, classes and scripts"
+   ]
+  },
+  {
+   "in": "<p>Blåbærgrød — Привет — 你好 — 😀</p>",
+   "out": "<p>Blåbærgrød — Привет — 你好 — 😀</p>",
+   "warnings": []
+  },
+  {
+   "in": "<p><img src=\"https://example.com/x.png\"><a href=\"http://a\">l</a></p>",
+   "out": "<p><a href=\"http://a\">l</a></p>",
+   "warnings": [
+    "pictures from the web"
+   ]
+  },
+  {
+   "in": "<p>a\tb   c</p><p>  x</p>",
+   "out": "<p>a\tb   c</p><p>  x</p>",
+   "warnings": []
+  },
+  {
+   "in": "<p>\n\t\tHello\n\t\tworld\n</p>",
+   "out": "<p>Hello world</p>",
+   "warnings": []
+  },
+  {
+   "in": "<p>a   b</p>\n<p>  c  </p>",
+   "out": "<p>a b</p><p>c</p>",
+   "warnings": []
+  },
+  {
+   "in": "<p><span style=\"font-weight:700;font-style:italic\">x</span></p>",
+   "out": "<p><b><i>x</i></b></p>",
+   "warnings": []
+  },
+  {
+   "in": "<p><span style=\"font-weight:500\">x</span></p>",
+   "out": "<p>x</p>",
+   "warnings": []
+  },
+  {
+   "in": "<p><span style=\"font-style:oblique;text-decoration:underline line-through\">x</span></p>",
+   "out": "<p><i><u><s>x</s></u></i></p>",
+   "warnings": []
+  },
+  {
+   "in": "<p><span style=\"text-decoration-line:line-through;color:red\">x</span></p>",
+   "out": "<p><span style=\"color:#ff0000\"><s>x</s></span></p>",
+   "warnings": []
+  },
+  {
+   "in": "<a href=\"http://a\"><div>one</div><div>two</div></a>",
+   "out": "<p><a href=\"http://a\">one<br>two</a></p>",
+   "warnings": []
+  },
+  {
+   "in": "<span><div>one</div><div>two</div></span>",
+   "out": "<p>one<br>two</p>",
+   "warnings": []
+  },
+  {
+   "in": "<div><div><p>deep</p></div><div>x</div></div>",
+   "out": "<p>deep</p><p>x</p>",
+   "warnings": []
+  },
+  {
+   "in": "<ul><li>a</li><li></li><li>c</li></ul>",
+   "out": "<ul><li>a</li><li></li><li>c</li></ul>",
+   "warnings": []
+  },
+  {
+   "in": "<ul><li>a<ul><li>b</li></ul>c</li><li>d</li></ul>",
+   "out": "<ul><li>a<ul><li>b</li></ul></li><li>c</li><li>d</li></ul>",
+   "warnings": []
+  },
+  {
+   "in": "<ul><li>a<ul><li>b</li></ul>\n<ul><li>e</li></ul></li></ul>",
+   "out": "<ul><li>a<ul><li>b</li></ul><ul><li>e</li></ul></li></ul>",
+   "warnings": []
+  },
+  {
+   "in": "<ol><li>a<ol><li>b<ol><li>c</li></ol></li></ol></li></ol>",
+   "out": "<ol><li>a<ol><li>b<ol><li>c</li></ol></li></ol></li></ol>",
+   "warnings": []
+  },
+  {
+   "in": "<table style=\"border:none\"><tr><td><p>x</p></td><td><p>y</p></td></tr></table>",
+   "out": "<table style=\"border:none\"><tr><td><p>x</p></td><td><p>y</p></td></tr></table>",
+   "warnings": []
+  },
+  {
+   "in": "<table border=\"1\"><tr><th>H</th><th>I</th></tr><tr><td>1</td><td></td></tr></table>",
+   "out": "<table><tr><td><p>H</p></td><td><p>I</p></td></tr><tr><td><p>1</p></td><td><p></p></td></tr></table>",
+   "warnings": []
+  },
+  {
+   "in": "<table><tr><td colspan=\"2\">a</td></tr><tr><td>b</td><td>c</td></tr></table>",
+   "out": "<table><tr><td colspan=\"2\"><p>a</p></td></tr><tr><td><p>b</p></td><td><p>c</p></td></tr></table>",
+   "warnings": []
+  },
+  {
+   "in": "<html><head><title>My page</title><style>p{color:red}</style></head><body><p class=\"lead\">Hello <img src=\"http://example.com/a.png\"></p></body></html>",
+   "out": "<p>Hello</p>",
+   "warnings": [
+    "page styles, classes and scripts",
+    "pictures from the web"
+   ]
+  },
+  {
+   "in": "<html><body><script>alert(1)</script><p>hi</p></body></html>",
+   "out": "<p>hi</p>",
+   "warnings": [
+    "page styles, classes and scripts"
+   ]
+  },
+  {
+   "in": "  \n",
+   "out": "",
+   "warnings": []
+  },
+  {
+   "in": "<p>a<img src=\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC\" width=\"10\"></p>",
+   "out": "<p>a<img src=\"img/1.png\" width=\"10\"></p>",
+   "warnings": [],
+   "images": {
+    "img/1.png": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+   }
+  },
+  {
+   "in": "<pre>line 1\n  line 2</pre><blockquote><p>q</p></blockquote><hr>",
+   "out": "<pre>line 1\n  line 2</pre><blockquote><p>q</p></blockquote><hr>",
+   "warnings": []
+  },
+  {
+   "in": "<p style=\"text-align:justify;margin-left:36pt\">m</p><p style=\"page-break-before:always\">n</p>",
+   "out": "<p style=\"text-align:justify;margin-left:36pt\">m</p><p style=\"page-break-before:always\">n</p>",
+   "warnings": []
+  }
+ ],
+ "markdown": [
+  {
+   "md": "# Project\n\nIntro with **bold**, *italic*, <u>under</u> and <s>strike</s>.\n\n```python\ndef f():\n\n    return 1\n```\n\n> A quote\n> over two lines\n\n",
+   "html": "<h1>Project</h1><p>Intro with <b>bold</b>, <i>italic</i>, <u>under</u> and <s>strike</s>.</p><pre>def f():\n\n    return 1\n</pre><blockquote><p>A quote over two lines</p></blockquote>",
+   "front_matter": "",
+   "warnings": [],
+   "md_out": "# Project\n\nIntro with **bold**, *italic*, <u>under</u> and <s>strike</s>.\n\n```\ndef f():\n\n    return 1\n```\n\n> A quote over two lines\n"
+  },
+  {
+   "md": "- one\n  - two\n    - three\n- four\n\n1. a\n2. b\n",
+   "html": "<ul><li>one</li><li>two<ul><li>three</li></ul></li><li>four</li></ul><ol><li>a</li><li>b</li></ol>",
+   "front_matter": "",
+   "warnings": [],
+   "md_out": "- one\n- two\n    - three\n- four\n\n1. a\n1. b\n"
+  },
+  {
+   "md": "| A | B |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |\n",
+   "html": "<table><tr><td><p>A</p></td><td><p>B</p></td></tr><tr><td><p>1</p></td><td><p>2</p></td></tr><tr><td><p>3</p></td><td><p>4</p></td></tr></table>",
+   "front_matter": "",
+   "warnings": [],
+   "md_out": "| A | B |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |\n"
+  },
+  {
+   "md": "---\ntitle: Hello\ntags: [a, b]\n---\n\n# Body\n\ntext\n",
+   "html": "<h1>Body</h1><p>text</p>",
+   "front_matter": "---\ntitle: Hello\ntags: [a, b]\n---\n",
+   "warnings": [],
+   "md_out": "# Body\n\ntext\n"
+  },
+  {
+   "md": "---\n\n# After a rule\n\ntext\n\n---\n\nmore\n",
+   "html": "<hr><h1>After a rule</h1><p>text</p><hr><p>more</p>",
+   "front_matter": "",
+   "warnings": [],
+   "md_out": "---\n\n# After a rule\n\ntext\n\n---\n\nmore\n"
+  },
+  {
+   "md": "Sized: <img src=\"img/1.png\" width=\"20\">\n",
+   "html": "<p>Sized: <img src=\"img/1.png\" width=\"20\"></p>",
+   "front_matter": "",
+   "warnings": [],
+   "md_out": "Sized: <img src=\"img/1.png\" width=\"20\">\n"
+  },
+  {
+   "md": "A [link](https://example.com/) and an ![alt](https://example.com/x.png)\n",
+   "html": "<p>A <a href=\"https://example.com/\">link</a> and an</p>",
+   "front_matter": "",
+   "warnings": [
+    "pictures from the web",
+    "inline code, small headings and picture descriptions"
+   ],
+   "md_out": "A [link](https://example.com/) and an\n"
+  },
+  {
+   "md": "Text with `code` and a footnote[^1].\n\n[^1]: note\n",
+   "html": "<p>Text with code and a footnote<a href=\"note\">^1</a>.</p>",
+   "front_matter": "",
+   "warnings": [
+    "footnotes and other Markdown extras",
+    "inline code, small headings and picture descriptions"
+   ],
+   "md_out": "Text with code and a footnote[^1](note).\n"
+  },
+  {
+   "md": "#### Small\n\nline one  \nline two\n",
+   "html": "<h3>Small</h3><p>line one<br>line two</p>",
+   "front_matter": "",
+   "warnings": [
+    "inline code, small headings and picture descriptions"
+   ],
+   "md_out": "### Small\n\nline one<br>line two\n"
+  },
+  {
+   "md": "Café — *Blåbær* 你好\n\n* star\n* list\n",
+   "html": "<p>Café — <i>Blåbær</i> 你好</p><ul><li>star</li><li>list</li></ul>",
+   "front_matter": "",
+   "warnings": [],
+   "md_out": "Café — *Blåbær* 你好\n\n- star\n- list\n"
+  }
+ ],
+ "txt": [
+  {
+   "txt": "def f():\n    return 1\n\tTabbed\nA    B\n",
+   "html": "<p>def f():</p><p>    return 1</p><p>\tTabbed</p><p>A    B</p>"
+  },
+  {
+   "txt": "first\n\nsecond with <tags> & more\n",
+   "html": "<p>first</p><p></p><p>second with &lt;tags&gt; &amp; more</p>"
+  },
+  {
+   "txt": "Name     Qty   Price\nApple    3     1.50\n",
+   "html": "<p>Name     Qty   Price</p><p>Apple    3     1.50</p>"
+  },
+  {
+   "txt": "  leading and trailing  \n",
+   "html": "<p>  leading and trailing  </p>"
+  },
+  {
+   "txt": "one line",
+   "html": "<p>one line</p>"
+  },
+  {
+   "txt": "",
+   "html": "<p></p>"
+  },
+  {
+   "txt": "Blåbær — 你好\r\nWindows line ends\r\n",
+   "html": "<p>Blåbær — 你好</p><p>Windows line ends</p>"
+  }
+ ],
+ "cases": [
+  "<h1>T</h1><h2>U</h2><h3>V</h3>",
+  "<p style=\"text-align:justify\">a <b>b</b> <i>c</i> <u>d</u> <s>e</s></p>",
+  "<p><span style=\"font-family:Arial;font-size:14pt;color:#ff0000;background-color:#ffcc00\">f</span></p>",
+  "<blockquote><p>q</p></blockquote><pre>code()</pre>",
+  "<p style=\"margin-left:72pt\">i</p><p style=\"page-break-before:always\">n</p><hr>",
+  "<p><a href=\"https://x.org/\">x</a></p>",
+  "<table><tr><td colspan=\"2\"><p>a</p></td></tr><tr><td><p>b</p></td><td><p>c</p></td></tr></table>",
+  "<table style=\"border:none\"><tr><td><p>x</p></td><td><p>y</p></td></tr></table>",
+  "<ol><li>a</li><li></li><li>c</li></ol>"
+ ]
+}
