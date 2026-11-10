@@ -10,3 +10,4 @@ packaging/bin/
 packaging/tessdata/
 packaging/fonts/
 *.log
+.claude/worktrees/
