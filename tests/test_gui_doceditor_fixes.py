@@ -76,3 +76,17 @@ def test_markdown_round_trip_through_the_editor(qtbot, page, tmp_path):
     assert "> A quote that goes on." in text
     assert "<u>under</u>" in text and "**bold**" in text and "*italic*" in text
     assert open_document(p).html == original.html
+
+
+def test_html_title_and_warnings_through_the_editor(qtbot, page, tmp_path, monkeypatch):
+    from tests.test_doceditor_fixes import WEB_PAGE
+    from umc.doceditor.types import W_PAGESTYLE, W_RAWHTML, W_WEBPICS
+
+    p = tmp_path / "a.html"
+    p.write_text(WEB_PAGE, encoding="utf-8")
+    asked = []
+    page._ask_lose_parts = lambda: asked.append(list(page.warnings)) or "save"
+    gui_cycle(qtbot, page, p, n=2)
+    assert asked == [[W_PAGESTYLE, W_WEBPICS, W_RAWHTML]]  # only the original had them
+    assert "<title>T</title>" in p.read_text(encoding="utf-8")
+    assert page.banner.isHidden()

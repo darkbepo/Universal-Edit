@@ -195,3 +195,62 @@ def test_markdown_text_never_turns_into_syntax(tmp_path, html):
     assert doc.html == normalise_html(expected)[0]
     save_document(content_of(doc, p), p, "md")
     assert p.read_text(encoding="utf-8") == first
+
+
+# ----- Important 5: warnings for HTML / Markdown, the page title, CSS emphasis ------------
+from umc.doceditor.types import W_MDEXTRA, W_PAGESTYLE, W_RAWHTML, W_WEBPICS  # noqa: E402
+
+WEB_PAGE = """<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>T</title>
+<style>p { color: red }</style></head>
+<body><p class="intro">Hello <img src="https://example.com/x.png"></p>
+<iframe src="https://example.com/"></iframe></body></html>
+"""
+
+
+def test_html_warnings_and_title_kept(tmp_path):
+    p = tmp_path / "a.html"
+    p.write_text(WEB_PAGE, encoding="utf-8")
+    doc = open_document(p)
+    assert doc.warnings == [W_PAGESTYLE, W_WEBPICS, W_RAWHTML]
+    assert doc.title == "T" and doc.html == "<p>Hello</p>"
+    for again in cycle(p, "html")[1:]:  # after the first save there is nothing to lose
+        assert again.title == "T" and again.html == "<p>Hello</p>"
+        assert again.warnings == []
+    assert "<title>T</title>" in p.read_text(encoding="utf-8")
+
+
+def test_html_title_falls_back_to_file_name(tmp_path):
+    out = save_document(SaveContent("<p>x</p>", {}), tmp_path / "notes.html", "html")
+    assert "<title>notes</title>" in out.read_text(encoding="utf-8")
+
+
+def test_plain_html_has_no_warnings(tmp_path):
+    p = tmp_path / "a.html"
+    p.write_text("<html><head><title>x</title></head><body><p>a</p></body></html>")
+    assert open_document(p).warnings == []
+
+
+def test_markdown_extras_warn(tmp_path):
+    p = tmp_path / "a.md"
+    p.write_text("Text[^1]\n\n[^1]: note\n\n<div>raw</div>\n", encoding="utf-8")
+    assert W_MDEXTRA in open_document(p).warnings
+    p.write_text("```python\n<div>in code</div>\n```\n\nPlain <u>inline</u>\n", encoding="utf-8")
+    assert open_document(p).warnings == []
+
+
+@pytest.mark.parametrize(
+    ("css", "out"),
+    [
+        ("font-weight:700;font-style:italic", "<b><i>x</i></b>"),
+        ("font-weight:bold", "<b>x</b>"),
+        ("font-weight:500", "x"),
+        ("font-style:oblique;text-decoration:underline line-through", "<i><u><s>x</s></u></i>"),
+        (
+            "text-decoration-line:line-through;color:red",
+            '<span style="color:#ff0000"><s>x</s></span>',
+        ),
+    ],
+)
+def test_css_emphasis_becomes_tags(css, out):
+    assert normalise_html(f'<p><span style="{css}">x</span></p>')[0] == f"<p>{out}</p>"

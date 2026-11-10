@@ -21,7 +21,14 @@ from lxml import etree
 from PIL import ImageColor
 
 from umc.core.errors import ConversionError
-from umc.doceditor.types import MAX_FILE_BYTES, DocImages, next_image_name
+from umc.doceditor.types import (
+    MAX_FILE_BYTES,
+    W_PAGESTYLE,
+    W_RAWHTML,
+    W_WEBPICS,
+    DocImages,
+    next_image_name,
+)
 
 # Removed together with everything inside them.
 _DROP = frozenset(
@@ -95,6 +102,26 @@ _BLOCK = frozenset(
     }
 )
 _LISTS = frozenset({"ul", "ol"})
+# Embedded content that is dropped (W_RAWHTML); forms keep their text, not their fields.
+_RAW_DROPPED = frozenset(
+    {
+        "iframe",
+        "object",
+        "embed",
+        "applet",
+        "audio",
+        "video",
+        "canvas",
+        "svg",
+        "frame",
+        "frameset",
+        "form",
+        "input",
+        "textarea",
+        "select",
+        "button",
+    }
+)
 _INLINE_MAP = {
     "b": "b",
     "strong": "b",
@@ -180,6 +207,30 @@ def _span_style(fam: str | None, size: float | None, fg: str | None, bg: str | N
     if bg:
         parts.append(f"background-color:{bg}")
     return ";".join(parts)
+
+
+def _css_emphasis(css: dict[str, str]) -> list[str]:
+    """Bold / italic / underline / strike set through CSS, as the tags b, i, u, s."""
+    tags = []
+    weight = css.get("font-weight", "").lower()
+    if weight in ("bold", "bolder") or (weight.isdigit() and int(weight) >= 600):
+        tags.append("b")
+    if css.get("font-style", "").lower() in ("italic", "oblique"):
+        tags.append("i")
+    deco = f"{css.get('text-decoration', '')} {css.get('text-decoration-line', '')}".lower()
+    if "underline" in deco:
+        tags.append("u")
+    if "line-through" in deco:
+        tags.append("s")
+    return tags
+
+
+def _not_bold(tag: str, node: etree._Element) -> bool:
+    """<b style="font-weight:normal"> (pasted from Google Docs) isn't bold."""
+    weight = _parse_style(node.get("style")).get("font-weight", "").lower()
+    return tag in ("b", "strong") and (
+        weight in ("normal", "lighter") or (weight.isdigit() and int(weight) < 600)
+    )
 
 
 def _attr(value: str) -> str:
@@ -310,7 +361,7 @@ class _Normaliser:
             toks.append(_BR)
         elif tag == "img":
             self._img(node, toks)
-        elif tag in _INLINE_MAP:
+        elif tag in _INLINE_MAP and not _not_bold(tag, node):
             out = _INLINE_MAP[tag]
             toks.append(("O", f"<{out}>"))
             self._inline_children(node, toks)
@@ -325,12 +376,14 @@ class _Normaliser:
                 self._inline_children(node, toks)
         elif tag in ("span", "font"):
             style = self._span_style(node, font=tag == "font")
+            wraps = _css_emphasis(_parse_style(node.get("style")))
             if style:
                 toks.append(("O", f'<span style="{_attr(style)}">'))
-                self._inline_children(node, toks)
+            toks.extend(("O", f"<{t}>") for t in wraps)
+            self._inline_children(node, toks)
+            toks.extend(("C", f"</{t}>") for t in reversed(wraps))
+            if style:
                 toks.append(("C", "</span>"))
-            else:
-                self._inline_children(node, toks)
         elif tag in _BLOCK:  # a block inside an inline tag: its content becomes a line
             self._separate(toks)
             self._inline_children(node, toks)
@@ -537,14 +590,67 @@ def _parse(html: str) -> etree._Element | None:
         raise ConversionError(_UNREADABLE, details=str(exc)) from exc
 
 
+def _page(html: str) -> etree._Element | None:
+    """The whole page, <head> included (the fragment parser drops it)."""
+    try:
+        return etree.fromstring(_XML_DECL.sub("", html), lxml.html.HTMLParser(huge_tree=True))
+    except (etree.LxmlError, ValueError):
+        return None
+
+
+def _is_language_class(value: str) -> bool:
+    """Python-Markdown marks fenced code with class="language-x": not the page's styling."""
+    return all(c.startswith("language-") for c in value.split())
+
+
+def _lost_parts(html: str) -> list[str]:
+    """What normalising ``html`` drops that a reader would miss (warnings, in a fixed order)."""
+    page = _page(html)
+    found: set[str] = set()
+    for el in page.iter() if page is not None else ():
+        tag = _tag(el)
+        if tag is None:
+            continue
+        rel = (el.get("rel") or "").lower()
+        if tag in ("style", "script") or (tag == "link" and "stylesheet" in rel):
+            found.add(W_PAGESTYLE)
+        elif tag in _RAW_DROPPED:
+            found.add(W_RAWHTML)
+        elif tag == "img":
+            parsed = urlparse((el.get("src") or "").strip())
+            if parsed.scheme.lower() in ("http", "https") or parsed.netloc:
+                found.add(W_WEBPICS)
+        if (el.get("class") and not _is_language_class(el.get("class") or "")) or any(
+            k.lower().startswith("on") for k in el.attrib
+        ):
+            found.add(W_PAGESTYLE)
+    return [w for w in (W_PAGESTYLE, W_WEBPICS, W_RAWHTML) if w in found]
+
+
+def html_title(html: str) -> str:
+    """The page's <title>, with its white space collapsed ("" if there is none)."""
+    page = _page(html)
+    title = page.find(".//title") if page is not None else None
+    return " ".join("".join(title.itertext()).split()) if title is not None else ""
+
+
 def normalise_html(html: str, base_dir: Path | None = None) -> tuple[str, DocImages]:
     """Rewrite ``html`` into the editor's subset; returns (fragment, pictures).
 
     ``base_dir`` is where relative picture paths are read from (never outside it).
     """
+    out, images, _ = normalise_html_report(html, base_dir, report=False)
+    return out, images
+
+
+def normalise_html_report(
+    html: str, base_dir: Path | None = None, *, report: bool = True
+) -> tuple[str, DocImages, list[str]]:
+    """Like ``normalise_html``, plus the warnings for what was dropped (W_PAGESTYLE, ...)."""
     root = _parse(html)
     if root is None:
-        return "", {}
+        return "", {}, []
+    warnings = _lost_parts(html) if report else []
     reserved = {
         src for img in root.iter("img") if _CANON_IMG.match(src := (img.get("src") or "").strip())
     }
@@ -558,7 +664,7 @@ def normalise_html(html: str, base_dir: Path | None = None) -> tuple[str, DocIma
         raise ConversionError(_UNREADABLE, details="nesting too deep") from exc
     finally:
         sys.setrecursionlimit(old_limit)
-    return "".join(out), norm.images
+    return "".join(out), norm.images, warnings
 
 
 def text_length(html: str) -> int:

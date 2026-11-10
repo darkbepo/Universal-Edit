@@ -112,7 +112,7 @@ def _build(
         return write(content.html, content.images, out)
     if fmt == "html":
         body = _data_uris(content.html, content.images)
-        out.write_text(htmlpdf._page(stem, body), encoding="utf-8", newline="\n")
+        out.write_text(htmlpdf._page(content.title or stem, body), encoding="utf-8", newline="\n")
         return out
     if fmt == "txt":
         text = content.plain_text if content.plain_text is not None else ""
