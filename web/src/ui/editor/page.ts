@@ -30,6 +30,9 @@ import { h, LayersPanel, Swatches, ToolBar, ToolSettings } from "./panels";
 import { SHORTCUTS, shortcutFor, toolGroups } from "./shortcuts";
 import * as selection from "../../editor/selection";
 
+/** Tools whose arrow keys move the selection outline. */
+const SELECT_TOOL_IDS = ["select", "ellipse_select", "lasso", "polygon_lasso", "wand"];
+
 /** Same size and (nearly) the same pixels — the clipboard may round semi-transparent colours. */
 function samePicture(a: { data: Uint8ClampedArray; width: number; height: number }, b: { data: Uint8ClampedArray; width: number; height: number }): boolean {
   if (a.width !== b.width || a.height !== b.height) return false;
@@ -407,6 +410,13 @@ export class EditorPage {
       const step = e.shiftKey ? 10 : 1;
       const [dx, dy] = arrows[k];
       return run(() => this.push(ops.nudgeLayers(this.doc as EditorDoc, selectedIndices(this.doc as EditorDoc), dx * step, dy * step)));
+    }
+    const drawingPolygon = !!(this.tool as unknown as { points?: unknown[] }).points?.length;
+    if (SELECT_TOOL_IDS.includes(this.tool.id) && this.doc.selection && k in arrows && !mod && !e.altKey && onCanvas && !this.canvas.dragging && !drawingPolygon) {
+      // arrows move the selection outline (Shift: 10 px)
+      const step = e.shiftKey ? 10 : 1;
+      const [dx, dy] = arrows[k];
+      return run(() => this.push(selection.moveSelection(this.doc as EditorDoc, dx * step, dy * step)));
     }
     const shortcut = shortcutFor(e);
     if (shortcut) {

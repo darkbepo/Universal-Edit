@@ -1173,3 +1173,15 @@ def test_colour_picker_shows_a_loupe_while_held(canvas, qtbot):
     assert c.grab().toImage().pixelColor(middle) != before
     qtbot.mouseRelease(c, Qt.MouseButton.LeftButton, pos=p)
     assert c.grab().toImage().pixelColor(middle) == before  # gone again
+
+
+def test_arrows_move_the_selection_with_a_selection_tool(page, qtbot):
+    from umc.editor.geometry import Rect
+
+    page.select_tool("select")
+    page.doc.selection = Rect(2, 2, 10, 10)
+    page.canvas.setFocus()
+    qtbot.keyClick(page.canvas, Qt.Key.Key_Right)
+    qtbot.keyClick(page.canvas, Qt.Key.Key_Down, SHIFT)
+    assert page.doc.selection == Rect(3, 12, 11, 20)
+    assert page.history.undo_label == "Move selection"

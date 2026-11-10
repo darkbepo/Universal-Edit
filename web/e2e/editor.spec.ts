@@ -927,3 +927,22 @@ test("quick fixes: menus close on an outside click; dragging layers selects no t
   expect(await shot()).not.toBe(plain);
   await page.mouse.up();
 });
+
+test("selection: drag inside to move it (move cursor), arrows nudge, undo", async ({ page }) => {
+  await openEditor(page);
+  await page.locator(".canvas-host canvas").focus();
+  await page.keyboard.press("m");
+  await expect.poll(() => page.evaluate(() => (window.__editor as EditorHook).toolId)).toBe("select");
+  await drag(page, [5, 5], [25, 20]);
+  await expect.poll(() => selState(page)).toEqual({ box: [5, 5, 25, 20], masked: false });
+  const inside = await at(page, 10, 10);
+  await page.mouse.move(inside.x, inside.y);
+  expect(await page.locator(".canvas-host canvas.view").evaluate((c) => (c as HTMLElement).style.cursor)).toBe("move");
+  await drag(page, [10, 10], [20, 15]);
+  await expect.poll(() => selState(page)).toEqual({ box: [15, 10, 35, 25], masked: false });
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("Shift+ArrowDown");
+  await expect.poll(() => selState(page)).toEqual({ box: [16, 20, 36, 35], masked: false });
+  for (let i = 0; i < 3; i++) await page.keyboard.press("Control+z");
+  await expect.poll(() => selState(page)).toEqual({ box: [5, 5, 25, 20], masked: false });
+});

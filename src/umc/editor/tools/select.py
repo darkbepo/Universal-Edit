@@ -14,15 +14,60 @@ from umc.editor.geometry import Rect
 from umc.editor.history import Command, PatchCommand
 from umc.editor.selection import (
     combine,
+    contains,
     deselect,
     ellipse_shape,
     mode_for,
+    move_selection,
     polygon_shape,
     rect_shape,
     select_all,
     wand_shape,
 )
 from umc.editor.tools.base import Tool, ToolContext, clip_rect, restrict
+
+
+class _SelectionMover:
+    """Dragging inside the selection (no Shift / Alt) moves its outline, not the pixels.
+
+    Selection tools call ``grab`` on press; while ``active`` they hand move / release over. The
+    drag shows the moved outline at once; release makes it one undo step (trimmed to the canvas).
+    A click without moving reports ``moved = False`` so the tool can do its usual click.
+    """
+
+    def __init__(self) -> None:
+        self.active = False
+        self.moved = False
+        self._start = (0.0, 0.0)
+        self._base: tuple | None = None
+
+    def grab(self, doc: Document, x: float, y: float, ctx: ToolContext) -> bool:
+        if ctx.shift or ctx.alt or not contains(doc, x, y):
+            return False
+        self.active, self.moved = True, False
+        self._start = (x, y)
+        self._base = (doc.selection, doc.selection_mask)
+        return True
+
+    def _offset(self, x: float, y: float) -> tuple[int, int]:
+        return round(x - self._start[0]), round(y - self._start[1])
+
+    def drag(self, doc: Document, x: float, y: float) -> None:
+        dx, dy = self._offset(x, y)
+        if (dx, dy) != (0, 0):
+            self.moved = True
+        rect, mask = self._base
+        doc.selection, doc.selection_mask = rect.offset(dx, dy), mask  # preview (not trimmed)
+
+    def drop(self, doc: Document, x: float, y: float) -> Command | None:
+        self.drag(doc, x, y)
+        self.active = False
+        return move_selection(doc, *self._offset(x, y), base=self._base)
+
+    def cancel(self, doc: Document) -> None:
+        if self.active:
+            doc.selection, doc.selection_mask = self._base
+        self.active = False
 
 
 class _DragRectTool(Tool):
@@ -51,20 +96,28 @@ class _ShapeSelectTool(_DragRectTool):
         super().__init__()
         self.outline = None
         self._mode = "replace"
+        self.mover = _SelectionMover()
 
     def press(self, doc: Document, x: float, y: float, ctx: ToolContext) -> Rect | None:
+        self.outline = None
+        if self.mover.grab(doc, x, y, ctx):
+            return None
         self._start = (x, y)
         self._mode = mode_for(ctx.shift, ctx.alt)
-        self.outline = None
         return None
 
     def move(self, doc: Document, x: float, y: float, ctx: ToolContext) -> Rect | None:
-        if self._start is not None:
+        if self.mover.active:
+            self.mover.drag(doc, x, y)
+        elif self._start is not None:
             r = self._rect(doc, x, y)
             self.outline = None if r is None else (self.shape, r)
         return None
 
     def release(self, doc: Document, x: float, y: float, ctx: ToolContext) -> Command | None:
+        if self.mover.active:
+            cmd = self.mover.drop(doc, x, y)
+            return cmd if self.mover.moved else deselect(doc)  # a click inside: deselect
         if self._start is None:
             return None
         r = self._rect(doc, x, y)
@@ -75,6 +128,7 @@ class _ShapeSelectTool(_DragRectTool):
         return combine(doc, shape, self._mode)
 
     def cancel(self, doc: Document) -> Rect | None:
+        self.mover.cancel(doc)
         self._start, self.outline = None, None
         return None
 
@@ -98,8 +152,11 @@ class LassoTool(Tool):
         self.outline = None
         self._mode = "replace"
         self._down = False
+        self.mover = _SelectionMover()
 
     def press(self, doc: Document, x: float, y: float, ctx: ToolContext) -> Rect | None:
+        if self.mover.grab(doc, x, y, ctx):
+            return None
         self._down = True
         self._mode = mode_for(ctx.shift, ctx.alt)
         self.points = [(x, y)]
@@ -107,11 +164,16 @@ class LassoTool(Tool):
         return None
 
     def move(self, doc: Document, x: float, y: float, ctx: ToolContext) -> Rect | None:
-        if self._down and math.hypot(x - self.points[-1][0], y - self.points[-1][1]) >= 1:
+        if self.mover.active:
+            self.mover.drag(doc, x, y)
+        elif self._down and math.hypot(x - self.points[-1][0], y - self.points[-1][1]) >= 1:
             self.points.append((x, y))
         return None
 
     def release(self, doc: Document, x: float, y: float, ctx: ToolContext) -> Command | None:
+        if self.mover.active:
+            cmd = self.mover.drop(doc, x, y)
+            return cmd if self.mover.moved else deselect(doc)
         if not self._down:
             return None
         self.move(doc, x, y, ctx)
@@ -121,6 +183,7 @@ class LassoTool(Tool):
         return combine(doc, polygon_shape(doc, pts), self._mode)
 
     def cancel(self, doc: Document) -> Rect | None:
+        self.mover.cancel(doc)
         self.points, self.outline, self._down = [], None, False
         return None
 
@@ -136,13 +199,26 @@ class PolygonLassoTool(Tool):
         self.points: list[tuple[float, float]] = []
         self.outline = None
         self._mode = "replace"
+        self.mover = _SelectionMover()
 
     def press(self, doc: Document, x: float, y: float, ctx: ToolContext) -> Rect | None:
         if not self.points:
+            if self.mover.grab(doc, x, y, ctx):  # only before the first corner
+                return None
             self._mode = mode_for(ctx.shift, ctx.alt)
         return None
 
+    def move(self, doc: Document, x: float, y: float, ctx: ToolContext) -> Rect | None:
+        if self.mover.active:
+            self.mover.drag(doc, x, y)
+        return None
+
     def release(self, doc: Document, x: float, y: float, ctx: ToolContext) -> Command | None:
+        if self.mover.active:
+            cmd = self.mover.drop(doc, x, y)
+            if self.mover.moved:
+                return cmd
+            self._mode = "replace"  # a click inside: start a polygon there, as usual
         if len(self.points) >= 3:
             fx, fy = self.points[0]
             if math.hypot(x - fx, y - fy) * max(ctx.zoom, 1e-6) <= self.CLOSE:
@@ -160,6 +236,7 @@ class PolygonLassoTool(Tool):
         return combine(doc, polygon_shape(doc, pts), self._mode)
 
     def cancel(self, doc: Document) -> Rect | None:
+        self.mover.cancel(doc)
         self.points, self.outline = [], None
         return None
 
@@ -180,21 +257,33 @@ class MagicWandTool(Tool):
     def __init__(self) -> None:
         self._mode = "replace"
         self._down = False
+        self.mover = _SelectionMover()
 
     def press(self, doc: Document, x: float, y: float, ctx: ToolContext) -> Rect | None:
         self._mode = mode_for(ctx.shift, ctx.alt)
         self._down = True
+        self.mover.grab(doc, x, y, ctx)  # a drag inside moves it; a click picks as usual
+        return None
+
+    def move(self, doc: Document, x: float, y: float, ctx: ToolContext) -> Rect | None:
+        if self.mover.active:
+            self.mover.drag(doc, x, y)
         return None
 
     def release(self, doc: Document, x: float, y: float, ctx: ToolContext) -> Command | None:
         if not self._down:
             return None
         self._down = False
+        if self.mover.active:
+            cmd = self.mover.drop(doc, x, y)
+            if self.mover.moved:
+                return cmd
         o = ctx.options
         shape = wand_shape(doc, x, y, o.tolerance, o.contiguous, o.sample_all)
         return combine(doc, shape, self._mode, "Magic wand")
 
     def cancel(self, doc: Document) -> Rect | None:
+        self.mover.cancel(doc)
         self._down = False
         return None
 

@@ -610,7 +610,13 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
          `soloLayer` (Alt+click an eye or the layer menu; again = show all; one undo step);
          colour-picker loupe (`_paint_loupe` / `paintLoupe`: 11 × 11 cached pixels at 11×, up-left
          of the pointer, kept on screen).
-      2. Move a selection (drag inside it with a selection tool; arrows nudge).
+      2. ✅ Move a selection (both apps): every selection tool has a `_SelectionMover` /
+         `SelectionMover` (`tools/select.py` / `select.ts`): a press inside the selection with no
+         Shift/Alt (`selection.contains`) drags the outline — previewed by offsetting
+         `doc.selection` (mask kept), committed on release by `move_selection` / `moveSelection`
+         (trimmed to the canvas by `shifted`, one undo step). A click inside still deselects (rect /
+         ellipse / lasso), picks (wand) or starts a polygon. Arrows (Shift = 10 px) nudge it with a
+         selection tool; the cursor turns into a move cursor inside it.
       3. Tool rail: grouped (Select → Move & crop → Paint → Retouch → Shapes & text → Adjust →
          Filters → Effects → Image), icons + names by default, narrowable; menu items become icons.
       4. Floating windows: every icon opens a movable, minimisable window (several at once,

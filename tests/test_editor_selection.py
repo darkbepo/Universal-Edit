@@ -198,3 +198,63 @@ def test_soft_selection_mixes_on_premultiplied_colour():
         0,
         0,
     ) and 100 < a < 160  # half selected: half see-through red, not dark
+
+
+# ------------------------------------------------------------------ moving a selection
+
+
+def test_dragging_inside_the_selection_moves_it_with_undo():
+    doc = _doc()
+    h = History(doc)
+    t = SelectTool()
+    h.push(_drag(t, doc, (5, 5), (15, 10)))
+    assert doc.selection == Rect(5, 5, 15, 10)
+    h.push(_drag(t, doc, (8, 7), (20, 17)))  # starts inside: moves by (12, 10)
+    assert doc.selection == Rect(17, 15, 27, 20) and h.undo_label == "Move selection"
+    assert doc.layers[0].image.getpixel((17, 15)) == (10, 20, 30, 255)  # pixels untouched
+    h.undo()
+    assert doc.selection == Rect(5, 5, 15, 10)
+
+
+def test_a_moved_shaped_selection_keeps_its_shape_and_is_trimmed():
+    doc = _doc()
+    h = History(doc)
+    h.push(_drag(EllipseSelectTool(), doc, (0, 0), (20, 20)))
+    before = _mask(doc)
+    h.push(_drag(LassoTool(), doc, (10, 10), (15, 12)))  # lasso also moves it
+    after = _mask(doc)
+    assert (after[2:22, 5:25] == before[0:20, 0:20]).all()
+    h.push(selection.move_selection(doc, 30, 0))  # mostly off the canvas: trimmed
+    assert doc.selection.x1 == 40 and doc.selection.x0 >= 35
+
+
+def test_shift_or_a_click_outside_still_selects():
+    doc = _doc()
+    t = SelectTool()
+    _drag(t, doc, (5, 5), (15, 10))
+    _drag(t, doc, (8, 7), (30, 25), shift=True)  # Shift inside: adds, doesn't move
+    assert doc.selection == Rect(5, 5, 30, 25)
+    _drag(t, doc, (8, 7), (8, 7))  # a click inside: deselects as before
+    assert doc.selection is None
+
+
+def test_wand_click_inside_still_picks_and_polygon_drag_moves():
+    doc = _doc()
+    doc.selection = Rect(0, 0, 10, 10)
+    w = MagicWandTool()
+    o = opts.build(type(w).options_cls, opts.defaults(type(w).options_cls))
+    c = _ctx(o)
+    w.press(doc, 5, 5, c)
+    w.release(doc, 5, 5, c)
+    assert doc.selection == Rect(0, 0, 40, 30)  # the whole single-colour picture
+    doc.selection = Rect(0, 0, 10, 10)
+    p = PolygonLassoTool()
+    _drag(p, doc, (5, 5), (8, 9))
+    assert doc.selection == Rect(3, 4, 13, 14) and p.points == []
+
+
+def test_contains_follows_the_shape():
+    doc = _doc()
+    _drag(EllipseSelectTool(), doc, (0, 0), (20, 20))
+    assert selection.contains(doc, 10, 10) and not selection.contains(doc, 0.5, 0.5)
+    assert not selection.contains(doc, 30, 10)

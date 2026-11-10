@@ -4,9 +4,54 @@ import { docBounds, type EditorDoc } from "../document";
 import { Rect } from "../geometry";
 import { opt } from "../../core/options";
 import { PatchCommand, type Command } from "../history";
-import { combine, deselect, ellipseShape, modeFor, polygonShape, rectShape, selectAll, wandShape, type Mode } from "../selection";
+import { combine, contains, deselect, ellipseShape, modeFor, moveSelection, polygonShape, rectShape, selectAll, wandShape, type Mode } from "../selection";
 import { cropData } from "../layer";
 import { clipRect, restrict, Tool, type ToolContext } from "./base";
+
+/** Dragging inside the selection (no Shift / Alt) moves its outline, not the pixels. Selection
+ *  tools call `grab` on press; while `active` they hand move / release over. The drag shows the
+ *  moved outline at once; release makes it one undo step (trimmed to the canvas). A click
+ *  without moving leaves `moved` false so the tool can do its usual click. Port of
+ *  _SelectionMover in select.py. */
+export class SelectionMover {
+  active = false;
+  moved = false;
+  private start: [number, number] = [0, 0];
+  private base: [Rect | null, Uint8Array | null] = [null, null];
+
+  grab(doc: EditorDoc, x: number, y: number, ctx?: ToolContext): boolean {
+    if (ctx?.shift || ctx?.alt || !contains(doc, x, y)) return false;
+    this.active = true;
+    this.moved = false;
+    this.start = [x, y];
+    this.base = [doc.selection, doc.selectionMask ?? null];
+    return true;
+  }
+
+  private offset(x: number, y: number): [number, number] {
+    return [Math.round(x - this.start[0]), Math.round(y - this.start[1])];
+  }
+
+  drag(doc: EditorDoc, x: number, y: number): void {
+    const [dx, dy] = this.offset(x, y);
+    if (dx || dy) this.moved = true;
+    const [rect, mask] = this.base;
+    doc.selection = rect ? rect.offset(dx, dy) : null; // preview (not trimmed)
+    doc.selectionMask = mask;
+  }
+
+  drop(doc: EditorDoc, x: number, y: number): Command | null {
+    this.drag(doc, x, y);
+    this.active = false;
+    const [dx, dy] = this.offset(x, y);
+    return moveSelection(doc, dx, dy, this.base);
+  }
+
+  cancel(doc: EditorDoc | undefined): void {
+    if (this.active && doc) [doc.selection, doc.selectionMask] = this.base;
+    this.active = false;
+  }
+}
 
 abstract class DragRectTool extends Tool {
   protected start: [number, number] | null = null;
@@ -28,16 +73,19 @@ abstract class ShapeSelectTool extends DragRectTool {
   protected abstract readonly shape: "rect" | "ellipse";
   outline: Outline | null = null;
   private mode: Mode = "replace";
+  readonly mover = new SelectionMover();
 
-  override press(_doc: EditorDoc, x: number, y: number, ctx?: ToolContext): Rect | null {
+  override press(doc: EditorDoc, x: number, y: number, ctx?: ToolContext): Rect | null {
+    this.outline = null;
+    if (this.mover.grab(doc, x, y, ctx)) return null;
     this.start = [x, y];
     this.mode = modeFor(!!ctx?.shift, !!ctx?.alt);
-    this.outline = null;
     return null;
   }
 
   override move(doc: EditorDoc, x: number, y: number, _ctx?: ToolContext): Rect | null {
-    if (this.start) {
+    if (this.mover.active) this.mover.drag(doc, x, y);
+    else if (this.start) {
       const r = this.rect(doc, x, y);
       this.outline = r ? [this.shape, r] : null;
     }
@@ -45,6 +93,10 @@ abstract class ShapeSelectTool extends DragRectTool {
   }
 
   override release(doc: EditorDoc, x: number, y: number, _ctx?: ToolContext): Command | null {
+    if (this.mover.active) {
+      const cmd = this.mover.drop(doc, x, y);
+      return this.mover.moved ? cmd : deselect(doc); // a click inside: deselect
+    }
     if (!this.start) return null;
     const r = this.rect(doc, x, y);
     this.start = null;
@@ -53,7 +105,8 @@ abstract class ShapeSelectTool extends DragRectTool {
     return combine(doc, this.shape === "rect" ? rectShape(doc, r) : ellipseShape(doc, r), this.mode);
   }
 
-  override cancel(): Rect | null {
+  override cancel(doc?: EditorDoc): Rect | null {
+    this.mover.cancel(doc);
     this.start = null;
     this.outline = null;
     return null;
@@ -83,8 +136,10 @@ export class LassoTool extends Tool {
   outline: Outline | null = null;
   private mode: Mode = "replace";
   private down = false;
+  readonly mover = new SelectionMover();
 
-  override press(_doc: EditorDoc, x: number, y: number, ctx?: ToolContext): Rect | null {
+  override press(doc: EditorDoc, x: number, y: number, ctx?: ToolContext): Rect | null {
+    if (this.mover.grab(doc, x, y, ctx)) return null;
     this.down = true;
     this.mode = modeFor(!!ctx?.shift, !!ctx?.alt);
     this.points = [[x, y]];
@@ -92,13 +147,22 @@ export class LassoTool extends Tool {
     return null;
   }
 
-  override move(_doc: EditorDoc, x: number, y: number, _ctx?: ToolContext): Rect | null {
+  override move(doc: EditorDoc, x: number, y: number, _ctx?: ToolContext): Rect | null {
+    if (this.mover.active) {
+      this.mover.drag(doc, x, y);
+      return null;
+    }
+    if (!this.down) return null;
     const last = this.points[this.points.length - 1];
     if (this.down && Math.hypot(x - last[0], y - last[1]) >= 1) this.points.push([x, y]);
     return null;
   }
 
   override release(doc: EditorDoc, x: number, y: number, _ctx?: ToolContext): Command | null {
+    if (this.mover.active) {
+      const cmd = this.mover.drop(doc, x, y);
+      return this.mover.moved ? cmd : deselect(doc);
+    }
     if (!this.down) return null;
     this.move(doc, x, y);
     const pts = this.points;
@@ -109,7 +173,8 @@ export class LassoTool extends Tool {
     return combine(doc, polygonShape(doc, pts), this.mode);
   }
 
-  override cancel(): Rect | null {
+  override cancel(doc?: EditorDoc): Rect | null {
+    this.mover.cancel(doc);
     this.points = [];
     this.outline = null;
     this.down = false;
@@ -128,12 +193,27 @@ export class PolygonLassoTool extends Tool {
   outline: Outline | null = null;
   private mode: Mode = "replace";
 
-  override press(_doc: EditorDoc, _x: number, _y: number, ctx?: ToolContext): Rect | null {
-    if (!this.points.length) this.mode = modeFor(!!ctx?.shift, !!ctx?.alt);
+  readonly mover = new SelectionMover();
+
+  override press(doc: EditorDoc, x: number, y: number, ctx?: ToolContext): Rect | null {
+    if (!this.points.length) {
+      if (this.mover.grab(doc, x, y, ctx)) return null; // only before the first corner
+      this.mode = modeFor(!!ctx?.shift, !!ctx?.alt);
+    }
+    return null;
+  }
+
+  override move(doc: EditorDoc, x: number, y: number, _ctx?: ToolContext): Rect | null {
+    if (this.mover.active) this.mover.drag(doc, x, y);
     return null;
   }
 
   override release(doc: EditorDoc, x: number, y: number, ctx?: ToolContext): Command | null {
+    if (this.mover.active) {
+      const cmd = this.mover.drop(doc, x, y);
+      if (this.mover.moved) return cmd;
+      this.mode = "replace"; // a click inside: start a polygon there, as usual
+    }
     if (this.points.length >= 3) {
       const [fx, fy] = this.points[0];
       if (Math.hypot(x - fx, y - fy) * Math.max(ctx?.zoom ?? 1, 1e-6) <= PolygonLassoTool.CLOSE) return this.finish(doc);
@@ -153,7 +233,8 @@ export class PolygonLassoTool extends Tool {
     return combine(doc, polygonShape(doc, pts), this.mode);
   }
 
-  override cancel(): Rect | null {
+  override cancel(doc?: EditorDoc): Rect | null {
+    this.mover.cancel(doc);
     this.points = [];
     this.outline = null;
     return null;
@@ -172,21 +253,33 @@ export class MagicWandTool extends Tool {
   ];
   private mode: Mode = "replace";
   private down = false;
+  readonly mover = new SelectionMover();
 
-  override press(_doc: EditorDoc, _x: number, _y: number, ctx?: ToolContext): Rect | null {
+  override press(doc: EditorDoc, x: number, y: number, ctx?: ToolContext): Rect | null {
     this.mode = modeFor(!!ctx?.shift, !!ctx?.alt);
     this.down = true;
+    this.mover.grab(doc, x, y, ctx); // a drag inside moves it; a click picks as usual
+    return null;
+  }
+
+  override move(doc: EditorDoc, x: number, y: number, _ctx?: ToolContext): Rect | null {
+    if (this.mover.active) this.mover.drag(doc, x, y);
     return null;
   }
 
   override release(doc: EditorDoc, x: number, y: number, ctx?: ToolContext): Command | null {
     if (!this.down || !ctx) return null;
     this.down = false;
+    if (this.mover.active) {
+      const cmd = this.mover.drop(doc, x, y);
+      if (this.mover.moved) return cmd;
+    }
     const o = ctx.options;
     return combine(doc, wandShape(doc, x, y, Number(o.tolerance), !!o.contiguous, !!o.sample_all), this.mode, "Magic wand");
   }
 
-  override cancel(): Rect | null {
+  override cancel(doc?: EditorDoc): Rect | null {
+    this.mover.cancel(doc);
     this.down = false;
     return null;
   }

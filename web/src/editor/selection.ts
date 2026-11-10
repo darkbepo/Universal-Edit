@@ -206,6 +206,52 @@ export function weight(doc: EditorDoc, rect: Rect): Float32Array | null {
 
 /** The edges of the selected area (≥ half selected) as merged horizontal and vertical segments
  *  [x0, y0, x1, y1] in canvas coordinates — what the marching ants follow. */
+/** True when canvas point (x, y) is inside the selected area (at least half selected). */
+export function contains(doc: EditorDoc, x: number, y: number): boolean {
+  const sel = doc.selection;
+  if (!sel) return false;
+  const px = Math.floor(x);
+  const py = Math.floor(y);
+  if (!sel.contains(px, py)) return false;
+  const m = doc.selectionMask;
+  return !m || m[(py - sel.y0) * sel.width + (px - sel.x0)] >= 128;
+}
+
+/** (rect, mask) moved by (dx, dy) and trimmed to the canvas. Same as shifted in selection.py. */
+export function shifted(doc: EditorDoc, rect: Rect, mask: Uint8Array | null, dx: number, dy: number): [Rect | null, Uint8Array | null] {
+  const moved = rect.offset(dx, dy);
+  const vis = moved.intersect(new Rect(0, 0, doc.width, doc.height));
+  if (vis.empty) return [null, null];
+  if (!mask) return [vis, null];
+  // the visible part, then its bounding box of selected pixels
+  let x0 = Infinity, y0 = Infinity, x1 = -1, y1 = -1;
+  for (let y = vis.y0; y < vis.y1; y++)
+    for (let x = vis.x0; x < vis.x1; x++)
+      if (mask[(y - moved.y0) * rect.width + (x - moved.x0)]) {
+        x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x + 1); y1 = Math.max(y1, y + 1);
+      }
+  if (x1 < 0) return [null, null];
+  const out = new Rect(x0, y0, x1, y1);
+  const part = new Uint8Array(out.width * out.height);
+  let full = true;
+  for (let y = y0; y < y1; y++)
+    for (let x = x0; x < x1; x++) {
+      const v = mask[(y - moved.y0) * rect.width + (x - moved.x0)];
+      part[(y - y0) * out.width + (x - x0)] = v;
+      if (v !== 255) full = false;
+    }
+  return [out, full ? null : part];
+}
+
+/** Move the selection outline (not the pixels) by (dx, dy); one undo step. `base` is the
+ *  (rect, mask) it started from when a drag already moved it for the preview. */
+export function moveSelection(doc: EditorDoc, dx: number, dy: number, base?: [Rect | null, Uint8Array | null], label = "Move selection"): Command | null {
+  if (base) [doc.selection, doc.selectionMask] = base;
+  if (!doc.selection || (dx === 0 && dy === 0)) return null;
+  const [rect, mask] = shifted(doc, doc.selection, doc.selectionMask ?? null, dx, dy);
+  return setSelection(doc, rect, mask, label);
+}
+
 export function outline(doc: EditorDoc): [number, number, number, number][] {
   const sel = doc.selection;
   if (!sel) return [];

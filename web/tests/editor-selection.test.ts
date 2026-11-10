@@ -169,3 +169,65 @@ describe("everything respects the selection's shape", () => {
     expect(a > 100 && a < 160).toBe(true);
   });
 });
+
+// mirrors the "moving a selection" tests in tests/test_editor_selection.py
+describe("moving a selection", () => {
+  it("drags inside the selection to move it, with undo", () => {
+    const d = doc();
+    const h = new History(d);
+    const t = new SelectTool();
+    h.push(drag(t, d, [5, 5], [15, 10]));
+    h.push(drag(t, d, [8, 7], [20, 17]));
+    expect(d.selection?.equals(new Rect(17, 15, 27, 20))).toBe(true);
+    expect(h.undoLabel).toBe("Move selection");
+    expect(px(d, 17, 15)).toEqual([10, 20, 30, 255]);
+    h.undo();
+    expect(d.selection?.equals(new Rect(5, 5, 15, 10))).toBe(true);
+  });
+
+  it("keeps the shape and trims at the edge", () => {
+    const d = doc();
+    const h = new History(d);
+    h.push(drag(new EllipseSelectTool(), d, [0, 0], [20, 20]));
+    const before = selection.fullMask(d);
+    h.push(drag(new LassoTool(), d, [10, 10], [15, 12]));
+    const after = selection.fullMask(d);
+    for (let y = 0; y < 20; y++) for (let x = 0; x < 20; x++) expect(after[(y + 2) * 40 + x + 5] > 127).toBe(before[y * 40 + x] > 127);
+    h.push(selection.moveSelection(d, 30, 0));
+    expect(d.selection?.x1).toBe(40);
+    expect((d.selection?.x0 ?? 0) >= 35).toBe(true);
+  });
+
+  it("Shift or a click inside still selects", () => {
+    const d = doc();
+    const t = new SelectTool();
+    drag(t, d, [5, 5], [15, 10]);
+    drag(t, d, [8, 7], [30, 25], { shift: true });
+    expect(d.selection?.equals(new Rect(5, 5, 30, 25))).toBe(true);
+    drag(t, d, [8, 7], [8, 7]);
+    expect(d.selection).toBeNull();
+  });
+
+  it("the wand still picks on a click inside; a polygon-lasso drag moves", () => {
+    const d = doc();
+    d.selection = new Rect(0, 0, 10, 10);
+    const w = new MagicWandTool();
+    const c = ctx({ tolerance: 32, contiguous: true, sample_all: false });
+    w.press(d, 5, 5, c);
+    w.release(d, 5, 5, c);
+    expect(d.selection?.equals(new Rect(0, 0, 40, 30))).toBe(true);
+    d.selection = new Rect(0, 0, 10, 10);
+    const p = new PolygonLassoTool();
+    drag(p, d, [5, 5], [8, 9]);
+    expect(d.selection?.equals(new Rect(3, 4, 13, 14))).toBe(true);
+    expect(p.points).toEqual([]);
+  });
+
+  it("contains follows the shape", () => {
+    const d = doc();
+    drag(new EllipseSelectTool(), d, [0, 0], [20, 20]);
+    expect(selection.contains(d, 10, 10)).toBe(true);
+    expect(selection.contains(d, 0.5, 0.5)).toBe(false);
+    expect(selection.contains(d, 30, 10)).toBe(false);
+  });
+});

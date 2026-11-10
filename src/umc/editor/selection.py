@@ -11,6 +11,8 @@ Shapes are combined by mode: "replace", "add" (Shift), "subtract" (Alt) or "inte
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
@@ -178,6 +180,51 @@ def weight(doc: Document, rect: Rect) -> np.ndarray | None:
         return None
     part = rect.offset(-doc.selection.x0, -doc.selection.y0)
     return np.asarray(doc.selection_mask.crop(part.box), dtype=np.float32) / 255.0
+
+
+def contains(doc: Document, x: float, y: float) -> bool:
+    """True when canvas point (x, y) is inside the selected area (at least half selected)."""
+    sel = doc.selection
+    if sel is None:
+        return False
+    px, py = math.floor(x), math.floor(y)
+    if not sel.contains(px, py):
+        return False
+    m = doc.selection_mask
+    return m is None or m.getpixel((px - sel.x0, py - sel.y0)) >= 128
+
+
+def shifted(
+    doc: Document, rect: Rect, mask: Image.Image | None, dx: int, dy: int
+) -> tuple[Rect | None, Image.Image | None]:
+    """(rect, mask) moved by (dx, dy) and trimmed to the canvas."""
+    new = rect.offset(dx, dy)
+    vis = new.intersect(doc.bounds)
+    if vis.empty:
+        return None, None
+    if mask is None:
+        return vis, None
+    part = mask.crop(vis.offset(-new.x0, -new.y0).box)
+    box = part.getbbox()
+    if box is None:
+        return None, None
+    part = part.crop(box)
+    lo, hi = part.getextrema()
+    rect = Rect(vis.x0 + box[0], vis.y0 + box[1], vis.x0 + box[2], vis.y0 + box[3])
+    return rect, (None if lo == hi == 255 else part)
+
+
+def move_selection(
+    doc: Document, dx: int, dy: int, base: tuple | None = None, label: str = "Move selection"
+) -> Command | None:
+    """Move the selection outline (not the pixels) by (dx, dy); one undo step. ``base`` is the
+    (rect, mask) it started from when a drag already moved it for the preview."""
+    if base is not None:
+        doc.selection, doc.selection_mask = base
+    if doc.selection is None or (dx, dy) == (0, 0):
+        return None
+    rect, mask = shifted(doc, doc.selection, doc.selection_mask, dx, dy)
+    return set_selection(doc, rect, mask, label)
 
 
 def outline(doc: Document) -> list[tuple[int, int, int, int]]:

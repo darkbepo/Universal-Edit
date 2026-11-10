@@ -4,7 +4,7 @@ import { Rect } from "../../editor/geometry";
 import type { Command, History } from "../../editor/history";
 import type { RGBA } from "../../editor/layer";
 import type { Tool, ToolContext } from "../../editor/tools/base";
-import { outline as selectionOutline } from "../../editor/selection";
+import { contains as selectionContains, outline as selectionOutline } from "../../editor/selection";
 import type { Outline } from "../../editor/tools/select";
 import { nearestCorner, placeBar, type BarMode, type CropBar } from "./cropbar";
 
@@ -628,6 +628,11 @@ export class EditorCanvas {
       const r = this.tool.move(this.doc, x, y, this.ctxFor(this.gesture, e));
       if (r) this.refresh(r);
       this.emitPick();
+    } else if (!this.gesture && this.tool && this.doc && SELECT_TOOLS.includes(this.tool.id)) {
+      // inside the selection a drag moves it: say so with the cursor
+      const drawing = (this.tool as unknown as { points?: unknown[] }).points?.length;
+      const inside = !drawing && !e.shiftKey && !e.altKey && selectionContains(this.doc, x, y);
+      this.view.style.cursor = inside ? "move" : cursorFor(this.tool);
     }
     this.draw();
   }

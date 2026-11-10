@@ -13,6 +13,8 @@ from PySide6.QtWidgets import QWidget
 from umc.editor.document import Document
 from umc.editor.geometry import Rect
 from umc.editor.history import History
+from umc.editor.selection import contains as selection_contains
+from umc.editor.selection import move_selection
 from umc.editor.selection import outline as selection_outline
 from umc.editor.tools.base import Tool, ToolContext
 from umc.gui import theme
@@ -559,6 +561,19 @@ class EditorCanvas(QWidget):
                 self.tool.move(self.doc, x, y, self._ctx(self._pressed, e.modifiers()))
             )
             self._emit_pick()
+        elif self._pressed is None and self.tool is not None and self.tool.id in SELECT_TOOLS:
+            # inside the selection a drag moves it: say so with the cursor
+            inside = (
+                self.doc is not None
+                and not getattr(self.tool, "points", None)
+                and not e.modifiers()
+                & (Qt.KeyboardModifier.ShiftModifier | Qt.KeyboardModifier.AltModifier)
+                and selection_contains(self.doc, x, y)
+            )
+            if inside:
+                self.setCursor(Qt.CursorShape.SizeAllCursor)
+            else:
+                self._restore_cursor()
         self.update()
 
     def mouseReleaseEvent(self, e) -> None:  # noqa: N802
@@ -622,6 +637,20 @@ class EditorCanvas(QWidget):
             step = 10 if e.modifiers() & Qt.KeyboardModifier.ShiftModifier else 1
             dx, dy = arrows[e.key()]
             self.nudge_requested.emit(dx * step, dy * step)
+            return
+        if (
+            e.key() in arrows
+            and self.tool is not None
+            and self.tool.id in SELECT_TOOLS
+            and self.doc is not None
+            and self.doc.selection is not None
+            and self._pressed is None
+            and not getattr(self.tool, "points", None)  # not while a polygon is being drawn
+        ):  # arrows move the selection outline (Shift: 10 px)
+            step = 10 if e.modifiers() & Qt.KeyboardModifier.ShiftModifier else 1
+            dx, dy = arrows[e.key()]
+            self.push(move_selection(self.doc, dx * step, dy * step))
+            self.update()
             return
         if e.key() == Qt.Key.Key_Escape and self.tool is not None and self.doc is not None:
             self._pressed = None
