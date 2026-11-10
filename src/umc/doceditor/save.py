@@ -10,6 +10,7 @@ import shutil
 import tempfile
 import threading
 from pathlib import Path
+from urllib.parse import quote
 
 from umc.converters import document as docroute
 from umc.core.errors import ConversionError
@@ -30,7 +31,9 @@ _FIRST = [
     ("txt", "Plain text (TXT)"),
     ("html", "Web page (HTML)"),
 ]
-_IMG_SRC = re.compile(r"img/[\w.-]+")
+_HTML_SRC = re.compile(r'(\bsrc=")(img/[\w.-]+)(")')
+_MD_LINK = re.compile(r'(\]\()(img/[\w.-]+)((?:\s+"[^"]*")?\))')
+_OURS = re.compile(r"^\d+\.(png|jpg|gif|bmp|webp)$")
 _MIME = {"jpg": "jpeg", "png": "png", "gif": "gif", "bmp": "bmp", "webp": "webp"}
 
 
@@ -53,13 +56,38 @@ def _libreoffice_pdf() -> bool:
 
 def _data_uris(html_text: str, images: DocImages) -> str:
     def sub(m: re.Match) -> str:
-        data = images.get(m.group(0))
+        data = images.get(m.group(2))
         if data is None:
             return m.group(0)
-        mime = _MIME.get(m.group(0).rsplit(".", 1)[-1].lower(), "png")
-        return f"data:image/{mime};base64,{base64.b64encode(data).decode('ascii')}"
+        mime = _MIME.get(m.group(2).rsplit(".", 1)[-1].lower(), "png")
+        uri = f"data:image/{mime};base64,{base64.b64encode(data).decode('ascii')}"
+        return m.group(1) + uri + m.group(3)
 
-    return _IMG_SRC.sub(sub, html_text)
+    return _HTML_SRC.sub(sub, html_text)
+
+
+def _files_folder(dest: Path) -> str:
+    """Name of the picture folder next to ``dest``: ours is reused, anything else is kept."""
+    base = f"{dest.stem}_files"
+    n = 0
+    while True:
+        name = base if n == 0 else f"{base} ({n})"
+        folder = dest.parent / name
+        if not folder.exists():
+            return name
+        if (
+            n == 0
+            and folder.is_dir()
+            and all(f.is_file() and _OURS.match(f.name) for f in folder.iterdir())
+        ):
+            return name
+        n += 1
+
+
+def _swap_in(new: Path, folder: Path) -> None:
+    if folder.exists():  # only ever an earlier save's pictures (see _files_folder)
+        shutil.rmtree(folder)
+    shutil.move(str(new), str(folder))
 
 
 def _write_images(images: DocImages, folder: Path, prefix: str) -> None:
@@ -70,7 +98,12 @@ def _write_images(images: DocImages, folder: Path, prefix: str) -> None:
 
 
 def _build(
-    content: SaveContent, fmt: str, tmp: Path, stem: str, cancel_event: threading.Event | None
+    content: SaveContent,
+    fmt: str,
+    tmp: Path,
+    stem: str,
+    cancel_event: threading.Event | None,
+    files_name: str = "",
 ) -> Path:
     """Write the document into ``tmp``; returns the file (md also makes ``tmp/{stem}_files``)."""
     out = tmp / f"{stem}.{fmt}"
@@ -86,17 +119,17 @@ def _build(
         return out
     if fmt == "md":
         text = content.markdown if content.markdown is not None else ""
-        folder = f"{stem}_files"
-        text = _IMG_SRC.sub(
+        link = quote(files_name, safe="()")
+        text = _MD_LINK.sub(
             lambda m: (
-                f"{folder}/{m.group(0).removeprefix('img/')}"
-                if m.group(0) in content.images
+                f"{m.group(1)}{link}/{m.group(2).removeprefix('img/')}{m.group(3)}"
+                if m.group(2) in content.images
                 else m.group(0)
             ),
             text,
         )
         if content.images:
-            _write_images(content.images, tmp / folder, "img/")
+            _write_images(content.images, tmp / "_pics", "img/")
         out.write_text(text, encoding="utf-8", newline="\n")
         return out
     if fmt == "pdf" and not _libreoffice_pdf():
@@ -120,21 +153,23 @@ def save_document(
     dest = Path(dest)
     fmt = fmt.lower().lstrip(".")
     saving = dest.with_name(dest.name + ".saving")
+    files_name = _files_folder(dest) if fmt == "md" else ""
     try:
         with tempfile.TemporaryDirectory(prefix="umc-docedit-") as t:
             tmp = Path(t)
-            built = _build(content, fmt, tmp, dest.stem, cancel_event)
+            built = _build(content, fmt, tmp, dest.stem, cancel_event, files_name)
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(built, saving)
-            files = tmp / f"{dest.stem}_files"
-            if fmt == "md" and files.is_dir():
-                shutil.copytree(files, dest.parent / files.name, dirs_exist_ok=True)
             os.replace(saving, dest)
+            if files_name and (tmp / "_pics").is_dir():
+                _swap_in(tmp / "_pics", dest.parent / files_name)
     except OSError as exc:
         log.warning("Could not write %s: %s", dest, exc)
-        raise ConversionError(
-            f"Couldn't save “{dest.name}” — it may be open in another program."
-        ) from exc
+        if isinstance(exc, PermissionError) or getattr(exc, "winerror", None) in (32, 33):
+            msg = f"Couldn't save “{dest.name}” — it may be open in another program."
+        else:
+            msg = f"Couldn't save “{dest.name}”: {exc.strerror or exc}."
+        raise ConversionError(msg) from exc
     finally:
         saving.unlink(missing_ok=True)
     return dest

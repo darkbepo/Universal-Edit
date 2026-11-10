@@ -79,3 +79,60 @@ def test_save_formats_order():
 def test_save_odt(tmp_path):
     out = save_document(CONTENT, tmp_path / "a.odt", "odt")
     assert "<h1>Hi</h1>" in open_document(out).html
+
+
+URL_CONTENT = SaveContent(
+    html='<p><a href="https://site.com/img/1.png">img/1.png</a><img src="img/1.png"></p>',
+    images={"img/1.png": PNG_1PX},
+    markdown='[x](https://site.com/img/1.png) img/1.png ![](img/1.png "t")\n',
+    plain_text="",
+)
+
+
+def test_only_real_picture_references_are_rewritten(tmp_path):
+    html = save_document(URL_CONTENT, tmp_path / "a.html", "html").read_text("utf-8")
+    assert 'href="https://site.com/img/1.png">img/1.png<' in html
+    assert html.count("data:image/png") == 1
+    md = save_document(URL_CONTENT, tmp_path / "a.md", "md").read_text("utf-8")
+    assert md == '[x](https://site.com/img/1.png) img/1.png ![](a_files/1.png "t")\n'
+
+
+def test_md_folder_name_is_percent_encoded(tmp_path):
+    md = save_document(CONTENT, tmp_path / "my notes.md", "md").read_text("utf-8")
+    assert "![](my%20notes_files/1.png)" in md
+    assert (tmp_path / "my notes_files" / "1.png").exists()
+
+
+def test_md_resave_leaves_no_stale_pictures(tmp_path):
+    two = SaveContent("", {"img/1.png": PNG_1PX, "img/2.png": PNG_1PX}, "![](img/2.png)", "")
+    save_document(two, tmp_path / "a.md", "md")
+    save_document(CONTENT, tmp_path / "a.md", "md")
+    assert [p.name for p in (tmp_path / "a_files").iterdir()] == ["1.png"]
+
+
+def test_md_foreign_folder_untouched(tmp_path):
+    (tmp_path / "a_files").mkdir()
+    (tmp_path / "a_files" / "notes.txt").write_text("mine")
+    md = save_document(CONTENT, tmp_path / "a.md", "md").read_text("utf-8")
+    assert "![](a_files%20(1)/1.png)" in md
+    assert [p.name for p in (tmp_path / "a_files").iterdir()] == ["notes.txt"]
+    assert (tmp_path / "a_files (1)" / "1.png").exists()
+
+
+def test_md_failed_replace_keeps_folder(tmp_path, monkeypatch):
+    save_document(CONTENT, tmp_path / "a.md", "md")
+    before = (tmp_path / "a_files" / "1.png").read_bytes()
+    monkeypatch.setattr(save_mod.os, "replace", raise_(PermissionError()))
+    with pytest.raises(ConversionError):
+        save_document(
+            SaveContent("", {"img/1.png": b"new"}, "![](img/1.png)", ""), tmp_path / "a.md", "md"
+        )
+    assert (tmp_path / "a_files" / "1.png").read_bytes() == before
+
+
+def test_other_oserror_has_its_own_message(tmp_path):
+    (tmp_path / "f").write_text("x")
+    with pytest.raises(ConversionError) as e:
+        save_document(CONTENT, tmp_path / "f" / "a.docx", "docx")
+    assert "open in another program" not in str(e.value)
+    assert "Couldn't save “a.docx”" in str(e.value)
