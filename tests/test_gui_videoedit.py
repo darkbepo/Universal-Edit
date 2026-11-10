@@ -545,3 +545,84 @@ def test_shutdown_removes_temp_and_stops_thread(vpage):
     vpage.shutdown()
     assert not tmp.exists()
     assert vpage.frames._thread.isFinished()
+
+
+# ---------------------------------------------------------------- playback
+
+
+@pytest.fixture
+def silent(monkeypatch):
+    monkeypatch.setenv("UMC_NO_AUDIO", "1")
+
+
+def _count_frames(pg):
+    got = []
+    pg.player.frame.connect(lambda _img: got.append(1))
+    return got
+
+
+@needs_ffmpeg
+def test_play_advances_playhead(vpage, qtbot, silent):
+    got = _count_frames(vpage)
+    vpage.preview.play_button.click()
+    assert vpage.player.is_playing
+    qtbot.wait(700)
+    assert 0.3 < vpage.playhead < 1.2
+    assert got
+    vpage.preview.play_button.click()
+    assert not vpage.player.is_playing
+
+
+@needs_ffmpeg
+def test_edit_stops_playback(vpage, qtbot, silent):
+    got = _count_frames(vpage)
+    vpage.preview.play_button.click()
+    qtbot.waitUntil(lambda: bool(got), timeout=5000)
+    vpage.timeline.edit.emit(vpage.history.project, "Nothing")
+    assert not vpage.player.is_playing
+    assert not vpage.preview.playing
+    qtbot.wait(100)
+    got.clear()
+    qtbot.wait(300)
+    assert not got
+
+
+@needs_ffmpeg
+def test_play_reaches_end_and_stops(vpage, qtbot, silent):
+    from umc.videoedit.project import length
+
+    total = length(vpage.history.project)
+    vpage.seek(total - 0.3)
+    with qtbot.waitSignal(vpage.player.finished, timeout=5000):
+        vpage.preview.play_button.click()
+    assert vpage.playhead == pytest.approx(total, abs=0.05)
+    assert not vpage.player.is_playing and not vpage.preview.playing
+
+
+@needs_ffmpeg
+def test_loop_restarts(vpage, qtbot, silent):
+    from umc.videoedit.project import length
+
+    total = length(vpage.history.project)
+    vpage.preview.loop = True
+    vpage.seek(total - 0.3)
+    vpage.preview.play_button.click()
+    qtbot.waitUntil(lambda: vpage.player.is_playing and vpage.playhead < 1.0, timeout=5000)
+    qtbot.wait(300)
+    assert vpage.player.is_playing
+    vpage.preview.play_button.click()
+
+
+@needs_ffmpeg
+def test_thumbnails_arrive(vpage, qtbot):
+    red = next(s.id for s in vpage.history.project.sources if s.path.name == "red.mp4")
+    qtbot.waitUntil(lambda: bool(vpage.timeline._thumbs.get(red)), timeout=15_000)
+    qtbot.waitUntil(lambda: bool(vpage.timeline._waves.get(red)), timeout=15_000)
+
+
+@needs_ffmpeg
+def test_shutdown_stops_playback(vpage, qtbot, silent):
+    vpage.preview.play_button.click()
+    qtbot.wait(200)
+    vpage.shutdown()
+    assert not vpage.player.is_playing

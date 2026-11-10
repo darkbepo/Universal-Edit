@@ -28,6 +28,7 @@ from umc.core.errors import ConversionError
 from umc.gui.videoedit.dialogs import LocateDialog
 from umc.gui.videoedit.inspector import Inspector, change_label, target_of
 from umc.gui.videoedit.media_list import MediaList
+from umc.gui.videoedit.player import MediaScanner, Player
 from umc.gui.videoedit.preview_view import FrameService, PreviewView, frame_number
 from umc.gui.videoedit.timeline import TimelineView
 from umc.videoedit import edits
@@ -123,6 +124,14 @@ class VideoEditorPage(QWidget):
         self.frames = FrameService(self.tmp, self)
         self.frames.ready.connect(self._frame_ready)
         self.frames.failed.connect(lambda msg: self.show_message(msg, error=True))
+        self.player = Player(self.tmp, self)
+        self.player.frame.connect(lambda img: self.preview.show_frame(img))
+        self.player.position.connect(self._playing_position)
+        self.player.finished.connect(self._play_finished)
+        self.player.notice.connect(self.show_message)
+        self.scanner = MediaScanner(self.tmp, self)
+        self.scanner.thumbnails.connect(lambda sid, imgs: self.timeline.set_thumbnails(sid, imgs))
+        self.scanner.waveform.connect(lambda sid, peaks: self.timeline.set_waveform(sid, peaks))
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -136,6 +145,7 @@ class VideoEditorPage(QWidget):
         self.preview = PreviewView()
         self.preview.step_requested.connect(self.step_frames)
         self.preview.play_toggled.connect(self._play_toggled)
+        self.preview.loop_toggled.connect(lambda on: setattr(self.player, "loop", on))
         middle.addWidget(self.preview, 1)
         middle.addWidget(self._build_inspector())
         root.addLayout(middle, 1)
@@ -179,7 +189,7 @@ class VideoEditorPage(QWidget):
             lay.addWidget(b)
             return b
 
-        tb("← Back to Convert", "Leave the editor", self.back_requested.emit, "Link")
+        tb("← Back to Convert", "Leave the editor", self._back, "Link")
         lay.addSpacing(12)
         self.undo_button = tb("Undo", "Undo (Ctrl+Z)", self.undo)
         self.redo_button = tb("Redo", "Redo (Ctrl+Y)", self.redo)
@@ -371,10 +381,16 @@ class VideoEditorPage(QWidget):
             self.history.redo()
             self._after_change()
 
+    def _back(self) -> None:
+        self._stop_playback()
+        self.back_requested.emit()
+
     def _after_change(self, new_view: bool = True) -> None:
         h = self.history
         if h is None:
             return
+        self._stop_playback(still=False)
+        self.scanner.want(h.project.sources)
         if new_view:
             self._view_version += 1
         self.timeline.set_project(h.project)
@@ -400,6 +416,7 @@ class VideoEditorPage(QWidget):
         """A setting is moving: preview the result; it's pushed once the edit is finished."""
         if self.history is None:
             return
+        self._stop_playback(still=False)
         base = self.history.project
         item_id = self.inspector.item_id
         if not changes:
@@ -434,6 +451,7 @@ class VideoEditorPage(QWidget):
 
     # ------------------------------------------------------------ timeline edits
     def _timeline_edit(self, project: Project, label: str) -> None:
+        self._stop_playback(still=False)
         self._pending = None  # the timeline's project doesn't include an unpushed setting
         self.show_message("")
         self._push(project, label)
@@ -513,6 +531,7 @@ class VideoEditorPage(QWidget):
         return length(p) if p is not None else 0.0
 
     def seek(self, t: float) -> None:
+        self._stop_playback(still=False)
         self.playhead = max(0.0, min(float(t), self._length()))
         self.timeline.set_playhead(self.playhead)
         self._update_time()
@@ -537,8 +556,38 @@ class VideoEditorPage(QWidget):
         if version == self._view_version:
             self.preview.show_frame(image)
 
-    def _play_toggled(self, _on: bool) -> None:
-        """Playback comes with the player (next step); the button only shows its state."""
+    def _stop_playback(self, still: bool = True) -> None:
+        was_playing = self.player.is_playing
+        self.player.stop()
+        self.preview.set_playing(False)
+        if was_playing and still:
+            self._request_still()
+
+    def _play_toggled(self, on: bool) -> None:
+        if not on:
+            self._stop_playback()
+            return
+        self._flush_pending()
+        project = self._shown_project()
+        if project is None or length(project) <= 0:
+            self.preview.set_playing(False)
+            return
+        start = self.playhead if self.playhead < length(project) - 0.02 else 0.0
+        self.player.play(project, start)
+        if not self.player.is_playing:
+            self.preview.set_playing(False)
+
+    def _playing_position(self, t: float) -> None:
+        self.playhead = t
+        self.timeline.set_playhead(t)
+        self._update_time()
+
+    def _play_finished(self) -> None:
+        self.preview.set_playing(False)
+        self.playhead = self._length()
+        self.timeline.set_playhead(self.playhead)
+        self._update_time()
+        self._request_still()
 
     def export(self) -> None:
         """Export… (enabled with the export dialog)."""
@@ -682,6 +731,9 @@ class VideoEditorPage(QWidget):
         if self.saving:
             self._wait_for_save()
         QApplication.instance().removeEventFilter(self._keys)
+        self.player.stop()
+        self.preview.set_playing(False)
+        self.scanner.close()
         self.frames.close()
         tmp, self._tmp = self._tmp, None
         if tmp is not None:
