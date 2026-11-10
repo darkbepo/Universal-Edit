@@ -11,6 +11,7 @@ import { loadLayers, openFiles, type OpenSource } from "../../editor/open";
 import * as ops from "../../editor/ops";
 import { writeOra } from "../../editor/ora";
 import { addSticker } from "../../editor/stickers";
+import { contentAwareFill } from "../../editor/inpaint";
 import { canvasPng, canvasRasterizer, decodeBlob, type Decoded } from "../../editor/raster";
 import type { Tool, ToolContext } from "../../editor/tools/base";
 import { makeTools } from "../../editor/tools/index";
@@ -121,6 +122,7 @@ export class EditorPage {
     this.canvas.onColorPicked = (c, b) => this.swatches.set(c, b);
     this.canvas.onCursor = (x, y) => this.updateInfo([x, y]);
     this.canvas.onTextRequested = (x, y) => this.openTextBox(x, y);
+    this.canvas.onNotice = (text) => this.showMessage(text);
     this.canvas.onView = () => {
       this.updateInfo();
       this.placeTextBox();
@@ -144,7 +146,7 @@ export class EditorPage {
         ["Layer: rotate 180°", "layer_rotate_180"], ["Layer: flip horizontal", "layer_flip_h"], ["Layer: flip vertical", "layer_flip_v"],
       ])));
     const selectMenu = h("details", { class: "menu" }, h("summary", { class: "btn small", title: "Select all, deselect, invert, feather" }, "Select ▾"),
-      h("div", { class: "menu-items" }, ...this.menuItems([["Select all", "select_all"], ["Deselect", "deselect"], ["Invert", "invert_selection"], ["Feather…", "feather"]])));
+      h("div", { class: "menu-items" }, ...this.menuItems([["Select all", "select_all"], ["Deselect", "deselect"], ["Invert", "invert_selection"], ["Feather…", "feather"], null, ["Content-aware fill (remove what's selected)", "content_fill"]])));
     const adjustMenu = h("details", { class: "menu" }, h("summary", { class: "btn small", title: "Fix the tones and colours of the selected layer" }, "Adjust ▾"),
       h("div", { class: "menu-items" }, ...this.menuItems([
         ["Quick fix… (exposure, contrast, colours)", "quick_fix"], ["Levels…", "levels"], ["Curves…", "curves"],
@@ -586,6 +588,8 @@ export class EditorPage {
       } else if (name === "crop_selection") {
         if (!doc.selection) return this.showMessage("Select an area first (rectangle select, M).");
         cmd = ops.crop(doc, doc.selection);
+      } else if (name === "content_fill") {
+        cmd = contentAwareFill(doc);
       } else if (name === "stickers") {
         const [front, back] = this.swatches.colors;
         const r = await stickersDialog(canvasRasterizer, Math.min(doc.width, doc.height), front, back);

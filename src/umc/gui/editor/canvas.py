@@ -53,6 +53,7 @@ class EditorCanvas(QWidget):
     cursor_moved = Signal(int, int)
     text_requested = Signal(float, float)  # text tool clicked at image coordinates
     nudge_requested = Signal(int, int)  # arrow keys with the Move tool
+    tool_notice = Signal(str)  # a tool needs something first (e.g. a clone source)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -404,7 +405,17 @@ class EditorCanvas(QWidget):
         p.restore()
 
     def _paint_tool_outline(self, p: QPainter) -> None:
-        """The shape a selection tool is drawing (before the mouse is let go)."""
+        """The shape a selection tool is drawing (before the mouse is let go); the clone source."""
+        marker = getattr(self.tool, "marker", None)
+        if marker is not None and self._mouse is not None:
+            pt = marker(*self.widget_to_image(self._mouse))
+            if pt is not None:
+                c = self.image_to_widget(*pt)
+                p.setRenderHint(QPainter.RenderHint.Antialiasing)
+                for color, width in ((QColor(0, 0, 0, 170), 3), (QColor(255, 255, 255, 230), 1)):
+                    p.setPen(QPen(color, width))
+                    p.drawLine(c.x() - 8, c.y(), c.x() + 8, c.y())
+                    p.drawLine(c.x(), c.y() - 8, c.x(), c.y() + 8)
         outline = getattr(self.tool, "outline", None)
         if outline is None:
             return
@@ -467,6 +478,11 @@ class EditorCanvas(QWidget):
             self.text_requested.emit(x, y)
             return
         self._after_change(self.tool.press(self.doc, x, y, self._ctx(button, e.modifiers())))
+        notice = getattr(self.tool, "notice", None)
+        if notice:
+            self.tool.notice = None
+            self._pressed = None
+            self.tool_notice.emit(notice)
         self._emit_pick()
         self.update()
 

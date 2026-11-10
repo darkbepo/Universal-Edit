@@ -1,7 +1,7 @@
 // Brush and eraser: round dabs along the pointer path (port of tools/paint.py). The original
 // pixels are remembered per 128 px tile, only where the stroke goes — never a whole-layer copy.
 import { opt } from "../../core/options";
-import type { EditorDoc } from "../document";
+import { composite, type EditorDoc } from "../document";
 import { Rect } from "../geometry";
 import { MaskPatchCommand, PatchCommand, type Command } from "../history";
 import { cropData, type Layer, type RGBA } from "../layer";
@@ -137,17 +137,21 @@ abstract class StrokeTool extends Tool {
             const ti = (py - t.rect.y0) * t.rect.width + (px - t.rect.x0);
             if (m <= t.cov[ti]) continue;
             t.cov[ti] = m;
-            const di = (py * layer.width + px) * 4;
-            if (this.erase) {
-              layer.data.set(t.base.subarray(ti * 4, ti * 4 + 3), di);
-              layer.data[di + 3] = t.base[ti * 4 + 3] * (1 - m) + 0.5;
-            } else blendPixel(layer.data, di, t.base, ti * 4, this.color, m);
+            this.paintPixel(layer, (py * layer.width + px) * 4, t.base, ti * 4, px, py, m);
           }
         }
       }
     }
     this.dirty = this.dirty ? this.dirty.union(region) : region;
     return region.offset(layer.x, layer.y);
+  }
+
+  /** Layer pixel `di` (at px, py in layer coordinates) from its original `base[bi]`, coverage `m`. */
+  protected paintPixel(layer: Layer, di: number, base: Uint8ClampedArray, bi: number, _px: number, _py: number, m: number): void {
+    if (this.erase) {
+      layer.data.set(base.subarray(bi, bi + 3), di);
+      layer.data[di + 3] = base[bi + 3] * (1 - m) + 0.5;
+    } else blendPixel(layer.data, di, base, bi, this.color, m);
   }
 }
 
@@ -186,6 +190,69 @@ export class HighlighterTool extends StrokeTool {
     opt.slider("hardness", "Hardness", 90, 0, 100, { unit: "%" }),
     opt.slider("opacity", "Strength", 40, 5, 100, { unit: "%" }),
   ];
+}
+
+/** Alt+click where to copy from, then paint: the pixels there are painted under the brush (port
+ *  of CloneStampTool in paint.py). The source is a snapshot taken when a stroke starts;
+ *  "aligned" keeps the brush–source distance for later strokes. */
+export class CloneStampTool extends StrokeTool {
+  readonly id = "clone";
+  readonly label = "Clone stamp";
+  readonly shortcut = "S";
+  protected readonly erase = false;
+  override readonly options = [
+    opt.slider("size", "Size", 40, 1, 500, { unit: "px" }),
+    opt.slider("hardness", "Hardness", 60, 0, 100, { unit: "%" }),
+    opt.slider("opacity", "Opacity", 100, 1, 100, { unit: "%" }),
+    opt.choice("sample", "Copy from", "layer", [["layer", "This layer"], ["all", "All layers"]]),
+    opt.bool("aligned", "Aligned (the source moves along with every stroke)", true),
+  ];
+  source: [number, number] | null = null; // canvas coordinates
+  offset: [number, number] | null = null; // brush − source
+  notice: string | null = null;
+  private src: { data: Uint8ClampedArray; width: number; height: number; x: number; y: number } | null = null;
+  private layerXY: [number, number] = [0, 0];
+
+  override press(doc: EditorDoc, x: number, y: number, ctx: ToolContext): Rect | null {
+    if (ctx.alt) {
+      this.source = [x, y];
+      this.offset = null;
+      return null;
+    }
+    if (!this.source) {
+      this.notice = "Alt+click the place to copy from first.";
+      return null;
+    }
+    if (!this.offset || !ctx.options.aligned) this.offset = [Math.round(x - this.source[0]), Math.round(y - this.source[1])];
+    const l = doc.layers[doc.active];
+    this.layerXY = [l.x, l.y];
+    this.src = ctx.options.sample === "all" ? { data: composite(doc), width: doc.width, height: doc.height, x: 0, y: 0 } : { data: new Uint8ClampedArray(l.data), width: l.width, height: l.height, x: l.x, y: l.y };
+    return super.press(doc, x, y, ctx);
+  }
+
+  override release(doc: EditorDoc, x: number, y: number, ctx: ToolContext): Command | null {
+    const cmd = this.src ? super.release(doc, x, y, ctx) : null;
+    this.src = null;
+    return cmd;
+  }
+
+  override move(doc: EditorDoc, x: number, y: number, ctx: ToolContext): Rect | null {
+    return this.src ? super.move(doc, x, y, ctx) : null;
+  }
+
+  /** Where the source is for the brush at (x, y) — drawn as a cross by the canvas. */
+  marker(x: number, y: number): [number, number] | null {
+    return this.offset ? [x - this.offset[0], y - this.offset[1]] : this.source;
+  }
+
+  protected override paintPixel(layer: Layer, di: number, base: Uint8ClampedArray, bi: number, px: number, py: number, m: number): void {
+    const s = this.src;
+    if (!s || !this.offset) return;
+    const sx = px + this.layerXY[0] - this.offset[0] - s.x;
+    const sy = py + this.layerXY[1] - this.offset[1] - s.y;
+    const color: RGBA = sx >= 0 && sy >= 0 && sx < s.width && sy < s.height ? (Array.from(s.data.subarray((sy * s.width + sx) * 4, (sy * s.width + sx) * 4 + 4)) as RGBA) : [0, 0, 0, 0];
+    blendPixel(layer.data, di, base, bi, color, m);
+  }
 }
 
 /** Paints the active layer's mask: left button hides (black), right button shows (white). */

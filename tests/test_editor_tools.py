@@ -313,6 +313,7 @@ def test_registry_has_all_tools():
         "highlighter",
         "eraser",
         "mask_brush",
+        "clone",
         "fill",
         "gradient",
         "picker",

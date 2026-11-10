@@ -1094,3 +1094,18 @@ def test_canvas_shows_layers_on_the_pasteboard(canvas):
     top_left = c.image_to_widget(0, -20)
     assert top_left.x() >= 0 and top_left.y() >= 0  # moved into view
     c.grab()  # paints without errors
+
+
+def test_clone_stamp_and_content_fill_in_the_page(page, qtbot):
+    from umc.editor.geometry import Rect
+
+    page.select_tool("clone")
+    msgs = []
+    page.canvas.tool_notice.connect(msgs.append)
+    p = page.canvas.image_to_widget(5, 5)
+    qtbot.mousePress(page.canvas, Qt.MouseButton.LeftButton, pos=p)
+    qtbot.mouseRelease(page.canvas, Qt.MouseButton.LeftButton, pos=p)
+    assert msgs and "Alt+click" in msgs[0]
+    page.doc.selection = Rect(4, 4, 8, 8)
+    page.run_op("content_fill")
+    assert page.history.undo_label == "Content-aware fill"

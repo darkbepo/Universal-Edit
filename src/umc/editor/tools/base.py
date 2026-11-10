@@ -114,6 +114,21 @@ def blend_over(base: np.ndarray, color: RGBA, coverage: np.ndarray) -> np.ndarra
     return np.clip(out * 255.0 + 0.5, 0, 255).astype(np.uint8)
 
 
+def blend_pixels(base: np.ndarray, src: np.ndarray, coverage: np.ndarray) -> np.ndarray:
+    """Source-over the pixels ``src`` onto ``base`` (both uint8 HxWx4), weighted by ``coverage``."""
+    b = base.astype(np.float32) / 255.0
+    s = src.astype(np.float32) / 255.0
+    ca = s[..., 3] * coverage
+    ba = b[..., 3]
+    out_a = ca + ba * (1.0 - ca)
+    safe = np.where(out_a > 0, out_a, 1.0)
+    rgb = (s[..., :3] * ca[..., None] + b[..., :3] * (ba * (1.0 - ca))[..., None]) / safe[..., None]
+    out = np.empty_like(b)
+    out[..., :3] = rgb
+    out[..., 3] = out_a
+    return np.clip(out * 255.0 + 0.5, 0, 255).astype(np.uint8)
+
+
 def paste_array(img: Image.Image, arr: np.ndarray, rect: Rect) -> None:
     img.paste(Image.fromarray(arr, "RGBA"), (rect.x0, rect.y0))
 

@@ -830,3 +830,25 @@ test("pasteboard: a layer dragged past the edge stays visible around the picture
   const png = await saveAs(page, "pasteboard", "png");
   expect(png.readUInt32BE(16)).toBe(size[0]); // the saved picture is the canvas only
 });
+
+test("clone stamp asks for a source, then copies; content-aware fill from the Select menu", async ({ page }) => {
+  await openEditor(page);
+  const undoLabel = () => page.evaluate(() => (window.__editor as EditorHook & { history: { undoLabel: string } }).history.undoLabel);
+  await page.locator(".canvas-host canvas").focus();
+  await page.keyboard.press("s");
+  await expect.poll(() => page.evaluate(() => (window.__editor as EditorHook).toolId)).toBe("clone");
+  const a = await at(page, 30, 30);
+  await page.mouse.click(a.x, a.y);
+  await expect(page.locator(".editor")).toContainText("Alt+click the place to copy from first");
+  const src = await at(page, 10, 10);
+  await page.keyboard.down("Alt");
+  await page.mouse.click(src.x, src.y);
+  await page.keyboard.up("Alt");
+  await drag(page, [40, 40], [60, 40]);
+  await expect.poll(undoLabel).toBe("Clone stamp");
+  await page.keyboard.press("m");
+  await drag(page, [20, 20], [40, 40]);
+  await page.locator("summary", { hasText: "Select ▾" }).click();
+  await page.getByRole("button", { name: /^Content-aware fill/ }).click();
+  await expect.poll(undoLabel).toBe("Content-aware fill");
+});

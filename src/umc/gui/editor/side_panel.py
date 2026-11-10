@@ -108,6 +108,11 @@ def tool_icon(tool_id: str, color: str) -> QIcon:
         p.drawLine(QPointF(12, 36), QPointF(10, 38))
     elif tool_id == "line":
         p.drawLine(QPointF(10, 38), QPointF(38, 10))
+    elif tool_id == "clone":
+        p.drawRoundedRect(QRectF(14, 26, 20, 8), 2, 2)
+        p.drawLine(QPointF(24, 26), QPointF(24, 16))
+        p.drawEllipse(QPointF(24, 12), 5, 5)
+        p.drawLine(QPointF(12, 40), QPointF(36, 40))
     elif tool_id == "arrow":
         p.drawLine(QPointF(10, 38), QPointF(34, 14))
         p.setBrush(c)

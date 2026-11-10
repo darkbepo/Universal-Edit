@@ -80,6 +80,7 @@ The browser version's source is in [`web/`](web/README.md).
 | Image editor text: text layers stay editable (click them with the Text tool, or Edit text… in the layer menu; kept in .ora), alignment, outline, drop shadow, background box, watermark across the picture | ✅ | ✅ |
 | Image editor annotation: arrow tool (one or both heads; L switches line / arrow), highlighter (H; see-through, doesn't darken where it crosses itself), 11 built-in stickers (check mark, cross, star, speech bubble, map pin…; free to use, CC0) | ✅ | ✅ |
 | Image editor pasteboard: parts of layers moved past the picture's edge stay visible (faded) around it and can be moved back; they're kept in .ora but never saved into the picture | ✅ | ✅ |
+| Image editor retouching: clone stamp (S; Alt+click the source, aligned or not, this layer or all layers) and content-aware fill (Select menu: paints the selection over from what surrounds it — blemishes, wires, small objects) | ✅ | ✅ |
 | Layered projects: save and open OpenRaster `.ora` (GIMP and Krita open it too); `.ora` → any image format | ✅ | ✅ |
 | Files never leave your computer | ✅ | ✅ |
 | No install needed | ❌ | ✅ |

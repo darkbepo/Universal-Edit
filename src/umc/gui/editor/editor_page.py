@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
 )
 
 from umc.core.errors import ConversionError
-from umc.editor import clipboard, effects, ops, selection
+from umc.editor import clipboard, effects, inpaint, ops, selection
 from umc.editor.document import Document, check_size
 from umc.editor.history import History
 from umc.editor.io import load_layers, open_files
@@ -179,6 +179,7 @@ class EditorPage(QWidget):
         self.canvas.cursor_moved.connect(lambda x, y: self._update_info((x, y)))
         self.canvas.text_requested.connect(self._open_text_box)
         self.canvas.nudge_requested.connect(self._nudge)
+        self.canvas.tool_notice.connect(self.show_message)
         self.crop_bar = CropBar(self.canvas)
         self.crop_bar.applied.connect(self._bar_apply)
         self.crop_bar.cancelled.connect(self._bar_cancel)
@@ -267,6 +268,7 @@ class EditorPage(QWidget):
             ("Deselect", lambda: self._push(selection.deselect(self.doc)) if self.doc else None),
             ("Invert", lambda: self._push(selection.invert(self.doc)) if self.doc else None),
             ("Feather…", self.feather),
+            ("Content-aware fill (remove what's selected)", lambda: self.run_op("content_fill")),
         ):
             select_menu.addAction(label, fn)
         select_button.setMenu(select_menu)
@@ -630,6 +632,12 @@ class EditorPage(QWidget):
                     "Select the subject first (lasso, magic wand…): what is around it gets blurred."
                 )
                 return
+            elif name == "content_fill":
+                QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+                try:
+                    cmd = inpaint.content_aware_fill(doc)
+                finally:
+                    QApplication.restoreOverrideCursor()
             elif name == "stickers":
                 dlg = StickersDialog(self)
                 if dlg.exec() and dlg.chosen():

@@ -17,6 +17,7 @@ from umc.editor.tools.base import (
     Tool,
     ToolContext,
     blend_over,
+    blend_pixels,
     clip_rect,
     paste_array,
     selection_weight,
@@ -155,15 +156,18 @@ class _StrokeTool(Tool):
                     slice(part.x0 - trect.x0, part.x1 - trect.x0),
                 )
                 np.maximum(cov_t[sl], mask, out=cov_t[sl])
-                base, cov = base_t[sl], cov_t[sl]
-                if self.erase:
-                    out = base.copy()
-                    out[..., 3] = np.clip(base[..., 3] * (1.0 - cov) + 0.5, 0, 255).astype(np.uint8)
-                else:
-                    out = blend_over(base, self._color, cov)
+                out = self._paint(base_t[sl], cov_t[sl], part, layer)
                 paste_array(layer.image, np.ascontiguousarray(out), part)
         self._dirty = region if self._dirty is None else self._dirty.union(region)
         return region.offset(layer.x, layer.y)
+
+    def _paint(self, base: np.ndarray, cov: np.ndarray, part: Rect, layer: Layer) -> np.ndarray:
+        """The stroke's pixels over ``part`` (layer coordinates) from the originals ``base``."""
+        if self.erase:
+            out = base.copy()
+            out[..., 3] = np.clip(base[..., 3] * (1.0 - cov) + 0.5, 0, 255).astype(np.uint8)
+            return out
+        return blend_over(base, self._color, cov)
 
 
 class BrushTool(_StrokeTool):
@@ -189,6 +193,78 @@ class HighlighterTool(_StrokeTool):
 
     id, label, shortcut = "highlighter", "Highlighter", "H"
     options_cls = HighlighterOptions
+
+
+@dataclass
+class CloneOptions:
+    size: int = opt(40, "Size", kind="slider", min=1, max=500, unit="px")
+    hardness: int = opt(60, "Hardness", kind="slider", min=0, max=100, unit="%")
+    opacity: int = opt(100, "Opacity", kind="slider", min=1, max=100, unit="%")
+    sample: str = opt(
+        "layer", "Copy from", choices=[("layer", "This layer"), ("all", "All layers")]
+    )
+    aligned: bool = opt(True, "Aligned (the source moves along with every stroke)")
+
+
+class CloneStampTool(_StrokeTool):
+    """Alt+click where to copy from, then paint: the pixels there are painted under the brush.
+
+    The source is a snapshot taken when a stroke starts, so a stroke never copies what it has
+    just painted. "Aligned" keeps the distance between brush and source for later strokes;
+    otherwise every stroke starts again at the Alt+clicked point.
+    """
+
+    id, label, shortcut = "clone", "Clone stamp", "S"
+    options_cls = CloneOptions
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.source: tuple[float, float] | None = None  # canvas coordinates
+        self.offset: tuple[int, int] | None = None  # brush − source, once a stroke has started
+        self.notice: str | None = None
+        self._src: tuple[np.ndarray, int, int] | None = None
+
+    def press(self, doc: Document, x: float, y: float, ctx: ToolContext) -> Rect | None:
+        if ctx.alt:
+            self.source, self.offset = (x, y), None
+            self._layer_index = None
+            return None
+        if self.source is None:
+            self._layer_index = None
+            self.notice = "Alt+click the place to copy from first."
+            return None
+        if self.offset is None or not ctx.options.aligned:
+            self.offset = (round(x - self.source[0]), round(y - self.source[1]))
+        if ctx.options.sample == "all":
+            self._src = (np.asarray(doc.composite(), dtype=np.uint8), 0, 0)
+        else:
+            la = doc.active_layer
+            self._src = (np.array(la.image, dtype=np.uint8), la.x, la.y)
+        return super().press(doc, x, y, ctx)
+
+    def release(self, doc: Document, x: float, y: float, ctx: ToolContext) -> Command | None:
+        cmd = super().release(doc, x, y, ctx)
+        self._src = None
+        return cmd
+
+    def marker(self, x: float, y: float) -> tuple[float, float] | None:
+        """Where the source is for the brush at (x, y) — drawn as a cross by the canvas."""
+        if self.offset is not None:
+            return (x - self.offset[0], y - self.offset[1])
+        return self.source
+
+    def _paint(self, base, cov, part, layer):
+        arr, sx0, sy0 = self._src
+        dx, dy = self.offset
+        h, w = part.height, part.width
+        # where ``part`` copies from, in the snapshot's coordinates
+        x0, y0 = part.x0 + layer.x - dx - sx0, part.y0 + layer.y - dy - sy0
+        block = np.zeros((h, w, 4), dtype=np.uint8)
+        ah, aw = arr.shape[:2]
+        cx0, cy0, cx1, cy1 = max(0, x0), max(0, y0), min(aw, x0 + w), min(ah, y0 + h)
+        if cx1 > cx0 and cy1 > cy0:
+            block[cy0 - y0 : cy1 - y0, cx0 - x0 : cx1 - x0] = arr[cy0:cy1, cx0:cx1]
+        return blend_pixels(base, block, cov)
 
 
 class MaskBrushTool(_StrokeTool):

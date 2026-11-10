@@ -562,7 +562,14 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
          cache on every move. The canvas cache covers that area (`composite(…, clip=False)`),
          drawn faded outside the picture with a thin border; pan limits use it, but the view is
          only re-clamped on full refreshes (never mid-drag). Saving composites the canvas only.
-      8. Clone stamp, then content-aware fill (opencv-python-headless, Apache-2.0, approved).
+      8. ✅ Clone stamp + content-aware fill (both apps). `CloneStampTool` (S) is a stroke tool
+         whose `_paint` / `paintPixel` hook copies from a snapshot taken at stroke start (layer or
+         composite); Alt+click sets `source`, `offset` is kept while "aligned"; `notice` asks for a
+         source first (canvas → status line), `marker()` = the cross the canvas draws. Fill:
+         desktop `editor/inpaint.py` = OpenCV `cv2.inpaint` TELEA (opencv-python-headless,
+         Apache-2.0, already pulled in by pdf2docx; checked by `--self-test`); web
+         `editor/inpaint.ts` = own Telea port (fast marching, premultiplied average). Both work on
+         the selection's box + a margin and blend soft selection edges.
       9. Background removal (desktop onnxruntime + a one-click model download; web
          @imgly/background-removal, AGPL — both approved by the owner).
 11. Ideas: installer for the app itself (Inno Setup), presets, batch queue.

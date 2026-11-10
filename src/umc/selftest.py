@@ -180,6 +180,14 @@ def _editor_check(d: Path) -> list[Path]:
     brush.move(doc, 100, 60, ctx)
     if brush.release(doc, 100, 60, ctx) is None:
         raise RuntimeError("brush stroke changed nothing")
+    # content-aware fill needs OpenCV's photo module (cv2.inpaint) inside the build
+    from umc.editor.geometry import Rect
+    from umc.editor.inpaint import content_aware_fill
+
+    doc.active, doc.selection = 0, Rect(60, 40, 70, 50)
+    if content_aware_fill(doc) is None:
+        raise RuntimeError("content-aware fill changed nothing")
+    doc.selection, doc.active = None, 1
     d.mkdir(parents=True, exist_ok=True)
     ora = save_document(doc, d / "edited.ora", "ora")
     if len(read_ora(ora).layers) != 2:

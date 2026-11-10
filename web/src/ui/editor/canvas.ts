@@ -65,6 +65,8 @@ export class EditorCanvas {
   onColorPicked: (c: RGBA, button: "left" | "right") => void = () => {};
   onCursor: (x: number, y: number) => void = () => {};
   onTextRequested: (x: number, y: number) => void = () => {};
+  /** A tool needs something first (e.g. a clone source). */
+  onNotice: (text: string) => void = () => {};
   onView: () => void = () => {};
 
   constructor() {
@@ -420,6 +422,24 @@ export class EditorCanvas {
 
   /** The shape a selection tool is drawing (before the pointer is let go). */
   private paintToolOutline(): void {
+    const marker = (this.tool as unknown as { marker?: (x: number, y: number) => [number, number] | null } | null)?.marker;
+    if (marker && this.mouse) {
+      const pt = marker.call(this.tool, ...this.widgetToImage(this.mouse.x, this.mouse.y));
+      if (pt) {
+        const c = this.imageToWidget(pt[0], pt[1]);
+        const ctx = this.ctx;
+        for (const [color, width] of [["rgba(0,0,0,0.65)", 3], ["rgba(255,255,255,0.9)", 1]] as const) {
+          ctx.strokeStyle = color;
+          ctx.lineWidth = width;
+          ctx.beginPath();
+          ctx.moveTo(c.x - 8, c.y);
+          ctx.lineTo(c.x + 8, c.y);
+          ctx.moveTo(c.x, c.y - 8);
+          ctx.lineTo(c.x, c.y + 8);
+          ctx.stroke();
+        }
+      }
+    }
     const outline = (this.tool as unknown as { outline?: Outline | null } | null)?.outline;
     if (!outline) return;
     const path = new Path2D();
@@ -504,6 +524,12 @@ export class EditorCanvas {
     this.gesture = button;
     const r = this.tool.press(this.doc, x, y, this.ctxFor(button, e));
     if (r) this.refresh(r);
+    const t = this.tool as unknown as { notice?: string | null };
+    if (t.notice) {
+      this.onNotice(t.notice);
+      t.notice = null;
+      this.gesture = null;
+    }
     this.emitPick();
     this.draw();
   }
