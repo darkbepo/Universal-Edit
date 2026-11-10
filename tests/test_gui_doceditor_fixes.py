@@ -108,3 +108,74 @@ def test_word_look_kept_through_the_editor(qtbot, page, tmp_path):
     assert set(_borders(grid).values()) == {"single"}
     assert open_document(p).html == original.html
     assert page.view.document().rootFrame().childFrames()[0].format().toTableFormat().border() == 0
+
+
+# ----- Important 4: pasted pictures are kept ----------------------------------------------
+import base64  # noqa: E402
+import io  # noqa: E402
+
+from PIL import Image  # noqa: E402
+from PySide6.QtCore import QMimeData, QUrl  # noqa: E402
+from PySide6.QtGui import QImage, QTextCursor  # noqa: E402
+
+from tests.doceditor_samples import PNG_1PX  # noqa: E402
+from umc.doceditor.save import save_document  # noqa: E402
+from umc.doceditor.types import OpenedDocument  # noqa: E402
+from umc.gui.doceditor.text_view import DocTextView  # noqa: E402
+
+
+def _blue_png() -> bytes:
+    buf = io.BytesIO()
+    Image.new("RGB", (2, 2), (0, 0, 255)).save(buf, "PNG")
+    return buf.getvalue()
+
+
+def _view_with_picture(qtbot) -> DocTextView:
+    v = DocTextView()
+    qtbot.addWidget(v)
+    v.load(OpenedDocument('<p>x<img src="img/1.png"></p>', {"img/1.png": PNG_1PX}, "docx"))
+    c = v.textCursor()
+    c.movePosition(QTextCursor.MoveOperation.End)
+    v.setTextCursor(c)
+    return v
+
+
+def _paste(view, html=None, text=None, image=None):
+    mime = QMimeData()
+    if html is not None:
+        mime.setHtml(html)
+    if text is not None:
+        mime.setText(text)
+    if image is not None:
+        mime.setImageData(image)
+    view.insertFromMimeData(mime)
+
+
+def test_paste_data_uri_picture_gets_its_own_name(qtbot, tmp_path):
+    v = _view_with_picture(qtbot)
+    blue = _blue_png()
+    _paste(v, html=f'<p>y<img src="data:image/png;base64,{base64.b64encode(blue).decode()}"></p>')
+    content = v.content()
+    assert sorted(content.images.values(), key=len) == sorted([PNG_1PX, blue], key=len)
+    assert len(content.images) == 2
+    p = save_document(content, tmp_path / "a.docx", "docx")
+    assert sorted(open_document(p).images.values(), key=len) == sorted([PNG_1PX, blue], key=len)
+
+
+def test_paste_local_file_picture_is_kept(qtbot, tmp_path):
+    pic = tmp_path / "clip image.png"
+    pic.write_bytes(_blue_png())
+    v = _view_with_picture(qtbot)
+    url = QUrl.fromLocalFile(str(pic)).toString()
+    _paste(v, html=f'<p>z<img src="{url}"><img src="https://example.com/r.png"></p>')
+    content = v.content()
+    assert len(content.images) == 2 and _blue_png() in content.images.values()
+    assert "example.com" not in content.html
+
+
+def test_paste_image_and_plain_text(qtbot):
+    v = _view_with_picture(qtbot)
+    _paste(v, image=QImage.fromData(_blue_png()))
+    assert len(v.content().images) == 2
+    _paste(v, text="<b>not bold</b>")
+    assert "&lt;b&gt;not bold&lt;/b&gt;" in v.content().html

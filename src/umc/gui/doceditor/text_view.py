@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import base64
+import html as _html
 import re
 from pathlib import Path
 
-from PySide6.QtCore import QPointF, QRectF, Qt, QUrl
+from PySide6.QtCore import QBuffer, QIODevice, QPointF, QRectF, Qt, QUrl
 from PySide6.QtGui import (
     QColor,
     QImage,
@@ -22,7 +24,13 @@ from PySide6.QtWidgets import QFrame, QTextEdit
 
 from umc.core.errors import ConversionError
 from umc.doceditor.html_subset import normalise_html
-from umc.doceditor.types import DocImages, OpenedDocument, SaveContent, next_image_name
+from umc.doceditor.types import (
+    MAX_FILE_BYTES,
+    DocImages,
+    OpenedDocument,
+    SaveContent,
+    next_image_name,
+)
 from umc.gui import theme
 from umc.gui.doceditor.html_export import QUOTE_PROPERTY, document_to_html
 
@@ -57,8 +65,33 @@ _IMAGE_EXTS = {
 _QUOTE_TOKENS = re.compile(r'<blockquote>|</blockquote>|<p(?: style="([^"]*)")?>')
 _MARGIN_PT = re.compile(r"(<(?:p|h[1-3]|li) [^>]*?)margin-left:(\d+(?:\.\d+)?)pt")
 _IMG_SRC = re.compile(r'<img src="([^"]+)"')
+_FILE_IMG = re.compile(r"""(<img\b[^>]*?\bsrc\s*=\s*(["']))(file:[^"']*)\2""", re.I)
 _TAB = re.compile(r"\t(?![^<>]*>)")  # a tab in text, not inside a tag
 _NOT_A_PICTURE = "This file isn't a picture the editor can add (PNG, JPG, GIF, BMP or WebP)."
+
+
+def _local_data_uri(src: str) -> str:
+    """A pasted ``file:`` picture on this computer as a data: URI ("" otherwise)."""
+    url = QUrl(_html.unescape(src))
+    path = url.toLocalFile()
+    if (
+        url.scheme() != "file"
+        or url.host() not in ("", "localhost")
+        or path.startswith(("//", "\\\\"))
+    ):
+        return ""  # a network share would be contacted
+    p = Path(path)
+    ext = _IMAGE_EXTS.get(p.suffix.lower().lstrip("."))
+    try:
+        if ext is None or not p.is_file() or p.stat().st_size > MAX_FILE_BYTES:
+            return ""
+        data = p.read_bytes()
+    except OSError:
+        return ""
+    if QImage.fromData(data).isNull():
+        return ""
+    mime = "jpeg" if ext == "jpg" else ext
+    return f"data:image/{mime};base64,{base64.b64encode(data).decode('ascii')}"
 
 
 def _qt_html(html: str) -> str:
@@ -209,21 +242,33 @@ class DocTextView(QTextEdit):
         return super().loadResource(type_, url)
 
     # ----- pictures -------------------------------------------------------
-    def insert_image(self, path: Path) -> None:
-        ext = _IMAGE_EXTS.get(path.suffix.lower().lstrip("."))
-        try:
-            data = path.read_bytes()
-        except OSError as exc:
-            raise ConversionError("The picture couldn't be read.", details=str(exc)) from exc
-        if ext is None or QImage.fromData(data).isNull():
-            raise ConversionError(_NOT_A_PICTURE)
+    def _free_name(self, ext: str) -> str:
         name = next_image_name(self.images, ext)
         n = len(self.images) + 1
         while name in self.images:
             n += 1
             name = f"img/{n}.{ext}"
+        return name
+
+    def _store(self, data: bytes, ext: str) -> tuple[str, QImage]:
+        name = self._free_name(ext)
         self.images[name] = data
-        image = self._add_resource(name, data)
+        return name, self._add_resource(name, data)
+
+    def insert_image(self, path: Path) -> None:
+        ext = _IMAGE_EXTS.get(path.suffix.lower().lstrip("."))
+        if ext is None or path.stat().st_size > MAX_FILE_BYTES:
+            raise ConversionError(_NOT_A_PICTURE)
+        try:
+            data = path.read_bytes()
+        except OSError as exc:
+            raise ConversionError("The picture couldn't be read.", details=str(exc)) from exc
+        if QImage.fromData(data).isNull():
+            raise ConversionError(_NOT_A_PICTURE)
+        self._insert_picture(data, ext)
+
+    def _insert_picture(self, data: bytes, ext: str) -> None:
+        name, image = self._store(data, ext)
         fmt = QTextImageFormat()
         fmt.setName(name)
         room = PAGE_WIDTH - 2 * PAGE_MARGIN
@@ -231,6 +276,44 @@ class DocTextView(QTextEdit):
             fmt.setWidth(room)
             fmt.setHeight(round(image.height() * room / image.width()))
         self.textCursor().insertImage(fmt)
+
+    # ----- pasting --------------------------------------------------------
+    def insertFromMimeData(self, source) -> None:  # noqa: N802 (Qt override)
+        """Pasted HTML is normalised and its pictures kept; a picture or plain text as such."""
+        if source.hasHtml():
+            self._paste_html(source.html())
+        elif source.hasImage():
+            image = source.imageData()
+            if isinstance(image, QImage) and not image.isNull():
+                buf = QBuffer()
+                buf.open(QIODevice.OpenModeFlag.WriteOnly)
+                image.save(buf, "PNG")
+                self._insert_picture(bytes(buf.data()), "png")
+        elif source.hasText():
+            self.textCursor().insertText(source.text())
+
+    def _paste_html(self, html: str) -> None:
+        html = _FILE_IMG.sub(lambda m: m.group(1) + _local_data_uri(m.group(3)) + m.group(2), html)
+        fragment, pictures = normalise_html(html)  # data: pictures decoded, the web dropped
+        renames = {}
+        for old, data in pictures.items():
+            name, _image = self._store(data, old.rsplit(".", 1)[-1])
+            renames[old] = name
+        fragment = _IMG_SRC.sub(
+            lambda m: f'<img src="{renames.get(m.group(1), m.group(1))}"', fragment
+        )
+        if not fragment:
+            return
+        cursor = self.textCursor()
+        cursor.beginEditBlock()
+        first = cursor.block().blockNumber()
+        cursor.insertHtml(_qt_html(fragment))
+        block = self.document().findBlockByNumber(first)
+        while block.isValid() and block.blockNumber() <= cursor.block().blockNumber():
+            self._fix_block(block)
+            block = block.next()
+        cursor.endEditBlock()
+        self.setTextCursor(cursor)
 
     # ----- saving ---------------------------------------------------------
     def content(self) -> SaveContent:
