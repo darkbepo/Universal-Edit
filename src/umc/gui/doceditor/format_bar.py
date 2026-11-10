@@ -78,6 +78,7 @@ class FormatBar(QWidget):
         )
         flow.addWidget(self.font_box)
 
+        self._size_shown = ""  # the size the box shows for the cursor
         self.size_box = QComboBox()
         self.size_box.setEditable(True)
         self.size_box.addItems([str(s) for s in SIZES])
@@ -160,11 +161,17 @@ class FormatBar(QWidget):
         self._apply(fm.set_alignment, key)
 
     def _size_chosen(self) -> None:
+        """Apply the size once, and only when it differs from what the box showed (leaving
+        the box untouched must not flatten a selection of mixed sizes)."""
+        text = self.size_box.currentText().strip()
+        if text == self._size_shown:
+            return
         try:
-            pt = float(self.size_box.currentText().replace(",", "."))
+            pt = float(text.replace(",", "."))
         except ValueError:
             self.refresh()
             return
+        self._size_shown = text  # activated + editingFinished: applied once
         self._apply(fm.set_font_size, min(400.0, max(1.0, pt)))
 
     # ----- dialogs (methods, so tests can replace them) -----------------------
@@ -254,6 +261,7 @@ class FormatBar(QWidget):
             self.size_box.blockSignals(True)
             self.size_box.setCurrentText(f"{pt:g}")
             self.size_box.blockSignals(False)
+            self._size_shown = f"{pt:g}"
         in_table = c.currentTable() is not None
         self.table_menu.setEnabled(in_table)
         self.table_menu_button.setEnabled(in_table)

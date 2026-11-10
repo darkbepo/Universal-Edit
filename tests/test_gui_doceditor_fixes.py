@@ -179,3 +179,31 @@ def test_paste_image_and_plain_text(qtbot):
     assert len(v.content().images) == 2
     _paste(v, text="<b>not bold</b>")
     assert "&lt;b&gt;not bold&lt;/b&gt;" in v.content().html
+
+
+# ----- smaller fixes: size box, Save as, leaving ------------------------------------------
+from umc.gui.doceditor.format_bar import FormatBar  # noqa: E402
+
+MIXED = '<p><span style="font-size:10pt">a</span><span style="font-size:20pt">b</span></p>'
+
+
+def test_size_box_focus_in_and_out_changes_nothing(qtbot):
+    v = DocTextView()
+    qtbot.addWidget(v)
+    bar = FormatBar(v)
+    qtbot.addWidget(bar)
+    v.load(OpenedDocument(MIXED, {}, "docx"))
+    c = v.textCursor()
+    c.select(QTextCursor.SelectionType.Document)
+    v.setTextCursor(c)
+    bar.refresh()
+    steps = v.document().availableUndoSteps()
+    bar.size_box.lineEdit().editingFinished.emit()  # clicked in and away, nothing typed
+    assert v.document().availableUndoSteps() == steps
+    assert v.content().html == MIXED
+    bar.size_box.setCurrentText("14")
+    bar.size_box.activated.emit(0)
+    bar.size_box.lineEdit().editingFinished.emit()  # focus leaves after choosing
+    assert v.content().html == '<p><span style="font-size:14pt">ab</span></p>'
+    v.undo()  # one step undoes the whole choice
+    assert v.content().html == MIXED and not v.document().isUndoAvailable()
