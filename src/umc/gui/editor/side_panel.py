@@ -1,14 +1,13 @@
-"""Tool bar (left), colour swatches and tool settings (right)."""
+"""Colour swatches and tool settings (right side). The tool rail is ``tool_rail.py``."""
 
 from __future__ import annotations
 
 import math
 from typing import Any
 
-from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import (
-    QButtonGroup,
     QColorDialog,
     QFontComboBox,
     QHBoxLayout,
@@ -19,171 +18,8 @@ from PySide6.QtWidgets import (
 )
 
 from umc.core import options as opts
-from umc.editor.tools import TOOLS
 from umc.editor.tools.base import Tool
 from umc.gui.widgets.settings_panel import SettingsPanel
-
-# ------------------------------------------------------------------ icons
-
-
-def tool_icon(tool_id: str, color: str) -> QIcon:
-    """Simple line icons drawn with QPainter (no image files to bundle)."""
-    size = 48
-    pm = QPixmap(size, size)
-    pm.fill(Qt.GlobalColor.transparent)
-    p = QPainter(pm)
-    p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    pen = QPen(QColor(color), 3.6)
-    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-    p.setPen(pen)
-    p.setBrush(Qt.BrushStyle.NoBrush)
-    c = QColor(color)
-    if tool_id == "move":
-        p.drawLine(QPointF(24, 8), QPointF(24, 40))
-        p.drawLine(QPointF(8, 24), QPointF(40, 24))
-        for tip, a, b in (
-            ((24, 6), (19, 12), (29, 12)),
-            ((24, 42), (19, 36), (29, 36)),
-            ((6, 24), (12, 19), (12, 29)),
-            ((42, 24), (36, 19), (36, 29)),
-        ):
-            p.drawPolyline([QPointF(*a), QPointF(*tip), QPointF(*b)])
-    elif tool_id in ("ellipse_select", "lasso", "polygon_lasso"):
-        pen.setStyle(Qt.PenStyle.DashLine)
-        pen.setWidthF(2.6)
-        p.setPen(pen)
-        if tool_id == "ellipse_select":
-            p.drawEllipse(QRectF(8, 12, 32, 24))
-        elif tool_id == "lasso":
-            path = QPainterPath(QPointF(14, 34))
-            path.cubicTo(QPointF(2, 26), QPointF(10, 8), QPointF(28, 10))
-            path.cubicTo(QPointF(46, 12), QPointF(42, 32), QPointF(24, 32))
-            p.drawPath(path)
-        else:
-            p.drawPolygon(
-                [QPointF(10, 14), QPointF(28, 8), QPointF(40, 24), QPointF(26, 40), QPointF(10, 32)]
-            )
-    elif tool_id == "wand":
-        p.drawLine(QPointF(8, 40), QPointF(30, 18))
-        p.drawLine(QPointF(34, 6), QPointF(34, 14))
-        p.drawLine(QPointF(30, 10), QPointF(38, 10))
-    elif tool_id == "mask_brush":
-        p.drawRoundedRect(QRectF(8, 8, 32, 32), 6, 6)
-        p.setBrush(QColor(color))
-        p.drawPie(QRectF(14, 14, 20, 20), 90 * 16, 180 * 16)
-        p.setBrush(Qt.BrushStyle.NoBrush)
-    elif tool_id == "gradient":
-        p.drawRoundedRect(QRectF(8, 10, 32, 28), 4, 4)
-        for i, x in enumerate((14, 19, 24, 29, 34)):
-            c = QColor(color)
-            c.setAlphaF(1 - i * 0.2)
-            pen2 = QPen(c, 3)
-            p.setPen(pen2)
-            p.drawLine(QPointF(x, 14), QPointF(x, 34))
-        p.setPen(pen)
-    elif tool_id == "brush":
-        p.drawLine(QPointF(34, 10), QPointF(20, 26))
-        path = QPainterPath(QPointF(20, 26))
-        path.cubicTo(QPointF(12, 26), QPointF(14, 36), QPointF(8, 38))
-        path.cubicTo(QPointF(18, 40), QPointF(26, 36), QPointF(24, 30))
-        p.setBrush(c)
-        p.drawPath(path)
-    elif tool_id == "eraser":
-        p.translate(24, 24)
-        p.rotate(-40)
-        p.drawRoundedRect(QRectF(-14, -8, 28, 16), 3, 3)
-        p.drawLine(QPointF(-2, -8), QPointF(-2, 8))
-    elif tool_id == "fill":
-        p.translate(22, 22)
-        p.rotate(45)
-        p.drawRoundedRect(QRectF(-9, -9, 18, 18), 2, 2)
-        p.resetTransform()
-        p.setBrush(c)
-        p.drawEllipse(QPointF(38, 34), 3.5, 4.5)
-    elif tool_id == "picker":
-        p.drawLine(QPointF(12, 36), QPointF(30, 18))
-        p.setBrush(c)
-        p.drawEllipse(QPointF(33, 15), 5, 5)
-        p.drawLine(QPointF(12, 36), QPointF(10, 38))
-    elif tool_id == "line":
-        p.drawLine(QPointF(10, 38), QPointF(38, 10))
-    elif tool_id == "clone":
-        p.drawRoundedRect(QRectF(14, 26, 20, 8), 2, 2)
-        p.drawLine(QPointF(24, 26), QPointF(24, 16))
-        p.drawEllipse(QPointF(24, 12), 5, 5)
-        p.drawLine(QPointF(12, 40), QPointF(36, 40))
-    elif tool_id == "arrow":
-        p.drawLine(QPointF(10, 38), QPointF(34, 14))
-        p.setBrush(c)
-        p.drawPolygon([QPointF(39, 9), QPointF(24, 14), QPointF(34, 24)])
-    elif tool_id == "highlighter":
-        hl = QColor(color)
-        hl.setAlphaF(0.45)
-        p.setPen(QPen(hl, 10, Qt.PenStyle.SolidLine, Qt.PenCapStyle.FlatCap))
-        p.drawLine(QPointF(8, 34), QPointF(40, 34))
-        p.setPen(pen)
-        p.drawPolygon([QPointF(18, 28), QPointF(30, 8), QPointF(38, 13), QPointF(26, 32)])
-        p.drawLine(QPointF(18, 28), QPointF(16, 34))
-    elif tool_id == "rect":
-        p.drawRoundedRect(QRectF(10, 13, 28, 22), 2, 2)
-    elif tool_id == "ellipse":
-        p.drawEllipse(QRectF(9, 13, 30, 22))
-    elif tool_id == "text":
-        f = QFont()
-        f.setPixelSize(30)
-        f.setBold(True)
-        p.setFont(f)
-        p.drawText(QRectF(0, 0, size, size), Qt.AlignmentFlag.AlignCenter, "T")
-    elif tool_id == "select":
-        pen.setStyle(Qt.PenStyle.DashLine)
-        pen.setWidthF(2.6)
-        p.setPen(pen)
-        p.drawRect(QRectF(10, 12, 28, 24))
-    elif tool_id == "crop":
-        p.drawPolyline([QPointF(16, 6), QPointF(16, 32), QPointF(42, 32)])
-        p.drawPolyline([QPointF(6, 16), QPointF(32, 16), QPointF(32, 42)])
-    else:
-        p.drawEllipse(QPointF(24, 24), 10, 10)
-    p.end()
-    return QIcon(pm)
-
-
-# ------------------------------------------------------------------ tool bar
-
-
-class ToolBar(QWidget):
-    tool_selected = Signal(str)
-
-    def __init__(self, icon_color: str, parent=None) -> None:
-        super().__init__(parent)
-        self.setObjectName("EditorToolBar")
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(6, 8, 6, 8)
-        lay.setSpacing(4)
-        self._group = QButtonGroup(self)
-        self._group.setExclusive(True)
-        self._buttons: dict[str, QToolButton] = {}
-        for cls in TOOLS:
-            b = QToolButton(objectName="ToolButton")
-            b.setCheckable(True)
-            b.setIcon(tool_icon(cls.id, icon_color))
-            b.setIconSize(QSize(26, 26))
-            b.setFixedSize(40, 40)
-            b.setToolTip(f"{cls.label} ({cls.shortcut})")
-            b.setCursor(Qt.CursorShape.PointingHandCursor)
-            b.clicked.connect(lambda _=False, tid=cls.id: self.tool_selected.emit(tid))
-            self._group.addButton(b)
-            self._buttons[cls.id] = b
-            lay.addWidget(b)
-        lay.addStretch(1)
-
-    def select(self, tool_id: str) -> None:
-        self._buttons[tool_id].setChecked(True)
-
-    def current(self) -> str:
-        return next((tid for tid, b in self._buttons.items() if b.isChecked()), "")
-
 
 # ------------------------------------------------------------------ colours
 

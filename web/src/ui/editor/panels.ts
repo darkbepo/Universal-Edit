@@ -1,4 +1,6 @@
 // Tool bar (left), colour swatches, tool settings and the layers list (right).
+import RAIL from "../../editor/rail.json";
+import { ICONS as TABLER } from "../icon_data";
 import { defaults, type Values } from "../../core/options";
 import { selectedIndices, type EditorDoc } from "../../editor/document";
 import type { Command } from "../../editor/history";
@@ -17,52 +19,108 @@ export const h = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<
   return el;
 };
 
-// ------------------------------------------------------------------ icons (inline SVG, no files)
 
-const ICONS: Record<string, string> = {
-  move: '<path d="M12 3v18M3 12h18"/><path d="m9 6 3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3"/>',
-  mask_brush: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M12 8a4 4 0 0 0 0 8z" fill="currentColor"/>',
-  gradient: '<rect x="4" y="6" width="16" height="12" rx="2"/><path d="M8 6v12" opacity=".9"/><path d="M12 6v12" opacity=".6"/><path d="M16 6v12" opacity=".3"/>',
-  ellipse_select: '<ellipse cx="12" cy="12" rx="8" ry="6" stroke-dasharray="3 2"/>',
-  lasso: '<path d="M7 17c-3-2-3-7 2-9s10 0 10 3-4 5-8 5c-2 0-3 1-3 3" stroke-dasharray="3 2"/>',
-  polygon_lasso: '<path d="M5 7l9-3 6 8-7 8-8-5z" stroke-dasharray="3 2"/>',
-  wand: '<path d="M4 20 15 9"/><path d="m17 3 .8 2.2L20 6l-2.2.8L17 9l-.8-2.2L14 6l2.2-.8z"/>',
-  brush: '<path d="M19 4 9.5 13.5"/><path d="M9.5 13.5c-2.5 0-3 2.5-3 4-.5 1-1.5 1.5-2.5 1.5 3 1.5 7 0 7-3"/>',
-  eraser: '<path d="m7 20-3-3 10-10 6 6-7 7z"/><path d="M11 10l6 6"/><path d="M7 20h13"/>',
-  fill: '<path d="m4 11 7-7 8 8-7 7z"/><path d="M4 11h15"/><path d="M20 15s2 2.5 2 3.5a2 2 0 0 1-4 0c0-1 2-3.5 2-3.5z"/>',
-  picker: '<path d="m5 19 9-9"/><circle cx="17" cy="7" r="3"/><path d="M5 19l-1 1"/>',
-  line: '<path d="M5 19 19 5"/>',
-  clone: '<rect x="7" y="13" width="10" height="4" rx="1"/><path d="M12 13V8"/><circle cx="12" cy="6" r="2.5"/><path d="M6 20h12"/>',
-  arrow: '<path d="M5 19 17 7"/><path d="M20 4 12 7l5 5z" fill="currentColor"/>',
-  highlighter: '<path d="M4 17h16" stroke-width="5" opacity=".45"/><path d="m9 14 6-10 4 2.5-6 10zM9 14l-1 3"/>',
-  rect: '<rect x="4" y="6" width="16" height="12" rx="1"/>',
-  ellipse: '<ellipse cx="12" cy="12" rx="8" ry="6"/>',
-  text: '<path d="M6 6h12M12 6v13"/>',
-  select: '<rect x="4" y="6" width="16" height="12" stroke-dasharray="3 2"/>',
-  crop: '<path d="M7 3v14h14"/><path d="M3 7h14v14"/>',
-};
+type RailItem = { kind: "tool" | "action" | "menu"; id: string; label: string | null; icon: string };
 
-const icon = (id: string) => {
-  const span = h("span", { class: "ico" });
-  span.innerHTML = `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[id] ?? ""}</svg>`;
+const railIcon = (name: string): HTMLElement => {
+  const span = h("span", { class: "rail-icon", ariaHidden: "true" });
+  span.innerHTML = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">${(TABLER as Record<string, string>)[name] ?? ""}</svg>`;
   return span;
 };
 
-export class ToolBar {
-  readonly el = h("div", { class: "tool-bar" });
+/** The tool rail: tools and actions in groups (rail.json = src/umc/editor/rail.py), names shown
+ *  by default; the chevron at the top narrows it to icons only (remembered in localStorage). */
+export class ToolRail {
+  readonly el = h("nav", { class: "tool-rail", ariaLabel: "Tools" });
   private buttons = new Map<string, HTMLButtonElement>();
+  private toggle: HTMLButtonElement;
+  private popup: HTMLElement | null = null;
+  narrow = false;
 
-  constructor(tools: Tool[], onSelect: (id: string) => void) {
-    for (const t of tools) {
-      const b = h("button", { class: "tool", title: `${t.label} (${t.shortcut})`, ariaLabel: t.label }, icon(t.id));
-      b.addEventListener("click", () => onSelect(t.id));
-      this.buttons.set(t.id, b);
-      this.el.append(b);
+  constructor(tools: Tool[], onSelect: (id: string) => void, onAction: (id: string) => void) {
+    const byId = new Map(tools.map((t) => [t.id, t]));
+    this.toggle = h("button", { type: "button", class: "rail-toggle" });
+    this.toggle.addEventListener("click", () => this.setNarrow(!this.narrow));
+    this.el.append(this.toggle);
+    for (const g of RAIL.groups) {
+      this.el.append(h("div", { class: "rail-group" }, g.group));
+      for (const it of g.items as RailItem[]) {
+        const t = byId.get(it.id);
+        const label = it.kind === "tool" && t ? t.label : (it.label as string);
+        const b = h("button", { type: "button", class: `rail-item ${it.kind}`, title: t ? `${t.label} (${t.shortcut})` : label, ariaLabel: label }, railIcon(it.icon), h("span", { class: "rail-label" }, label));
+        b.dataset.id = it.id;
+        if (it.kind === "tool") b.addEventListener("click", () => onSelect(it.id));
+        else if (it.kind === "menu") {
+          b.setAttribute("aria-haspopup", "menu");
+          b.addEventListener("click", (e) => {
+            e.stopPropagation();
+            this.openMenu(b, it.id, onAction);
+          });
+        } else b.addEventListener("click", () => onAction(it.id));
+        this.buttons.set(it.id, b);
+        this.el.append(b);
+      }
+    }
+    let narrow = false;
+    try {
+      narrow = localStorage.getItem("umc-rail-narrow") === "1";
+    } catch {
+      /* storage blocked: the default (names shown) */
+    }
+    this.setNarrow(narrow, false);
+    document.addEventListener("pointerdown", (e) => {
+      if (this.popup && !this.popup.contains(e.target as Node)) this.closeMenu();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") this.closeMenu();
+    });
+  }
+
+  setNarrow(narrow: boolean, remember = true): void {
+    this.narrow = narrow;
+    this.el.classList.toggle("narrow", narrow);
+    this.toggle.replaceChildren(railIcon(narrow ? "chevrons-right" : "chevrons-left"));
+    this.toggle.title = narrow ? "Show tool names" : "Icons only";
+    this.toggle.setAttribute("aria-label", this.toggle.title);
+    if (!remember) return;
+    try {
+      localStorage.setItem("umc-rail-narrow", narrow ? "1" : "0");
+    } catch {
+      /* fine: just not remembered */
     }
   }
 
+  private openMenu(anchor: HTMLElement, id: string, onAction: (id: string) => void): void {
+    if (this.popup) return this.closeMenu();
+    const menu = h("div", { class: "context-menu rail-menu", role: "menu", ariaLabel: anchor.getAttribute("aria-label") ?? "" });
+    for (const entry of (RAIL.menus as Record<string, ([string, string] | null)[]>)[id]) {
+      if (!entry) {
+        menu.append(h("hr"));
+        continue;
+      }
+      const [op, text] = entry;
+      const item = h("button", { type: "button", role: "menuitem" }, text);
+      item.addEventListener("click", () => {
+        this.closeMenu();
+        onAction(op);
+      });
+      menu.append(item);
+    }
+    document.body.append(menu);
+    const r = anchor.getBoundingClientRect();
+    menu.style.left = `${r.right + 4}px`;
+    menu.style.top = `${Math.min(r.top, window.innerHeight - menu.offsetHeight - 8)}px`;
+    this.popup = menu;
+    (menu.querySelector("button") as HTMLButtonElement | null)?.focus();
+  }
+
+  private closeMenu(): void {
+    this.popup?.remove();
+    this.popup = null;
+  }
+
   select(id: string): void {
-    for (const [tid, b] of this.buttons) b.setAttribute("aria-pressed", String(tid === id));
+    for (const [tid, b] of this.buttons) if (b.classList.contains("tool")) b.setAttribute("aria-pressed", String(tid === id));
   }
 }
 

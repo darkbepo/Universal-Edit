@@ -26,7 +26,7 @@ import * as clipboard from "../../editor/clipboard";
 import { EditorCanvas } from "./canvas";
 import { backgroundBlurDialog, blurDialog, canvasSizeDialog, featherDialog, curvesDialog, stickersDialog, levelsDialog, looksDialog, quickFixDialog, resizeDialog, saveDialog, sharpenDialog, shortcutsDialog, type AdjustHost } from "./dialogs";
 import { CropBar, type BarMode } from "./cropbar";
-import { h, LayersPanel, Swatches, ToolBar, ToolSettings } from "./panels";
+import { h, LayersPanel, Swatches, ToolRail, ToolSettings } from "./panels";
 import { SHORTCUTS, shortcutFor, toolGroups } from "./shortcuts";
 import * as selection from "../../editor/selection";
 
@@ -88,7 +88,7 @@ export class EditorPage {
   history: History | null = null;
   private tools = makeTools(canvasRasterizer);
   tool: Tool = this.tools[0];
-  private toolBar: ToolBar;
+  private toolBar: ToolRail;
   private settings: ToolSettings;
   private swatches: Swatches;
   private layers: LayersPanel;
@@ -114,7 +114,7 @@ export class EditorPage {
   private clipOnSystem = false;
 
   constructor(private opts: EditorOptions) {
-    this.toolBar = new ToolBar(this.tools, (id) => this.selectTool(id));
+    this.toolBar = new ToolRail(this.tools, (id) => this.selectTool(id), (id) => void this.railAction(id));
     this.settings = new ToolSettings(() => this.canvas.draw());
     this.swatches = new Swatches();
     this.layers = new LayersPanel(
@@ -142,31 +142,12 @@ export class EditorPage {
     this.redoBtn = btn("Redo", "Redo (Ctrl+Y)", () => this.canvas.redo());
     this.saveAsBtn = btn("Save as…", "Save as (Ctrl+Shift+S)", () => void this.saveAs());
     this.saveBtn = btn("Save", "Save (Ctrl+S)", () => void this.save(), "primary small");
-    const imageMenu = h("details", { class: "menu" }, h("summary", { class: "btn small" }, "Image ▾"),
-      h("div", { class: "menu-items" }, ...this.menuItems([
-        ["Resize image…", "resize"], ["Canvas size…", "canvas_size"], ["Crop to selection", "crop_selection"], null,
-        ["Rotate 90° right", "rotate_right"], ["Rotate 90° left", "rotate_left"], ["Rotate 180°", "rotate_180"],
-        ["Flip horizontal", "flip_h"], ["Flip vertical", "flip_v"], null,
-        ["Layer: rotate 90° right", "layer_rotate_right"], ["Layer: rotate 90° left", "layer_rotate_left"],
-        ["Layer: rotate 180°", "layer_rotate_180"], ["Layer: flip horizontal", "layer_flip_h"], ["Layer: flip vertical", "layer_flip_v"],
-        null, ["Remove background (keeps the subject)", "remove_background"],
-      ])));
-    const selectMenu = h("details", { class: "menu" }, h("summary", { class: "btn small", title: "Select all, deselect, invert, feather" }, "Select ▾"),
-      h("div", { class: "menu-items" }, ...this.menuItems([["Select all", "select_all"], ["Deselect", "deselect"], ["Invert", "invert_selection"], ["Feather…", "feather"], null, ["Content-aware fill (remove what's selected)", "content_fill"]])));
-    const adjustMenu = h("details", { class: "menu" }, h("summary", { class: "btn small", title: "Fix the tones and colours of the selected layer" }, "Adjust ▾"),
-      h("div", { class: "menu-items" }, ...this.menuItems([
-        ["Quick fix… (exposure, contrast, colours)", "quick_fix"], ["Levels…", "levels"], ["Curves…", "curves"],
-      ])));
-    const filterMenu = h("details", { class: "menu" }, h("summary", { class: "btn small", title: "Blur, sharpen and one-click looks for the selected layer" }, "Filters ▾"),
-      h("div", { class: "menu-items" }, ...this.menuItems([["Looks…", "looks"], ["Blur…", "blur"], ["Background blur… (portraits)", "background_blur"], ["Sharpen…", "sharpen"]])));
     const top = h("div", { class: "editor-top" },
       btn("← Back to Convert", "Leave the editor", () => this.back(), "link"),
       h("span", { class: "gap" }), this.undoBtn, this.redoBtn,
       h("span", { class: "gap" }),
       btn("−", "Zoom out", () => this.canvas.zoomOut()), btn("+", "Zoom in", () => this.canvas.zoomIn()),
       btn("Fit", "Fit to window (Ctrl+0)", () => this.canvas.fit()), btn("100 %", "Actual pixels (Ctrl+1)", () => this.canvas.setZoom(1)),
-      h("span", { class: "gap" }), imageMenu, selectMenu, adjustMenu, filterMenu,
-      btn("Stickers", "Add a sticker (check mark, arrow, bubble…) as a new layer", () => void this.runOp("stickers")),
       h("div", { class: "spacer" }), btn("?", "Keyboard shortcuts (?)", () => void this.showShortcuts()), this.saveAsBtn, this.saveBtn);
     // Crop needs buttons too (Enter isn't available on touch screens): they float next to the
     // rectangle once one is drawn, and also offer "Crop to selection" for a selection.
@@ -180,7 +161,6 @@ export class EditorPage {
       h("div", { class: "editor-status" }, this.message, this.info));
     this.selectTool("brush");
     this.updateButtons();
-    this.closeMenusOnOutsideClick();
     window.addEventListener("keydown", (e) => this.key(e));
     window.addEventListener("paste", (e) => void this.onPaste(e));
     window.addEventListener("keyup", (e) => {
@@ -195,31 +175,10 @@ export class EditorPage {
     if (location.search.includes("e2e")) this.installTestHook();
   }
 
-  /** Top-bar menus close on a click anywhere else, and opening one closes the others. */
-  private closeMenusOnOutsideClick(): void {
-    const menus = () => [...this.el.querySelectorAll<HTMLDetailsElement>("details.menu")];
-    document.addEventListener("pointerdown", (e) => {
-      for (const m of menus()) if (m.open && !m.contains(e.target as Node)) m.open = false;
-    });
-    for (const m of menus())
-      m.addEventListener("toggle", () => {
-        if (m.open) for (const other of menus()) if (other !== m) other.open = false;
-      });
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") for (const m of menus()) if (m.open) m.open = false;
-    });
-  }
-
-  private menuItems(items: ([string, string] | null)[]): HTMLElement[] {
-    return items.map((it) => {
-      if (!it) return h("hr");
-      const b = h("button", { class: "menu-item" }, it[0]);
-      b.addEventListener("click", () => {
-        (b.closest("details") as HTMLDetailsElement).open = false;
-        void this.runOp(it[1]);
-      });
-      return b;
-    });
+  /** An action button in the tool rail (the Select group's ones included: runOp hands those on). */
+  private async railAction(id: string): Promise<void> {
+    await this.runOp(id);
+    if (!document.querySelector("dialog[open]")) this.canvas.view.focus();
   }
 
   // ---------------------------------------------------------------- visibility

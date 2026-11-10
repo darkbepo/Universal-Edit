@@ -16,13 +16,11 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
-    QMenu,
     QMessageBox,
     QPlainTextEdit,
     QProgressDialog,
     QPushButton,
     QScrollArea,
-    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -44,7 +42,6 @@ from umc.editor.tools.text import (
     painted_over,
     text_layer_at,
 )
-from umc.gui import theme
 from umc.gui.editor.canvas import EditorCanvas, pil_to_qimage, qimage_to_pil
 from umc.gui.editor.crop_bar import CropBar
 from umc.gui.editor.dialogs import (
@@ -65,7 +62,8 @@ from umc.gui.editor.dialogs import (
 )
 from umc.gui.editor.layers_panel import LayersPanel
 from umc.gui.editor.shortcuts import SHORTCUTS
-from umc.gui.editor.side_panel import ColorSwatches, ToolBar, ToolSettings
+from umc.gui.editor.side_panel import ColorSwatches, ToolSettings
+from umc.gui.editor.tool_rail import ToolRail
 
 log = logging.getLogger(__name__)
 
@@ -202,9 +200,9 @@ class EditorPage(QWidget):
         middle = QHBoxLayout()
         middle.setContentsMargins(0, 0, 0, 0)
         middle.setSpacing(0)
-        icon_color = theme.palette()["text"]
-        self.tool_bar = ToolBar(icon_color)
+        self.tool_bar = ToolRail()
         self.tool_bar.tool_selected.connect(self.select_tool)
+        self.tool_bar.action_triggered.connect(self.rail_action)
         middle.addWidget(self.tool_bar)
 
         self.canvas = EditorCanvas()
@@ -263,85 +261,6 @@ class EditorPage(QWidget):
         tb("Fit", "Fit to window (Ctrl+0)", lambda: self.canvas.fit())
         tb("100 %", "Actual pixels (Ctrl+1)", lambda: self.canvas.set_zoom(1.0))
         lay.addSpacing(12)
-        image = QToolButton(text="Image ▾", objectName="SmallMenu")
-        image.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        menu = QMenu(image)
-        for label, op in (
-            ("Resize image…", "resize"),
-            ("Canvas size…", "canvas_size"),
-            ("Crop to selection", "crop_selection"),
-            (None, None),
-            ("Rotate 90° right", "rotate_right"),
-            ("Rotate 90° left", "rotate_left"),
-            ("Rotate 180°", "rotate_180"),
-            ("Flip horizontal", "flip_h"),
-            ("Flip vertical", "flip_v"),
-            (None, None),
-            ("Remove background (keeps the subject)", "remove_background"),
-        ):
-            if label is None:
-                menu.addSeparator()
-            else:
-                menu.addAction(label, lambda o=op: self.run_op(o))
-        layer_menu = menu.addMenu("Layer only")
-        for label, op in (
-            ("Rotate 90° right", "layer_rotate_right"),
-            ("Rotate 90° left", "layer_rotate_left"),
-            ("Rotate 180°", "layer_rotate_180"),
-            ("Flip horizontal", "layer_flip_h"),
-            ("Flip vertical", "layer_flip_v"),
-        ):
-            layer_menu.addAction(label, lambda o=op: self.run_op(o))
-        image.setMenu(menu)
-        lay.addWidget(image)
-        select_button = QToolButton(text="Select ▾", objectName="SmallMenu")
-        select_button.setToolTip("Select all, deselect, invert, feather")
-        select_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        select_menu = QMenu(select_button)
-        for label, fn in (
-            (
-                "Select all",
-                lambda: self._push(selection.select_all(self.doc)) if self.doc else None,
-            ),
-            ("Deselect", lambda: self._push(selection.deselect(self.doc)) if self.doc else None),
-            ("Invert", lambda: self._push(selection.invert(self.doc)) if self.doc else None),
-            ("Feather…", self.feather),
-            ("Content-aware fill (remove what's selected)", lambda: self.run_op("content_fill")),
-        ):
-            select_menu.addAction(label, fn)
-        select_button.setMenu(select_menu)
-        lay.addWidget(select_button)
-        adjust_button = QToolButton(text="Adjust ▾", objectName="SmallMenu")
-        adjust_button.setToolTip("Fix the tones and colours of the selected layer")
-        adjust_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        adjust_menu = QMenu(adjust_button)
-        for label, op in (
-            ("Quick fix… (exposure, contrast, colours)", "quick_fix"),
-            ("Levels…", "levels"),
-            ("Curves…", "curves"),
-        ):
-            adjust_menu.addAction(label, lambda o=op: self.run_op(o))
-        adjust_button.setMenu(adjust_menu)
-        lay.addWidget(adjust_button)
-        filter_button = QToolButton(text="Filters ▾", objectName="SmallMenu")
-        filter_button.setToolTip("Blur, sharpen and one-click looks for the selected layer")
-        filter_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        filter_menu = QMenu(filter_button)
-        for label, op in (
-            ("Looks…", "looks"),
-            ("Blur…", "blur"),
-            ("Background blur… (portraits)", "background_blur"),
-            ("Sharpen…", "sharpen"),
-        ):
-            filter_menu.addAction(label, lambda o=op: self.run_op(o))
-        filter_button.setMenu(filter_menu)
-        lay.addWidget(filter_button)
-        sticker_button = QToolButton(text="Stickers", objectName="SmallMenu")
-        sticker_button.setToolTip(
-            "Add a sticker (check mark, arrow, speech bubble…) as a new layer"
-        )
-        sticker_button.clicked.connect(lambda: self.run_op("stickers"))
-        lay.addWidget(sticker_button)
         lay.addStretch(1)
         tb("?", "Keyboard shortcuts (?)", lambda: self.show_shortcuts())
         lay.addSpacing(6)
@@ -651,6 +570,22 @@ class EditorPage(QWidget):
         self.message.setText(text)
 
     # ------------------------------------------------------------ operations
+    def rail_action(self, name: str) -> None:
+        """An action button in the tool rail (the Select group's ones aren't run_op ops)."""
+        if self.doc is None:
+            return
+        select = {
+            "select_all": lambda: self._push(selection.select_all(self.doc)),
+            "deselect": lambda: self._push(selection.deselect(self.doc)),
+            "invert_selection": lambda: self._push(selection.invert(self.doc)),
+            "feather": self.feather,
+        }
+        if name in select:
+            select[name]()
+        else:
+            self.run_op(name)
+        self.canvas.setFocus()
+
     def run_op(self, name: str) -> None:
         doc = self.doc
         if doc is None:

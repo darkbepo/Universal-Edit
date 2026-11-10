@@ -619,8 +619,16 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
          selection tool — a run of presses is one undo step (`nudge_selection` / `nudgeSelection`,
          trimmed once from where the run started); a drag starts after 3 screen px, so a wobble is
          still a click; the cursor turns into a move cursor inside it.
-      3. Tool rail: grouped (Select → Move & crop → Paint → Retouch → Shapes & text → Adjust →
-         Filters → Effects → Image), icons + names by default, narrowable; menu items become icons.
+      3. ✅ Tool rail (both apps): one layout, `editor/rail.py` → `web/src/editor/rail.json`
+         (`python -m umc.editor.rail`; `tests/test_editor_rail.py` checks they match, every tool is
+         on it once, and every icon exists in both icon sets). Groups Select → Move & crop → Paint →
+         Retouch → Shapes & text → Adjust → Filters → Image (Effects comes with step 7); items are
+         tools, actions (run at once) or a menu (Rotate & flip). Icons are Tabler 3.24.0 (added to
+         `gui/icon_data.py` / `web/src/ui/icon_data.ts`); the old painted / hand-drawn tool icons are
+         gone. Desktop `gui/editor/tool_rail.py` `ToolRail` (QSettings `editor/rail_narrow`), web
+         `ToolRail` in `ui/editor/panels.ts` (localStorage `umc-rail-narrow`; below 900 px it
+         becomes an icon row). Names shown by default, the chevron narrows to icons. The top bar's
+         Image / Select / Adjust / Filters menus and the Stickers button are gone; e2e uses `rail()`.
       4. Floating windows: every icon opens a movable, minimisable window (several at once,
          positions remembered); no modal dialogs; layers side stays only layers.
       5. Live text layers (a layer at once, movable while typing, editable until rasterised).

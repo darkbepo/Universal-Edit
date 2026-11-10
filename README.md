@@ -73,17 +73,18 @@ The browser version's source is in [`web/`](web/README.md).
 | Image editor crop: after you draw a crop rectangle (or a rectangle selection), a small bar next to it shows the size with Apply crop / Cancel (Crop to selection / Deselect) | ✅ | ✅ |
 | Image editor clipboard: copy (Ctrl+C), copy what you see (Ctrl+Shift+C), cut, paste as a new layer — back in place, or centred for pictures from other programs | ✅ | ✅ (copying into other programs needs a browser that allows it) |
 | Image editor Move tool (V): drag the selected layers, arrow keys nudge · layer shortcuts (duplicate, merge, new, up / down / top / bottom) · a "?" list of every shortcut | ✅ | ✅ |
-| Image editor Adjust menu: Quick fix (exposure, brightness, contrast, temperature, tint, saturation, vibrance, auto tone), Levels (histogram, per channel, auto), Curves (per channel) — live preview, "hold to see the original" | ✅ | ✅ |
-| Image editor Filters menu: Blur, Sharpen (amount, radius, threshold), 11 one-click Looks (warm, cool, vivid, black & white, noir, sepia, faded, vintage, dramatic, matte, bright & airy) with strength — live preview | ✅ | ✅ |
-| Image editor selections: rectangle / ellipse (M), lasso / polygon lasso (Q), magic wand (W); Shift adds, Alt subtracts; Select menu: all, deselect, invert, feather — any shape with soft edges, and every tool, adjustment, filter, copy and cut follows it | ✅ | ✅ |
+| Image editor Adjust group: Quick fix (exposure, brightness, contrast, temperature, tint, saturation, vibrance, auto tone), Levels (histogram, per channel, auto), Curves (per channel) — live preview, "hold to see the original" | ✅ | ✅ |
+| Image editor Filters group: Blur, Sharpen (amount, radius, threshold), 11 one-click Looks (warm, cool, vivid, black & white, noir, sepia, faded, vintage, dramatic, matte, bright & airy) with strength — live preview | ✅ | ✅ |
+| Image editor selections: rectangle / ellipse (M), lasso / polygon lasso (Q), magic wand (W); Shift adds, Alt subtracts; select all, deselect, invert, feather — any shape with soft edges, and every tool, adjustment, filter, copy and cut follows it | ✅ | ✅ |
 | Image editor masks and gradients: layer masks (add, from selection, invert, apply, delete) with a Mask brush (K), Gradient tool (colour, layer mask or soft selection — e.g. brighten only the sky), Background blur for portraits | ✅ | ✅ |
 | Image editor text: text layers stay editable (click them with the Text tool, or Edit text… in the layer menu; kept in .ora), alignment, outline, drop shadow, background box, watermark across the picture | ✅ | ✅ |
 | Image editor annotation: arrow tool (one or both heads; L switches line / arrow), highlighter (H; see-through, doesn't darken where it crosses itself), 11 built-in stickers (check mark, cross, star, speech bubble, map pin…; free to use, CC0) | ✅ | ✅ |
 | Image editor pasteboard: parts of layers moved past the picture's edge stay visible (faded) around it and can be moved back; they're kept in .ora but never saved into the picture | ✅ | ✅ |
-| Image editor retouching: clone stamp (S; Alt+click the source, aligned or not, this layer or all layers) and content-aware fill (Select menu: paints the selection over from what surrounds it — blemishes, wires, small objects) | ✅ | ✅ |
-| Image editor background removal (Image menu): hides the background with a layer mask, so it can be touched up with the mask brush; the model is downloaded once (desktop: IS-Net, ~179 MB, SHA-256 checked; website: IMG.LY's IS-Net, ~80 MB, cached by the browser) | ✅ | ✅ |
+| Image editor retouching: clone stamp (S; Alt+click the source, aligned or not, this layer or all layers) and content-aware fill (paints the selection over from what surrounds it — blemishes, wires, small objects) | ✅ | ✅ |
+| Image editor background removal (Retouch group): hides the background with a layer mask, so it can be touched up with the mask brush; the model is downloaded once (desktop: IS-Net, ~179 MB, SHA-256 checked; website: IMG.LY's IS-Net, ~80 MB, cached by the browser) | ✅ | ✅ |
 | Image editor: show only one layer (Alt+click its eye, or the layer menu; again to show all), colour-picker magnifier while the button is held, the mask brush adds a mask by itself | ✅ | ✅ |
 | Image editor: move a selection by dragging inside it (or with the arrow keys) — the outline moves, the picture stays | ✅ | ✅ |
+| Image editor tool rail: every tool and action grouped (Select, Move & crop, Paint, Retouch, Shapes & text, Adjust, Filters, Image) with names shown, or narrowed to icons only (remembered) | ✅ | ✅ |
 | Layered projects: save and open OpenRaster `.ora` (GIMP and Krita open it too); `.ora` → any image format | ✅ | ✅ |
 | Files never leave your computer | ✅ | ✅ |
 | No install needed | ❌ | ✅ |

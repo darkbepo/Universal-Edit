@@ -520,3 +520,44 @@ QWidget#EditorCanvas {
     background: @bg;
 }
 
+
+/* ---------- editor tool rail */
+QScrollArea#ToolRail, QWidget#ToolRailHost {
+    background: @surface;
+}
+QLabel#RailGroup {
+    color: @muted;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    padding: 10px 6px 2px 6px;
+}
+QFrame#RailLine {
+    color: @border;
+    margin: 4px 6px;
+}
+QToolButton#RailButton {
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    padding: 5px 6px;
+    text-align: left;
+    font-size: 12px;
+}
+QToolButton#RailButton:hover {
+    background: @accent_soft;
+}
+QToolButton#RailButton:checked {
+    background: @accent_soft;
+    border-color: @accent;
+    color: @accent;
+    font-weight: 600;
+}
+QToolButton#RailButton::menu-indicator {
+    image: none;
+}
+QToolButton#RailToggle {
+    background: transparent;
+    border: none;
+    padding: 2px;
+}

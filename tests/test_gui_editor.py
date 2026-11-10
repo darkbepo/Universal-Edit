@@ -82,7 +82,7 @@ def page(qtbot, tmp_path):
     Image.new("RGBA", (30, 30), (0, 0, 255, 128)).save(b)
     pg = EditorPage()
     qtbot.addWidget(pg)
-    pg.resize(1100, 720)
+    pg.resize(1300, 720)
     pg.show()
     assert pg.open_paths([a, b])
     yield pg
@@ -1185,3 +1185,31 @@ def test_arrows_move_the_selection_with_a_selection_tool(page, qtbot):
     qtbot.keyClick(page.canvas, Qt.Key.Key_Down, SHIFT)
     assert page.doc.selection == Rect(3, 12, 11, 20)
     assert page.history.undo_label == "Move selection"
+
+
+def test_tool_rail_groups_names_narrowing_and_actions(page, qtbot, monkeypatch):
+    from PySide6.QtWidgets import QToolButton
+
+    from umc.editor.geometry import Rect
+
+    rail = page.tool_bar
+    b = rail.buttons["select"]
+    assert b.text() == "Rectangle select" and not rail.narrow
+    assert b.toolButtonStyle() == Qt.ToolButtonStyle.ToolButtonTextBesideIcon
+    qtbot.mouseClick(rail.buttons["lasso"], Qt.MouseButton.LeftButton)
+    assert page.tool.id == "lasso" and rail.current() == "lasso"
+    qtbot.mouseClick(rail.toggle, Qt.MouseButton.LeftButton)
+    assert rail.narrow and b.toolButtonStyle() == Qt.ToolButtonStyle.ToolButtonIconOnly
+    rail.set_narrow(False)
+    # actions run at once; the Select group's ones too
+    qtbot.mouseClick(rail.buttons["select_all"], Qt.MouseButton.LeftButton)
+    assert page.doc.selection == Rect(0, 0, 60, 40)
+    qtbot.mouseClick(rail.buttons["deselect"], Qt.MouseButton.LeftButton)
+    assert page.doc.selection is None
+    menu = rail.buttons["rotate"].menu()
+    texts = [a.text() for a in menu.actions() if a.text()]
+    assert "Rotate 90° right" in texts and "Layer: flip vertical" in texts
+    next(a for a in menu.actions() if a.text() == "Rotate 90° right").trigger()
+    assert (page.doc.width, page.doc.height) == (40, 60)
+    # the old top-bar menus are gone
+    assert not [w for w in page.findChildren(QToolButton) if w.text().endswith("▾")]

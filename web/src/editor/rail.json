@@ -1,0 +1,318 @@
+{
+ "_note": "The editor's tool rail, generated from src/umc/editor/rail.py.",
+ "groups": [
+  {
+   "group": "Select",
+   "items": [
+    {
+     "kind": "tool",
+     "id": "select",
+     "label": null,
+     "icon": "marquee-2"
+    },
+    {
+     "kind": "tool",
+     "id": "ellipse_select",
+     "label": null,
+     "icon": "circle-dashed"
+    },
+    {
+     "kind": "tool",
+     "id": "lasso",
+     "label": null,
+     "icon": "lasso"
+    },
+    {
+     "kind": "tool",
+     "id": "polygon_lasso",
+     "label": null,
+     "icon": "lasso-polygon"
+    },
+    {
+     "kind": "tool",
+     "id": "wand",
+     "label": null,
+     "icon": "wand"
+    },
+    {
+     "kind": "action",
+     "id": "select_all",
+     "label": "Select all",
+     "icon": "select-all"
+    },
+    {
+     "kind": "action",
+     "id": "deselect",
+     "label": "Deselect",
+     "icon": "deselect"
+    },
+    {
+     "kind": "action",
+     "id": "invert_selection",
+     "label": "Invert selection",
+     "icon": "arrows-exchange"
+    },
+    {
+     "kind": "action",
+     "id": "feather",
+     "label": "Feather…",
+     "icon": "feather"
+    }
+   ]
+  },
+  {
+   "group": "Move & crop",
+   "items": [
+    {
+     "kind": "tool",
+     "id": "move",
+     "label": null,
+     "icon": "arrows-move"
+    },
+    {
+     "kind": "tool",
+     "id": "crop",
+     "label": null,
+     "icon": "crop"
+    },
+    {
+     "kind": "action",
+     "id": "crop_selection",
+     "label": "Crop to selection",
+     "icon": "crop-1-1"
+    }
+   ]
+  },
+  {
+   "group": "Paint",
+   "items": [
+    {
+     "kind": "tool",
+     "id": "brush",
+     "label": null,
+     "icon": "brush"
+    },
+    {
+     "kind": "tool",
+     "id": "highlighter",
+     "label": null,
+     "icon": "highlight"
+    },
+    {
+     "kind": "tool",
+     "id": "eraser",
+     "label": null,
+     "icon": "eraser"
+    },
+    {
+     "kind": "tool",
+     "id": "mask_brush",
+     "label": null,
+     "icon": "mask"
+    },
+    {
+     "kind": "tool",
+     "id": "fill",
+     "label": null,
+     "icon": "bucket-droplet"
+    },
+    {
+     "kind": "tool",
+     "id": "gradient",
+     "label": null,
+     "icon": "gradienter"
+    },
+    {
+     "kind": "tool",
+     "id": "picker",
+     "label": null,
+     "icon": "color-picker"
+    }
+   ]
+  },
+  {
+   "group": "Retouch",
+   "items": [
+    {
+     "kind": "tool",
+     "id": "clone",
+     "label": null,
+     "icon": "rubber-stamp"
+    },
+    {
+     "kind": "action",
+     "id": "content_fill",
+     "label": "Content-aware fill",
+     "icon": "sparkles"
+    },
+    {
+     "kind": "action",
+     "id": "remove_background",
+     "label": "Remove background",
+     "icon": "background"
+    }
+   ]
+  },
+  {
+   "group": "Shapes & text",
+   "items": [
+    {
+     "kind": "tool",
+     "id": "line",
+     "label": null,
+     "icon": "line"
+    },
+    {
+     "kind": "tool",
+     "id": "arrow",
+     "label": null,
+     "icon": "arrow-up-right"
+    },
+    {
+     "kind": "tool",
+     "id": "rect",
+     "label": null,
+     "icon": "square"
+    },
+    {
+     "kind": "tool",
+     "id": "ellipse",
+     "label": null,
+     "icon": "circle"
+    },
+    {
+     "kind": "tool",
+     "id": "text",
+     "label": null,
+     "icon": "typography"
+    },
+    {
+     "kind": "action",
+     "id": "stickers",
+     "label": "Stickers…",
+     "icon": "sticker"
+    }
+   ]
+  },
+  {
+   "group": "Adjust",
+   "items": [
+    {
+     "kind": "action",
+     "id": "quick_fix",
+     "label": "Quick fix…",
+     "icon": "adjustments"
+    },
+    {
+     "kind": "action",
+     "id": "levels",
+     "label": "Levels…",
+     "icon": "chart-histogram"
+    },
+    {
+     "kind": "action",
+     "id": "curves",
+     "label": "Curves…",
+     "icon": "chart-line"
+    }
+   ]
+  },
+  {
+   "group": "Filters",
+   "items": [
+    {
+     "kind": "action",
+     "id": "looks",
+     "label": "Looks…",
+     "icon": "palette"
+    },
+    {
+     "kind": "action",
+     "id": "blur",
+     "label": "Blur…",
+     "icon": "blur"
+    },
+    {
+     "kind": "action",
+     "id": "background_blur",
+     "label": "Background blur…",
+     "icon": "aperture"
+    },
+    {
+     "kind": "action",
+     "id": "sharpen",
+     "label": "Sharpen…",
+     "icon": "focus-2"
+    }
+   ]
+  },
+  {
+   "group": "Image",
+   "items": [
+    {
+     "kind": "action",
+     "id": "resize",
+     "label": "Resize image…",
+     "icon": "resize"
+    },
+    {
+     "kind": "action",
+     "id": "canvas_size",
+     "label": "Canvas size…",
+     "icon": "aspect-ratio"
+    },
+    {
+     "kind": "menu",
+     "id": "rotate",
+     "label": "Rotate & flip",
+     "icon": "rotate-clockwise"
+    }
+   ]
+  }
+ ],
+ "menus": {
+  "rotate": [
+   [
+    "rotate_right",
+    "Rotate 90° right"
+   ],
+   [
+    "rotate_left",
+    "Rotate 90° left"
+   ],
+   [
+    "rotate_180",
+    "Rotate 180°"
+   ],
+   [
+    "flip_h",
+    "Flip horizontal"
+   ],
+   [
+    "flip_v",
+    "Flip vertical"
+   ],
+   null,
+   [
+    "layer_rotate_right",
+    "Layer: rotate 90° right"
+   ],
+   [
+    "layer_rotate_left",
+    "Layer: rotate 90° left"
+   ],
+   [
+    "layer_rotate_180",
+    "Layer: rotate 180°"
+   ],
+   [
+    "layer_flip_h",
+    "Layer: flip horizontal"
+   ],
+   [
+    "layer_flip_v",
+    "Layer: flip vertical"
+   ]
+  ]
+ }
+}

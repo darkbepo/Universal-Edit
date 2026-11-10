@@ -515,10 +515,11 @@ test("Ctrl+Plus / Ctrl+Minus zoom the picture, not the page", async ({ page }) =
 
 // ------------------------------------------------------------------ Adjust menu
 
-const adjustMenu = async (page: Page, item: string) => {
-  await page.getByText("Adjust ▾").click();
-  await page.getByRole("button", { name: item }).click();
+/** Click an item in the tool rail by (the start of) its name. */
+const rail = async (page: Page, item: string) => {
+  await page.locator(".tool-rail").getByRole("button", { name: new RegExp(`^${item}`) }).click();
 };
+const adjustMenu = rail;
 const layerPx = (page: Page, x: number, y: number) => page.evaluate(([a, b]) => (window.__editor as EditorHook).pixel(a, b), [x, y]);
 
 test("Quick fix: live preview, hold to see the original, cancel and apply", async ({ page }) => {
@@ -613,10 +614,7 @@ test("Curves keeps its end points; Levels treats an empty Output white as 255", 
 
 // ------------------------------------------------------------------ Filters menu
 
-const filterMenu = async (page: Page, item: string) => {
-  await page.getByText("Filters ▾").click();
-  await page.getByRole("button", { name: new RegExp(`^${item}`) }).click(); // "Blur", not "Background blur"
-};
+const filterMenu = rail; // "^Blur" — not "Background blur"
 
 test("Filters: blur and sharpen apply as one undo step each", async ({ page }) => {
   await openEditor(page);
@@ -695,8 +693,7 @@ test("selection: polygon lasso finishes on double-click and Enter; Select menu i
   }
   await page.keyboard.press("Enter");
   await expect.poll(async () => (await selState(page))?.masked).toBe(true);
-  await page.getByText("Select ▾").click();
-  await page.getByRole("button", { name: "Invert" }).click();
+  await rail(page, "Invert selection");
   await expect.poll(async () => (await selState(page))?.box[0]).toBe(0);
   await page.keyboard.press("Control+Alt+d");
   await page.locator("dialog.feather").getByRole("button", { name: "Apply" }).click();
@@ -734,13 +731,11 @@ test("layer mask from the layer menu, mask brush (K), G cycles fill / gradient",
 
 test("background blur asks for a subject, then blurs around it", async ({ page }) => {
   await openEditor(page);
-  await page.getByText("Filters ▾").click();
-  await page.getByRole("button", { name: "Background blur" }).click();
+  await rail(page, "Background blur");
   await expect(page.locator(".editor-status")).toContainText("Select the subject first");
   await page.keyboard.press("m");
   await drag(page, [10, 10], [80, 80]);
-  await page.getByText("Filters ▾").click();
-  await page.getByRole("button", { name: "Background blur" }).click();
+  await rail(page, "Background blur");
   await page.locator("dialog.background-blur").getByRole("button", { name: "Apply" }).click();
   await expect.poll(() => page.evaluate(() => (window.__editor as EditorHook & { history: { undoLabel: string } }).history.undoLabel)).toBe("Background blur");
 });
@@ -792,7 +787,7 @@ test("annotation: L cycles line / arrow, highlighter (H), stickers window adds a
   await drag(page, [10, 80], [120, 80]);
   await expect.poll(undoLabel).toBe("Highlighter");
   const layers = await page.locator(".layers li").count();
-  await page.getByRole("button", { name: "Stickers" }).click();
+  await rail(page, "Stickers");
   const dlg = page.locator("dialog.stickers");
   await expect(dlg.getByRole("radio")).toHaveCount(11);
   await dlg.getByRole("radio", { name: "Star" }).click();
@@ -823,7 +818,7 @@ test("pasteboard: a layer dragged past the edge stays visible around the picture
   };
   await page.locator(".canvas-host canvas").focus();
   await page.keyboard.press("v");
-  const outside = [size[0] + 10, 10] as [number, number];
+  const outside = [size[0] + 3, 10] as [number, number]; // just past the right edge
   const before = await viewPx(...outside);
   await drag(page, [5, 5], [Math.round(size[0] * 0.4) + 5, 5]);
   await expect.poll(() => viewPx(...outside)).not.toEqual(before);
@@ -848,16 +843,14 @@ test("clone stamp asks for a source, then copies; content-aware fill from the Se
   await expect.poll(undoLabel).toBe("Clone stamp");
   await page.keyboard.press("m");
   await drag(page, [20, 20], [40, 40]);
-  await page.locator("summary", { hasText: "Select ▾" }).click();
-  await page.getByRole("button", { name: /^Content-aware fill/ }).click();
+  await rail(page, "Content-aware fill");
   await expect.poll(undoLabel).toBe("Content-aware fill");
 });
 
 test("Remove background hides the background with a layer mask (model faked)", async ({ page }) => {
   await openEditor(page);
   await page.evaluate(() => (window.__editor as EditorHook & { fakeSegmenter(): void }).fakeSegmenter());
-  await page.locator("summary", { hasText: "Image ▾" }).click();
-  await page.getByRole("button", { name: /^Remove background/ }).click();
+  await rail(page, "Remove background");
   await expect.poll(() => page.evaluate(() => (window.__editor as EditorHook & { history: { undoLabel: string } }).history.undoLabel)).toBe("Remove background");
   await expect(page.locator(".layers li.active canvas.mask-thumb, .layers li canvas.mask-thumb").first()).toBeVisible();
   const corner = await pixel(page, 0, 0);
@@ -879,18 +872,14 @@ test("polygon lasso: Esc drops unfinished corners, so Enter then selects nothing
   expect(await selState(page)).toBeNull();
 });
 
-test("quick fixes: menus close on an outside click; dragging layers selects no text; Alt+click eye isolates; mask brush adds a mask; picker loupe", async ({ page }) => {
+test("quick fixes: the rail's menu closes on an outside click; dragging layers selects no text; Alt+click eye isolates; mask brush adds a mask; picker loupe", async ({ page }) => {
   await openEditor(page);
   const undoLabel = () => page.evaluate(() => (window.__editor as EditorHook & { history: { undoLabel: string } }).history.undoLabel);
-  // menus
-  const image = page.locator("details.menu", { has: page.locator("summary", { hasText: "Image ▾" }) });
-  const select = page.locator("details.menu", { has: page.locator("summary", { hasText: "Select ▾" }) });
-  await image.locator("summary").click();
-  await expect(image).toHaveAttribute("open", "");
-  await select.locator("summary").click();
-  await expect(image).not.toHaveAttribute("open", ""); // opening one closes the other
+  // the rail's "Rotate & flip" list closes on a click elsewhere
+  await rail(page, "Rotate & flip");
+  await expect(page.getByRole("menu", { name: "Rotate & flip" })).toBeVisible();
   await page.locator(".editor-status").click();
-  await expect(select).not.toHaveAttribute("open", "");
+  await expect(page.getByRole("menu", { name: "Rotate & flip" })).toHaveCount(0);
   // dragging a layer row doesn't highlight text
   const rows = page.locator(".layers li");
   const a = await rows.nth(0).boundingBox();
@@ -947,4 +936,32 @@ test("selection: drag inside to move it (move cursor), arrows nudge, undo", asyn
   await expect.poll(() => selState(page)).toEqual({ box: [15, 10, 35, 25], masked: false });
   await page.keyboard.press("Control+z");
   await expect.poll(() => selState(page)).toEqual({ box: [5, 5, 25, 20], masked: false });
+});
+
+test("tool rail: groups with names, narrows to icons (remembered), tools and actions, rotate list", async ({ page }) => {
+  await openEditor(page);
+  const r = page.locator(".tool-rail");
+  await expect(r.locator(".rail-group").first()).toHaveText("Select");
+  const lasso = r.getByRole("button", { name: "Lasso", exact: true });
+  await expect(lasso.locator(".rail-label")).toBeVisible();
+  await lasso.click();
+  await expect.poll(() => page.evaluate(() => (window.__editor as EditorHook).toolId)).toBe("lasso");
+  await expect(lasso).toHaveAttribute("aria-pressed", "true");
+  await r.getByRole("button", { name: "Icons only" }).click();
+  await expect(r).toHaveClass(/narrow/);
+  await expect(lasso.locator(".rail-label")).toBeHidden();
+  await page.reload();
+  await page.locator('input[type="file"]').first().setInputFiles([fx("img0.png"), fx("img1.png")]);
+  await page.getByRole("button", { name: "Edit", exact: true }).click();
+  await expect(page.locator(".tool-rail")).toHaveClass(/narrow/);
+  await page.locator(".tool-rail").getByRole("button", { name: "Show tool names" }).click();
+  await expect(page.locator(".tool-rail")).not.toHaveClass(/narrow/);
+  const size = () => page.evaluate(() => [(window.__editor as EditorHook).doc.width, (window.__editor as EditorHook).doc.height]);
+  const before = await size();
+  await rail(page, "Rotate & flip");
+  await page.getByRole("menu", { name: "Rotate & flip" }).getByRole("menuitem", { name: "Rotate 90° right", exact: true }).click();
+  await expect.poll(size).toEqual([before[1], before[0]]);
+  await rail(page, "Select all");
+  await expect.poll(() => selState(page)).toEqual({ box: [0, 0, before[1], before[0]], masked: false });
+  await expect(page.locator("details.menu")).toHaveCount(0); // the top-bar menus are gone
 });
