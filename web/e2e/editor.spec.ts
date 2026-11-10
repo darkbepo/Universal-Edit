@@ -57,12 +57,12 @@ async function saveAs(page: Page, name: string, format: string): Promise<Buffer>
   return readFileSync(await (await download).path());
 }
 
-test("switch hidden for non-images, shown for images", async ({ page }) => {
+test("Edit disabled for non-images, enabled for images", async ({ page }) => {
   await load(page, [fx("doc.md")]);
-  await expect(page.getByRole("button", { name: "Edit", exact: true })).toBeHidden();
+  await expect(page.getByRole("button", { name: "Edit", exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "Clear" }).click();
   await page.locator('input[type="file"]').first().setInputFiles([fx("img0.png"), fx("img1.png")]);
-  await expect(page.getByRole("button", { name: "Edit", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Edit", exact: true })).toBeEnabled();
 });
 
 test("Edit opens one layer per image; Back returns to the converter", async ({ page }) => {

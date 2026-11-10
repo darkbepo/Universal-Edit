@@ -50,13 +50,20 @@ imports, but keep the defaults sensible so a user can convert with zero configur
 
 ## UI / UX requirements
 
-- **Modern and minimalistic.** One window, no menus cluttering the top.
-- Flow: **input → output format → (optional) settings → Convert**.
-  1. Input area: a large drop zone that also opens a file picker on click. Accepts multiple files.
-  2. Output format selector: only shows formats valid for the detected source type(s).
-  3. Settings panel: collapsible ("Advanced"), contents change based on source → target pair.
-  4. Convert button + progress bar + "Open output folder" when done.
-- Dark/light theme following the OS. Rounded corners, generous spacing, one accent colour.
+- **Modern and minimalistic** ("calm & refined", redesigned Nov 2026 — spec
+  `docs/superpowers/specs/2026-11-10-convert-redesign-design.md`). One wide window, no menus.
+- Flow: **input → output format → (optional) settings → Convert**. Same layout in both apps:
+  1. Top bar: app name + **Convert | Edit** switch (Edit disabled unless the files can be edited).
+  2. Left column: drop zone (the whole window while empty, a slim "Add more files" bar after),
+     then **Results** (after a run) and the **Queue** — one row per file with thumbnail, size and
+     its own progress (`file_fractions` / `fileFractions`: converters report equal slices per file).
+  3. Right column, two sideways tabs: **Convert to** (foldable category cards with icon tiles, all
+     open; folds remembered) and **Settings** (opened by the cog; "Convert to" then shrinks to a
+     strip showing the chosen format). Only formats valid for the detected inputs are shown.
+  4. Bottom bar: summary/status, save-to (desktop), overall progress, Convert / Cancel.
+  Below 900 px wide everything stacks in one column.
+- Dark/light theme following the OS. Same tokens in `gui/theme.py` and `web/src/styles.css`.
+  Icons: Tabler line icons (MIT) in `gui/icon_data.py` / `web/src/ui/icon_data.ts` (same set).
 - Never block the UI thread — all conversions run in a worker thread with progress/cancel.
 - Errors are shown inline in plain language (no raw stack traces in the UI; log them instead).
 
@@ -109,7 +116,15 @@ See `web/README.md` for commands and deployment.
   collapse). TXT → PDF wraps the text in `<pre>` HTML (UTF-8, falling back to Windows-1252).
 - **Same architecture as the desktop app:** `core/` (detect, options schema → auto form, registry,
   types — no DOM/WASM), `converters/` (declare options + targets; `run()` imports engines dynamically
-  so the page bundle stays around ~100 KB), `engines/`, `ui/`. Target ids match the desktop ones.
+  so the page bundle stays around ~100 KB), `engines/`, `ui/` (`app.ts` page, `queue.ts` queue
+  rows, `icons.ts`, `settings.ts` auto form). Target ids match the desktop ones. Test hooks the
+  e2e suite relies on: `.pill[data-target]` (format tiles), `.status`, `.results li` /
+  `a.fname`, `.results-head`, `.queue li[data-state]`, `.files-head` (queue only), `.note`,
+  `.form`, buttons "Convert", "Cancel", "Clear", "Settings" (cog), "Convert to" (strip), "Edit".
+  Tiles are hidden while Settings is open: tests choose formats with the `pick()` helper (strip →
+  tile → cog again if Settings was open), never by clicking a tile directly.
+  Playwright's own Chromium isn't always installed locally; `npx playwright test -c
+  playwright.edge.local.config.ts` (in `web/`) or the matrix script's `--channel msedge` use Edge instead.
   The image editor is `editor/` (model, no DOM) + `ui/editor/` (page), imported on demand.
 - **Cancel** = terminate the worker (kills FFmpeg's nested worker too); a new worker starts next run.
 - **Must be cross-origin isolated** (COOP/COEP): headers in `vite.config.ts` / `public/_headers`;
@@ -177,11 +192,14 @@ Primary target platform is **Windows** (`.exe`); keep code cross-platform (macOS
 src/umc/
   app.py                 # entry point: logging, QApplication, theme, main window
   gui/                   # the ONLY package that imports Qt
-    main_window.py       # drop zone, file list, format picker, settings, progress, Convert/Cancel
+    main_window.py       # top bar, left column (drop zone, results, queue), right tabs, bottom bar
     worker.py            # runs a ConversionJob on a QThread, reports via signals
     tool_dialog.py       # "LibreOffice/Pandoc needed" → Install it for me (+ manual fallbacks)
     theme.py, style.qss  # light/dark palettes + stylesheet (follows the OS colour scheme)
-    widgets/             # DropZone, FormatPicker (pills), SettingsPanel (auto form), FlowLayout
+    icons.py, icon_data.py  # Tabler line icons rendered with QtSvg, tinted to the palette
+    widgets/             # DropZone, FileQueue (painted rows, thumbnails off-thread),
+                         #   FormatPicker (category cards + tiles), SideTabs (Convert to | Settings),
+                         #   SettingsPanel (auto form), FlowLayout
     editor/              # image editor view: EditorPage (top bar, shortcuts, saving on a QThread),
                          #   EditorCanvas (zoom/pan, cached composite), ToolBar, LayersPanel, dialogs
   editor/                # image editor model — pure Python, no Qt
