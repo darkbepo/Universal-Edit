@@ -83,7 +83,8 @@ class _OcrConverter(Converter):
     def run(self, job: ConversionJob) -> list[Path]:
         o: OcrOptions = job.options
         codes = _language(o)
-        folder = tessdata.ensure(codes, job.sub_progress(0.0, 0.1), job.cancel_event)
+        # ensure() reports (fraction, message) like the installers; the first 10 % is the download.
+        folder = tessdata.ensure(codes, lambda f, m: job.report(0.1 * f, m), job.cancel_event)
         lang = "+".join(codes)
         ext = TARGETS[job.target.id][1]
         files = list(job.files)

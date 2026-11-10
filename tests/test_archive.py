@@ -119,6 +119,22 @@ def test_rar_can_be_read(tmp_path, name):
     assert names == ({"test.txt", "testdir/test.txt"} if "rar4" in name else {"test.bin"})
 
 
+@needs_bsdtar
+def test_only_link_errors_are_tolerated(monkeypatch):
+    # Windows' tar.exe can't create the RAR4 sample's symlink as a normal user; links are dropped
+    # anyway, so that alone must not fail the extraction — but any other error still must.
+    tool = archive.bsdtar_path()
+    rar4 = FIXTURES / "sample-rar4.rar"
+    link_only = (
+        "testlink: Can't create '\\\\?\\C:\\tmp\\.umc-extract\\testlink': Invalid argument\n"
+        "tar.exe: Error exit delayed from previous errors"
+    )
+    assert archive._only_link_errors(tool, rar4, link_only)
+    real_file = link_only.replace("testlink", "test.txt")
+    assert not archive._only_link_errors(tool, rar4, real_file)
+    assert not archive._only_link_errors(tool, rar4, link_only + "\ntar.exe: Damaged archive")
+
+
 def test_pack_any_files(media, tmp_path):
     files = [media / "img0.png", media / "doc.md", media / "img1.png"]
     [out] = convert(files, "pack:zip", tmp_path)

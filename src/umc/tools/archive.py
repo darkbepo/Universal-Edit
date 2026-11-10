@@ -10,6 +10,7 @@ Extraction is defensive: absolute paths, ``..`` and links are never written outs
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -187,13 +188,11 @@ def _extract_bsdtar(src, dest, password, cancel) -> list[Path]:
     try:
         process.run(args, cancel_event=cancel, error_message=f"Couldn't open “{src.name}”.")
     except ConversionError as exc:
-        shutil.rmtree(staging, ignore_errors=True)
-        text = exc.details.lower()
-        if "passphrase" in text or "encrypt" in text:
-            raise ConversionError(
-                f"“{src.name}” is encrypted. Password-protected RAR files can't be opened yet."
-            ) from exc
-        raise
+        if not _only_link_errors(tool, src, exc.details):
+            shutil.rmtree(staging, ignore_errors=True)
+            _raise_bsdtar_error(src, exc)
+        # else: only links failed (Windows won't let normal users create them); they're dropped
+        # below anyway, so everything else that was extracted is kept.
     # bsdtar refuses absolute and ``..`` paths itself; also drop links and move into place.
     out = []
     for p in sorted(staging.rglob("*")):
@@ -208,6 +207,55 @@ def _extract_bsdtar(src, dest, password, cancel) -> list[Path]:
         out.append(target)
     shutil.rmtree(staging, ignore_errors=True)
     return out
+
+
+_CANT_CREATE = re.compile(r"^(.+?): Can't create '", re.MULTILINE)
+
+
+def _link_names(tool: str, src: Path) -> set[str]:
+    """Names of the symbolic / hard links in an archive (from ``bsdtar -tv``)."""
+    from umc.tools import process
+
+    try:
+        listing = subprocess.run(
+            [tool, "-tv", "-f", str(src)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=120,
+            creationflags=process._creationflags(),
+        ).stdout
+    except (subprocess.SubprocessError, OSError):
+        return set()
+    names = set()
+    for line in listing.splitlines():
+        # "lrwxrwxrwx  0 0 0  0 Jun 10 12:00 testlink -> test.txt" / "... a link to b"
+        for sep in (" -> ", " link to "):
+            if line[:1] in ("l", "h", "-") and sep in line:
+                names.add(line.split(sep, 1)[0].rsplit(" ", 1)[-1])
+    return names
+
+
+def _only_link_errors(tool: str, src: Path, stderr: str) -> bool:
+    """True if bsdtar only failed to create links — e.g. Windows' tar.exe, which normal users
+    can't make symbolic links with. Links are never extracted anyway (see _extract_bsdtar)."""
+    failed = set(_CANT_CREATE.findall(stderr))
+    other = [
+        line
+        for line in stderr.splitlines()
+        if line.strip() and "Can't create" not in line and "Error exit delayed" not in line
+    ]
+    return bool(failed) and not other and failed <= _link_names(tool, src)
+
+
+def _raise_bsdtar_error(src: Path, exc: ConversionError) -> None:
+    text = exc.details.lower()
+    if "passphrase" in text or "encrypt" in text:
+        raise ConversionError(
+            f"“{src.name}” is encrypted. Password-protected RAR files can't be opened yet."
+        ) from exc
+    raise exc
 
 
 # --------------------------------------------------------------------------- writing
