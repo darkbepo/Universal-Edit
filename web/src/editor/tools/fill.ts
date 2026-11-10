@@ -3,7 +3,7 @@ import { opt } from "../../core/options";
 import { composite, docBounds, type EditorDoc } from "../document";
 import { Rect } from "../geometry";
 import { PatchCommand, type Command } from "../history";
-import { cropData, layerBounds, type RGBA } from "../layer";
+import { cropData, layerBounds, pasteData, type RGBA } from "../layer";
 import { blendPixel, clipRect, colorOf, Tool, type ToolContext } from "./base";
 
 /** Pixels 4-connected to (sx, sy) where `candidates` is 1. */
@@ -108,6 +108,16 @@ export class FillTool extends Tool {
     const { index, region, before } = this.pending;
     this.pending = null;
     return PatchCommand.fromRegion(this.label, doc, index, region, before);
+  }
+
+  /** The fill is applied on press; an interrupted gesture must put the pixels back. */
+  override cancel(doc: EditorDoc): Rect | null {
+    if (!this.pending) return null;
+    const { index, region, before } = this.pending;
+    this.pending = null;
+    const layer = doc.layers[index];
+    pasteData(layer.data, layer.width, before, region);
+    return region.offset(layer.x, layer.y);
   }
 }
 

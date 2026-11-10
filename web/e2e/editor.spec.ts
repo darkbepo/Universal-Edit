@@ -208,3 +208,55 @@ test("touch: two fingers don't paint", async ({ page }) => {
   expect((await pixel(page, 105, 100))[3]).toBe(0);
   expect(await page.evaluate(() => (window.__editor as EditorHook).history.canUndo)).toBe(true); // only the "Add layer"
 });
+
+// ---------------------------------------------------------------- review fixes
+const size = (page: Page) => page.evaluate(() => [(window.__editor as EditorHook).doc.width, (window.__editor as EditorHook).doc.height]);
+
+test("ctrl+s in a text field is ours, not the browser's", async ({ page }) => {
+  await openEditor(page);
+  await page.keyboard.press("t");
+  const p = await at(page, 30, 150);
+  await page.mouse.click(p.x, p.y);
+  await page.keyboard.type("Yo");
+  const prevented = await page.locator("textarea.text-box").evaluate((el) => {
+    const e = new KeyboardEvent("keydown", { key: "s", ctrlKey: true, bubbles: true, cancelable: true });
+    el.dispatchEvent(e);
+    return e.defaultPrevented;
+  });
+  expect(prevented).toBe(true);
+  await expect(page.locator("dialog.save[open]")).toBeVisible();
+  await expect.poll(() => page.evaluate(() => (window.__editor as EditorHook).doc.layers.at(-1)?.name)).toBe("Yo");
+});
+
+test("Enter and Space press a focused button", async ({ page }) => {
+  await openEditor(page);
+  await page.getByRole("button", { name: "Add" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".layers li")).toHaveCount(3);
+  await page.keyboard.press(" ");
+  await expect(page.locator(".layers li")).toHaveCount(4);
+});
+
+test("double-click renames a layer; Esc cancels", async ({ page }) => {
+  await openEditor(page);
+  await page.locator(".layers li .lname").first().dblclick();
+  await page.locator(".layers input.rename").fill("Sky");
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".layers li .lname").first()).toHaveText("Sky");
+  await page.locator(".layers li .lname").first().dblclick();
+  await page.locator(".layers input.rename").fill("Nope");
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".layers li .lname").first()).toHaveText("Sky");
+});
+
+test("crop: Apply button, and Esc discards", async ({ page }) => {
+  await openEditor(page);
+  await page.keyboard.press("c");
+  await drag(page, [0, 0], [200, 100]);
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Enter");
+  expect(await size(page)).toEqual([321, 241]);
+  await drag(page, [0, 0], [200, 100]);
+  await page.getByRole("button", { name: "Apply crop" }).click();
+  await expect.poll(() => size(page)).toEqual([200, 100]);
+});

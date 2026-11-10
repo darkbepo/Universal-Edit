@@ -362,3 +362,21 @@ def test_shape_preview_is_bounded_on_large_canvas():
     assert elapsed < 1.0
     tool.release(doc, 5000, 4000, c)
     assert doc.active_layer.image.getpixel((0, 1500))[3] == 0  # outline is off-canvas
+
+
+def test_every_tool_cancels_mid_gesture():
+    """An interrupted gesture (Esc, Ctrl+Z while the mouse is down) must leave no trace."""
+    from umc.core import options as opts
+    from umc.editor.tools import TOOLS
+
+    for cls in TOOLS:
+        doc = Document(40, 40, [Layer("bg", Image.new("RGBA", (40, 40), (10, 20, 30, 255)))])
+        before = doc.layers[0].image.tobytes()
+        tool = cls()
+        o = opts.build(cls.options_cls, opts.defaults(cls.options_cls)) if cls.options_cls else None
+        c = ctx(o)
+        tool.press(doc, 10, 10, c)
+        tool.move(doc, 30, 25, c)
+        tool.cancel(doc)
+        assert doc.layers[0].image.tobytes() == before, cls.id
+        assert tool.release(doc, 30, 25, c) is None, cls.id

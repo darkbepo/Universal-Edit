@@ -4,6 +4,7 @@ import type { EditorDoc } from "../../editor/document";
 import type { Command } from "../../editor/history";
 import type { Layer, RGBA } from "../../editor/layer";
 import * as ops from "../../editor/ops";
+import { sampleThumbnail } from "../../editor/ora";
 import type { Tool } from "../../editor/tools/base";
 import { SettingsForm } from "../settings";
 
@@ -167,13 +168,11 @@ export class ToolSettings {
 const THUMB = 40;
 
 function thumbnail(layer: Layer): HTMLCanvasElement {
+  // Point-sampled (no copy of the layer), so it's cheap enough to redo after every change.
+  const t = sampleThumbnail(layer, THUMB);
   const c = h("canvas", { width: THUMB, height: THUMB, class: "thumb" });
   const ctx = c.getContext("2d") as CanvasRenderingContext2D;
-  const src = new OffscreenCanvas(layer.width, layer.height);
-  (src.getContext("2d") as OffscreenCanvasRenderingContext2D).putImageData(new ImageData(new Uint8ClampedArray(layer.data), layer.width, layer.height), 0, 0);
-  const s = Math.min(THUMB / layer.width, THUMB / layer.height);
-  ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(src, (THUMB - layer.width * s) / 2, (THUMB - layer.height * s) / 2, layer.width * s, layer.height * s);
+  ctx.putImageData(new ImageData(t.data as Uint8ClampedArray<ArrayBuffer>, t.width, t.height), Math.floor((THUMB - t.width) / 2), Math.floor((THUMB - t.height) / 2));
   return c;
 }
 
@@ -184,7 +183,6 @@ export class LayersPanel {
   private opacityOut = h("output");
   private buttons: Record<string, HTMLButtonElement> = {};
   private doc: EditorDoc | null = null;
-  private thumbs = new Map<Uint8ClampedArray, HTMLCanvasElement>();
 
   constructor(
     private onCommand: (cmd: Command) => void,
@@ -223,20 +221,24 @@ export class LayersPanel {
   render(doc: EditorDoc): void {
     this.doc = doc;
     this.list.replaceChildren();
-    const live = new Set<Uint8ClampedArray>();
     for (let i = doc.layers.length - 1; i >= 0; i--) {
       const layer = doc.layers[i];
-      live.add(layer.data);
       const eye = h("input", { type: "checkbox", checked: layer.visible, title: "Show / hide", ariaLabel: `Show ${layer.name}` });
       eye.addEventListener("click", (e) => e.stopPropagation());
       eye.addEventListener("change", () => this.run((d) => ops.setVisible(d, i, eye.checked)));
       const name = h("span", { class: "lname", title: "Double-click to rename" }, layer.name);
-      name.addEventListener("dblclick", () => {
+      const li = h("li", { class: i === doc.active ? "active" : "", tabIndex: 0, ariaLabel: `Layer ${layer.name}` }, eye, thumbnail(layer), name);
+      const startRename = () => {
         const input = h("input", { type: "text", value: layer.name, class: "rename", ariaLabel: "Layer name" });
+        let finished = false;
         const done = (save: boolean) => {
+          if (finished) return;
+          finished = true;
           if (save) this.run((d) => ops.renameLayer(d, i, input.value));
-          else this.render(doc);
+          this.render(doc); // also restores the name if nothing changed
         };
+        input.addEventListener("click", (e) => e.stopPropagation());
+        input.addEventListener("dblclick", (e) => e.stopPropagation());
         input.addEventListener("keydown", (e) => {
           if (e.key === "Enter") done(true);
           if (e.key === "Escape") done(false);
@@ -246,21 +248,29 @@ export class LayersPanel {
         name.replaceWith(input);
         input.focus();
         input.select();
+      };
+      li.addEventListener("dblclick", startRename);
+      li.addEventListener("keydown", (e) => {
+        if (e.key === "F2") startRename();
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          li.click();
+        }
       });
-      let thumb = this.thumbs.get(layer.data);
-      if (!thumb) {
-        thumb = thumbnail(layer);
-        this.thumbs.set(layer.data, thumb);
-      }
-      const li = h("li", { class: i === doc.active ? "active" : "" }, eye, thumb, name);
       li.addEventListener("click", () => {
+        if (doc.active === i) return; // no rebuild: keeps double-click-to-rename working
         ops.selectLayer(doc, i);
-        this.render(doc);
+        for (const row of this.list.children) row.classList.toggle("active", row === li);
+        this.syncControls();
         this.onActive();
       });
       this.list.append(li);
     }
-    for (const key of [...this.thumbs.keys()]) if (!live.has(key)) this.thumbs.delete(key);
+    this.syncControls();
+  }
+
+  private syncControls(): void {
+    const doc = this.doc as EditorDoc;
     const active = doc.layers[doc.active];
     this.opacity.value = String(Math.round(active.opacity * 100));
     this.opacityOut.textContent = `${this.opacity.value} %`;
@@ -271,11 +281,8 @@ export class LayersPanel {
     this.buttons.Down.disabled = doc.active === 0;
   }
 
-  /** Pixels of the active layer changed: redraw just its thumbnail. */
+  /** Something changed (pixels, layers, undo): redraw the list — thumbnails are cheap samples. */
   refreshActiveThumb(): void {
-    if (!this.doc) return;
-    const layer = this.doc.layers[this.doc.active];
-    this.thumbs.delete(layer.data);
-    this.render(this.doc);
+    if (this.doc && !this.list.querySelector("input.rename")) this.render(this.doc);
   }
 }

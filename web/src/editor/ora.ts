@@ -32,6 +32,29 @@ export function thumbnail(data: Uint8ClampedArray, w: number, h: number, max = 2
   return { data: out, width: tw, height: th };
 }
 
+/** A small preview of a layer by point-sampling (3 × 3 per thumbnail pixel) — no layer copy,
+ *  cost independent of the layer size, so it can run after every stroke. */
+export function sampleThumbnail(layer: { width: number; height: number; data: Uint8ClampedArray }, max = 40): { data: Uint8ClampedArray; width: number; height: number } {
+  const { width: w, height: h, data } = layer;
+  const scale = Math.min(max / w, max / h, 1);
+  const tw = Math.max(1, Math.round(w * scale));
+  const th = Math.max(1, Math.round(h * scale));
+  const out = new Uint8ClampedArray(tw * th * 4);
+  for (let ty = 0; ty < th; ty++)
+    for (let tx = 0; tx < tw; tx++) {
+      const sum = [0, 0, 0, 0];
+      for (let sy = 0; sy < 3; sy++)
+        for (let sx = 0; sx < 3; sx++) {
+          const x = Math.min(w - 1, Math.floor(((tx + (sx + 0.5) / 3) * w) / tw));
+          const y = Math.min(h - 1, Math.floor(((ty + (sy + 0.5) / 3) * h) / th));
+          const i = (y * w + x) * 4;
+          for (let c = 0; c < 4; c++) sum[c] += data[i + c];
+        }
+      for (let c = 0; c < 4; c++) out[(ty * tw + tx) * 4 + c] = sum[c] / 9 + 0.5;
+    }
+  return { data: out, width: tw, height: th };
+}
+
 export async function writeOra(doc: EditorDoc, png: PngCodec): Promise<Uint8Array> {
   const files: Zippable = { mimetype: [strToU8("image/openraster"), { level: 0 }] };
   const entries: string[] = [];

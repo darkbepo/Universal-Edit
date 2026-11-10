@@ -30,6 +30,7 @@ function modal<T>(cls: string, title: string, body: HTMLElement[], okLabel: stri
         e.preventDefault();
         finish(okLabel);
       }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") e.preventDefault(); // not the browser's "Save page"
       e.stopPropagation(); // never reach the editor's shortcuts
     });
     document.body.append(dlg);

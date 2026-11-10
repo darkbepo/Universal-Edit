@@ -63,6 +63,7 @@ export class EditorPage {
   private saveBtn: HTMLButtonElement;
   private saveAsBtn: HTMLButtonElement;
   private textBox: HTMLTextAreaElement | null = null;
+  private cropActions!: HTMLElement;
   private textAnchor: [number, number] = [0, 0];
   private committing = false;
   private sources: string[] = [];
@@ -115,7 +116,11 @@ export class EditorPage {
       btn("Fit", "Fit to window (Ctrl+0)", () => this.canvas.fit()), btn("100 %", "Actual pixels (Ctrl+1)", () => this.canvas.setZoom(1)),
       h("span", { class: "gap" }), imageMenu,
       h("div", { class: "spacer" }), this.saveAsBtn, this.saveBtn);
-    const side = h("div", { class: "editor-side" }, this.settings.el, h("div", { class: "section" }, "Colours"), this.swatches.el, this.layers.el);
+    // Crop needs buttons too: Enter isn't available on touch screens.
+    this.cropActions = h("div", { class: "crop-actions", hidden: true },
+      h("div", { class: "hint" }, "Drag a rectangle, then apply it (Enter) or cancel (Esc)."),
+      h("div", { class: "row" }, btn("Apply crop", "Crop to the rectangle (Enter)", () => this.applyCrop(), "primary small"), btn("Cancel", "Discard the rectangle (Esc)", () => this.discardCrop())));
+    const side = h("div", { class: "editor-side" }, this.settings.el, this.cropActions, h("div", { class: "section" }, "Colours"), this.swatches.el, this.layers.el);
     this.el = h("div", { class: "editor", hidden: true },
       top,
       h("div", { class: "editor-body" }, this.toolBar.el, this.canvas.el, side),
@@ -259,6 +264,7 @@ export class EditorPage {
     this.canvas.setTool(tool);
     this.toolBar.select(id);
     this.settings.show(tool);
+    if (this.cropActions) this.cropActions.hidden = id !== "crop";
   }
 
   private push(cmd: Command | null): void {
@@ -302,9 +308,19 @@ export class EditorPage {
   private key(e: KeyboardEvent): void {
     if (!this.active || !this.doc) return;
     const t = e.target as HTMLElement;
-    if (t.closest("dialog") || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName) || t.isContentEditable) return;
     const k = e.key.toLowerCase();
     const mod = e.ctrlKey || e.metaKey;
+    // Ctrl+S is always ours — never the browser's "Save page" — even while typing.
+    if (mod && k === "s") {
+      e.preventDefault();
+      if (t.closest("dialog")) return;
+      this.canvas.cancelGesture();
+      void (e.shiftKey ? this.saveAs() : this.save());
+      return;
+    }
+    if (t.closest("dialog") || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName) || t.isContentEditable) return;
+    // Enter / Space on a focused button, menu or layer row must press it, not run a shortcut.
+    if ((k === "enter" || k === " ") && t !== document.body && t !== this.canvas.view && t !== this.el) return;
     const run = (fn: () => void) => {
       e.preventDefault();
       this.canvas.cancelGesture();
@@ -313,7 +329,6 @@ export class EditorPage {
     if (mod) {
       if (k === "z" && !e.shiftKey) run(() => this.canvas.undo());
       else if (k === "y" || (k === "z" && e.shiftKey)) run(() => this.canvas.redo());
-      else if (k === "s") run(() => void (e.shiftKey ? this.saveAs() : this.save()));
       else if (k === "a") run(() => this.push(selectAll(this.doc as EditorDoc)));
       else if (k === "d") run(() => this.push(deselect(this.doc as EditorDoc)));
       else if (k === "0") run(() => this.canvas.fit());
@@ -328,7 +343,7 @@ export class EditorPage {
     }
     if (k === "delete" || k === "backspace") return run(() => this.push(clearSelection(this.doc as EditorDoc)));
     if (k === "enter") return run(() => this.applyCrop());
-    if (k === "escape") return run(() => this.canvas.cancelGesture());
+    if (k === "escape") return run(() => this.discardCrop());
     if (k === "x") return run(() => this.swatches.swap());
     if (k === "[" || k === "]") return run(() => this.settings.changeSize(this.tool, k === "]" ? 1.2 : 1 / 1.2));
     if (k === "u") return run(() => this.selectTool(this.tool.id === "rect" ? "ellipse" : "rect"));
@@ -336,9 +351,20 @@ export class EditorPage {
     if (tool) run(() => this.selectTool(tool.id));
   }
 
+  private discardCrop(): void {
+    if (this.tool.id === "crop" && this.doc) {
+      this.tool.cancel(this.doc);
+      this.canvas.draw();
+    }
+  }
+
   private applyCrop(): void {
     const crop = this.tool as unknown as { pending?: import("../../editor/geometry").Rect | null };
-    if (!this.doc || !crop.pending) return;
+    if (!this.doc) return;
+    if (!crop.pending) {
+      if (this.tool.id === "crop") this.showMessage("Drag a rectangle on the picture first.");
+      return;
+    }
     const r = crop.pending;
     crop.pending = null;
     this.push(ops.crop(this.doc, r));

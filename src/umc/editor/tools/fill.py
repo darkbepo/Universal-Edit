@@ -116,6 +116,16 @@ class FillTool(Tool):
         self._pending = None
         return PatchCommand.from_region(self.label, doc, idx, region, before)
 
+    def cancel(self, doc: Document) -> Rect | None:
+        """The fill is applied on press; an interrupted gesture must put the pixels back."""
+        if self._pending is None:
+            return None
+        idx, region, before = self._pending
+        self._pending = None
+        layer = doc.layers[idx]
+        layer.image.paste(before, (region.x0, region.y0))
+        return region.offset(layer.x, layer.y)
+
 
 class PickerTool(Tool):
     id, label, shortcut = "picker", "Colour picker", "I"

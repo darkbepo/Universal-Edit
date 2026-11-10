@@ -15,7 +15,22 @@ export class ConversionClient {
     return this.worker;
   }
 
+  // The worker runs one job at a time: overlapping requests (the converter page and the image
+  // editor share this client) wait their turn instead of overwriting each other's handlers.
+  private tail: Promise<unknown> = Promise.resolve();
+
   run(
+    target: Target,
+    files: InputFile[],
+    options: Values,
+    onProgress: (fraction: number, message: string) => void,
+  ): Promise<OutputFile[]> {
+    const job = this.tail.then(() => this.runNow(target, files, options, onProgress));
+    this.tail = job.catch(() => undefined);
+    return job;
+  }
+
+  private runNow(
     target: Target,
     files: InputFile[],
     options: Values,
