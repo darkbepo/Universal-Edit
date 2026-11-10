@@ -6,11 +6,13 @@ import math
 from dataclasses import dataclass
 
 import numpy as np
+from PIL import Image
 
 from umc.core.options import opt
 from umc.editor.document import Document
 from umc.editor.geometry import Rect
 from umc.editor.history import Command, PatchCommand
+from umc.editor.layer import Layer
 from umc.editor.tools.base import (
     Tool,
     ToolContext,
@@ -173,3 +175,67 @@ class EraserTool(_StrokeTool):
     id, label, shortcut = "eraser", "Eraser", "E"
     options_cls = EraserOptions
     erase = True
+
+
+class MaskBrushTool(_StrokeTool):
+    """Paints the active layer's mask: left button hides (black), right button shows (white).
+
+    It paints an RGBA stand-in of the mask with the normal brush and copies its grey back into
+    the mask after every dab; undo is a ``MaskPatchCommand``.
+    """
+
+    id, label, shortcut = "mask_brush", "Mask brush", "K"
+    options_cls = BrushOptions
+
+    def press(self, doc: Document, x: float, y: float, ctx: ToolContext) -> Rect | None:
+        layer = doc.active_layer
+        if layer.mask is None:
+            self._layer_index = None
+            return None
+        grey = layer.mask
+        self._proxy = Layer(
+            layer.name,
+            Image.merge("RGBA", (grey, grey, grey, Image.new("L", grey.size, 255))),
+            layer.x,
+            layer.y,
+        )
+        self._mask_before = grey.copy()
+        black = (0, 0, 0, 255) if ctx.button == "left" else (255, 255, 255, 255)
+        ctx = ToolContext(black, black, ctx.options, ctx.shift, "left", ctx.font_family)
+        return super().press(doc, x, y, ctx)
+
+    def _target(self, doc: Document, index: int | None = None):
+        return self._proxy
+
+    def _dab(self, doc: Document, x: float, y: float, ctx: ToolContext) -> Rect | None:
+        r = super()._dab(doc, x, y, ctx)
+        if r is not None:
+            layer = doc.layers[self._layer_index]
+            part = r.offset(-layer.x, -layer.y)
+            layer.mask.paste(self._proxy.image.getchannel("R").crop(part.box), (part.x0, part.y0))
+        return r
+
+    def release(self, doc: Document, x: float, y: float, ctx: ToolContext) -> Command | None:
+        if self._layer_index is None:
+            return None
+        idx = self._layer_index
+        self.move(doc, x, y, ctx)
+        self._layer_index = None
+        dirty, self._tiles = self._dirty, {}
+        if dirty is None:
+            return None
+        from umc.editor.history import MaskPatchCommand
+
+        mask = doc.layers[idx].mask
+        return MaskPatchCommand(
+            self.label, idx, dirty, self._mask_before.crop(dirty.box), mask.crop(dirty.box)
+        )
+
+    def cancel(self, doc: Document) -> Rect | None:
+        if self._layer_index is None or self._dirty is None:
+            self._layer_index = None
+            return None
+        layer = doc.layers[self._layer_index]
+        layer.mask.paste(self._mask_before.crop(self._dirty.box), (self._dirty.x0, self._dirty.y0))
+        self._layer_index, self._tiles = None, {}
+        return self._dirty.offset(layer.x, layer.y)

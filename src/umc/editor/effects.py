@@ -9,6 +9,7 @@ effects measured in pixels (blur radius…) shrink with it.
 from __future__ import annotations
 
 import math
+from contextlib import contextmanager
 from typing import Protocol
 
 from PIL import Image
@@ -35,6 +36,29 @@ def margin(effect: Effect) -> int:
     """
     fn = getattr(effect, "margin", None)
     return int(fn()) if fn is not None else 0
+
+
+@contextmanager
+def _scope(doc: Document, effect: Effect):
+    """Effects with ``outside_selection`` (background blur) work on the inverted, softened
+    selection; the real selection is put back afterwards."""
+    soften = getattr(effect, "outside_selection", None)
+    if soften is None:
+        yield True
+        return
+    if doc.selection is None:  # nothing selected = no subject: nothing to blur around
+        yield False
+        return
+    from umc.editor import selection as sel
+
+    saved = (doc.selection, doc.selection_mask)
+    try:
+        sel.invert(doc)
+        if soften > 0:
+            sel.feather(doc, soften)
+        yield True
+    finally:
+        doc.selection, doc.selection_mask = saved
 
 
 def region_image(doc: Document) -> Image.Image | None:
@@ -79,11 +103,12 @@ def preview(doc: Document, effect: Effect, max_pixels: int = PREVIEW_PIXELS) -> 
     """
     layer = doc.active_layer
     img = layer.image.copy()
-    region = clip_rect(doc, layer)
-    if region.empty or effect.identity:
-        return img
-    img.paste(_run(layer.image, region, effect, max_pixels), (region.x0, region.y0))
-    _masked(doc, img, layer, region)
+    with _scope(doc, effect) as ok:
+        region = clip_rect(doc, layer)
+        if not ok or region.empty or effect.identity:
+            return img
+        img.paste(_run(layer.image, region, effect, max_pixels), (region.x0, region.y0))
+        _masked(doc, img, layer, region)
     return img
 
 
@@ -101,6 +126,11 @@ def apply_to_document(doc: Document, effect: Effect, label: str) -> Command | No
     """Apply ``effect`` to the active layer inside the selection — one undo step."""
     if effect.identity:
         return None
+    with _scope(doc, effect) as ok:
+        return _apply(doc, effect, label) if ok else None
+
+
+def _apply(doc: Document, effect: Effect, label: str) -> Command | None:
     layer = doc.active_layer
     region = clip_rect(doc, layer)
     if region.empty:

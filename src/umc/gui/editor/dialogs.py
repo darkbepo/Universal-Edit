@@ -771,6 +771,36 @@ class FeatherDialog(QDialog):
         form.addRow(_buttons(self))
 
 
+class BackgroundBlurDialog(_AdjustDialog):
+    """Blur everything outside the selection (the subject stays sharp)."""
+
+    title = "Background blur"
+
+    def __init__(self, page: EditorPage) -> None:
+        super().__init__(page)
+        form = QFormLayout()
+        self.radius = _ValueSlider(0, 500, self.changed, 0.1, "{:.1f} px")
+        self.soften = _ValueSlider(0, 400, self.changed, 0.1, "{:.1f} px")
+        self.radius.setToolTip("How blurred the background gets (px)")
+        self.soften.setToolTip("How gradually the sharp subject turns into the blur (px)")
+        form.addRow("Blur", self.radius)
+        form.addRow("Soft edge", self.soften)
+        hint = QLabel("Everything outside the selection is blurred — select the subject first.")
+        hint.setObjectName("Muted")
+        hint.setWordWrap(True)
+        self.body.addLayout(form)
+        self.body.addWidget(hint)
+        self.radius.set_value(8)
+        self.soften.set_value(4)
+
+    def effect(self) -> effects.Effect:
+        return filters.BackgroundBlur(round(self.radius.value(), 1), round(self.soften.value(), 1))
+
+    def reset(self) -> None:
+        self.radius.set_value(0)
+        self.soften.set_value(4)
+
+
 class SaveOptionsDialog(QDialog):
     def __init__(self, target_id: str, values: dict[str, Any], parent=None) -> None:
         super().__init__(parent)

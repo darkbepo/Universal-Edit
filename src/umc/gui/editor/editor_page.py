@@ -38,6 +38,7 @@ from umc.gui import theme
 from umc.gui.editor.canvas import EditorCanvas, pil_to_qimage, qimage_to_pil
 from umc.gui.editor.crop_bar import CropBar
 from umc.gui.editor.dialogs import (
+    BackgroundBlurDialog,
     BlurDialog,
     CanvasSizeDialog,
     CurvesDialog,
@@ -66,6 +67,7 @@ ADJUST_DIALOGS = {
     "blur": (BlurDialog, "Blur"),
     "sharpen": (SharpenDialog, "Sharpen"),
     "looks": (LooksDialog, "Look"),
+    "background_blur": (BackgroundBlurDialog, "Background blur"),
 }
 # Marks a clipboard image as ours and remembers where on the canvas it was copied from.
 CLIP_MIME = "application/x-umc-editor-clip"
@@ -278,7 +280,12 @@ class EditorPage(QWidget):
         filter_button.setToolTip("Blur, sharpen and one-click looks for the selected layer")
         filter_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         filter_menu = QMenu(filter_button)
-        for label, op in (("Looks…", "looks"), ("Blur…", "blur"), ("Sharpen…", "sharpen")):
+        for label, op in (
+            ("Looks…", "looks"),
+            ("Blur…", "blur"),
+            ("Background blur… (portraits)", "background_blur"),
+            ("Sharpen…", "sharpen"),
+        ):
             filter_menu.addAction(label, lambda o=op: self.run_op(o))
         filter_button.setMenu(filter_menu)
         lay.addWidget(filter_button)
@@ -604,6 +611,11 @@ class EditorPage(QWidget):
                     self.show_message("Select an area first (rectangle select, M).")
                     return
                 cmd = ops.crop(doc, doc.selection)
+            elif name == "background_blur" and doc.selection is None:
+                self.show_message(
+                    "Select the subject first (lasso, magic wand…): what is around it gets blurred."
+                )
+                return
             elif name in ADJUST_DIALOGS:
                 dlg = ADJUST_DIALOGS[name][0](self)
                 if dlg.exec():

@@ -452,3 +452,50 @@ def nudge_layers(doc: Document, indices, dx: int, dy: int) -> Command | None:
     return _change(
         doc, "Move", offset_layers(doc, doc.layers, indices, dx, dy), doc.active, set(doc.selected)
     )
+
+
+# ------------------------------------------------------------------ layer masks
+
+
+def add_mask(
+    doc: Document, index: int | None = None, from_selection: bool = False
+) -> Command | None:
+    """Give a layer a mask: all white (shows everything), or shaped like the selection."""
+    i = doc.active if index is None else index
+    layer = doc.layers[i]
+    if layer.mask is not None:
+        return None
+    mask = Image.new("L", layer.image.size, 255)
+    if from_selection and doc.selection is not None:
+        from umc.editor.selection import full_mask
+
+        canvas = full_mask(doc)
+        mask = Image.new("L", layer.image.size, 0)
+        mask.paste(canvas, (-layer.x, -layer.y))
+    label = "Mask from selection" if from_selection else "Add layer mask"
+    return _replace(doc, i, label, replace(layer, mask=mask))
+
+
+def delete_mask(doc: Document, index: int | None = None) -> Command | None:
+    i = doc.active if index is None else index
+    if doc.layers[i].mask is None:
+        return None
+    return _replace(doc, i, "Delete layer mask", replace(doc.layers[i], mask=None))
+
+
+def apply_mask(doc: Document, index: int | None = None) -> Command | None:
+    """Bake the mask into the layer's pixels (alpha) and drop it."""
+    i = doc.active if index is None else index
+    layer = doc.layers[i]
+    if layer.mask is None:
+        return None
+    return _replace(doc, i, "Apply layer mask", replace(layer, image=layer.pixels(), mask=None))
+
+
+def invert_mask(doc: Document, index: int | None = None) -> Command | None:
+    i = doc.active if index is None else index
+    layer = doc.layers[i]
+    if layer.mask is None:
+        return None
+    flipped = Image.eval(layer.mask, lambda v: 255 - v)
+    return _replace(doc, i, "Invert layer mask", replace(layer, mask=flipped))

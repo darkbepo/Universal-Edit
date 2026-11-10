@@ -67,6 +67,28 @@ class Sharpen:
         return Image.fromarray(np.clip(np.floor(out + 0.5), 0, 255).astype(np.uint8), "RGBA")
 
 
+@dataclass(frozen=True)
+class BackgroundBlur:
+    """Blur everything outside the selection (select the person first), with a soft edge."""
+
+    radius: float = 8.0  # px
+    soften: float = 4.0  # px: how gradually the sharp subject turns into the blurred background
+
+    @property
+    def identity(self) -> bool:
+        return self.radius <= 0
+
+    @property
+    def outside_selection(self) -> float:  # effects.py inverts + feathers the selection
+        return self.soften
+
+    def margin(self) -> int:
+        return math.ceil(3 * self.radius)
+
+    def __call__(self, image: Image.Image, scale: float = 1.0) -> Image.Image:
+        return Blur(self.radius)(image, scale)
+
+
 # The same looks as web/src/editor/looks.json: name → (label, steps).
 LOOKS: dict[str, tuple[str, tuple[dict, ...]]] = {
     "warm": ("Warm", ({"temperature": 35, "vibrance": 15},)),

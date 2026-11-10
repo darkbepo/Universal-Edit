@@ -49,6 +49,20 @@ def tool_icon(tool_id: str, color: str) -> QIcon:
             ((42, 24), (36, 19), (36, 29)),
         ):
             p.drawPolyline([QPointF(*a), QPointF(*tip), QPointF(*b)])
+    elif tool_id == "mask_brush":
+        p.drawRoundedRect(QRectF(8, 8, 32, 32), 6, 6)
+        p.setBrush(QColor(color))
+        p.drawPie(QRectF(14, 14, 20, 20), 90 * 16, 180 * 16)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+    elif tool_id == "gradient":
+        p.drawRoundedRect(QRectF(8, 10, 32, 28), 4, 4)
+        for i, x in enumerate((14, 19, 24, 29, 34)):
+            c = QColor(color)
+            c.setAlphaF(1 - i * 0.2)
+            pen2 = QPen(c, 3)
+            p.setPen(pen2)
+            p.drawLine(QPointF(x, 14), QPointF(x, 34))
+        p.setPen(pen)
     elif tool_id == "brush":
         p.drawLine(QPointF(34, 10), QPointF(20, 26))
         path = QPainterPath(QPointF(20, 26))

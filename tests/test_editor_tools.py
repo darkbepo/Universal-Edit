@@ -165,7 +165,7 @@ def test_tools_registry_order():
     from umc.editor.tools import TOOLS
 
     ids = [t.id for t in TOOLS]
-    assert ids[:5] == ["move", "brush", "eraser", "fill", "picker"]
+    assert ids[:7] == ["move", "brush", "eraser", "mask_brush", "fill", "gradient", "picker"]
     assert len(set(ids)) == len(ids)
 
 
@@ -311,7 +311,9 @@ def test_registry_has_all_tools():
         "move",
         "brush",
         "eraser",
+        "mask_brush",
         "fill",
+        "gradient",
         "picker",
         "line",
         "rect",

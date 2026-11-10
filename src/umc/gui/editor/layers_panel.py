@@ -45,6 +45,8 @@ from umc.gui import theme
 from umc.gui.editor.canvas import pil_to_qimage
 
 THUMB = 40
+MASK_THUMB = 26
+MASK_ROLE = Qt.ItemDataRole.UserRole + 1  # a QPixmap of the layer's mask, if it has one
 ARROW_W = 22  # width of the up / down arrow column at the right of each row
 
 
@@ -58,6 +60,14 @@ def thumbnail(img: Image.Image) -> QIcon:
                 bg.paste((215, 215, 215, 255), (x, y, x + 8, y + 8))
     bg.alpha_composite(t, ((THUMB - t.width) // 2, (THUMB - t.height) // 2))
     return QIcon(QPixmap.fromImage(pil_to_qimage(bg)))
+
+
+def mask_thumbnail(mask: Image.Image) -> QPixmap:
+    t = mask.copy()
+    t.thumbnail((MASK_THUMB, MASK_THUMB))
+    bg = Image.new("L", (MASK_THUMB, MASK_THUMB), 128)
+    bg.paste(t, ((MASK_THUMB - t.width) // 2, (MASK_THUMB - t.height) // 2))
+    return QPixmap.fromImage(pil_to_qimage(bg.convert("RGBA")))
 
 
 def arrow_rects(row_rect: QRect) -> tuple[QRect, QRect]:
@@ -80,9 +90,15 @@ class LayerDelegate(QStyledItemDelegate):
         widget = opt.widget
         style = widget.style() if widget is not None else QApplication.style()
         text_rect = style.subElementRect(QStyle.SubElement.SE_ItemViewItemText, opt, widget)
-        width = max(10, text_rect.width() - ARROW_W - 6)
+        mask = index.data(MASK_ROLE)
+        extra = MASK_THUMB + 6 if mask is not None else 0
+        width = max(10, text_rect.width() - ARROW_W - 6 - extra)
         opt.text = opt.fontMetrics.elidedText(opt.text, Qt.TextElideMode.ElideRight, width)
         style.drawControl(QStyle.ControlElement.CE_ItemViewItem, opt, painter, widget)
+        if mask is not None:  # the layer mask, left of the arrows
+            r = option.rect
+            x = r.right() - ARROW_W - 6 - MASK_THUMB
+            painter.drawPixmap(x, r.center().y() - MASK_THUMB // 2, mask)
         self._paint_arrows(painter, option.rect, index.row())
 
     def _paint_arrows(self, painter: QPainter, rect: QRect, row: int) -> None:
@@ -287,6 +303,8 @@ class LayersPanel(QWidget):
             visible = item.checkState() == Qt.CheckState.Checked
             if item.text() != layer.name or visible != layer.visible:
                 return False
+            if (item.data(MASK_ROLE) is None) != (layer.mask is None):  # mask added / removed
+                return False
         return (
             self.list.currentRow() == self._index_to_row(doc.active)
             and self.selected_rows() == {self._index_to_row(i) for i in doc.selected_indices}
@@ -300,6 +318,9 @@ class LayersPanel(QWidget):
             self.list.clear()
             for layer in reversed(doc.layers):
                 item = QListWidgetItem(thumbnail(layer.image), layer.name)
+                if layer.mask is not None:
+                    item.setData(MASK_ROLE, mask_thumbnail(layer.mask))
+                    item.setToolTip("This layer has a mask: black hides, white shows")
                 item.setFlags(
                     Qt.ItemFlag.ItemIsEnabled
                     | Qt.ItemFlag.ItemIsSelectable
@@ -329,6 +350,8 @@ class LayersPanel(QWidget):
         for row in range(self.list.count()):
             layer = self.doc.layers[self._row_to_index(row)]
             self.list.item(row).setIcon(thumbnail(layer.image))
+            if layer.mask is not None:
+                self.list.item(row).setData(MASK_ROLE, mask_thumbnail(layer.mask))
 
     def _sync_controls(self) -> None:
         doc = self.doc
@@ -458,6 +481,23 @@ class LayersPanel(QWidget):
         if any(not doc.layers[i].visible for i in chosen):
             menu.addAction(f"Show {word}", lambda: self.set_visible(True))
         menu.addAction("Select all layers", self.select_all)
+        if not many:  # layer mask actions for the one selected layer
+            menu.addSeparator()
+            layer = doc.layers[doc.active]
+            if layer.mask is None:
+                menu.addAction("Add layer mask", lambda: self._run(lambda d: ops.add_mask(d)))
+                if doc.selection is not None:
+                    menu.addAction(
+                        "Mask from selection",
+                        lambda: self._run(lambda d: ops.add_mask(d, from_selection=True)),
+                    )
+            else:
+                for label, fn in (
+                    ("Invert mask", ops.invert_mask),
+                    ("Apply mask (bake it in)", ops.apply_mask),
+                    ("Delete mask", ops.delete_mask),
+                ):
+                    menu.addAction(label, lambda f=fn: self._run(lambda d: f(d)))
         return menu
 
     def _show_menu(self, pos: QPoint) -> None:

@@ -964,3 +964,60 @@ def test_select_menu_invert_and_feather(page, qtbot, monkeypatch):
     monkeypatch.setattr(FeatherDialog, "exec", lambda self: 1)
     qtbot.keyClick(page.canvas, Qt.Key.Key_F6, SHIFT)
     assert page.doc.selection_mask is not None and page.history.undo_label == "Feather selection"
+
+
+# ------------------------------------------------------------- masks, gradient, background blur
+
+
+def test_layer_mask_menu_thumbnail_and_mask_brush(page, qtbot):
+    from umc.gui.editor.layers_panel import MASK_ROLE
+
+    page.layers.list.setCurrentRow(0)
+    actions = {a.text(): a for a in page.layers.build_menu(0).actions() if a.text()}
+    actions["Add layer mask"].trigger()
+    assert page.doc.active_layer.mask is not None
+    assert page.layers.list.item(0).data(MASK_ROLE) is not None
+    page.layers.list.repaint()
+    actions = {a.text(): a for a in page.layers.build_menu(0).actions() if a.text()}
+    assert {"Invert mask", "Apply mask (bake it in)", "Delete mask"} <= set(actions)
+    page.canvas.setFocus()
+    qtbot.keyClick(page.canvas, Qt.Key.Key_K)
+    assert page.tool.id == "mask_brush"
+    c = page.canvas
+    qtbot.mousePress(c, Qt.MouseButton.LeftButton, pos=c.image_to_widget(5, 5))
+    qtbot.mouseRelease(c, Qt.MouseButton.LeftButton, pos=c.image_to_widget(5, 5))
+    assert (
+        page.doc.active_layer.mask.getpixel((5, 5)) < 128
+        and page.history.undo_label == "Mask brush"
+    )
+    actions = {a.text(): a for a in page.layers.build_menu(0).actions() if a.text()}
+    actions["Delete mask"].trigger()
+    assert page.doc.active_layer.mask is None
+
+
+def test_g_cycles_fill_and_gradient_and_gradient_paints(page, qtbot):
+    page.canvas.setFocus()
+    qtbot.keyClick(page.canvas, Qt.Key.Key_G)
+    assert page.tool.id == "fill"
+    qtbot.keyClick(page.canvas, Qt.Key.Key_G)
+    assert page.tool.id == "gradient"
+    c = page.canvas
+    a, b = c.image_to_widget(0, 10), c.image_to_widget(29, 10)
+    qtbot.mousePress(c, Qt.MouseButton.LeftButton, pos=a)
+    qtbot.mouseMove(c, b)
+    c.repaint()  # the gradient line is drawn while dragging
+    qtbot.mouseRelease(c, Qt.MouseButton.LeftButton, pos=b)
+    assert page.history.undo_label == "Gradient"
+
+
+def test_background_blur_needs_a_selection_then_applies(page, monkeypatch):
+    from umc.editor.geometry import Rect
+    from umc.gui.editor.dialogs import BackgroundBlurDialog
+
+    page.run_op("background_blur")
+    assert "Select the subject first" in page.message.text() and not page.history.can_undo
+    page.doc.selection = Rect(0, 0, 10, 10)
+    monkeypatch.setattr(BackgroundBlurDialog, "exec", lambda self: 1)
+    page.run_op("background_blur")
+    assert page.history.undo_label == "Background blur"
+    assert page.doc.selection == Rect(0, 0, 10, 10)

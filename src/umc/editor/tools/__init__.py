@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from umc.editor.tools.base import Tool
 from umc.editor.tools.fill import FillTool, PickerTool
+from umc.editor.tools.gradient import GradientTool
 from umc.editor.tools.move import MoveTool
-from umc.editor.tools.paint import BrushTool, EraserTool
+from umc.editor.tools.paint import BrushTool, EraserTool, MaskBrushTool
 from umc.editor.tools.select import (
     CropTool,
     EllipseSelectTool,
@@ -21,7 +22,9 @@ TOOLS: list[type[Tool]] = [
     MoveTool,
     BrushTool,
     EraserTool,
+    MaskBrushTool,
     FillTool,
+    GradientTool,
     PickerTool,
     LineTool,
     RectTool,
