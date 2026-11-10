@@ -8,11 +8,14 @@ import type { EditorDoc } from "./document";
 import { Rect } from "./geometry";
 import { PatchCommand, type Command } from "./history";
 import { cropData, type Layer } from "./layer";
+import * as sel from "./selection";
 import { clipRect, restrict } from "./tools/base";
 
 export interface Effect {
   identity: boolean;
   margin?: number;
+  /** Background blur: work on the inverted selection softened by this many px. */
+  outsideSelection?: number;
   apply(data: Uint8ClampedArray, width: number, height: number, scale?: number): Uint8ClampedArray;
 }
 
@@ -91,8 +94,28 @@ export function enlarge(src: Uint8ClampedArray, sw: number, sh: number, w: numbe
   return out;
 }
 
+/** Run `fn` with the selection inverted and softened when `effect` works outside it (background
+ *  blur); the real selection is put back afterwards. `fn` gets false when there is no subject. */
+function scoped<T>(doc: EditorDoc, effect: Effect, fn: (ok: boolean) => T): T {
+  const soften = effect.outsideSelection;
+  if (soften === undefined) return fn(true);
+  if (!doc.selection) return fn(false); // nothing selected = no subject: nothing to blur around
+  const saved: [typeof doc.selection, typeof doc.selectionMask] = [doc.selection, doc.selectionMask];
+  try {
+    sel.invert(doc);
+    if (soften > 0) sel.feather(doc, soften);
+    return fn(true);
+  } finally {
+    [doc.selection, doc.selectionMask] = saved;
+  }
+}
+
 /** The active layer's pixels as they would look with `effect` (for the live preview). */
 export function preview(doc: EditorDoc, effect: Effect, maxPixels = PREVIEW_PIXELS): Uint8ClampedArray {
+  return scoped(doc, effect, (ok) => (ok ? previewIn(doc, effect, maxPixels) : new Uint8ClampedArray(doc.layers[doc.active].data)));
+}
+
+function previewIn(doc: EditorDoc, effect: Effect, maxPixels: number): Uint8ClampedArray {
   const l = doc.layers[doc.active];
   const out = new Uint8ClampedArray(l.data);
   const region = clipRect(doc, l);
@@ -112,6 +135,10 @@ export function preview(doc: EditorDoc, effect: Effect, maxPixels = PREVIEW_PIXE
 /** Apply `effect` to the active layer inside the selection — one undo step. */
 export function applyToDocument(doc: EditorDoc, effect: Effect, label: string): Command | null {
   if (effect.identity) return null;
+  return scoped(doc, effect, (ok) => (ok ? applyIn(doc, effect, label) : null));
+}
+
+function applyIn(doc: EditorDoc, effect: Effect, label: string): Command | null {
   const l = doc.layers[doc.active];
   const region = clipRect(doc, l);
   if (region.empty) return null;

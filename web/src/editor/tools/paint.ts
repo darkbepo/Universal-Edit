@@ -3,7 +3,7 @@
 import { opt } from "../../core/options";
 import type { EditorDoc } from "../document";
 import { Rect } from "../geometry";
-import { PatchCommand, type Command } from "../history";
+import { MaskPatchCommand, PatchCommand, type Command } from "../history";
 import { cropData, type Layer, type RGBA } from "../layer";
 import { blendPixel, clipRect, colorOf, selectionWeight, Tool, type ToolContext } from "./base";
 
@@ -25,8 +25,18 @@ abstract class StrokeTool extends Tool {
   private last: [number, number] = [0, 0];
   private color: RGBA = [0, 0, 0, 255];
 
+  /** The layer the stroke paints on (the mask brush paints the mask, laid out like pixels). */
+  protected target(doc: EditorDoc, index: number): Layer {
+    return doc.layers[index];
+  }
+
+  /** The undo step for a finished stroke. */
+  protected command(doc: EditorDoc, index: number, dirty: Rect, before: Uint8ClampedArray): Command | null {
+    return PatchCommand.fromRegion(this.label, doc, index, dirty, before);
+  }
+
   override press(doc: EditorDoc, x: number, y: number, ctx: ToolContext): Rect | null {
-    const layer = doc.layers[doc.active];
+    const layer = this.target(doc, doc.active);
     this.layerIndex = doc.active;
     this.tiles = new Map();
     this.clip = clipRect(doc, layer);
@@ -64,9 +74,9 @@ abstract class StrokeTool extends Tool {
       this.tiles = new Map();
       return null;
     }
-    const before = this.original(doc.layers[idx], dirty);
+    const before = this.original(this.target(doc, idx), dirty);
     this.tiles = new Map();
-    return PatchCommand.fromRegion(this.label, doc, idx, dirty, before);
+    return this.command(doc, idx, dirty, before);
   }
 
   override cancel(doc: EditorDoc): Rect | null {
@@ -74,7 +84,7 @@ abstract class StrokeTool extends Tool {
       this.layerIndex = null;
       return null;
     }
-    const layer = doc.layers[this.layerIndex];
+    const layer = this.target(doc, this.layerIndex);
     const orig = this.original(layer, this.dirty);
     const r = this.dirty;
     for (let y = 0; y < r.height; y++) layer.data.set(orig.subarray(y * r.width * 4, (y + 1) * r.width * 4), ((r.y0 + y) * layer.width + r.x0) * 4);
@@ -108,7 +118,7 @@ abstract class StrokeTool extends Tool {
   }
 
   private dab(doc: EditorDoc, x: number, y: number, ctx: ToolContext): Rect | null {
-    const layer = doc.layers[this.layerIndex as number];
+    const layer = this.target(doc, this.layerIndex as number);
     const cx = x - layer.x;
     const cy = y - layer.y;
     const radius = Math.max(0.5, Number(ctx.options.size) / 2);
@@ -163,4 +173,33 @@ export class EraserTool extends StrokeTool {
     opt.slider("hardness", "Hardness", 80, 0, 100, { unit: "%" }),
     opt.slider("opacity", "Opacity", 100, 1, 100, { unit: "%" }),
   ];
+}
+
+/** Paints the active layer's mask: left button hides (black), right button shows (white). */
+export class MaskBrushTool extends StrokeTool {
+  readonly id = "mask_brush";
+  readonly label = "Mask brush";
+  readonly shortcut = "K";
+  protected readonly erase = false;
+  override readonly options = [
+    opt.slider("size", "Size", 24, 1, 500, { unit: "px" }),
+    opt.slider("hardness", "Hardness", 50, 0, 100, { unit: "%" }),
+    opt.slider("opacity", "Strength", 100, 1, 100, { unit: "%" }),
+  ];
+
+  protected override target(doc: EditorDoc, index: number): Layer {
+    const l = doc.layers[index];
+    return { ...l, data: l.mask as Uint8ClampedArray }; // the mask, edited in place
+  }
+
+  protected override command(doc: EditorDoc, index: number, dirty: Rect, before: Uint8ClampedArray): Command | null {
+    return MaskPatchCommand.fromRegion(this.label, doc, index, dirty, before);
+  }
+
+  override press(doc: EditorDoc, x: number, y: number, ctx: ToolContext): Rect | null {
+    if (!doc.layers[doc.active].mask) return null; // no mask: nothing to paint
+    const black: RGBA = [0, 0, 0, 255];
+    const white: RGBA = [255, 255, 255, 255];
+    return super.press(doc, x, y, { ...ctx, primary: black, secondary: white });
+  }
 }

@@ -61,11 +61,12 @@ export function composite(doc: EditorDoc, rect?: Rect, override?: Map<number, Ui
     if (part.empty) return;
     const src = override?.get(i) ?? layer.data;
     const op = layer.opacity;
+    const mask = layer.mask && layer.mask.length === src.length ? layer.mask : null;
     for (let y = part.y0; y < part.y1; y++) {
       let si = ((y - layer.y) * layer.width + (part.x0 - layer.x)) * 4;
       let di = ((y - r.y0) * r.width + (part.x0 - r.x0)) * 4;
       for (let x = part.x0; x < part.x1; x++, si += 4, di += 4) {
-        const sa = (src[si + 3] / 255) * op;
+        const sa = (src[si + 3] / 255) * op * (mask ? mask[si] / 255 : 1);
         if (sa <= 0) continue;
         const da = out[di + 3] / 255;
         const oa = sa + da * (1 - sa);

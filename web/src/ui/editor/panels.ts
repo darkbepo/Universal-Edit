@@ -21,6 +21,12 @@ export const h = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<
 
 const ICONS: Record<string, string> = {
   move: '<path d="M12 3v18M3 12h18"/><path d="m9 6 3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3"/>',
+  mask_brush: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M12 8a4 4 0 0 0 0 8z" fill="currentColor"/>',
+  gradient: '<rect x="4" y="6" width="16" height="12" rx="2"/><path d="M8 6v12" opacity=".9"/><path d="M12 6v12" opacity=".6"/><path d="M16 6v12" opacity=".3"/>',
+  ellipse_select: '<ellipse cx="12" cy="12" rx="8" ry="6" stroke-dasharray="3 2"/>',
+  lasso: '<path d="M7 17c-3-2-3-7 2-9s10 0 10 3-4 5-8 5c-2 0-3 1-3 3" stroke-dasharray="3 2"/>',
+  polygon_lasso: '<path d="M5 7l9-3 6 8-7 8-8-5z" stroke-dasharray="3 2"/>',
+  wand: '<path d="M4 20 15 9"/><path d="m17 3 .8 2.2L20 6l-2.2.8L17 9l-.8-2.2L14 6l2.2-.8z"/>',
   brush: '<path d="M19 4 9.5 13.5"/><path d="M9.5 13.5c-2.5 0-3 2.5-3 4-.5 1-1.5 1.5-2.5 1.5 3 1.5 7 0 7-3"/>',
   eraser: '<path d="m7 20-3-3 10-10 6 6-7 7z"/><path d="M11 10l6 6"/><path d="M7 20h13"/>',
   fill: '<path d="m4 11 7-7 8 8-7 7z"/><path d="M4 11h15"/><path d="M20 15s2 2.5 2 3.5a2 2 0 0 1-4 0c0-1 2-3.5 2-3.5z"/>',
@@ -183,6 +189,25 @@ const ARROW_DOWN = '<svg viewBox="0 0 10 6" width="10" height="6" aria-hidden="t
 /** Layers list (top layer first). Click selects, Ctrl/⌘+click and Shift+click select several,
  *  dragging a row reorders, ▲▼ on each row move it, right-click (or Shift+F10) opens a menu with
  *  every layer action. The opacity slider and the buttons act on all selected layers. */
+const MASK_THUMB = 26;
+
+/** A small grey picture of the layer's mask (black hides, white shows). */
+function maskThumbnail(layer: Layer): HTMLCanvasElement {
+  const c = h("canvas", { width: MASK_THUMB, height: MASK_THUMB, class: "mask-thumb", title: "This layer has a mask: black hides, white shows" });
+  const m = layer.mask as Uint8ClampedArray;
+  const k = Math.max(layer.width, layer.height) / MASK_THUMB;
+  const w = Math.max(1, Math.round(layer.width / k));
+  const ht = Math.max(1, Math.round(layer.height / k));
+  const img = new ImageData(w, ht);
+  for (let y = 0; y < ht; y++)
+    for (let x = 0; x < w; x++) {
+      const v = m[(Math.min(layer.height - 1, Math.floor(y * k)) * layer.width + Math.min(layer.width - 1, Math.floor(x * k))) * 4];
+      img.data.set([v, v, v, 255], (y * w + x) * 4);
+    }
+  (c.getContext("2d") as CanvasRenderingContext2D).putImageData(img, Math.floor((MASK_THUMB - w) / 2), Math.floor((MASK_THUMB - ht) / 2));
+  return c;
+}
+
 export class LayersPanel {
   readonly el: HTMLElement;
   readonly list = h("ul", { class: "layers", ariaLabel: "Layers" });
@@ -286,7 +311,9 @@ export class LayersPanel {
         });
         return a;
       };
-      const li = h("li", { tabIndex: 0, ariaLabel: `Layer ${layer.name}` }, eye, thumbnail(layer), name, h("span", { class: "arrows" }, arrow(true), arrow(false)));
+      const parts: (Node | string)[] = [eye, thumbnail(layer), name];
+      if (layer.mask) parts.push(maskThumbnail(layer));
+      const li = h("li", { tabIndex: 0, ariaLabel: `Layer ${layer.name}` }, ...parts, h("span", { class: "arrows" }, arrow(true), arrow(false)));
       li.dataset.index = String(i);
       const startRename = () => {
         const input = h("input", { type: "text", value: layer.name, class: "rename", ariaLabel: "Layer name" });
@@ -498,6 +525,16 @@ export class LayersPanel {
     if (chosen.some((i) => doc.layers[i].visible)) items.push([`Hide ${word}`, () => this.setVisible(false), true]);
     if (chosen.some((i) => !doc.layers[i].visible)) items.push([`Show ${word}`, () => this.setVisible(true), true]);
     items.push(["Select all layers", () => this.selectAll(), true]);
+    if (!many) {
+      // layer mask actions for the one selected layer
+      items.push(null);
+      if (!doc.layers[doc.active].mask) {
+        items.push(["Add layer mask", () => this.run((d) => ops.addMask(d)), true]);
+        if (doc.selection) items.push(["Mask from selection", () => this.run((d) => ops.addMask(d, true)), true]);
+      } else {
+        items.push(["Invert mask", () => this.run((d) => ops.invertMask(d)), true], ["Apply mask (bake it in)", () => this.run((d) => ops.applyMask(d)), true], ["Delete mask", () => this.run((d) => ops.deleteMask(d)), true]);
+      }
+    }
     return items;
   }
 

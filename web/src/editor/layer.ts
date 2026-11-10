@@ -13,6 +13,9 @@ export interface Layer {
   readonly y: number;
   readonly opacity: number;
   readonly visible: boolean;
+  /** Layer mask in the same RGBA layout as `data` (grey in R/G/B: black hides, white shows),
+   *  so crop / resize / rotate / flip reuse the pixel routines; null / absent = no mask. */
+  readonly mask?: Uint8ClampedArray | null;
 }
 
 /** Test hook: the largest crop made (in pixels) — lets tests prove strokes don't copy whole layers. */
@@ -27,7 +30,20 @@ export function withProps(layer: Layer, patch: Partial<Layer>): Layer {
 }
 
 export function copyLayer(layer: Layer): Layer {
-  return { ...layer, data: new Uint8ClampedArray(layer.data) };
+  return { ...layer, data: new Uint8ClampedArray(layer.data), mask: layer.mask ? new Uint8ClampedArray(layer.mask) : null };
+}
+
+/** A mask (RGBA layout) of `width` × `height`, all `value` (255 = shows everything). */
+export function solidMask(width: number, height: number, value = 255): Uint8ClampedArray {
+  return solid(width, height, [value, value, value, 255]);
+}
+
+/** What the layer shows: its pixels with the mask applied to alpha (a new array). */
+export function layerPixels(layer: Layer): Uint8ClampedArray {
+  const out = new Uint8ClampedArray(layer.data);
+  const m = layer.mask;
+  if (m) for (let i = 3; i < out.length; i += 4) out[i] = (out[i] * m[i - 3]) / 255;
+  return out;
 }
 
 export function layerBounds(layer: Layer): Rect {

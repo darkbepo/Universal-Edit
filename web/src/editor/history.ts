@@ -57,10 +57,56 @@ export class PatchCommand implements Command {
   }
 }
 
+/** A changed rectangle of a layer's mask (the mask brush). Same as PatchCommand, on `mask`. */
+export class MaskPatchCommand implements Command {
+  private origin: [number, number] = [0, 0];
+
+  constructor(
+    public label: string,
+    private index: number,
+    private rect: Rect,
+    private before: Uint8ClampedArray,
+    private after: Uint8ClampedArray,
+  ) {}
+
+  static fromRegion(label: string, doc: EditorDoc, index: number, rect: Rect, before: Uint8ClampedArray): MaskPatchCommand | null {
+    const l = doc.layers[index];
+    if (rect.empty || !l.mask) return null;
+    const cmd = new MaskPatchCommand(label, index, rect, before, cropData(l.mask, l.width, rect));
+    cmd.origin = [l.x, l.y];
+    return cmd;
+  }
+
+  private apply(doc: EditorDoc, src: Uint8ClampedArray): void {
+    const l = doc.layers[this.index];
+    if (!l.mask) return;
+    const r = this.rect;
+    for (let y = 0; y < r.height; y++) l.mask.set(src.subarray(y * r.width * 4, (y + 1) * r.width * 4), ((r.y0 + y) * l.width + r.x0) * 4);
+    this.origin = [l.x, l.y];
+  }
+
+  undo(doc: EditorDoc): void {
+    this.apply(doc, this.before);
+  }
+
+  redo(doc: EditorDoc): void {
+    this.apply(doc, this.after);
+  }
+
+  get bytes(): number {
+    return this.before.byteLength + this.after.byteLength;
+  }
+
+  repaint(): Rect {
+    return this.rect.offset(this.origin[0], this.origin[1]);
+  }
+}
+
 /** Bytes of the pixel arrays only one side holds (shared arrays cost nothing extra). */
 function uniqueBytes(a: Layer[], b: Layer[]): number {
-  const sa = new Set(a.map((l) => l.data));
-  const sb = new Set(b.map((l) => l.data));
+  const planes = (ls: Layer[]) => ls.flatMap((l) => (l.mask ? [l.data, l.mask] : [l.data]));
+  const sa = new Set(planes(a));
+  const sb = new Set(planes(b));
   let total = 0;
   for (const d of new Set([...sa, ...sb])) if (!(sa.has(d) && sb.has(d))) total += d.byteLength;
   return total;

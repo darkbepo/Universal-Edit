@@ -141,3 +141,8 @@ export function look(name: string, strength = 1): Effect {
     },
   };
 }
+
+/** Blur everything outside the selection (select the person first), with a soft edge. */
+export function backgroundBlur(radius: number, soften = 4): Effect {
+  return { ...blur(radius), outsideSelection: soften };
+}

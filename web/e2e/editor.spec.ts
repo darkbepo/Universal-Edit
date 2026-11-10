@@ -615,7 +615,7 @@ test("Curves keeps its end points; Levels treats an empty Output white as 255", 
 
 const filterMenu = async (page: Page, item: string) => {
   await page.getByText("Filters ▾").click();
-  await page.getByRole("button", { name: item }).click();
+  await page.getByRole("button", { name: new RegExp(`^${item}`) }).click(); // "Blur", not "Background blur"
 };
 
 test("Filters: blur and sharpen apply as one undo step each", async ({ page }) => {
@@ -709,4 +709,38 @@ test("selection: magic wand picks a colour", async ({ page }) => {
   const p = await at(page, 5, 5);
   await page.mouse.click(p.x, p.y);
   await expect.poll(() => selState(page)).not.toBeNull();
+});
+
+// ------------------------------------------------------------------ masks, gradient, background blur
+
+test("layer mask from the layer menu, mask brush (K), G cycles fill / gradient", async ({ page }) => {
+  await openEditor(page);
+  await page.locator(".layers li").first().click({ button: "right" });
+  await page.getByRole("menu", { name: "Layer actions" }).getByRole("menuitem", { name: "Add layer mask" }).click();
+  await expect(page.locator(".layers li").first().locator("canvas.mask-thumb")).toHaveCount(1);
+  await page.locator(".canvas-host canvas").focus();
+  await page.keyboard.press("k");
+  await expect.poll(() => page.evaluate(() => (window.__editor as EditorHook).toolId)).toBe("mask_brush");
+  const p = await at(page, 5, 5);
+  await page.mouse.click(p.x, p.y);
+  await expect.poll(() => page.evaluate(() => (window.__editor as EditorHook & { history: { undoLabel: string } }).history.undoLabel)).toBe("Mask brush");
+  for (const want of ["fill", "gradient"]) {
+    await page.keyboard.press("g");
+    await expect.poll(() => page.evaluate(() => (window.__editor as EditorHook).toolId)).toBe(want);
+  }
+  await drag(page, [0, 0], [150, 0]);
+  await expect.poll(() => page.evaluate(() => (window.__editor as EditorHook & { history: { undoLabel: string } }).history.undoLabel)).toBe("Gradient");
+});
+
+test("background blur asks for a subject, then blurs around it", async ({ page }) => {
+  await openEditor(page);
+  await page.getByText("Filters ▾").click();
+  await page.getByRole("button", { name: "Background blur" }).click();
+  await expect(page.locator(".editor-status")).toContainText("Select the subject first");
+  await page.keyboard.press("m");
+  await drag(page, [10, 10], [80, 80]);
+  await page.getByText("Filters ▾").click();
+  await page.getByRole("button", { name: "Background blur" }).click();
+  await page.locator("dialog.background-blur").getByRole("button", { name: "Apply" }).click();
+  await expect.poll(() => page.evaluate(() => (window.__editor as EditorHook & { history: { undoLabel: string } }).history.undoLabel)).toBe("Background blur");
 });

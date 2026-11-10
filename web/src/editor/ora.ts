@@ -2,7 +2,7 @@
 // (src/umc/editor/ora.py) and GIMP / Krita read.
 import { strFromU8, strToU8, unzipSync, zipSync, type Zippable } from "fflate";
 import { checkSize, composite, EditorError, type EditorDoc } from "./document";
-import { makeLayer, type Layer } from "./layer";
+import { layerPixels, makeLayer, type Layer } from "./layer";
 import type { PngCodec } from "./raster";
 
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -61,7 +61,7 @@ export async function writeOra(doc: EditorDoc, png: PngCodec): Promise<Uint8Arra
   for (let i = doc.layers.length - 1; i >= 0; i--) {
     const l = doc.layers[i];
     const src = `data/layer${i}.png`;
-    files[src] = [await png.encode(l.data, l.width, l.height), { level: 0 }]; // PNG is compressed already
+    files[src] = [await png.encode(layerPixels(l), l.width, l.height), { level: 0 }]; // ORA has no masks: baked in
     entries.push(
       `<layer name="${esc(l.name)}" src="${src}" x="${l.x}" y="${l.y}" opacity="${l.opacity.toFixed(4)}" visibility="${l.visible ? "visible" : "hidden"}"${i === doc.active ? ' selected="true"' : ""}/>`,
     );

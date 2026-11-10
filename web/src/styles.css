@@ -211,6 +211,7 @@ h1 { font-size: 22px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.01em
 .layers li.drop-above { box-shadow: inset 0 2px 0 var(--accent); }
 .layers li.drop-below { box-shadow: inset 0 -2px 0 var(--accent); }
 .layers.dragging, .layers.dragging li { cursor: grabbing; }
+.layers .mask-thumb { width: 26px; height: 26px; border-radius: 3px; background: #808080; flex-shrink: 0; }
 .layers .arrows { display: flex; flex-direction: column; gap: 2px; flex-shrink: 0; }
 .layers .arrow { display: grid; place-items: center; width: 22px; height: 18px; padding: 0; border: none; border-radius: 5px; background: none; color: var(--text); cursor: pointer; }
 .layers .arrow:hover:not(:disabled) { background: var(--surface-alt); }

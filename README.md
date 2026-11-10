@@ -76,6 +76,7 @@ The browser version's source is in [`web/`](web/README.md).
 | Image editor Adjust menu: Quick fix (exposure, brightness, contrast, temperature, tint, saturation, vibrance, auto tone), Levels (histogram, per channel, auto), Curves (per channel) — live preview, "hold to see the original" | ✅ | ✅ |
 | Image editor Filters menu: Blur, Sharpen (amount, radius, threshold), 11 one-click Looks (warm, cool, vivid, black & white, noir, sepia, faded, vintage, dramatic, matte, bright & airy) with strength — live preview | ✅ | ✅ |
 | Image editor selections: rectangle / ellipse (M), lasso / polygon lasso (Q), magic wand (W); Shift adds, Alt subtracts; Select menu: all, deselect, invert, feather — any shape with soft edges, and every tool, adjustment, filter, copy and cut follows it | ✅ | ✅ |
+| Image editor masks and gradients: layer masks (add, from selection, invert, apply, delete) with a Mask brush (K), Gradient tool (colour, layer mask or soft selection — e.g. brighten only the sky), Background blur for portraits | ✅ | ✅ |
 | Layered projects: save and open OpenRaster `.ora` (GIMP and Krita open it too); `.ora` → any image format | ✅ | ✅ |
 | Files never leave your computer | ✅ | ✅ |
 | No install needed | ❌ | ✅ |

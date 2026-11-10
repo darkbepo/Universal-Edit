@@ -20,7 +20,7 @@ import * as effects from "../../editor/effects";
 import type { Effect } from "../../editor/effects";
 import * as clipboard from "../../editor/clipboard";
 import { EditorCanvas } from "./canvas";
-import { blurDialog, canvasSizeDialog, featherDialog, curvesDialog, levelsDialog, looksDialog, quickFixDialog, resizeDialog, saveDialog, sharpenDialog, shortcutsDialog, type AdjustHost } from "./dialogs";
+import { backgroundBlurDialog, blurDialog, canvasSizeDialog, featherDialog, curvesDialog, levelsDialog, looksDialog, quickFixDialog, resizeDialog, saveDialog, sharpenDialog, shortcutsDialog, type AdjustHost } from "./dialogs";
 import { CropBar, type BarMode } from "./cropbar";
 import { h, LayersPanel, Swatches, ToolBar, ToolSettings } from "./panels";
 import { SHORTCUTS, shortcutFor, toolGroups } from "./shortcuts";
@@ -45,6 +45,7 @@ const ADJUST_DIALOGS: Record<string, [(host: AdjustHost) => Promise<Effect | nul
   blur: [blurDialog, "Blur"],
   sharpen: [sharpenDialog, "Sharpen"],
   looks: [looksDialog, "Look"],
+  background_blur: [backgroundBlurDialog, "Background blur"],
 };
 
 const CROP_HINT = "Drag a rectangle on the picture, then apply it with the button next to it (or Enter).";
@@ -146,7 +147,7 @@ export class EditorPage {
         ["Quick fix… (exposure, contrast, colours)", "quick_fix"], ["Levels…", "levels"], ["Curves…", "curves"],
       ])));
     const filterMenu = h("details", { class: "menu" }, h("summary", { class: "btn small", title: "Blur, sharpen and one-click looks for the selected layer" }, "Filters ▾"),
-      h("div", { class: "menu-items" }, ...this.menuItems([["Looks…", "looks"], ["Blur…", "blur"], ["Sharpen…", "sharpen"]])));
+      h("div", { class: "menu-items" }, ...this.menuItems([["Looks…", "looks"], ["Blur…", "blur"], ["Background blur… (portraits)", "background_blur"], ["Sharpen…", "sharpen"]])));
     const top = h("div", { class: "editor-top" },
       btn("← Back to Convert", "Leave the editor", () => this.back(), "link"),
       h("span", { class: "gap" }), this.undoBtn, this.redoBtn,
@@ -581,6 +582,8 @@ export class EditorPage {
       } else if (name === "crop_selection") {
         if (!doc.selection) return this.showMessage("Select an area first (rectangle select, M).");
         cmd = ops.crop(doc, doc.selection);
+      } else if (name === "background_blur" && !doc.selection) {
+        return this.showMessage("Select the subject first (lasso, magic wand…): what is around it gets blurred.");
       } else if (name in ADJUST_DIALOGS) {
         const [dialog, label] = ADJUST_DIALOGS[name];
         const host: AdjustHost = {

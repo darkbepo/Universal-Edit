@@ -2,9 +2,10 @@
 // Each applies its change and returns the Command to push (null when nothing changed). Layers
 // are replaced, never changed in place — see history.ts.
 import { checkSize, docBounds, type EditorDoc } from "./document";
+import { fullMask } from "./selection";
 import { Rect } from "./geometry";
 import { DocStateCommand, LayerListCommand, type Command } from "./history";
-import { copyLayer, cropData, layerBounds, makeLayer, withProps, type Layer } from "./layer";
+import { copyLayer, cropData, layerBounds, layerPixels, makeLayer, solidMask, withProps, type Layer } from "./layer";
 import { overPixel } from "./tools/base";
 
 export type Resample = "lanczos" | "bilinear" | "nearest";
@@ -112,9 +113,10 @@ export function crop(doc: EditorDoc, rect: Rect): Command | null {
   const layers = doc.layers.map((l) => {
     const shifted = layerBounds(l).offset(-r.x0, -r.y0);
     const keep = shifted.intersect(canvas);
-    if (keep.empty) return withProps(l, { data: new Uint8ClampedArray(4), width: 1, height: 1, x: 0, y: 0 });
-    const data = cropData(l.data, l.width, keep.offset(-shifted.x0, -shifted.y0));
-    return withProps(l, { data, width: keep.width, height: keep.height, x: keep.x0, y: keep.y0 });
+    if (keep.empty) return withProps(l, { data: new Uint8ClampedArray(4), width: 1, height: 1, x: 0, y: 0, mask: null });
+    const box = keep.offset(-shifted.x0, -shifted.y0);
+    const mask = l.mask ? cropData(l.mask, l.width, box) : null; // the layer mask follows
+    return withProps(l, { data: cropData(l.data, l.width, box), mask, width: keep.width, height: keep.height, x: keep.x0, y: keep.y0 });
   });
   return setState(doc, "Crop", r.width, r.height, layers);
 }
@@ -127,7 +129,8 @@ export function resizeImage(doc: EditorDoc, width: number, height: number, resam
   const layers = doc.layers.map((l) => {
     const nw = Math.max(1, Math.round(l.width * sx));
     const nh = Math.max(1, Math.round(l.height * sy));
-    return withProps(l, { data: resizer(l.data, l.width, l.height, nw, nh, resample), width: nw, height: nh, x: Math.round(l.x * sx), y: Math.round(l.y * sy) });
+    const mask = l.mask ? resizer(l.mask, l.width, l.height, nw, nh, resample) : null;
+    return withProps(l, { data: resizer(l.data, l.width, l.height, nw, nh, resample), mask, width: nw, height: nh, x: Math.round(l.x * sx), y: Math.round(l.y * sy) });
   });
   return setState(doc, "Resize image", width, height, layers);
 }
@@ -150,15 +153,17 @@ export function rotate(doc: EditorDoc, degrees: number, layerOnly = false): Comm
   if (layerOnly) {
     const l = doc.layers[doc.active];
     const [data, nw, nh] = rotateData(l.data, l.width, l.height, deg);
+    const mask = l.mask ? rotateData(l.mask, l.width, l.height, deg)[0] : null;
     const x = l.x + Math.floor((l.width - nw) / 2);
     const y = l.y + Math.floor((l.height - nh) / 2);
-    return replace(doc, doc.active, `Rotate layer ${deg}°`, withProps(l, { data, width: nw, height: nh, x, y }));
+    return replace(doc, doc.active, `Rotate layer ${deg}°`, withProps(l, { data, mask, width: nw, height: nh, x, y }));
   }
   const { width: w, height: h } = doc;
   const layers = doc.layers.map((l) => {
     const [data, nw, nh] = rotateData(l.data, l.width, l.height, deg);
+    const mask = l.mask ? rotateData(l.mask, l.width, l.height, deg)[0] : null;
     const [x, y] = deg === 90 ? [h - (l.y + l.height), l.x] : deg === 180 ? [w - (l.x + l.width), h - (l.y + l.height)] : [l.y, w - (l.x + l.width)];
-    return withProps(l, { data, width: nw, height: nh, x, y });
+    return withProps(l, { data, mask, width: nw, height: nh, x, y });
   });
   const [nw, nh] = deg === 180 ? [w, h] : [h, w];
   return setState(doc, `Rotate ${deg}°`, nw, nh, layers);
@@ -168,11 +173,13 @@ export function flip(doc: EditorDoc, horizontal: boolean, layerOnly = false): Co
   const label = horizontal ? "Flip horizontal" : "Flip vertical";
   if (layerOnly) {
     const l = doc.layers[doc.active];
-    return replace(doc, doc.active, `${label} (layer)`, withProps(l, { data: flipData(l.data, l.width, l.height, horizontal) }));
+    const mask = l.mask ? flipData(l.mask, l.width, l.height, horizontal) : null;
+    return replace(doc, doc.active, `${label} (layer)`, withProps(l, { data: flipData(l.data, l.width, l.height, horizontal), mask }));
   }
   const layers = doc.layers.map((l) =>
     withProps(l, {
       data: flipData(l.data, l.width, l.height, horizontal),
+      mask: l.mask ? flipData(l.mask, l.width, l.height, horizontal) : null,
       x: horizontal ? doc.width - (l.x + l.width) : l.x,
       y: horizontal ? l.y : doc.height - (l.y + l.height),
     }),
@@ -191,6 +198,10 @@ function change(doc: EditorDoc, label: string, layers: Layer[], active: number, 
   doc.active = active;
   doc.selected = [...selected];
   return new LayerListCommand(label, before, layers, activeBefore, active, selectedBefore, selected);
+}
+
+export function replaceLayer(doc: EditorDoc, index: number, label: string, layer: Layer): Command {
+  return replace(doc, index, label, layer);
 }
 
 function replace(doc: EditorDoc, index: number, label: string, layer: Layer): Command {
@@ -276,8 +287,9 @@ function flatten(group: Layer[]): { data: Uint8ClampedArray; box: Rect } {
   for (const l of group.slice(1)) box = box.union(layerBounds(l));
   const data = new Uint8ClampedArray(box.width * box.height * 4);
   for (const l of group) {
+    const px = layerPixels(l); // the mask is baked into a merge
     for (let y = 0; y < l.height; y++)
-      for (let x = 0; x < l.width; x++) overPixel(data, ((l.y - box.y0 + y) * box.width + (l.x - box.x0 + x)) * 4, l.data, (y * l.width + x) * 4, l.opacity);
+      for (let x = 0; x < l.width; x++) overPixel(data, ((l.y - box.y0 + y) * box.width + (l.x - box.x0 + x)) * 4, px, (y * l.width + x) * 4, l.opacity);
   }
   return { data, box };
 }
@@ -409,4 +421,43 @@ export function nudgeLayers(doc: EditorDoc, indices: Iterable<number>, dx: numbe
   const chosen = clean(doc, indices);
   if ((dx === 0 && dy === 0) || !chosen.length) return null;
   return change(doc, "Move", offsetLayers(doc, doc.layers, chosen, dx, dy), doc.active, doc.selected ?? []);
+}
+
+// ------------------------------------------------------------------ layer masks (port of ops.py)
+
+/** Give a layer a mask: all white (shows everything), or shaped like the selection. */
+export function addMask(doc: EditorDoc, fromSelection = false, index = doc.active): Command | null {
+  const l = doc.layers[index];
+  if (l.mask) return null;
+  const mask = solidMask(l.width, l.height, 255);
+  if (fromSelection && doc.selection) {
+    const full = fullMask(doc);
+    for (let y = 0; y < l.height; y++)
+      for (let x = 0; x < l.width; x++) {
+        const cx = l.x + x;
+        const cy = l.y + y;
+        const v = cx >= 0 && cy >= 0 && cx < doc.width && cy < doc.height ? full[cy * doc.width + cx] : 0;
+        mask.fill(v, (y * l.width + x) * 4, (y * l.width + x) * 4 + 3);
+      }
+  }
+  return replace(doc, index, fromSelection ? "Mask from selection" : "Add layer mask", withProps(l, { mask }));
+}
+
+export function deleteMask(doc: EditorDoc, index = doc.active): Command | null {
+  const l = doc.layers[index];
+  return l.mask ? replace(doc, index, "Delete layer mask", withProps(l, { mask: null })) : null;
+}
+
+/** Bake the mask into the layer's pixels (alpha) and drop it. */
+export function applyMask(doc: EditorDoc, index = doc.active): Command | null {
+  const l = doc.layers[index];
+  return l.mask ? replace(doc, index, "Apply layer mask", withProps(l, { data: layerPixels(l), mask: null })) : null;
+}
+
+export function invertMask(doc: EditorDoc, index = doc.active): Command | null {
+  const l = doc.layers[index];
+  if (!l.mask) return null;
+  const m = new Uint8ClampedArray(l.mask);
+  for (let i = 0; i < m.length; i += 4) m[i] = m[i + 1] = m[i + 2] = 255 - m[i];
+  return replace(doc, index, "Invert layer mask", withProps(l, { mask: m }));
 }

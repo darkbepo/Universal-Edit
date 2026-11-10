@@ -568,6 +568,21 @@ export async function featherDialog(): Promise<number | null> {
   return res?.value ?? null;
 }
 
+export function backgroundBlurDialog(host: AdjustHost): Promise<Effect | null> {
+  return effectModal("background-blur", "Background blur", host, (changed) => {
+    const radius = rangeRow("Blur", 0, 500, 8, 0.1, " px", "How blurred the background gets (px)", changed);
+    const soften = rangeRow("Soft edge", 0, 400, 4, 0.1, " px", "How gradually the sharp subject turns into the blur (px)", changed);
+    return {
+      els: [radius.row, soften.row, h("div", { class: "hint" }, "Everything outside the selection is blurred — select the subject first.")],
+      read: () => filters.backgroundBlur(Math.round(radius.value() * 10) / 10, Math.round(soften.value() * 10) / 10),
+      reset: () => {
+        radius.set(0);
+        soften.set(4);
+      },
+    };
+  });
+}
+
 export interface SaveChoice {
   name: string;
   format: string;

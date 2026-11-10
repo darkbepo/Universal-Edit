@@ -195,6 +195,6 @@ describe("selection, crop and text", () => {
   });
 
   it("lists the tools in tool-bar order", () => {
-    expect(makeTools(stubRaster).map((t) => t.id)).toEqual(["move", "brush", "eraser", "fill", "picker", "line", "rect", "ellipse", "text", "select", "ellipse_select", "lasso", "polygon_lasso", "wand", "crop"]);
+    expect(makeTools(stubRaster).map((t) => t.id)).toEqual(["move", "brush", "eraser", "mask_brush", "fill", "gradient", "picker", "line", "rect", "ellipse", "text", "select", "ellipse_select", "lasso", "polygon_lasso", "wand", "crop"]);
   });
 });

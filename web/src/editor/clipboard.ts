@@ -4,7 +4,7 @@
 import { checkSize, composite, docBounds, type EditorDoc } from "./document";
 import { Rect } from "./geometry";
 import { PatchCommand, type Command } from "./history";
-import { cropData, layerBounds, makeLayer } from "./layer";
+import { cropData, layerBounds, layerPixels, makeLayer } from "./layer";
 import * as ops from "./ops";
 import { weight } from "./selection";
 import { restrict } from "./tools/base";
@@ -28,7 +28,8 @@ export function copy(doc: EditorDoc, merged = false): Clip | null {
   const layer = doc.layers[doc.active];
   const region = doc.selection ? layerBounds(layer).intersect(doc.selection) : layerBounds(layer);
   if (region.empty) return null;
-  const data = shaped(doc, cropData(layer.data, layer.width, region.offset(-layer.x, -layer.y)), region);
+  const src = layer.mask ? layerPixels(layer) : layer.data; // with its layer mask applied
+  const data = shaped(doc, cropData(src, layer.width, region.offset(-layer.x, -layer.y)), region);
   return { data, width: region.width, height: region.height, x: region.x0, y: region.y0 };
 }
 

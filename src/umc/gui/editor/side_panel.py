@@ -49,6 +49,25 @@ def tool_icon(tool_id: str, color: str) -> QIcon:
             ((42, 24), (36, 19), (36, 29)),
         ):
             p.drawPolyline([QPointF(*a), QPointF(*tip), QPointF(*b)])
+    elif tool_id in ("ellipse_select", "lasso", "polygon_lasso"):
+        pen.setStyle(Qt.PenStyle.DashLine)
+        pen.setWidthF(2.6)
+        p.setPen(pen)
+        if tool_id == "ellipse_select":
+            p.drawEllipse(QRectF(8, 12, 32, 24))
+        elif tool_id == "lasso":
+            path = QPainterPath(QPointF(14, 34))
+            path.cubicTo(QPointF(2, 26), QPointF(10, 8), QPointF(28, 10))
+            path.cubicTo(QPointF(46, 12), QPointF(42, 32), QPointF(24, 32))
+            p.drawPath(path)
+        else:
+            p.drawPolygon(
+                [QPointF(10, 14), QPointF(28, 8), QPointF(40, 24), QPointF(26, 40), QPointF(10, 32)]
+            )
+    elif tool_id == "wand":
+        p.drawLine(QPointF(8, 40), QPointF(30, 18))
+        p.drawLine(QPointF(34, 6), QPointF(34, 14))
+        p.drawLine(QPointF(30, 10), QPointF(38, 10))
     elif tool_id == "mask_brush":
         p.drawRoundedRect(QRectF(8, 8, 32, 32), 6, 6)
         p.setBrush(QColor(color))

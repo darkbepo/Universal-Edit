@@ -533,8 +533,15 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
          browser's devtools, so invert is Shift+F7 / Ctrl+Alt+I and feather Ctrl+Alt+D (both apps
          accept those). `web/src/editor/flood.ts` exists to break an import cycle
          (tools/base → selection → fill → base).
-      4. Masks and gradients: layer masks, gradient tool, adjustments inside a selection / mask,
-         background blur for portraits.
+      4. ✅ Masks and gradients (both apps). `Layer.mask` (desktop "L" the image's size; web RGBA
+         layout, grey in R, so crop/resize/rotate/flip reuse the pixel routines); `composite`,
+         merges, copy and ORA save use the masked pixels (`Layer.pixels()` / `layerPixels`; ORA has
+         no masks, so they're baked in). Desktop transforms go through `ops._moved(op=…)`, which
+         applies the same op to the mask. Mask brush = the normal stroke tool painting a stand-in
+         (desktop proxy RGBA → mask; web the mask array itself), undo `MaskPatchCommand`.
+         `tools/gradient.py` / `gradient.ts`: colour, layer mask or a soft selection (adjustments
+         then fade). Background blur = an effect with `outside_selection` / `outsideSelection`:
+         effects.py/ts invert + feather the selection around it and put it back.
       5. Text v2: re-editable text layers, outline, shadow, background box, alignment, watermark.
       6. Annotation: arrow tool, highlighter, built-in CC0 stickers.
       7. Pasteboard (owner chose this kind of "artboard"): the area around the canvas holds
