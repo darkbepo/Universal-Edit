@@ -10,9 +10,10 @@ from __future__ import annotations
 import base64
 import binascii
 import html as _html
+import os
 import re
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from urllib.parse import unquote, urlparse
 
 import lxml.html
@@ -224,6 +225,17 @@ def _finalise(tokens: list[_Token], *, pre: bool = False, drop_trailing_br: bool
     return "".join(_html.escape(t, quote=False) if k == "T" else t for k, t in tokens)
 
 
+def _is_plain_relative(base_dir: Path, rel: str) -> bool:
+    """``rel`` is a relative path that stays inside ``base_dir`` (decided without any I/O)."""
+    if rel.startswith(("\\\\", "//")) or PureWindowsPath(rel).drive:
+        return False
+    if PurePosixPath(rel).is_absolute() or PureWindowsPath(rel).is_absolute():
+        return False
+    base = os.path.normpath(base_dir)
+    joined = os.path.normpath(os.path.join(base, rel))
+    return joined.startswith(base.rstrip("\\/") + os.sep)
+
+
 class _Normaliser:
     def __init__(self, base_dir: Path | None, reserved: set[str]) -> None:
         self.base_dir = base_dir.resolve() if base_dir else None
@@ -260,8 +272,8 @@ class _Normaliser:
         return src if _CANON_IMG.match(src) else None
 
     def _read_relative(self, rel: str) -> tuple[bytes, str] | None:
-        if self.base_dir is None:
-            return None
+        if self.base_dir is None or not _is_plain_relative(self.base_dir, rel):
+            return None  # checked before touching the disk: a UNC path would contact the host
         try:
             path = (self.base_dir / rel).resolve()
             ext = _IMAGE_EXTS.get(path.suffix.lower().lstrip("."))
