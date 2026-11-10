@@ -21,6 +21,17 @@ export interface EditorDoc {
   active: number;
   selection: Rect | null;
   dirty: boolean;
+  /** Layers selected in the layers list (Ctrl / Shift+click). The active layer always counts as
+   *  selected — it's the one tools paint on. Not an undo step by itself. */
+  selected?: number[];
+}
+
+/** Selected layer indices, bottom first; always includes the active layer. */
+export function selectedIndices(doc: EditorDoc): number[] {
+  const n = doc.layers.length;
+  const set = new Set((doc.selected ?? []).filter((i) => i >= 0 && i < n));
+  set.add(doc.active);
+  return [...set].sort((a, b) => a - b);
 }
 
 export function checkSize(width: number, height: number): void {

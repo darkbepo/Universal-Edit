@@ -260,3 +260,91 @@ test("crop: Apply button, and Esc discards", async ({ page }) => {
   await page.getByRole("button", { name: "Apply crop" }).click();
   await expect.poll(() => size(page)).toEqual([200, 100]);
 });
+
+// ------------------------------------------------------------------ layers list
+
+/** Layer names top first, as the list shows them. */
+const rowNames = (page: Page) => page.locator(".layers li .lname").allTextContents();
+const selected = (page: Page) =>
+  page.evaluate(() => {
+    const d = (window.__editor as EditorHook).doc as EditorHook["doc"] & { selected?: number[] };
+    return [...new Set([...(d.selected ?? []), d.active])].filter((i) => i < d.layers.length).sort((a, b) => a - b);
+  });
+
+async function fourLayers(page: Page) {
+  await openEditor(page);
+  await page.getByRole("button", { name: "Add" }).click();
+  await page.getByRole("button", { name: "Add" }).click();
+  await expect.poll(() => rowNames(page)).toEqual(["Layer 4", "Layer 3", "img1", "img0"]);
+}
+
+const row = (page: Page, i: number) => page.locator(".layers li").nth(i);
+
+test("layers: Ctrl+click and Shift+click select several", async ({ page }) => {
+  await fourLayers(page);
+  await row(page, 0).locator(".lname").click();
+  await row(page, 2).locator(".lname").click({ modifiers: ["Control"] });
+  await expect.poll(() => selected(page)).toEqual([1, 3]);
+  await expect(page.getByRole("button", { name: "Merge layers" })).toBeVisible();
+  await row(page, 1).locator(".lname").click();
+  await row(page, 3).locator(".lname").click({ modifiers: ["Shift"] });
+  await expect.poll(() => selected(page)).toEqual([0, 1, 2]);
+  await expect(page.locator(".layers li.selected")).toHaveCount(3);
+  await page.getByRole("button", { name: "Delete" }).click();
+  await expect.poll(() => rowNames(page)).toEqual(["Layer 4"]);
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect.poll(() => rowNames(page)).toEqual(["Layer 4", "Layer 3", "img1", "img0"]);
+  await expect.poll(() => selected(page)).toEqual([0, 1, 2]);
+});
+
+test("layers: arrows on a row move it", async ({ page }) => {
+  await fourLayers(page);
+  await expect(page.getByRole("button", { name: "Move img0 down" })).toBeDisabled();
+  await page.getByRole("button", { name: "Move img0 up" }).click();
+  await expect.poll(() => rowNames(page)).toEqual(["Layer 4", "Layer 3", "img0", "img1"]);
+  await expect(page.locator(".layers li.active .lname")).toHaveText("img0");
+});
+
+test("layers: drag rows to reorder", async ({ page }) => {
+  await fourLayers(page);
+  await row(page, 2).locator(".lname").click();
+  await row(page, 3).locator(".lname").click({ modifiers: ["Control"] });
+  const from = await row(page, 3).locator(".lname").boundingBox();
+  const to = await row(page, 0).boundingBox();
+  if (!from || !to) throw new Error("no layout");
+  await page.mouse.move(from.x + 10, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(from.x + 10, to.y + 4, { steps: 8 });
+  await expect(row(page, 0)).toHaveClass(/drop-above/);
+  await page.mouse.up();
+  await expect.poll(() => rowNames(page)).toEqual(["img1", "img0", "Layer 4", "Layer 3"]);
+  await expect(page.locator(".layers li.selected")).toHaveCount(2);
+  await page.keyboard.press("Control+z");
+  await expect.poll(() => rowNames(page)).toEqual(["Layer 4", "Layer 3", "img1", "img0"]);
+});
+
+test("layers: right-click menu", async ({ page }) => {
+  await fourLayers(page);
+  await row(page, 0).locator(".lname").click();
+  await row(page, 1).locator(".lname").click({ modifiers: ["Control"] });
+  await row(page, 0).click({ button: "right" });
+  const menu = page.getByRole("menu", { name: "Layer actions" });
+  await expect(menu.getByRole("menuitem", { name: "Move up", exact: true })).toBeDisabled();
+  await expect(menu.getByRole("menuitem", { name: "Rename…" })).toHaveCount(0);
+  await menu.getByRole("menuitem", { name: "Hide 2 layers" }).click();
+  await expect(menu).toHaveCount(0);
+  await expect(row(page, 0).locator("input[type=checkbox]")).not.toBeChecked();
+  await row(page, 1).click({ button: "right" });
+  await menu.getByRole("menuitem", { name: "Move to bottom" }).click();
+  await expect.poll(() => rowNames(page)).toEqual(["img1", "img0", "Layer 4", "Layer 3"]);
+  // right-clicking a row outside the selection selects it; Esc closes the menu
+  await row(page, 0).click({ button: "right" });
+  await expect.poll(() => selected(page)).toEqual([3]);
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+  await row(page, 0).click({ button: "right" });
+  await menu.getByRole("menuitem", { name: "Rename…" }).click();
+  await page.locator(".layers input.rename").fill("Top");
+  await page.keyboard.press("Enter");
+  await expect(row(page, 0).locator(".lname")).toHaveText("Top");
+});

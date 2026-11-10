@@ -482,7 +482,14 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
          from the model), right-click menu `build_menu`. The Up / Down buttons are gone (owner:
          arrows on the row are clearer). Offscreen Qt can't run a real drag, so the drop test
          calls `dropEvent` directly — check a real mouse drag on Windows.
-      b. web layers (same behaviour in `web/src/editor/ops.ts` + `ui/editor/panels.ts`).
+      b. ✅ web layers: same ops in `web/src/editor/ops.ts` (`EditorDoc.selected?: number[]`,
+         `selectedIndices(doc)` in `document.ts`; `web/tests/editor-layers.test.ts` mirrors
+         `tests/test_editor_layers.py`). `ui/editor/panels.ts` `LayersPanel`: selection is updated
+         by classes (`selected`, `active`, list `multi`) without a rebuild so double-click rename
+         keeps working; dragging = pointer events with pointer capture on the list (gap shown as
+         `drop-above` / `drop-below`, auto-scroll at the edges, the click after a drag is
+         swallowed); right-click / Shift+F10 / menu key opens a fixed `.context-menu` (arrow keys,
+         Esc). e2e in `e2e/editor.spec.ts` drags with the real mouse.
       c. Crop: the Apply / Cancel bar only appears once a rectangle is drawn, next to it (both apps).
       d. Shortcuts + clipboard (desktop, then web): Ctrl+C / Ctrl+Shift+C (merged) / Ctrl+X /
          Ctrl+V (pastes as a new layer, like Photoshop), Move tool (V, arrow-key nudge), Ctrl+J,

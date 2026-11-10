@@ -202,7 +202,17 @@ h1 { font-size: 22px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.01em
 .layers-panel { display: flex; flex-direction: column; gap: 8px; }
 .layers { list-style: none; margin: 0; padding: 4px; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; max-height: 300px; overflow: auto; }
 .layers li { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 8px; cursor: pointer; }
-.layers li.active { background: var(--accent-soft); }
+.layers li.selected { background: var(--accent-soft); }
+.layers.multi li.active { box-shadow: inset 3px 0 0 var(--accent); }
+.layers li.drop-above { box-shadow: inset 0 2px 0 var(--accent); }
+.layers li.drop-below { box-shadow: inset 0 -2px 0 var(--accent); }
+.layers.dragging, .layers.dragging li { cursor: grabbing; }
+.layers .arrows { display: flex; flex-direction: column; gap: 2px; flex-shrink: 0; }
+.layers .arrow { display: grid; place-items: center; width: 22px; height: 18px; padding: 0; border: none; border-radius: 5px; background: none; color: var(--text); cursor: pointer; }
+.layers .arrow:hover:not(:disabled) { background: var(--surface-alt); }
+.layers .arrow:disabled { color: var(--border); cursor: default; }
+.context-menu { position: fixed; top: 0; left: 0; }
+.menu-item:disabled { color: var(--muted); opacity: .6; cursor: default; background: none; }
 .layers li input[type="checkbox"] { accent-color: var(--accent); }
 .layers .thumb { width: 40px; height: 40px; border-radius: 4px; background: repeating-conic-gradient(#d9d9d9 0 25%, #fff 0 50%) 0 0 / 10px 10px; flex-shrink: 0; }
 .layers .lname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

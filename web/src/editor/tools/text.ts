@@ -17,7 +17,9 @@ export function addTextLayer(doc: EditorDoc, raster: Rasterizer, text: string, x
   layers.splice(doc.active + 1, 0, makeLayer(name, img.width, img.height, img.data, { x: Math.trunc(x), y: Math.trunc(y) }));
   doc.layers = layers;
   doc.active += 1;
-  return new LayerListCommand("Text", before, layers, activeBefore, doc.active);
+  const selectedBefore = [...(doc.selected ?? [])];
+  doc.selected = [];
+  return new LayerListCommand("Text", before, layers, activeBefore, doc.active, selectedBefore, []);
 }
 
 /** Click to place text; the page shows an edit box at `anchor` and calls addTextLayer. */

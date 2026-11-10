@@ -76,19 +76,25 @@ export class LayerListCommand implements Command {
     after: Layer[],
     private activeBefore: number,
     private activeAfter: number,
+    private selectedBefore: number[] = [],
+    private selectedAfter: number[] = [],
   ) {
     this.before = [...before];
     this.after = [...after];
+    this.selectedBefore = [...selectedBefore];
+    this.selectedAfter = [...selectedAfter];
   }
 
   undo(doc: EditorDoc): void {
     doc.layers = [...this.before];
     doc.active = this.activeBefore;
+    doc.selected = [...this.selectedBefore];
   }
 
   redo(doc: EditorDoc): void {
     doc.layers = [...this.after];
     doc.active = this.activeAfter;
+    doc.selected = [...this.selectedAfter];
   }
 
   get bytes(): number {
