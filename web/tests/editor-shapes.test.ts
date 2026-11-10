@@ -9,7 +9,7 @@ import type { Tool, ToolContext } from "../src/editor/tools/base";
 import { makeTools } from "../src/editor/tools/index";
 import { clearSelection, CropTool, deselect, selectAll, SelectTool } from "../src/editor/tools/select";
 import { EllipseTool, LineTool, RectTool } from "../src/editor/tools/shapes";
-import { addTextLayer } from "../src/editor/tools/text";
+import { addTextLayer, makeSpec } from "../src/editor/tools/text";
 
 const lpx = (doc: EditorDoc, x: number, y: number, i = doc.active) => {
   const l = doc.layers[i];
@@ -182,8 +182,7 @@ describe("selection, crop and text", () => {
   it("adds text as a new layer", () => {
     const doc = newDoc(200, 100);
     const h = new History(doc);
-    const font = { family: "DejaVu Sans", size: 40, bold: false, italic: false };
-    h.push(addTextLayer(doc, stubRaster, "Hello", 10, 10, font, [255, 0, 0, 255]));
+    h.push(addTextLayer(doc, stubRaster, makeSpec("Hello", { size: 40, color: [255, 0, 0, 255] }), 10, 10));
     expect(doc.layers.length).toBe(2);
     expect(doc.active).toBe(1);
     expect(doc.layers[1].name).toBe("Hello");
@@ -191,7 +190,7 @@ describe("selection, crop and text", () => {
     expect(lpx(doc, 0, 0)).toEqual([255, 0, 0, 255]);
     h.undo();
     expect(doc.layers.length).toBe(1);
-    expect(addTextLayer(doc, stubRaster, "   ", 0, 0, font, [0, 0, 0, 255])).toBeNull();
+    expect(addTextLayer(doc, stubRaster, makeSpec("   "), 0, 0)).toBeNull();
   });
 
   it("lists the tools in tool-bar order", () => {

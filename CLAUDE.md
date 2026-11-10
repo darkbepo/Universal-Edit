@@ -542,7 +542,12 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
          `tools/gradient.py` / `gradient.ts`: colour, layer mask or a soft selection (adjustments
          then fade). Background blur = an effect with `outside_selection` / `outsideSelection`:
          effects.py/ts invert + feather the selection around it and put it back.
-      5. Text v2: re-editable text layers, outline, shadow, background box, alignment, watermark.
+      5. ✅ Text v2 (both apps): `Layer.text` = a `TextSpec` (desktop dataclass / web object with the
+         same snake_case fields) — `render_spec` / `renderSpec` draws it (glyphs + outline by Pillow
+         `stroke_width` / canvas `strokeText`; box, shadow, watermark composed in the model);
+         `ox`/`oy` = where the clicked point sits in the image so re-editing keeps it in place even
+         after a move. Transforms (`_moved(op=…)`) drop the spec (it's pixels then). ORA keeps it as
+         a `umc-text` JSON attribute on the layer element (same format in both apps).
       6. Annotation: arrow tool, highlighter, built-in CC0 stickers.
       7. Pasteboard (owner chose this kind of "artboard"): the area around the canvas holds
          layers that aren't saved into the image (layers already have x/y outside the canvas).

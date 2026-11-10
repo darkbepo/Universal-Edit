@@ -744,3 +744,32 @@ test("background blur asks for a subject, then blurs around it", async ({ page }
   await page.locator("dialog.background-blur").getByRole("button", { name: "Apply" }).click();
   await expect.poll(() => page.evaluate(() => (window.__editor as EditorHook & { history: { undoLabel: string } }).history.undoLabel)).toBe("Background blur");
 });
+
+// ------------------------------------------------------------------ text v2
+
+test("text: box style, click the text again to edit it, layer menu Edit text…", async ({ page }) => {
+  await openEditor(page);
+  await page.keyboard.press("t");
+  await page.locator(".tool-settings").getByLabel("Box behind (back colour)").check();
+  const p = await at(page, 20, 20);
+  await page.mouse.click(p.x, p.y);
+  await page.locator("textarea.text-box").fill("Hello");
+  await page.keyboard.press("Control+Enter");
+  const top = () => page.evaluate(() => {
+    const d = (window.__editor as EditorHook).doc as EditorHook["doc"] & { layers: { text?: { text: string; box: boolean } | null }[] };
+    const l = d.layers[d.layers.length - 1];
+    return { n: d.layers.length, text: l.text?.text ?? null, box: l.text?.box ?? null };
+  });
+  await expect.poll(top).toEqual({ n: 3, text: "Hello", box: true });
+  const q = await at(page, 30, 30);
+  await page.mouse.click(q.x, q.y); // inside the text layer
+  await expect(page.locator("textarea.text-box")).toHaveValue("Hello");
+  await page.locator("textarea.text-box").fill("Hello there");
+  await page.keyboard.press("Control+Enter");
+  await expect.poll(top).toEqual({ n: 3, text: "Hello there", box: true });
+  await page.keyboard.press("b");
+  await page.locator(".layers li").first().click({ button: "right" });
+  await page.getByRole("menu", { name: "Layer actions" }).getByRole("menuitem", { name: "Edit text…" }).click();
+  await expect(page.locator("textarea.text-box")).toHaveValue("Hello there");
+  await page.keyboard.press("Escape");
+});

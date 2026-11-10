@@ -26,6 +26,10 @@ export interface FontSpec {
   size: number;
   bold: boolean;
   italic: boolean;
+  align?: "left" | "center" | "right";
+  /** Outline width in px (drawn behind the letters) and its colour. */
+  outline?: number;
+  outlineColor?: RGBA;
 }
 
 export interface Rasterizer {
@@ -94,14 +98,25 @@ export const canvasRasterizer: Rasterizer = {
       ascent = Math.max(ascent, Math.ceil(m.actualBoundingBoxAscent));
       descent = Math.max(descent, Math.ceil(m.actualBoundingBoxDescent));
     }
-    const pad = 2;
+    const stroke = Math.max(0, font.outline ?? 0);
+    const pad = 2 + stroke;
     const w = width + 2 * pad;
     const h = ascent + descent + (lines.length - 1) * lineHeight + 2 * pad;
     const ctx = context(w, h);
     ctx.font = fontCss;
-    ctx.fillStyle = css(color);
     ctx.textBaseline = "alphabetic";
-    lines.forEach((line, i) => ctx.fillText(line, pad, pad + ascent + i * lineHeight));
+    const xOf = (line: string) => {
+      const lw = probe.measureText(line || " ").width;
+      return font.align === "center" ? pad + (width - lw) / 2 : font.align === "right" ? pad + width - lw : pad;
+    };
+    if (stroke > 0) {
+      ctx.lineJoin = "round";
+      ctx.lineWidth = 2 * stroke;
+      ctx.strokeStyle = css(font.outlineColor ?? [255, 255, 255, 255]);
+      lines.forEach((line, i) => ctx.strokeText(line, xOf(line), pad + ascent + i * lineHeight));
+    }
+    ctx.fillStyle = css(color);
+    lines.forEach((line, i) => ctx.fillText(line, xOf(line), pad + ascent + i * lineHeight));
     return { width: w, height: h, data: ctx.getImageData(0, 0, w, h).data };
   },
 };

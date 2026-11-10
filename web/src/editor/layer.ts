@@ -16,6 +16,8 @@ export interface Layer {
   /** Layer mask in the same RGBA layout as `data` (grey in R/G/B: black hides, white shows),
    *  so crop / resize / rotate / flip reuse the pixel routines; null / absent = no mask. */
   readonly mask?: Uint8ClampedArray | null;
+  /** How a text layer was made (tools/text.ts TextSpec), so it can be edited again. */
+  readonly text?: unknown;
 }
 
 /** Test hook: the largest crop made (in pixels) — lets tests prove strokes don't copy whole layers. */

@@ -146,6 +146,12 @@ export class ToolSettings {
     this.el = h("div", { class: "tool-settings" }, this.title, this.fontRow, this.form.el);
   }
 
+  /** Set some of `tool`'s settings (e.g. from a text layer being edited). */
+  setValues(tool: Tool, values: Values): void {
+    this.values.set(tool.id, { ...this.optionsFor(tool), ...values });
+    if (tool === this.tool) this.show(tool);
+  }
+
   show(tool: Tool): void {
     this.tool = tool;
     this.title.textContent = tool.label;
@@ -226,6 +232,7 @@ export class LayersPanel {
   constructor(
     private onCommand: (cmd: Command) => void,
     private onActive: () => void,
+    private onEditText: (index: number) => void = () => {},
   ) {
     const b = (name: string, title: string, fn: () => void) => {
       const btn = h("button", { class: "btn small", title }, name);
@@ -522,6 +529,7 @@ export class LayersPanel {
       null,
     );
     if (!many) items.push(["Rename…", () => this.renamers.get(doc.active)?.(), true]);
+    if (!many && doc.layers[doc.active].text) items.push(["Edit text…", () => this.onEditText(doc.active), true]);
     if (chosen.some((i) => doc.layers[i].visible)) items.push([`Hide ${word}`, () => this.setVisible(false), true]);
     if (chosen.some((i) => !doc.layers[i].visible)) items.push([`Show ${word}`, () => this.setVisible(true), true]);
     items.push(["Select all layers", () => this.selectAll(), true]);

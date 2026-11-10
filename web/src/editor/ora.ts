@@ -63,7 +63,7 @@ export async function writeOra(doc: EditorDoc, png: PngCodec): Promise<Uint8Arra
     const src = `data/layer${i}.png`;
     files[src] = [await png.encode(layerPixels(l), l.width, l.height), { level: 0 }]; // ORA has no masks: baked in
     entries.push(
-      `<layer name="${esc(l.name)}" src="${src}" x="${l.x}" y="${l.y}" opacity="${l.opacity.toFixed(4)}" visibility="${l.visible ? "visible" : "hidden"}"${i === doc.active ? ' selected="true"' : ""}/>`,
+      `<layer name="${esc(l.name)}" src="${src}" x="${l.x}" y="${l.y}" opacity="${l.opacity.toFixed(4)}" visibility="${l.visible ? "visible" : "hidden"}"${i === doc.active ? ' selected="true"' : ""}${l.text ? ` umc-text="${esc(JSON.stringify(l.text))}"` : ""}/>`, // our extra: keeps text editable
     );
   }
   const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<image version="0.0.3" w="${doc.width}" h="${doc.height}"><stack>${entries.join("")}</stack></image>`;
@@ -79,6 +79,17 @@ function attrs(tag: string): Record<string, string> {
   const out: Record<string, string> = {};
   for (const m of tag.matchAll(/([\w:-]+)\s*=\s*("([^"]*)"|'([^']*)')/g)) out[m[1]] = unesc(m[3] ?? m[4] ?? "");
   return out;
+}
+
+/** A text layer's recipe saved by either app (JSON of TextSpec); null if absent or damaged. */
+function parseText(raw: string | undefined): unknown {
+  if (!raw) return null;
+  try {
+    const t = JSON.parse(raw);
+    return t && typeof t.text === "string" ? t : null;
+  } catch {
+    return null; // keep the pixels, lose the editing
+  }
 }
 
 export async function readOra(bytes: Uint8Array, png: PngCodec, name = "file"): Promise<EditorDoc> {
@@ -107,6 +118,7 @@ export async function readOra(bytes: Uint8Array, png: PngCodec, name = "file"): 
       y: Math.trunc(+(a.y ?? 0) || 0),
       opacity: Math.max(0, Math.min(1, a.opacity === undefined ? 1 : +a.opacity || 0)),
       visible: a.visibility !== "hidden",
+      text: parseText(a["umc-text"]),
     });
     if (a.selected === "true") active = layer;
     layers.push(layer);

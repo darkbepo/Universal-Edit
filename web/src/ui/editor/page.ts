@@ -14,7 +14,7 @@ import { canvasPng, canvasRasterizer, decodeBlob, type Decoded } from "../../edi
 import type { Tool, ToolContext } from "../../editor/tools/base";
 import { makeTools } from "../../editor/tools/index";
 import { clearSelection, deselect, selectAll } from "../../editor/tools/select";
-import { addTextLayer } from "../../editor/tools/text";
+import { addTextLayer, anchorOf, editTextLayer, makeSpec, textLayerAt, type TextSpec } from "../../editor/tools/text";
 import type { ConversionClient } from "../../worker/client";
 import * as effects from "../../editor/effects";
 import type { Effect } from "../../editor/effects";
@@ -94,6 +94,7 @@ export class EditorPage {
   private textBox: HTMLTextAreaElement | null = null;
   private cropBar!: CropBar;
   private textAnchor: [number, number] = [0, 0];
+  private editingText: number | null = null; // the text layer being edited again, if any
   private committing = false;
   private sources: string[] = [];
   private lastSave: { name: string; format: string; values: Record<string, unknown>; handle?: FileHandle } | null = null;
@@ -112,6 +113,7 @@ export class EditorPage {
     this.layers = new LayersPanel(
       (cmd) => this.push(cmd),
       () => this.updateInfo(),
+      (index) => this.editText(index),
     );
     this.canvas.contextProvider = () => this.context();
     this.canvas.onChanged = () => this.changed();
@@ -608,10 +610,30 @@ export class EditorPage {
   }
 
   // ---------------------------------------------------------------- text
-  private openTextBox(x: number, y: number): void {
+  /** Open text layer `index` again (layer menu → Edit text…). */
+  editText(index: number): void {
+    if (!this.doc?.layers[index]?.text) return;
+    this.selectTool("text");
+    this.openTextBox(...anchorOf(this.doc.layers[index]), index);
+  }
+
+  private openTextBox(x: number, y: number, editing: number | null = null): void {
     this.commitText();
+    if (editing === null && this.doc) {
+      editing = textLayerAt(this.doc, x, y); // a click on a text layer edits it
+      if (editing !== null) [x, y] = anchorOf(this.doc.layers[editing]);
+    }
+    this.editingText = editing;
+    const textTool = this.tools.find((t) => t.id === "text") as Tool;
+    if (editing !== null && this.doc) {
+      const s = this.doc.layers[editing].text as TextSpec;
+      this.settings.setValues(textTool, { size: s.size, bold: s.bold, italic: s.italic, align: s.align, outline: s.outline, shadow: s.shadow, box: s.box, watermark: s.watermark });
+      this.settings.font.value = s.font;
+      this.swatches.set(s.color, "left");
+      this.swatches.set(s.box ? s.box_color : s.outline_color, "right");
+    }
     this.textAnchor = [x, y];
-    const o = this.settings.optionsFor(this.tools.find((t) => t.id === "text") as Tool);
+    const o = this.settings.optionsFor(textTool);
     const box = h("textarea", { class: "text-box", rows: 1, ariaLabel: "Text" });
     const [r, g, b, a] = this.swatches.colors[0];
     box.style.color = `rgba(${r},${g},${b},${a / 255})`;
@@ -624,6 +646,7 @@ export class EditorPage {
         this.commitText();
       }
     });
+    if (editing !== null && this.doc) box.value = (this.doc.layers[editing].text as TextSpec).text;
     box.addEventListener("input", () => this.placeTextBox());
     box.addEventListener("blur", () => this.commitText());
     this.textBox = box;
@@ -657,8 +680,16 @@ export class EditorPage {
       if (!this.doc) return;
       const o = this.settings.optionsFor(this.tools.find((t) => t.id === "text") as Tool);
       const [x, y] = this.textAnchor;
-      const font = { family: this.settings.font.value, size: Number(o.size), bold: !!o.bold, italic: !!o.italic };
-      this.push(addTextLayer(this.doc, canvasRasterizer, text, x, y, font, this.swatches.colors[0] as RGBA));
+      const [front, back] = this.swatches.colors;
+      const spec = makeSpec(text, {
+        font: this.settings.font.value, size: Number(o.size), bold: !!o.bold, italic: !!o.italic,
+        color: front as RGBA, align: (o.align as TextSpec["align"]) ?? "left", outline: Number(o.outline) || 0,
+        outline_color: back as RGBA, shadow: !!o.shadow, box: !!o.box, box_color: back as RGBA, watermark: !!o.watermark,
+      });
+      const editing = this.editingText;
+      this.editingText = null;
+      if (editing !== null && editing < this.doc.layers.length) this.push(editTextLayer(this.doc, canvasRasterizer, editing, spec));
+      else this.push(addTextLayer(this.doc, canvasRasterizer, spec, x, y));
       this.canvas.view.focus();
     } finally {
       this.committing = false;
