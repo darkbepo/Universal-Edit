@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from umc.converters.subtitles import _ass_colour
+from umc.editor.fonts import find_font
 from umc.videoedit.project import TextItem
 
 # anchor → (numpad alignment, column 0..2, row 0..2)
@@ -20,6 +21,25 @@ _ANCHORS = {
     "bottom-right": (3, 2, 2),
 }
 _BASE = (0.05, 0.50, 0.95)
+_JOINER = "⁠"
+_FALLBACK_FONT = "DejaVu Sans"
+
+
+def font_name(t: TextItem) -> str:
+    """The family to use: the item's, if the system (or the bundled set) has it."""
+    if t.font and (find_font(t.font, t.bold, t.italic) or t.font == _FALLBACK_FONT):
+        return t.font
+    return _FALLBACK_FONT
+
+
+def _fades(t: TextItem) -> tuple[float, float]:
+    """Fade-in / fade-out, scaled down together when they don't fit in the item."""
+    fin, fout = max(t.fade_in, 0.0), max(t.fade_out, 0.0)
+    span = t.end - t.start
+    if fin + fout > span > 0:
+        scale = span / (fin + fout)
+        fin, fout = fin * scale, fout * scale
+    return fin, fout
 
 
 def _time(t: float) -> str:
@@ -32,7 +52,9 @@ def _time(t: float) -> str:
 
 def escape(text: str) -> str:
     text = text.replace("\r\n", "\n").replace("\r", "\n")
-    text = text.replace("\\", "\\\\").replace("{", "\\{").replace("}", "\\}")
+    # A lone backslash outside {} is literal in libass (a doubled one shows twice). The word
+    # joiner (zero width) stops a following n / N / h / { / } from being read as a command.
+    text = text.replace("\\", "\\" + _JOINER).replace("{", "\\{").replace("}", "\\}")
     return text.replace("\n", "\\N")
 
 
@@ -49,7 +71,7 @@ def _style(n: int, t: TextItem, h: int) -> str:
         outline, back, border = _ass_colour(t.outline_colour, 0), _ass_colour("#000000", 255), 1
     fields = [
         f"T{n}",
-        t.font or "DejaVu Sans",
+        font_name(t),
         str(round(t.size / 100 * h)),
         primary,
         primary,
@@ -117,7 +139,7 @@ def build_ass(items: Sequence[TextItem], size: tuple[int, int]) -> str:
         an, col, row = _ANCHORS[t.anchor]
         x = round(w * (_BASE[col] + t.x_offset / 100))
         y = round(h * (_BASE[row] + t.y_offset / 100))
-        tags = f"{{\\an{an}\\pos({x},{y}){_fade_tag(t.start, t.end, t.fade_in, t.fade_out)}}}"
+        tags = f"{{\\an{an}\\pos({x},{y}){_fade_tag(t.start, t.end, *_fades(t))}}}"
         events.append(
             f"Dialogue: 0,{_time(max(t.start, 0.0))},{_time(t.end)},T{n},,0,0,0,,"
             f"{tags}{escape(t.text)}"

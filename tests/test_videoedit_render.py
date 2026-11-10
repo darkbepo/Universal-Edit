@@ -369,7 +369,7 @@ def test_build_ass_escaping():
     from umc.videoedit.text_ass import build_ass
 
     ass = build_ass([TextItem("t", "a{b}\\c\nline2", 0.0, 1.0)], (320, 240))
-    assert "a\\{b\\}\\\\c\\Nline2" in ass
+    assert "a\\{b\\}\\⁠c\\Nline2" in ass
     assert "PlayResX: 320" in ass and "PlayResY: 240" in ass
     assert "WrapStyle: 0" in ass and "ScaledBorderAndShadow: yes" in ass
 
@@ -458,3 +458,55 @@ def test_text_window_matches_full_render(src, tmp_path):
         x = np.asarray(frame_at(part, 0.0), dtype=np.float64)
         y = np.asarray(frame_at(full, t), dtype=np.float64)
         assert np.abs(x - y).mean() < 6, t
+
+
+def _text_bbox(src, tmp_path, text, name):
+    item = TextItem("t", text, 0.0, 1.0, anchor="center", size=15.0, outline=0.0)
+    out = render_to(_text_proj(src, item), tmp_path / f"{name}.mp4", tmp_path)
+    img = np.asarray(frame_at(out, 0.5)).astype(int)
+    ys, xs = np.nonzero(img[..., 0] > 160)
+    return xs.max() - xs.min() + 1, ys.max() - ys.min() + 1
+
+
+def test_text_backslash_is_literal_and_not_a_line_break(src, tmp_path):
+    from umc.videoedit.text_ass import build_ass
+
+    ass = build_ass([TextItem("t", "a\\Nb")], (320, 240))
+    assert "a\\⁠Nb" in ass  # lone backslash + word joiner, not a doubled one
+    _w1, h_one = _text_bbox(src, tmp_path, "a\\Nb", "one")
+    _w2, h_two = _text_bbox(src, tmp_path, "a\nb", "two")
+    assert h_two > 1.6 * h_one  # the real newline gives two lines, the typed one does not
+    w_single, _ = _text_bbox(src, tmp_path, "x\\y", "single")
+    w_plain, _ = _text_bbox(src, tmp_path, "xy", "plain")
+    w_double, _ = _text_bbox(src, tmp_path, "x\\\\y", "double")
+    assert w_plain < w_single < w_double  # exactly one backslash, joiner invisible
+
+
+def test_text_braces_render_as_braces(src, tmp_path):
+    w_brace, _ = _text_bbox(src, tmp_path, "x{y}z", "brace")
+    w_plain, _ = _text_bbox(src, tmp_path, "xyz", "plain3")
+    assert w_brace > w_plain * 1.2
+
+
+def test_text_unknown_font_falls_back_to_dejavu():
+    from umc.videoedit.text_ass import build_ass
+
+    ass = build_ass([TextItem("t", "Hi", font="No Such Family 123")], (320, 240))
+    style = next(line for line in ass.splitlines() if line.startswith("Style:"))
+    assert style.split(",")[1] == "DejaVu Sans"
+
+
+def test_text_fades_are_clamped_to_the_duration():
+    from umc.videoedit.text_ass import build_ass
+
+    item = TextItem("t", "Hi", 0.0, 1.0, fade_in=2.0, fade_out=2.0)
+    dialogue = next(
+        line for line in build_ass([item], (320, 240)).splitlines() if "Dialogue" in line
+    )
+    assert "\\fad(500,500)" in dialogue
+    neg = TextItem("t", "Hi", -0.5, 1.0, fade_in=2.0, fade_out=2.0)  # shown 0..1, scaled 0.5/0.5
+    dialogue = next(
+        line for line in build_ass([neg], (320, 240)).splitlines() if "Dialogue" in line
+    )
+    # timeline span is 1.5 s, fades scale to 0.75 each: 0.5 s of fade-in already played
+    assert "\\fade(85,0,255,0,250,250,1000)" in dialogue.replace(" ", "")
