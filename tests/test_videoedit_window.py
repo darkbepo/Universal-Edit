@@ -92,3 +92,59 @@ def test_window_keeps_item_whose_transition_starts_before_end():
     tr = Transition("fade", 0.5)
     w = window(_proj([_clip("a"), _clip("b", transition_in=tr)]), 0.0, 1.8)
     assert [c.id for c in w.project.main] == ["a", "b"]
+
+
+def test_window_cut_converts_to_source_time_with_speed():
+    clip = VideoClip("a", "v", 0.0, 8.0, speed=2.0)  # 4 s on the timeline
+    w = window(_proj([clip]), 1.0, 3.0)
+    assert w.project.main[0].in_ == 2.0
+    assert w.lead == 0
+
+
+def test_window_cut_past_fade_in_clears_it():
+    w = window(_proj([_clip("a", fade_in=0.5)]), 1.0, 2.0)
+    assert w.project.main[0].in_ == 1.0
+    assert w.project.main[0].fade_in == 0.0
+
+
+def test_window_cut_exactly_at_fade_in_end_clears_it():
+    w = window(_proj([_clip("a", fade_in=1.0)]), 1.0, 2.0)
+    assert w.project.main[0].in_ == 1.0
+    assert w.project.main[0].fade_in == 0.0
+
+
+def test_window_uncut_fade_in_is_kept():
+    w = window(_proj([_clip("a", fade_in=1.0)]), 0.4, 1.5)
+    assert w.project.main[0].fade_in == 1.0
+
+
+def test_window_transition_branch_clears_fade_in_of_previous():
+    tr = Transition("fade", 0.5)
+    w = window(_proj([_clip("a", fade_in=0.5), _clip("b", transition_in=tr)]), 1.6, 2.5)
+    a = w.project.main[0]
+    assert a.in_ == pytest.approx(1.5)
+    assert a.fade_in == 0.0
+
+
+def test_window_transition_branch_fade_in_guard_on_previous():
+    tr = Transition("fade", 0.5)
+    w = window(_proj([_clip("a", fade_in=1.8), _clip("b", transition_in=tr)]), 1.6, 2.5)
+    a, b = w.project.main
+    assert a.in_ == 0
+    assert a.fade_in == 1.8
+    assert w.lead == pytest.approx(1.6)
+    assert b.transition_in == tr
+
+
+def test_window_none_transition_does_not_keep_previous():
+    w = window(_proj([_clip("a"), _clip("b", transition_in=Transition("none", 0.5))]), 2.0, 3.0)
+    assert [c.id for c in w.project.main] == ["b"]
+    assert w.lead == 0
+
+
+def test_window_music_loop_until_shifts():
+    m = AudioClip("m", "a", 0.0, 0.0, 2.0, loop_until=6.0)
+    w = window(_proj([_clip("a")], music=((m,),)), 1.0, 2.0)
+    got = w.project.music_rows[0][0]
+    assert got.start == -1
+    assert got.loop_until == 5.0

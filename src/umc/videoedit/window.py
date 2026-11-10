@@ -28,6 +28,7 @@ class Window:
 def _cut(item: MainItem, cut: float) -> MainItem:
     """The item without its first ``cut`` timeline seconds (its transition is dropped)."""
     if cut > 0:
+        item = replace(item, fade_in=0.0)  # the fade is over by the cut point
         if isinstance(item, VideoClip):
             item = replace(item, in_=item.in_ + cut * item.speed)
         else:
