@@ -520,3 +520,8 @@ QWidget#EditorCanvas {
     background: @bg;
 }
 
+/* Document editor: the page column */
+#DocPage {
+    background: white;
+    color: black;
+}
