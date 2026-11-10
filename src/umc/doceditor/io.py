@@ -18,6 +18,14 @@ from umc.doceditor.types import MAX_CHARS, MAX_FILE_BYTES, TOO_LARGE, OpenedDocu
 from umc.tools.htmlpdf import read_text
 
 EMPTY = "<p></p>"
+NBSP = "\xa0"
+
+
+def _keep_spaces(line: str) -> str:
+    """A space at the start of the line or after another space becomes a no-break space."""
+    return "".join(
+        NBSP if c == " " and (i == 0 or line[i - 1] == " ") else c for i, c in enumerate(line)
+    )
 
 
 def _txt_to_html(text: str) -> str:
@@ -26,7 +34,7 @@ def _txt_to_html(text: str) -> str:
         lines.pop()
     if not lines:
         return EMPTY
-    return "".join(f"<p>{html_lib.escape(line)}</p>" for line in lines)
+    return "".join(f"<p>{html_lib.escape(_keep_spaces(line))}</p>" for line in lines)
 
 
 def open_document(path: Path, cancel_event: threading.Event | None = None) -> OpenedDocument:

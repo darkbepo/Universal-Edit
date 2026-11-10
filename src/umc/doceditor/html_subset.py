@@ -122,7 +122,9 @@ _DATA_URI = re.compile(
     r"^data:image/(png|jpe?g|gif|bmp|webp)(?:;[^,;]*)*;base64,(.*)$", re.I | re.S
 )
 _CANON_IMG = re.compile(r"^img/\d+\.(?:png|jpg|gif|bmp|webp)$")
-_WS = re.compile(r"[ \t\r\n\f]+")
+# Collapsed to one space: runs of spaces, and line breaks with the indentation around them
+# (source formatting). Tabs elsewhere and no-break spaces (U+00A0) are content and are kept.
+_WS = re.compile(r"[ \t]*[\r\n\f][ \t\r\n\f]*| {2,}")
 _XML_DECL = re.compile(r"^\s*<\?xml[^>]*\?>", re.I)
 _BR = ("V", "<br>")
 

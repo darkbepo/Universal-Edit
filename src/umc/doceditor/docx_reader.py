@@ -42,6 +42,7 @@ from umc.doceditor.types import (
 log = logging.getLogger(__name__)
 
 _EMU_PER_PX = 9525
+NBSP = "\xa0"
 _HEADINGS = {f"Heading {n}": f"h{min(n, 3)}" for n in range(1, 10)} | {"Title": "h1"}
 _BLOCK_STYLES = {
     **_HEADINGS,
@@ -264,9 +265,9 @@ def _run_items(
     for child in r:
         tag = child.tag
         if tag == _W + "t":
-            add("t", child.text or "")
+            add("t", _keep_spaces(child.text or "", _last_char(segs[-1])))
         elif tag == _W + "tab":
-            add("t", " ")
+            add("t", "\t")
         elif tag == _W + "noBreakHyphen":
             add("t", "-")
         elif tag == _W + "cr":
@@ -280,6 +281,30 @@ def _run_items(
                 add("br", "")
         elif tag == _W + "drawing" and (img := _picture(ctx, child)) is not None:
             add("img", img)
+
+
+def _last_char(seg: _Segment) -> str:
+    """The last character of the paragraph so far ("" at its start, "\n" after a break)."""
+    for kind, value, _fmt, _link in reversed(seg.items):
+        if kind == "br":
+            return "\n"
+        if kind == "img":
+            return "\ufffc"
+        if value:
+            return value[-1]
+    return ""
+
+
+def _keep_spaces(text: str, before: str) -> str:
+    """Spaces HTML would collapse become no-break spaces: one at the start of a line, or one
+    after another space (the writer turns them back into ordinary spaces)."""
+    out = []
+    for c in text:
+        if c == " " and before in ("", "\n", " ", NBSP):
+            c = NBSP
+        out.append(c)
+        before = " " if c == NBSP else c
+    return "".join(out)
 
 
 def _inline_nodes(
@@ -329,6 +354,8 @@ def _render_group(items: list[_Item], pre: bool) -> str:
             while i < len(items) and items[i][0] == "t" and items[i][2] == fmt:
                 value += items[i][1]
                 i += 1
+            if pre:  # <pre> keeps every space as it is
+                value = value.replace(NBSP, " ")
             out.append(_wrap(_html.escape(value, quote=False), fmt))
     return "".join(out)
 

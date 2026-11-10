@@ -57,6 +57,7 @@ _IMAGE_EXTS = {
 _QUOTE_TOKENS = re.compile(r'<blockquote>|</blockquote>|<p(?: style="([^"]*)")?>')
 _MARGIN_PT = re.compile(r"(<(?:p|h[1-3]|li) [^>]*?)margin-left:(\d+(?:\.\d+)?)pt")
 _IMG_SRC = re.compile(r'<img src="([^"]+)"')
+_TAB = re.compile(r"\t(?![^<>]*>)")  # a tab in text, not inside a tag
 _NOT_A_PICTURE = "This file isn't a picture the editor can add (PNG, JPG, GIF, BMP or WebP)."
 
 
@@ -80,6 +81,8 @@ def _qt_html(html: str) -> str:
         return f'<p style="{style + ";" if style else ""}{margins}">'
 
     depth = [0]
+    # Qt's HTML reader turns a tab into a space unless white-space is preserved around it.
+    html = _TAB.sub('<span style="white-space:pre-wrap">\t</span>', html)
     # Qt drops empty paragraphs unless they are marked the way its own HTML marks them.
     html = re.sub(
         r'<(p|h[1-3]|li)(?: style="([^"]*)")?>(?=</\1>|<[uo]l>)',

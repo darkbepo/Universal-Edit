@@ -39,6 +39,8 @@ _ALIGN = {
 _HEADINGS = {"h1": "Heading 1", "h2": "Heading 2", "h3": "Heading 3"}
 _INLINE_FLAGS = {"b": "bold", "i": "italic", "u": "underline", "s": "strike"}
 _EMU_PER_PX = 9525
+NBSP = "\xa0"
+XML_SPACE = "{http://www.w3.org/XML/1998/namespace}space"
 
 
 @dataclass(frozen=True)
@@ -182,7 +184,9 @@ def _inline(ctx: _Ctx, par: Any, node: etree._Element, fmt: _Fmt, holder: Any) -
 
     def text(value: str | None) -> None:
         if value:
-            run = par.add_run(value)
+            run = par.add_run(value.replace(NBSP, " "))  # python-docx writes tabs as w:tab
+            for t in run._r.findall(qn("w:t")):
+                t.set(XML_SPACE, "preserve")
             _style_run(run, fmt)
             _place(par, run, holder)
 

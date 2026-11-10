@@ -27,6 +27,8 @@ SUBSET_CASES = CASES + [
     '<h2 style="text-align:center;page-break-before:always">H</h2>',
     '<p><span style="font-family:Courier New">m</span></p><pre>x &lt; 1<br>y</pre>',
     '<p style="margin-left:36pt">margin-left:72pt text-align:center</p><p>&lt;p&gt;</p>',
+    "<p>a\tb \xa0\xa0c</p><p>\xa0\xa0x<b>\ty</b></p><pre>x\ty  z</pre>",
+    "<ul><li>\ta</li></ul><table><tr><td><p>\xa0\tb</p></td></tr></table>",
 ]
 
 
