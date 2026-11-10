@@ -7,7 +7,7 @@ from umc.converters.video_frames import ffmpeg_pattern, select_expr
 from umc.core import options as opts
 from umc.core.detect import MediaFamily, detect
 from umc.core.errors import ConversionError
-from umc.core.job import unique_path
+from umc.core.job import file_fractions, unique_path
 from umc.core.registry import targets_for
 from umc.tools.pdf import parse_page_range
 
@@ -107,3 +107,12 @@ def test_video_targets(media):
 
 def test_paths(media):
     assert isinstance(media, Path)
+
+
+def test_file_fractions_split_overall_progress_per_file():
+    assert file_fractions(0.0, 3) == [0.0, 0.0, 0.0]
+    assert file_fractions(0.5, 2) == [1.0, 0.0]
+    assert [round(f, 2) for f in file_fractions(0.6, 4)] == [1.0, 1.0, 0.4, 0.0]
+    assert file_fractions(1.0, 3) == [1.0, 1.0, 1.0]
+    assert file_fractions(1.7, 1) == [1.0] and file_fractions(-1, 1) == [0.0]
+    assert file_fractions(0.5, 0) == []

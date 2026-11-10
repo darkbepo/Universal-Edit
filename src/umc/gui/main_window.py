@@ -1,13 +1,19 @@
-"""The single application window: input → output format → settings → Convert."""
+"""The single application window: files (drop zone + queue) → output format → settings → Convert.
+
+Wide layout: files on the left, "Convert to" / "Settings" sideways tabs on the right, a bottom
+bar with the status, the destination, the overall progress and Convert. Below ``NARROW`` px of
+width everything stacks in one column, in the same order.
+"""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QSettings, Qt, QUrl
-from PySide6.QtGui import QAction, QDesktopServices, QKeySequence
+from PySide6.QtCore import QSettings, QSize, Qt, QUrl
+from PySide6.QtGui import QAction, QDesktopServices, QGuiApplication, QKeySequence
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QBoxLayout,
     QButtonGroup,
     QFileDialog,
     QFrame,
@@ -19,7 +25,7 @@ from PySide6.QtWidgets import (
     QMenu,
     QProgressBar,
     QPushButton,
-    QScrollArea,
+    QSizePolicy,
     QStackedWidget,
     QToolButton,
     QVBoxLayout,
@@ -28,12 +34,15 @@ from PySide6.QtWidgets import (
 
 from umc.core import options as opts
 from umc.core.detect import DetectedFile, MediaFamily, detect
-from umc.core.job import ConversionJob
+from umc.core.job import ConversionJob, file_fractions
 from umc.core.registry import MixedInputError, Target, targets_for
+from umc.gui import icons, theme
 from umc.gui.tool_dialog import ToolMissingDialog
 from umc.gui.widgets.drop_zone import DropZone
+from umc.gui.widgets.file_queue import FileQueue, fmt_size
 from umc.gui.widgets.format_picker import FormatPicker
 from umc.gui.widgets.settings_panel import SettingsPanel
+from umc.gui.widgets.side_tabs import SideTabs
 from umc.gui.worker import start_worker
 
 FAMILY_NOUN = {
@@ -49,33 +58,17 @@ FAMILY_NOUN = {
     MediaFamily.CAD: ("CAD drawing", "CAD drawings"),
     MediaFamily.PROJECT: ("video project", "video projects"),
 }
-ICONS = {
-    MediaFamily.IMAGE: "🖼",
-    MediaFamily.VIDEO: "🎞",
-    MediaFamily.AUDIO: "🎵",
-    MediaFamily.MODEL: "🧊",
-    MediaFamily.DOCUMENT: "📄",
-    MediaFamily.ARCHIVE: "🗜",
-    MediaFamily.SUBTITLE: "💬",
-    MediaFamily.FONT: "🔤",
-    MediaFamily.VECTOR: "✒",
-    MediaFamily.CAD: "📐",
-    MediaFamily.PROJECT: "🎬",
-}
 
-
-def section(text: str) -> QLabel:
-    label = QLabel(text.upper())
-    label.setObjectName("Section")
-    return label
+NARROW = 900  # px of window width below which the layout becomes one column
+DEFAULT_SIZE = QSize(1280, 800)
+MAX_RESULTS = 200
 
 
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("Universal Media Converter")
-        self.resize(620, 780)
-        self.setMinimumSize(480, 560)
+        self.setMinimumSize(600, 560)
         self.settings = QSettings()
         self.files: list[DetectedFile] = []
         self.target: Target | None = None
@@ -85,40 +78,33 @@ class MainWindow(QMainWindow):
         self._worker = None
         self._last_job: ConversionJob | None = None
         self._pending_tool: tuple[str, str, str] | None = None
+        self._narrow: bool | None = None
 
         root = QWidget(objectName="Root")
         outer = QVBoxLayout(root)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
 
-        # ---------------------------------------------------------- scrollable content
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        content = QWidget(objectName="Content")
-        body = QVBoxLayout(content)
-        body.setContentsMargins(28, 24, 28, 16)
-        body.setSpacing(12)
-
+        # ---------------------------------------------------------- top bar
+        top = QFrame(objectName="TopBar")
+        tl = QHBoxLayout(top)
+        tl.setContentsMargins(22, 12, 22, 12)
+        tl.setSpacing(10)
+        self.logo = QLabel(objectName="Logo")
+        self.logo.setFixedSize(30, 30)
+        self.logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title = QLabel("Universal Media Converter", objectName="Title")
-        subtitle = QLabel(
-            "Documents, images and video — drop it in, pick a format.", objectName="Subtitle"
-        )
-        body.addWidget(title)
-        body.addWidget(subtitle)
-        body.addSpacing(8)
+        tl.addWidget(self.logo)
+        tl.addWidget(title)
+        tl.addStretch(1)
 
-        self.drop = DropZone()
-        self.drop.files_dropped.connect(self.add_files)
-        body.addWidget(self.drop)
-
-        # Convert | Edit — only shown when every added file is an image
-        self.mode_bar = QWidget(objectName="ModeBar")
+        # Convert | Edit — Edit is enabled when every added file can be edited (images)
+        self.mode_bar = QFrame(objectName="ModeBar")
         mb = QHBoxLayout(self.mode_bar)
-        mb.setContentsMargins(0, 0, 0, 0)
-        mb.setSpacing(0)
-        self.convert_mode = QPushButton("Convert", objectName="SegmentLeft")
-        self.edit_mode = QPushButton("Edit", objectName="SegmentRight")
+        mb.setContentsMargins(3, 3, 3, 3)
+        mb.setSpacing(2)
+        self.convert_mode = QPushButton("Convert", objectName="Segment")
+        self.edit_mode = QPushButton("Edit", objectName="Segment")
         self._mode_group = QButtonGroup(self)
         for b in (self.convert_mode, self.edit_mode):
             b.setCheckable(True)
@@ -126,109 +112,120 @@ class MainWindow(QMainWindow):
             self._mode_group.addButton(b)
             mb.addWidget(b)
         self.convert_mode.setChecked(True)
-        self.edit_mode.setToolTip(
-            "Open the images in the image editor (each image becomes a layer)"
-        )
         self.convert_mode.clicked.connect(self.leave_edit)
         self.edit_mode.clicked.connect(self.enter_edit)
-        mb.addStretch(1)
-        body.addWidget(self.mode_bar)
+        tl.addWidget(self.mode_bar)
+        outer.addWidget(top)
         self.editor = None  # EditorPage, created on first use
         self._convert_size = None
 
-        # files card
+        # ---------------------------------------------------------- body: two columns
+        body = QWidget(objectName="Body")
+        self._columns = QBoxLayout(QBoxLayout.Direction.LeftToRight, body)
+        self._columns.setContentsMargins(20, 18, 20, 18)
+        self._columns.setSpacing(18)
+
+        self.left = QWidget(objectName="LeftColumn")
+        left = QVBoxLayout(self.left)
+        left.setContentsMargins(0, 0, 0, 0)
+        left.setSpacing(12)
+        self.drop = DropZone()
+        self.drop.files_dropped.connect(self.add_files)
+        left.addWidget(self.drop)
+
+        self.input_error = QLabel(objectName="Error")
+        self.input_error.setWordWrap(True)
+        left.addWidget(self.input_error)
+
+        # results (after a successful run)
+        self.results_card = QFrame(objectName="Card")
+        rc = QVBoxLayout(self.results_card)
+        rc.setContentsMargins(14, 10, 10, 8)
+        rc.setSpacing(4)
+        head = QHBoxLayout()
+        self.results_label = QLabel(objectName="CardTitle")
+        self.open_button = QPushButton("Open folder", objectName="Link")
+        self.open_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.open_button.clicked.connect(self.open_output)
+        head.addWidget(self.results_label)
+        head.addStretch(1)
+        head.addWidget(self.open_button)
+        rc.addLayout(head)
+        self.results_list = QListWidget(objectName="ResultList")
+        self.results_list.setIconSize(QSize(18, 18))
+        self.results_list.setToolTip("Click to show the file in its folder")
+        self.results_list.itemClicked.connect(self._reveal_result)
+        rc.addWidget(self.results_list)
+        left.addWidget(self.results_card)
+
+        # queue
         self.files_card = QFrame(objectName="Card")
         fc = QVBoxLayout(self.files_card)
-        fc.setContentsMargins(14, 10, 14, 10)
+        fc.setContentsMargins(14, 10, 10, 8)
+        fc.setSpacing(4)
         head = QHBoxLayout()
-        self.files_label = QLabel()
-        self.files_label.setStyleSheet("font-weight: 600;")
+        self.files_label = QLabel(objectName="CardTitle")
         clear = QPushButton("Clear", objectName="Link")
         clear.setCursor(Qt.CursorShape.PointingHandCursor)
         clear.clicked.connect(self.clear_files)
+        self.clear_button = clear
         head.addWidget(self.files_label)
         head.addStretch(1)
         head.addWidget(clear)
         fc.addLayout(head)
-        self.file_list = QListWidget(objectName="FileList")
-        self.file_list.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
-        self.file_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.file_list = FileQueue()
         self.file_list.model().rowsMoved.connect(self._sync_order)
-        self.file_list.setToolTip("Drag to reorder · Delete to remove")
+        self.file_list.remove_requested.connect(self.remove_row)
         remove = QAction(self.file_list)
         remove.setShortcuts([QKeySequence.StandardKey.Delete, QKeySequence(Qt.Key.Key_Backspace)])
         remove.triggered.connect(self.remove_selected)
         self.file_list.addAction(remove)
-        fc.addWidget(self.file_list)
-        self.files_hint = QLabel("Drag to reorder · Delete key removes", objectName="Help")
+        fc.addWidget(self.file_list, 1)
+        self.files_hint = QLabel("Drag to reorder · Delete removes", objectName="Help")
         fc.addWidget(self.files_hint)
-        body.addWidget(self.files_card)
+        left.addWidget(self.files_card, 1)
+        self._columns.addWidget(self.left, 0)
 
-        self.input_error = QLabel(objectName="Error")
-        self.input_error.setWordWrap(True)
-        body.addWidget(self.input_error)
-
-        # output format
-        self.format_section = section("Convert to")
-        body.addWidget(self.format_section)
+        # right: Convert to | Settings
         self.picker = FormatPicker()
         self.picker.target_changed.connect(self.on_target_changed)
-        body.addWidget(self.picker)
-
-        # settings
-        self.settings_toggle = QToolButton(objectName="Disclosure")
-        self.settings_toggle.setCheckable(True)
-        self.settings_toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
-        self.settings_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.settings_toggle.toggled.connect(self._toggle_settings)
-        body.addWidget(self.settings_toggle)
-        self.settings_card = QFrame(objectName="Card")
-        sc = QVBoxLayout(self.settings_card)
-        sc.setContentsMargins(18, 14, 18, 16)
         self.settings_panel = SettingsPanel()
         self.settings_panel.changed.connect(self._remember_values)
-        reset = QPushButton("Reset to defaults", objectName="Link")
-        reset.clicked.connect(self.reset_settings)
-        sc.addWidget(self.settings_panel)
-        sc.addWidget(reset, alignment=Qt.AlignmentFlag.AlignRight)
-        body.addWidget(self.settings_card)
-        body.addStretch(1)
-        scroll.setWidget(content)
-        outer.addWidget(scroll, 1)
+        self.tabs = SideTabs(self.picker, self.settings_panel)
+        self.tabs.reset_clicked.connect(self.reset_settings)
+        self.empty_hint = QLabel("Add files to see what they can become.", objectName="EmptyHint")
+        self.empty_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.right = QStackedWidget(objectName="RightColumn")
+        self.right.addWidget(self.empty_hint)
+        self.right.addWidget(self.tabs)
+        self._columns.addWidget(self.right, 1)
+        outer.addWidget(body, 1)
 
         # ---------------------------------------------------------- bottom bar
-        bar = QFrame(objectName="Card")
-        bar.setStyleSheet(
-            "QFrame#Card { border-radius: 0; border-left: none; border-right: none;"
-            " border-bottom: none; }"
-        )
-        bl = QVBoxLayout(bar)
-        bl.setContentsMargins(28, 12, 28, 14)
-        bl.setSpacing(8)
-        self.progress = QProgressBar()
-        self.progress.setTextVisible(False)
-        self.progress.setRange(0, 1000)
+        bar = QFrame(objectName="BottomBar")
+        bl = QHBoxLayout(bar)
+        bl.setContentsMargins(22, 12, 22, 12)
+        bl.setSpacing(14)
         self.status = QLabel(objectName="Muted")
         self.status.setWordWrap(True)
-        bl.addWidget(self.progress)
-        bl.addWidget(self.status)
-        row = QHBoxLayout()
+        self.status.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.dest_button = QToolButton(objectName="Link")
         self.dest_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         menu = QMenu(self.dest_button)
         menu.addAction("Same folder as the original", lambda: self._set_output_dir(None))
         menu.addAction("Choose folder…", self._choose_output_dir)
         self.dest_button.setMenu(menu)
-        self.open_button = QPushButton("Open folder")
-        self.open_button.clicked.connect(self.open_output)
+        self.progress = QProgressBar()
+        self.progress.setTextVisible(False)
+        self.progress.setRange(0, 1000)
+        self.progress.setFixedWidth(200)
         self.convert_button = QPushButton("Convert", objectName="Primary")
         self.convert_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.convert_button.clicked.connect(self.on_convert_clicked)
-        row.addWidget(self.dest_button)
-        row.addStretch(1)
-        row.addWidget(self.open_button)
-        row.addWidget(self.convert_button)
-        bl.addLayout(row)
+        bl.addWidget(self.status, 1)
+        bl.addWidget(self.dest_button)
+        bl.addWidget(self.progress)
+        bl.addWidget(self.convert_button)
         outer.addWidget(bar)
 
         self.stack = QStackedWidget()
@@ -237,8 +234,71 @@ class MainWindow(QMainWindow):
         self.setAcceptDrops(True)
         saved = self.settings.value("output_dir", "", str)
         self._set_output_dir(Path(saved) if saved and Path(saved).is_dir() else None)
-        self.settings_toggle.setChecked(self.settings.value("settings_open", False, bool))
+        self._restore_size()
+        QGuiApplication.styleHints().colorSchemeChanged.connect(lambda _s: self._retint())
+        self._retint()
+        self._apply_layout()
         self._refresh()
+
+    # ------------------------------------------------------------------ window size / layout
+    def _restore_size(self) -> None:
+        geometry = self.settings.value("geometry")
+        if geometry is not None and self.restoreGeometry(geometry):
+            return
+        screen = QGuiApplication.primaryScreen()
+        size = QSize(DEFAULT_SIZE)
+        if screen is not None:
+            avail = screen.availableGeometry().size()
+            size = size.boundedTo(QSize(int(avail.width() * 0.92), int(avail.height() * 0.9)))
+        self.resize(size)
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._apply_layout()
+        self._apply_left_width()
+
+    @property
+    def narrow(self) -> bool:
+        return self.width() < NARROW
+
+    def _apply_layout(self) -> None:
+        narrow = self.narrow
+        if narrow == self._narrow:
+            return
+        self._narrow = narrow
+        self._columns.setDirection(
+            QBoxLayout.Direction.TopToBottom if narrow else QBoxLayout.Direction.LeftToRight
+        )
+        self._apply_left_width()
+        self._update_left_sizes()
+
+    def _apply_left_width(self) -> None:
+        if self.narrow or not self.files:
+            self.left.setMinimumWidth(0)
+            self.left.setMaximumWidth(16777215)
+        else:
+            self.left.setMinimumWidth(320)
+            self.left.setMaximumWidth(max(340, min(460, self.width() // 3)))
+
+    def _update_left_sizes(self) -> None:
+        """Queue/results heights: free in the wide layout, capped when stacked."""
+        rows = self.file_list.count()
+        row_h = 56
+        if self.narrow:
+            self.file_list.setMaximumHeight(min(max(rows, 1), 4) * row_h + 6)
+        else:
+            self.file_list.setMaximumHeight(16777215)
+        self.results_list.setMaximumHeight(min(max(self.results_list.count(), 1), 4) * 34 + 6)
+
+    def _retint(self) -> None:
+        pal = theme.palette()
+        self.logo.setPixmap(icons.pixmap("transform", 18, pal["accent_text"]))
+        self.drop.retint()
+        self.picker.retint()
+        self.tabs.retint()
+        for i in range(self.results_list.count()):
+            self.results_list.item(i).setIcon(icons.icon("check", pal["success"], 18))
+        self.file_list.viewport().update()
 
     # ------------------------------------------------------------------ files
     def add_files(self, paths: list[str]) -> None:
@@ -271,44 +331,47 @@ class MainWindow(QMainWindow):
         return out
 
     def clear_files(self) -> None:
+        if self.busy:
+            return
         self.files.clear()
         self._rebuild_list()
         self._refresh()
 
     def remove_selected(self) -> None:
+        if self.busy:
+            return
         rows = sorted((self.file_list.row(i) for i in self.file_list.selectedItems()), reverse=True)
         for r in rows:
             del self.files[r]
         self._rebuild_list()
         self._refresh()
 
+    def remove_row(self, row: int) -> None:
+        if self.busy or not 0 <= row < len(self.files):
+            return
+        del self.files[row]
+        self._rebuild_list()
+        self._refresh()
+
     def _rebuild_list(self) -> None:
-        self.file_list.clear()
-        for f in self.files:
-            item = QListWidgetItem(f"{ICONS[f.family]}  {f.name}")
-            item.setData(Qt.ItemDataRole.UserRole, str(f.path))
-            item.setToolTip(str(f.path))
-            self.file_list.addItem(item)
-        rows = min(len(self.files), 6)
-        row_h = self.file_list.sizeHintForRow(0) if self.files else 30
-        self.file_list.setFixedHeight(max(1, rows) * row_h + 6)
+        self.file_list.set_files(self.files)
+        self._update_left_sizes()
 
     def _sync_order(self, *_args) -> None:
         by_path = {str(f.path): f for f in self.files}
-        self.files = [
-            by_path[self.file_list.item(i).data(Qt.ItemDataRole.UserRole)]
-            for i in range(self.file_list.count())
-        ]
+        self.files = [by_path[p] for p in self.file_list.paths()]
 
     # ------------------------------------------------------------------ targets / settings
     def _refresh(self, extra_error: str = "") -> None:
         if not self.busy:
-            self.last_outputs = []
+            self._clear_results()
+            self.file_list.reset_states()
             self.progress.setValue(0)
             self._set_status("")
         has_files = bool(self.files)
         self.drop.set_compact(has_files)
         self.files_card.setVisible(has_files)
+        self._update_left_sizes()
         error = extra_error
         targets: list[Target] = []
         if has_files:
@@ -316,9 +379,9 @@ class MainWindow(QMainWindow):
             if len(fams) == 1:
                 fam = fams.pop()
                 noun = FAMILY_NOUN[fam][0 if len(self.files) == 1 else 1]
-                self.files_label.setText(f"{len(self.files)} {noun}")
+                self.files_label.setText(f"Queue · {len(self.files)} {noun}")
             else:
-                self.files_label.setText(f"{len(self.files)} files")
+                self.files_label.setText(f"Queue · {len(self.files)} files")
             self.files_hint.setVisible(len(self.files) > 1)
             try:
                 targets = targets_for(self.files)
@@ -326,9 +389,17 @@ class MainWindow(QMainWindow):
                 error = str(exc)
         self.input_error.setText(error)
         self.input_error.setVisible(bool(error))
-        self.mode_bar.setVisible(self.edit_available())
-        self.format_section.setVisible(bool(targets))
-        self.picker.setVisible(bool(targets))
+        can_edit = self.edit_available()
+        self.edit_mode.setEnabled(can_edit)
+        self.edit_mode.setToolTip(
+            "Open the images in the image editor (each image becomes a layer)"
+            if can_edit
+            else "Add images to edit them"
+        )
+        # No files yet: the drop zone gets the whole window.
+        self.right.setVisible(has_files)
+        self.right.setCurrentWidget(self.tabs if targets else self.empty_hint)
+        self._apply_left_width()
         keep = self.target.id if self.target else self.settings.value("last_target", "", str)
         self.picker.set_targets(targets, keep_id=keep)
         self._update_buttons()
@@ -376,7 +447,8 @@ class MainWindow(QMainWindow):
     def on_target_changed(self, target: Target | None) -> None:
         self.target = target
         if not self.busy:
-            self.last_outputs = []
+            self._clear_results()
+            self.file_list.reset_states()
             self.progress.setValue(0)
             self._set_status("")
         if target is not None:
@@ -386,7 +458,9 @@ class MainWindow(QMainWindow):
             self.settings_panel.set_schema(cls, target.id, values)
         else:
             self.settings_panel.set_schema(None, "", {})
-        self._update_settings_visibility()
+        self.tabs.set_target(
+            target.label if target else None, self.settings_panel.has_visible_fields()
+        )
         self._update_buttons()
 
     def _remember_values(self) -> None:
@@ -402,24 +476,13 @@ class MainWindow(QMainWindow):
         self.option_values.pop(cls.__name__, None)
         self.settings_panel.set_schema(cls, self.target.id, opts.defaults(cls))
 
-    def _toggle_settings(self, open_: bool) -> None:
-        self.settings.setValue("settings_open", open_)
-        self._update_settings_visibility()
-
-    def _update_settings_visibility(self) -> None:
-        available = self.target is not None and self.settings_panel.has_visible_fields()
-        self.settings_toggle.setVisible(available)
-        open_ = self.settings_toggle.isChecked()
-        self.settings_toggle.setText(("▾  " if open_ else "▸  ") + "Settings")
-        self.settings_card.setVisible(available and open_)
-
     # ------------------------------------------------------------------ output folder
     def _set_output_dir(self, path: Path | None) -> None:
         self.output_dir = path
         self.settings.setValue("output_dir", str(path) if path else "")
-        text = f"Save to: {path.name or path}" if path else "Save to: same folder as original"
+        text = f"Save to: {path.name or path}" if path else "Save to: same folder"
         self.dest_button.setText(text + "  ▾")
-        self.dest_button.setToolTip(str(path) if path else "")
+        self.dest_button.setToolTip(str(path) if path else "Next to each original file")
 
     def _choose_output_dir(self) -> None:
         start = str(self.output_dir or (self.files[0].path.parent if self.files else Path.home()))
@@ -434,6 +497,41 @@ class MainWindow(QMainWindow):
         folder = p if p.is_dir() else p.parent
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
 
+    def _reveal_result(self, item: QListWidgetItem) -> None:
+        p = Path(item.data(Qt.ItemDataRole.UserRole))
+        folder = p if p.is_dir() else p.parent
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
+
+    # ------------------------------------------------------------------ results
+    def _clear_results(self) -> None:
+        self.last_outputs = []
+        self.results_list.clear()
+        self.results_card.hide()
+
+    def _show_results(self, outputs: list[str]) -> None:
+        pal = theme.palette()
+        self.results_list.clear()
+        total = 0
+        for out in outputs[:MAX_RESULTS]:
+            p = Path(out)
+            try:
+                size = p.stat().st_size if p.is_file() else 0
+            except OSError:
+                size = 0
+            total += size
+            label = p.name + (f"   ·   {fmt_size(size)}" if size else "")
+            item = QListWidgetItem(icons.icon("check", pal["success"], 18), label)
+            item.setData(Qt.ItemDataRole.UserRole, str(p))
+            item.setToolTip(str(p))
+            self.results_list.addItem(item)
+        if len(outputs) > MAX_RESULTS:
+            self.results_list.addItem(f"…and {len(outputs) - MAX_RESULTS} more")
+        n = len(outputs)
+        size_text = f" · {fmt_size(total)}" if total else ""
+        self.results_label.setText(f"Results · {n} file{'s' if n != 1 else ''}{size_text}")
+        self.results_card.setVisible(bool(outputs))
+        self._update_left_sizes()
+
     # ------------------------------------------------------------------ conversion
     @property
     def busy(self) -> bool:
@@ -442,14 +540,27 @@ class MainWindow(QMainWindow):
     def _update_buttons(self) -> None:
         ready = bool(self.files) and self.target is not None
         self.convert_button.setEnabled(self.busy or ready)
-        self.convert_button.setText("Cancel" if self.busy else "Convert")
+        n = len(self.files)
+        if self.busy:
+            text = "Cancel"
+        elif n > 1 and ready:
+            text = f"Convert {n} files"
+        else:
+            text = "Convert"
+        self.convert_button.setText(text)
+        self.convert_button.setAccessibleName("Cancel" if self.busy else "Convert")
         self.convert_button.setProperty("danger", self.busy)
         self.convert_button.style().unpolish(self.convert_button)
         self.convert_button.style().polish(self.convert_button)
         self.open_button.setVisible(bool(self.last_outputs) and not self.busy)
         self.progress.setVisible(self.busy or self.progress.value() > 0)
-        for w in (self.drop, self.file_list, self.picker, self.settings_card):
+        for w in (self.drop, self.picker, self.tabs, self.clear_button):
             w.setEnabled(not self.busy)
+        self.file_list.setDragDropMode(
+            QAbstractItemView.DragDropMode.NoDragDrop
+            if self.busy
+            else QAbstractItemView.DragDropMode.InternalMove
+        )
         if not self.busy and not self.last_outputs and self.status.objectName() == "Muted":
             self._set_status(self._idle_status())
 
@@ -458,9 +569,13 @@ class MainWindow(QMainWindow):
             return "Add files to get started."
         if self.target is None:
             return "Choose an output format."
+        fams = {f.family for f in self.files}
         n = len(self.files)
-        plural = "s" if n != 1 else ""
-        return f"Ready to convert {n} file{plural} to {self.target.label}."
+        if len(fams) == 1:
+            what = f"{n} {FAMILY_NOUN[next(iter(fams))][0 if n == 1 else 1]}"
+        else:
+            what = f"{n} files"
+        return f"{what} → {self.target.label}"
 
     def on_convert_clicked(self) -> None:
         if self.busy:
@@ -479,30 +594,42 @@ class MainWindow(QMainWindow):
 
     def _start(self, job: ConversionJob) -> None:
         self._last_job = job
-        self.last_outputs = []
+        self._clear_results()
         self.progress.setValue(0)
+        self.file_list.set_progress(file_fractions(0.0, len(job.files)))
         self._set_status("Starting…")
         self._thread, self._worker = start_worker(job, self)
         self._worker.progress.connect(self._on_progress)
         self._worker.succeeded.connect(self._on_success)
-        self._worker.failed.connect(lambda m: self._set_status(m, "Error"))
-        self._worker.cancelled.connect(lambda: self._set_status("Cancelled."))
+        self._worker.failed.connect(self._on_failed)
+        self._worker.cancelled.connect(self._on_cancelled)
         self._worker.tool_missing.connect(self._on_tool_missing)
         self._thread.finished.connect(self._on_done)
         self._update_buttons()
 
     def _on_progress(self, percent: float, message: str) -> None:
         self.progress.setValue(round(percent * 10))
+        self.file_list.set_progress(file_fractions(percent / 100, self.file_list.count()))
         if message:
             self._set_status(f"{message} — {percent:.0f}%")
 
     def _on_success(self, outputs: list[str]) -> None:
-        self.last_outputs = outputs
         self.progress.setValue(1000)
+        self.file_list.mark_done()
+        self._show_results(outputs)
+        self.last_outputs = outputs
         n = len(outputs)
         what = "folder" if n == 1 and Path(outputs[0]).is_dir() else "file"
         names = Path(outputs[0]).name if n == 1 else f"{n} {what}s"
         self._set_status(f"Done — saved {names}", "Success")
+
+    def _on_failed(self, message: str) -> None:
+        self.file_list.mark_failed(message)
+        self._set_status(message, "Error")
+
+    def _on_cancelled(self) -> None:
+        self.file_list.cancel_running()
+        self._set_status("Cancelled.")
 
     def _on_done(self) -> None:
         self._worker = None
@@ -516,6 +643,7 @@ class MainWindow(QMainWindow):
                 self._start(self._last_job)
 
     def _on_tool_missing(self, tool: str, url: str, message: str) -> None:
+        self.file_list.mark_failed(message)
         self._set_status(message, "Error")
         self._pending_tool = (tool, url, message)  # shown once the worker has finished
 
@@ -538,7 +666,7 @@ class MainWindow(QMainWindow):
     def handle_drop(self, paths: list[str]) -> None:
         if self.stack.currentIndex() == 1 and self.editor is not None:
             self.editor.add_paths([Path(p) for p in self._expand(paths)])
-        else:
+        elif not self.busy:
             self.add_files(paths)
 
     def closeEvent(self, event) -> None:  # noqa: N802
@@ -552,4 +680,6 @@ class MainWindow(QMainWindow):
             if self._thread is not None:
                 self._thread.quit()
                 self._thread.wait(5000)
+        if self.stack.currentIndex() == 0:
+            self.settings.setValue("geometry", self.saveGeometry())
         super().closeEvent(event)
