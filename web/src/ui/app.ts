@@ -47,7 +47,8 @@ export function mountApp(root: HTMLElement): void {
   const filesCard = h("div", { class: "card", hidden: true }, h("div", { class: "files-head" }, filesLabel, clearBtn), fileList, filesHint);
   const note = h("div", { class: "note", hidden: true });
   // Convert | Edit — only when every added file is an image (the editor loads on demand)
-  const convertMode = h("button", { class: "seg", type: "button" }, "Convert");
+  // "Convert mode" as its accessible name, so it never collides with the Convert action button.
+  const convertMode = h("button", { class: "seg", type: "button", ariaLabel: "Convert mode" }, "Convert");
   const editMode = h("button", { class: "seg", type: "button", title: "Open the images in the image editor (each image becomes a layer)" }, "Edit");
   const modeBar = h("div", { class: "mode", hidden: true, role: "group", ariaLabel: "Mode" }, convertMode, editMode);
   convertMode.setAttribute("aria-pressed", "true");

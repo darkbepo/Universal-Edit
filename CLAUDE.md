@@ -110,6 +110,7 @@ See `web/README.md` for commands and deployment.
 - **Same architecture as the desktop app:** `core/` (detect, options schema → auto form, registry,
   types — no DOM/WASM), `converters/` (declare options + targets; `run()` imports engines dynamically
   so the page bundle stays around ~100 KB), `engines/`, `ui/`. Target ids match the desktop ones.
+  The image editor is `editor/` (model, no DOM) + `ui/editor/` (page), imported on demand.
 - **Cancel** = terminate the worker (kills FFmpeg's nested worker too); a new worker starts next run.
 - **Must be cross-origin isolated** (COOP/COEP): headers in `vite.config.ts` / `public/_headers`;
   where a host can't send them (GitHub Pages) `coi-serviceworker.js` (emitted by a plugin in
@@ -460,7 +461,16 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
       brightness / contrast, undo / redo (patches of the changed rect, 500 MB cap). Saves `.ora`
       (layers; also readable by the converter) or any image format through `ImageConverter`.
       Layer objects are replaced, never changed in place, so undo can share them (history.py).
-      Not yet: lasso / magic wand, blend modes, filters, hue / saturation / curves, website.
+      Not yet: lasso / magic wand, blend modes, filters, hue / saturation / curves.
+   3. ✅ Image editor on the website — spec `docs/superpowers/specs/2026-11-11-web-image-editor-design.md`:
+      same tools and shortcuts. Model in `web/src/editor/` (port of `src/umc/editor/`, RGBA
+      `Uint8ClampedArray` layers; Canvas 2D only behind the `Rasterizer` / `PngCodec` interfaces in
+      `raster.ts`, so vitest runs it in node with fakes); page in `web/src/ui/editor/`, loaded on
+      demand from `ui/app.ts`. Pixels stay in the page; the conversion worker only decodes formats
+      the browser can't (HEIC/TIFF/RAW/PSD → PNG) and encodes non-`.ora` saves. Save downloads;
+      "Save to a file…" (Chrome/Edge) uses `showSaveFilePicker` and Ctrl+S overwrites it. The web
+      image converter reads `.ora` via its `mergedimage.png`. e2e: `e2e/editor.spec.ts` (the page
+      exposes `window.__editor` only with `?e2e` in the URL).
 11. Ideas: installer for the app itself (Inno Setup), presets, batch queue.
 
 ## Handoff — read this first (for the next Claude account)

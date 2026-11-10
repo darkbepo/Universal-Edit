@@ -68,8 +68,8 @@ The browser version's source is in [`web/`](web/README.md).
 | eBooks: save as MOBI / AZW3 (Kindle), read Kindle books (one-click Calibre install) | ✅ | — |
 | CAD drawings: DXF → SVG, PNG, JPG (layer colours or print black-on-white) | ✅ | ✅ |
 | CAD drawings: DWG in (one-click LibreDWG install), → PDF on paper sizes, save as another DXF version | ✅ | ❌ |
-| **Image editor**: Convert \| Edit switch, layers (opacity, hide, reorder, merge), brush, eraser, fill, colour picker, shapes, text, rectangle selection, crop, resize, rotate / flip, brightness / contrast, undo | ✅ | 🔜 |
-| Layered projects: save and open OpenRaster `.ora` (GIMP and Krita open it too); `.ora` → any image format | ✅ | ❌ |
+| **Image editor**: Convert \| Edit switch, layers (opacity, hide, reorder, merge), brush, eraser, fill, colour picker, shapes, text, rectangle selection, crop, resize, rotate / flip, brightness / contrast, undo | ✅ | ✅ |
+| Layered projects: save and open OpenRaster `.ora` (GIMP and Krita open it too); `.ora` → any image format | ✅ | ✅ |
 | Files never leave your computer | ✅ | ✅ |
 | No install needed | ❌ | ✅ |
 | Save straight into a folder | ✅ | ✅ Chrome/Edge · ❌ Firefox/Safari (zip instead) |

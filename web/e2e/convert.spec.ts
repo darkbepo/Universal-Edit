@@ -12,7 +12,7 @@ async function load(page: Page, files: string[]) {
 
 async function convert(page: Page, targetId: string, timeout = 150_000) {
   await page.locator(`.pill[data-target="${targetId}"]`).click();
-  await page.getByRole("button", { name: "Convert" }).click();
+  await page.getByRole("button", { name: "Convert", exact: true }).click();
   await expect(page.locator(".status")).toHaveClass(/success|error/, { timeout });
   await expect(page.locator(".status")).toHaveClass(/success/);
 }
@@ -246,7 +246,7 @@ test.describe("PDF tools", () => {
     await settings(page, "pdf:unlock");
     await page.locator("#opt-password").fill("wrong");
     await page.locator('.pill[data-target="pdf:unlock"]').click();
-    await page.getByRole("button", { name: "Convert" }).click();
+    await page.getByRole("button", { name: "Convert", exact: true }).click();
     await expect(page.locator(".status")).toHaveClass(/error/, { timeout: 60_000 });
     await expect(page.locator(".status")).toContainText("password");
 
@@ -372,10 +372,10 @@ test.describe("video", () => {
   test("cancel stops a conversion", async ({ page }) => {
     await load(page, [fx("clip.mp4")]);
     await page.locator(`.pill[data-target="mkv"]`).click();
-    await page.getByRole("button", { name: "Convert" }).click();
+    await page.getByRole("button", { name: "Convert", exact: true }).click();
     await page.getByRole("button", { name: "Cancel" }).click();
     await expect(page.locator(".status")).toHaveText("Cancelled.");
-    await expect(page.getByRole("button", { name: "Convert" })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Convert", exact: true })).toBeEnabled();
   });
 });
 
@@ -505,7 +505,7 @@ test.describe("archives", () => {
   test("password-protected ZIP: asks, then opens with the password", async ({ page }) => {
     await load(page, [fx("sample-aes.zip")]);
     await page.locator('.pill[data-target="archive:extract"]').click();
-    await page.getByRole("button", { name: "Convert" }).click();
+    await page.getByRole("button", { name: "Convert", exact: true }).click();
     await expect(page.locator(".status")).toHaveClass(/error/, { timeout: 60_000 });
     await expect(page.locator(".status")).toContainText("password");
     await page.getByRole("button", { name: /Settings/ }).click();
@@ -620,7 +620,7 @@ test.describe("fonts", () => {
   test("WOFF2 with TrueType outlines → OTF explains it needs the desktop app", async ({ page }) => {
     await load(page, [fx("DejaVuSans.woff2")]);
     await page.locator('.pill[data-target="otf"]').click();
-    await page.getByRole("button", { name: "Convert" }).click();
+    await page.getByRole("button", { name: "Convert", exact: true }).click();
     await expect(page.locator(".status")).toHaveClass(/error/, { timeout: 60_000 });
     await expect(page.locator(".status")).toContainText("desktop app");
   });
