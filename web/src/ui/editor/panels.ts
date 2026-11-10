@@ -35,6 +35,7 @@ export class ToolRail {
   private buttons = new Map<string, HTMLButtonElement>();
   private toggle: HTMLButtonElement;
   private popup: HTMLElement | null = null;
+  private anchor: HTMLElement | null = null;
   narrow = false;
 
   constructor(tools: Tool[], onSelect: (id: string) => void, onAction: (id: string) => void) {
@@ -69,11 +70,32 @@ export class ToolRail {
     }
     this.setNarrow(narrow, false);
     document.addEventListener("pointerdown", (e) => {
-      if (this.popup && !this.popup.contains(e.target as Node)) this.closeMenu();
+      const t = e.target as Node;
+      // the anchor toggles the list itself (its click comes after this pointerdown)
+      if (this.popup && !this.popup.contains(t) && !this.anchor?.contains(t)) this.closeMenu();
     });
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") this.closeMenu();
-    });
+    document.addEventListener(
+      "keydown",
+      (e) => {
+        if (!this.popup) return;
+        const items = [...this.popup.querySelectorAll<HTMLButtonElement>("button")];
+        const i = items.indexOf(document.activeElement as HTMLButtonElement);
+        if (e.key === "Escape") {
+          // only close the list: don't also cancel a crop or polygon in progress
+          e.preventDefault();
+          e.stopPropagation();
+          const a = this.anchor;
+          this.closeMenu();
+          a?.focus();
+        } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+          e.preventDefault();
+          e.stopPropagation();
+          items[(i + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length]?.focus();
+        }
+      },
+      true,
+    );
+    window.addEventListener("resize", () => this.closeMenu());
   }
 
   setNarrow(narrow: boolean, remember = true): void {
@@ -108,15 +130,20 @@ export class ToolRail {
     }
     document.body.append(menu);
     const r = anchor.getBoundingClientRect();
-    menu.style.left = `${r.right + 4}px`;
-    menu.style.top = `${Math.min(r.top, window.innerHeight - menu.offsetHeight - 8)}px`;
+    const below = window.innerWidth < 900; // the rail is a row of icons there: open underneath
+    const left = below ? r.left : r.right + 4;
+    const top = below ? r.bottom + 4 : r.top;
+    menu.style.left = `${Math.max(8, Math.min(left, window.innerWidth - menu.offsetWidth - 8))}px`;
+    menu.style.top = `${Math.max(8, Math.min(top, window.innerHeight - menu.offsetHeight - 8))}px`;
     this.popup = menu;
+    this.anchor = anchor;
     (menu.querySelector("button") as HTMLButtonElement | null)?.focus();
   }
 
   private closeMenu(): void {
     this.popup?.remove();
     this.popup = null;
+    this.anchor = null;
   }
 
   select(id: string): void {

@@ -114,7 +114,14 @@ export class EditorPage {
   private clipOnSystem = false;
 
   constructor(private opts: EditorOptions) {
-    this.toolBar = new ToolRail(this.tools, (id) => this.selectTool(id), (id) => void this.railAction(id));
+    this.toolBar = new ToolRail(
+      this.tools,
+      (id) => {
+        this.selectTool(id);
+        this.canvas.view.focus(); // so Space pans and arrows nudge straight away
+      },
+      (id) => void this.railAction(id),
+    );
     this.settings = new ToolSettings(() => this.canvas.draw());
     this.swatches = new Swatches();
     this.layers = new LayersPanel(

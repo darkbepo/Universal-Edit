@@ -411,6 +411,7 @@ body.no-select { user-select: none; -webkit-user-select: none; }
   .tool-rail, .tool-rail.narrow { width: auto; flex-direction: row; align-items: center; overflow-x: auto; border-right: none; border-bottom: 1px solid var(--border); }
   .tool-rail .rail-group { font-size: 0; padding: 0; margin: 0 4px; border-left: 1px solid var(--border); align-self: stretch; }
   .tool-rail .rail-label, .tool-rail .rail-toggle { display: none; }
-  .tool-rail .rail-item { width: auto; padding: 6px; }
+  .tool-rail .rail-item, .tool-rail.narrow .rail-item { width: auto; padding: 6px; }
+  .tool-rail.narrow .rail-group { margin: 0 4px; border-top: none; border-left: 1px solid var(--border); align-self: stretch; }
   .editor-side { border-left: none; border-top: 1px solid var(--border); }
 }

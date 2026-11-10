@@ -80,6 +80,9 @@ def page(qtbot, tmp_path):
     a, b = tmp_path / "first.png", tmp_path / "second.png"
     Image.new("RGB", (60, 40), "red").save(a)
     Image.new("RGBA", (30, 30), (0, 0, 255, 128)).save(b)
+    from PySide6.QtCore import QCoreApplication
+
+    QCoreApplication.setOrganizationName("UMC-tests")  # rail width etc. never touch real settings
     pg = EditorPage()
     qtbot.addWidget(pg)
     pg.resize(1300, 720)
@@ -1213,3 +1216,12 @@ def test_tool_rail_groups_names_narrowing_and_actions(page, qtbot, monkeypatch):
     assert (page.doc.width, page.doc.height) == (40, 60)
     # the old top-bar menus are gone
     assert not [w for w in page.findChildren(QToolButton) if w.text().endswith("▾")]
+
+
+def test_the_rail_never_takes_focus_from_the_canvas(page, qtbot):
+    page.canvas.setFocus()
+    rail = page.tool_bar
+    qtbot.mouseClick(rail.buttons["move"], Qt.MouseButton.LeftButton)
+    qtbot.mouseClick(rail._labels[0], Qt.MouseButton.LeftButton)
+    qtbot.mouseClick(rail.viewport(), Qt.MouseButton.LeftButton)
+    assert page.tool.id == "move" and page.focusWidget() is page.canvas

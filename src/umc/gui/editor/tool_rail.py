@@ -20,7 +20,7 @@ from umc.editor.rail import MENUS, RAIL
 from umc.editor.tools import TOOLS
 from umc.gui import icons, theme
 
-WIDE, NARROW = 184, 52
+WIDE, NARROW = 184, 60
 _KEY = "editor/rail_narrow"
 
 
@@ -34,6 +34,9 @@ class ToolRail(QScrollArea):
         self.setWidgetResizable(True)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setFrameShape(QFrame.Shape.NoFrame)
+        # never take the keyboard away from the canvas (Space to pan, arrows to nudge)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.viewport().setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._tools = {cls.id: cls for cls in TOOLS}
         color = theme.palette()["text"]
         accent = theme.palette()["accent"]
@@ -42,6 +45,7 @@ class ToolRail(QScrollArea):
         lay.setContentsMargins(6, 6, 6, 8)
         lay.setSpacing(1)
         self.toggle = QToolButton(objectName="RailToggle")
+        self.toggle.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.toggle.setCursor(Qt.CursorShape.PointingHandCursor)
         self.toggle.clicked.connect(lambda: self.set_narrow(not self.narrow))
         lay.addWidget(self.toggle, 0, Qt.AlignmentFlag.AlignRight)
@@ -60,6 +64,7 @@ class ToolRail(QScrollArea):
             lay.addWidget(line)
             for kind, item_id, label, icon_name in g["items"]:
                 b = QToolButton(objectName="RailButton")
+                b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
                 b.setIcon(icons.icon(icon_name, color, 20, accent))
                 b.setIconSize(QSize(20, 20))
                 b.setCursor(Qt.CursorShape.PointingHandCursor)

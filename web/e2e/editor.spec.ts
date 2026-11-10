@@ -818,7 +818,9 @@ test("pasteboard: a layer dragged past the edge stays visible around the picture
   };
   await page.locator(".canvas-host canvas").focus();
   await page.keyboard.press("v");
-  const outside = [size[0] + 3, 10] as [number, number]; // just past the right edge
+  // just past the right edge: the picture is fitted to the view (≈ 2.4× zoom), so a point much
+  // further out would fall outside the visible canvas element itself
+  const outside = [size[0] + 3, 10] as [number, number];
   const before = await viewPx(...outside);
   await drag(page, [5, 5], [Math.round(size[0] * 0.4) + 5, 5]);
   await expect.poll(() => viewPx(...outside)).not.toEqual(before);
@@ -964,4 +966,24 @@ test("tool rail: groups with names, narrows to icons (remembered), tools and act
   await rail(page, "Select all");
   await expect.poll(() => selState(page)).toEqual({ box: [0, 0, before[1], before[0]], masked: false });
   await expect(page.locator("details.menu")).toHaveCount(0); // the top-bar menus are gone
+});
+
+test("tool rail: the rotate list toggles on its button, Esc closes only the list, focus goes back to the canvas", async ({ page }) => {
+  await openEditor(page);
+  const list = page.getByRole("menu", { name: "Rotate & flip" });
+  await rail(page, "Rotate & flip");
+  await expect(list).toBeVisible();
+  await rail(page, "Rotate & flip"); // a second click closes it
+  await expect(list).toHaveCount(0);
+  await page.locator(".canvas-host canvas").focus();
+  await page.keyboard.press("c");
+  await drag(page, [5, 5], [40, 30]); // a pending crop
+  await expect(page.locator(".crop-bar")).toBeVisible();
+  await rail(page, "Rotate & flip");
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Escape");
+  await expect(list).toHaveCount(0);
+  await expect(page.locator(".crop-bar")).toBeVisible(); // the crop is still there
+  await page.locator(".tool-rail").getByRole("button", { name: "Move", exact: true }).click();
+  expect(await page.evaluate(() => document.activeElement?.classList.contains("view"))).toBe(true);
 });
