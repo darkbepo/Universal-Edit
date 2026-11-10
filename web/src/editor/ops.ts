@@ -252,7 +252,7 @@ function reselect(layers: Layer[], keep: Layer[], active: Layer): [number, numbe
   return [layers.indexOf(active), keep.map((l) => layers.indexOf(l)).sort((a, b) => a - b)];
 }
 
-function uniqueName(doc: EditorDoc, base: string): string {
+export function uniqueName(doc: EditorDoc, base: string): string {
   const names = new Set(doc.layers.map((l) => l.name));
   let n = doc.layers.length + 1;
   while (names.has(`${base} ${n}`)) n++;
@@ -431,3 +431,17 @@ export function setVisibleLayers(doc: EditorDoc, indices: Iterable<number>, visi
   return replaceMany(doc, updated, (visible ? "Show " : "Hide ") + plural(updated.size, "layer", "layers"));
 }
 
+
+/** `base` with the given layers shifted by (dx, dy) — new Layer objects, pixels shared. */
+export function offsetLayers(doc: EditorDoc, base: Layer[], indices: Iterable<number>, dx: number, dy: number): Layer[] {
+  const layers = [...base];
+  for (const i of clean(doc, indices)) layers[i] = withProps(base[i], { x: base[i].x + dx, y: base[i].y + dy });
+  return layers;
+}
+
+/** Move layers by (dx, dy) pixels (arrow keys with the Move tool). */
+export function nudgeLayers(doc: EditorDoc, indices: Iterable<number>, dx: number, dy: number): Command | null {
+  const chosen = clean(doc, indices);
+  if ((dx === 0 && dy === 0) || !chosen.length) return null;
+  return change(doc, "Move", offsetLayers(doc, doc.layers, chosen, dx, dy), doc.active, doc.selected ?? []);
+}

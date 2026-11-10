@@ -131,3 +131,31 @@ export async function saveDialog(defaultName: string, formats: [string, string][
   if (!r) return null;
   return { ...r.value, toFile: r.button !== "Save" };
 }
+
+/** The "?" window: every keyboard shortcut, grouped. */
+export function shortcutsDialog(tools: { shortcut: string; label: string }[]): Promise<void> {
+  return import("./shortcuts").then(({ shortcutRows }) => new Promise<void>((resolve) => {
+    const cols = h("div", { class: "shortcut-cols" });
+    for (const [group, rows] of shortcutRows(tools)) {
+      const table = h("table", { class: "shortcuts" }, h("caption", {}, group));
+      for (const [keys, label] of rows) table.append(h("tr", {}, h("td", {}, h("kbd", {}, keys)), h("td", {}, label)));
+      cols.append(table);
+    }
+    const close = h("button", { class: "btn", type: "button" }, "Close");
+    const dlg = h("dialog", { class: "editor-dialog shortcuts-dialog", ariaLabel: "Keyboard shortcuts" }, h("h2", {}, "Keyboard shortcuts"), cols, h("div", { class: "row" }, h("div", { class: "spacer" }), close));
+    const finish = () => {
+      dlg.close();
+      dlg.remove();
+      resolve();
+    };
+    close.addEventListener("click", finish);
+    dlg.addEventListener("cancel", (e) => {
+      e.preventDefault();
+      finish();
+    });
+    dlg.addEventListener("keydown", (e) => e.stopPropagation()); // never reach the editor's shortcuts
+    document.body.append(dlg);
+    dlg.showModal();
+    close.focus();
+  }));
+}

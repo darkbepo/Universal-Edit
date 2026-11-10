@@ -525,3 +525,145 @@ def test_selection_bar_crops_or_deselects(page, qtbot):
     assert (page.doc.width, page.doc.height) == (20, 15)
     page.canvas.undo()
     assert (page.doc.width, page.doc.height) == (60, 40)
+
+
+# ------------------------------------------------------------------ clipboard, Move tool, shortcuts
+
+CTRL = Qt.KeyboardModifier.ControlModifier
+SHIFT = Qt.KeyboardModifier.ShiftModifier
+
+
+def _names(pg):
+    return [la.name for la in pg.doc.layers]
+
+
+def test_ctrl_c_ctrl_v_pastes_in_place_through_the_system_clipboard(page, qtbot):
+    from PySide6.QtWidgets import QApplication
+
+    page.canvas.setFocus()
+    qtbot.keyClick(page.canvas, Qt.Key.Key_C, CTRL)
+    assert not QApplication.clipboard().image().isNull()
+    assert "Copied 30 × 30 px" in page.message.text()
+    qtbot.keyClick(page.canvas, Qt.Key.Key_V, CTRL)
+    assert _names(page) == ["first", "second", "Pasted 3"]
+    pasted = page.doc.active_layer
+    assert (pasted.x, pasted.y, pasted.image.size) == (0, 0, (30, 30))
+    assert pasted.image.getpixel((5, 5)) == page.doc.layers[1].image.getpixel((5, 5))
+    assert page.layers.list.item(0).text() == "Pasted 3"
+    page.canvas.undo()
+    assert _names(page) == ["first", "second"]
+
+
+def test_paste_from_another_program_is_centred_in_view(page, qtbot):
+    from PySide6.QtGui import QImage
+    from PySide6.QtWidgets import QApplication
+
+    img = QImage(10, 6, QImage.Format.Format_ARGB32)
+    img.fill(Qt.GlobalColor.green)
+    QApplication.clipboard().setImage(img)
+    page.paste()
+    layer = page.doc.active_layer
+    cx, cy = page.view_center()
+    assert (layer.x, layer.y) == (round(cx - 5), round(cy - 3))
+    assert layer.image.getpixel((0, 0)) == (0, 255, 0, 255)
+
+
+def test_paste_without_a_picture_says_so(page):
+    from PySide6.QtWidgets import QApplication
+
+    QApplication.clipboard().setText("just text")
+    page.paste()
+    assert len(page.doc.layers) == 2 and "no picture" in page.message.text()
+
+
+def test_ctrl_x_cuts_the_selection(page, qtbot):
+    from umc.editor.geometry import Rect
+
+    page.doc.selection = Rect(0, 0, 10, 10)
+    page.canvas.setFocus()
+    qtbot.keyClick(page.canvas, Qt.Key.Key_X, CTRL)
+    top = page.doc.layers[1]
+    assert top.image.getpixel((5, 5))[3] == 0 and top.image.getpixel((15, 15))[3] > 0
+    qtbot.keyClick(page.canvas, Qt.Key.Key_V, CTRL)
+    assert (page.doc.active_layer.x, page.doc.active_layer.image.size) == (0, (10, 10))
+
+
+def test_move_tool_drag_and_arrow_nudge(page, qtbot):
+    page.canvas.setFocus()
+    qtbot.keyClick(page.canvas, Qt.Key.Key_V)
+    assert page.tool.id == "move"
+    c = page.canvas
+    a, b = c.image_to_widget(5, 5), c.image_to_widget(15, 9)
+    qtbot.mousePress(c, Qt.MouseButton.LeftButton, pos=a)
+    qtbot.mouseMove(c, b)
+    qtbot.mouseRelease(c, Qt.MouseButton.LeftButton, pos=b)
+    top = page.doc.layers[1]
+    assert (top.x, top.y) == (10, 4) and page.history.undo_label == "Move"
+    qtbot.keyClick(c, Qt.Key.Key_Left)
+    qtbot.keyClick(c, Qt.Key.Key_Down, SHIFT)
+    assert (page.doc.layers[1].x, page.doc.layers[1].y) == (9, 14)
+    for _ in range(3):
+        page.canvas.undo()
+    assert (page.doc.layers[1].x, page.doc.layers[1].y) == (0, 0)
+
+
+def test_layer_shortcuts(page, qtbot):
+    c = page.canvas
+    c.setFocus()
+    qtbot.keyClick(c, Qt.Key.Key_N, CTRL | SHIFT)
+    assert _names(page) == ["first", "second", "Layer 3"]
+    qtbot.keyClick(c, Qt.Key.Key_J, CTRL)
+    assert _names(page) == ["first", "second", "Layer 3", "Layer 3 copy"]
+    qtbot.keyClick(c, Qt.Key.Key_BracketLeft, CTRL)
+    assert _names(page)[2] == "Layer 3 copy"
+    qtbot.keyClick(c, Qt.Key.Key_BracketRight, CTRL | SHIFT)  # to the top
+    assert _names(page)[-1] == "Layer 3 copy"
+    qtbot.keyClick(c, Qt.Key.Key_E, CTRL)  # merge down
+    assert _names(page) == ["first", "second", "Layer 3"]
+    qtbot.keyClick(c, Qt.Key.Key_A, CTRL | Qt.KeyboardModifier.AltModifier)
+    assert page.doc.selected_indices == [0, 1, 2]
+    qtbot.keyClick(c, Qt.Key.Key_E, CTRL)  # merge all selected
+    assert len(page.doc.layers) == 1
+
+
+def test_delete_in_layers_list_deletes_layers_and_on_canvas_clears(page, qtbot):
+    from umc.editor.geometry import Rect
+
+    page.doc.selection = Rect(0, 0, 4, 4)
+    page.canvas.setFocus()
+    qtbot.keyClick(page.canvas, Qt.Key.Key_Delete)
+    assert len(page.doc.layers) == 2 and page.doc.layers[1].image.getpixel((1, 1))[3] == 0
+    page.layers.list.setFocus()
+    qtbot.keyClick(page.layers.list, Qt.Key.Key_Delete)
+    assert _names(page) == ["first"]
+
+
+def test_zoom_shortcuts(page, qtbot):
+    page.canvas.set_zoom(1.0)
+    qtbot.keyClick(page.canvas, Qt.Key.Key_Equal, CTRL)
+    assert page.canvas.zoom > 1.0
+    qtbot.keyClick(page.canvas, Qt.Key.Key_Minus, CTRL)
+    qtbot.keyClick(page.canvas, Qt.Key.Key_Minus, CTRL)
+    assert page.canvas.zoom < 1.0
+
+
+def test_shortcut_table_has_no_clashes_and_help_lists_everything(page, qtbot, monkeypatch):
+    from PySide6.QtGui import QKeySequence
+
+    from umc.editor.tools import TOOLS
+    from umc.gui.editor import dialogs
+    from umc.gui.editor.shortcuts import SHORTCUTS
+
+    keys = [QKeySequence(k).toString() for s in SHORTCUTS for k in s.keys]
+    keys += [t.shortcut for t in TOOLS if t.shortcut != "U"]
+    assert len(keys) == len(set(keys)), "two actions share a key"
+    rows = dialogs.shortcut_rows(TOOLS)
+    labels = {label for group in rows.values() for _, label in group}
+    assert {s.label for s in SHORTCUTS} <= labels and "Move" in labels
+    tool_keys = [k for k, _ in rows["Tools"]]
+    assert tool_keys.count("U") == 1
+    opened = []
+    monkeypatch.setattr(dialogs.ShortcutsDialog, "exec", lambda self: opened.append(self.rows))
+    page.canvas.setFocus()
+    qtbot.keyClick(page.canvas, Qt.Key.Key_F1)
+    assert opened

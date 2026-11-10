@@ -6,9 +6,10 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QEventLoop, QObject, Qt, QThread, Signal, Slot
+from PySide6.QtCore import QEventLoop, QMimeData, QObject, QPointF, Qt, QThread, Signal, Slot
 from PySide6.QtGui import QColor, QFont, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
+    QApplication,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -24,7 +25,7 @@ from PySide6.QtWidgets import (
 )
 
 from umc.core.errors import ConversionError
-from umc.editor import ops
+from umc.editor import clipboard, ops
 from umc.editor.document import Document, check_size
 from umc.editor.history import History
 from umc.editor.io import load_layers, open_files
@@ -34,20 +35,24 @@ from umc.editor.tools.base import ToolContext
 from umc.editor.tools.select import clear_selection, deselect, select_all
 from umc.editor.tools.text import add_text_layer
 from umc.gui import theme
-from umc.gui.editor.canvas import EditorCanvas
+from umc.gui.editor.canvas import EditorCanvas, pil_to_qimage, qimage_to_pil
 from umc.gui.editor.crop_bar import CropBar
 from umc.gui.editor.dialogs import (
     BrightnessContrastDialog,
     CanvasSizeDialog,
     ResizeDialog,
     SaveOptionsDialog,
+    ShortcutsDialog,
 )
 from umc.gui.editor.layers_panel import LayersPanel
+from umc.gui.editor.shortcuts import SHORTCUTS
 from umc.gui.editor.side_panel import ColorSwatches, ToolBar, ToolSettings
 
 log = logging.getLogger(__name__)
 
 CROP_HINT = "Drag a rectangle on the picture, then apply it with the button next to it (or Enter)."
+# Marks a clipboard image as ours and remembers where on the canvas it was copied from.
+CLIP_MIME = "application/x-umc-editor-clip"
 EXT_ALIASES = {"jpeg": "jpg", "tif": "tiff", "heif": "heic"}
 
 
@@ -148,6 +153,7 @@ class EditorPage(QWidget):
         self.canvas.zoom_changed.connect(lambda _z: self._update_info())
         self.canvas.cursor_moved.connect(lambda x, y: self._update_info((x, y)))
         self.canvas.text_requested.connect(self._open_text_box)
+        self.canvas.nudge_requested.connect(self._nudge)
         self.crop_bar = CropBar(self.canvas)
         self.crop_bar.applied.connect(self._bar_apply)
         self.crop_bar.cancelled.connect(self._bar_cancel)
@@ -227,6 +233,8 @@ class EditorPage(QWidget):
         image.setMenu(menu)
         lay.addWidget(image)
         lay.addStretch(1)
+        tb("?", "Keyboard shortcuts (?)", lambda: self.show_shortcuts())
+        lay.addSpacing(6)
         self.save_as_button = tb("Save as…", "Save as (Ctrl+Shift+S)", lambda: self.save_as())
         self.save_button = tb("Save", "Save (Ctrl+S)", lambda: self.save(), "Primary")
         return bar
@@ -255,32 +263,141 @@ class EditorPage(QWidget):
         return scroll
 
     def _install_shortcuts(self) -> None:
+        """Bind every key from ``shortcuts.SHORTCUTS`` and the tool letters."""
+
         def sc(keys, fn) -> None:
-            for k in keys if isinstance(keys, tuple) else (keys,):
+            for k in keys:
                 s = QShortcut(QKeySequence(k), self)
                 s.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
                 s.activated.connect(lambda f=fn: (self.canvas.cancel_gesture(), f()))
 
+        def with_doc(fn):
+            return lambda: fn(self.doc) if self.doc is not None else None
+
+        lp = self.layers
+        actions = {
+            "undo": self.canvas.undo,
+            "redo": self.canvas.redo,
+            "copy": lambda: self.copy(),
+            "copy_merged": lambda: self.copy(merged=True),
+            "cut": self.cut,
+            "paste": self.paste,
+            "delete": self._delete,
+            "save": self.save,
+            "save_as": self.save_as,
+            "select_all": with_doc(lambda d: self._push(select_all(d))),
+            "deselect": with_doc(lambda d: self._push(deselect(d))),
+            "apply": self._apply_crop,
+            "new_layer": lp.add,
+            "duplicate": lp.duplicate,
+            "merge": lp.merge,
+            "layer_up": lambda: lp.move(1),
+            "layer_down": lambda: lp.move(-1),
+            "layer_top": lambda: lp.move_to_end(True),
+            "layer_bottom": lambda: lp.move_to_end(False),
+            "select_all_layers": lp.select_all,
+            "zoom_in": self.canvas.zoom_in,
+            "zoom_out": self.canvas.zoom_out,
+            "fit": self.canvas.fit,
+            "actual": lambda: self.canvas.set_zoom(1.0),
+            "help": self.show_shortcuts,
+            "toggle_shape": self._toggle_shape,
+            "swap_colours": self.swatches.swap,
+            "smaller": lambda: self.tool_settings.change_size(self.tool, 1 / 1.2),
+            "bigger": lambda: self.tool_settings.change_size(self.tool, 1.2),
+        }
+        missing = {s.id for s in SHORTCUTS} ^ set(actions)
+        assert not missing, f"shortcut table and actions differ: {missing}"
+        for shortcut in SHORTCUTS:
+            sc(shortcut.keys, actions[shortcut.id])
         for cls in TOOLS:
-            if cls.shortcut != "U":
-                sc(cls.shortcut, lambda tid=cls.id: self.select_tool(tid))
-        sc("U", self._toggle_shape)
-        sc("X", self.swatches.swap)
-        sc("[", lambda: self.tool_settings.change_size(self.tool, 1 / 1.2))
-        sc("]", lambda: self.tool_settings.change_size(self.tool, 1.2))
-        sc(("Ctrl+Z",), lambda: self.canvas.undo())
-        sc(("Ctrl+Y", "Ctrl+Shift+Z"), lambda: self.canvas.redo())
-        sc("Ctrl+S", lambda: self.save())
-        sc("Ctrl+Shift+S", lambda: self.save_as())
-        sc("Ctrl+A", lambda: self._push(select_all(self.doc)) if self.doc else None)
-        sc("Ctrl+D", lambda: self._push(deselect(self.doc)) if self.doc else None)
-        sc(
-            ("Delete", "Backspace"),
-            lambda: self._push(clear_selection(self.doc)) if self.doc else None,
+            if cls.shortcut != "U":  # U toggles rectangle / ellipse (above)
+                sc((cls.shortcut,), lambda tid=cls.id: self.select_tool(tid))
+
+    def show_shortcuts(self) -> None:
+        ShortcutsDialog(TOOLS, self).exec()
+
+    def _delete(self) -> None:
+        """Delete: the selected layers when the layers list has focus, else the selected area."""
+        if self.doc is None:
+            return
+        if self.layers.list.hasFocus():
+            self.layers.delete()
+        else:
+            self._push(clear_selection(self.doc))
+
+    # ------------------------------------------------------------ clipboard
+    def _put_on_clipboard(self, clip: clipboard.Clip) -> None:
+        mime = QMimeData()
+        mime.setImageData(pil_to_qimage(clip.image))
+        w, h = clip.image.size
+        mime.setData(CLIP_MIME, f"{clip.x},{clip.y},{w},{h}".encode())
+        QApplication.clipboard().setMimeData(mime)
+
+    def copy(self, merged: bool = False) -> bool:
+        if self.doc is None:
+            return False
+        clip = clipboard.copy(self.doc, merged)
+        if clip is None:
+            self.show_message("Nothing to copy: the selection doesn't touch this layer.")
+            return False
+        self._put_on_clipboard(clip)
+        w, h = clip.image.size
+        self.show_message(f"Copied {w} × {h} px.")
+        return True
+
+    def cut(self) -> None:
+        if self.doc is None:
+            return
+        clip, cmd = clipboard.cut(self.doc)
+        if clip is None:
+            self.show_message("Nothing to cut: the selection doesn't touch this layer.")
+            return
+        self._put_on_clipboard(clip)
+        self._push(cmd)
+
+    def view_center(self) -> tuple[float, float]:
+        """The canvas point in the middle of what the user is looking at."""
+        return self.canvas.widget_to_image(
+            QPointF(self.canvas.width() / 2, self.canvas.height() / 2)
         )
-        sc("Ctrl+0", lambda: self.canvas.fit())
-        sc("Ctrl+1", lambda: self.canvas.set_zoom(1.0))
-        sc(("Return", "Enter"), self._apply_crop)
+
+    def paste(self) -> None:
+        """Clipboard image → new layer (back in place if copied here); image files → layers."""
+        if self.doc is None:
+            return
+        mime = QApplication.clipboard().mimeData()
+        if mime is not None and mime.hasImage():
+            data = mime.imageData()
+            qimg = data.toImage() if hasattr(data, "toImage") else data
+            image = qimage_to_pil(qimg)
+            x = y = None
+            if mime.hasFormat(CLIP_MIME):
+                try:
+                    cx, cy, w, h = (int(v) for v in bytes(mime.data(CLIP_MIME)).decode().split(","))
+                    if (w, h) == image.size:
+                        x, y = cx, cy
+                except ValueError:
+                    pass
+            try:
+                self._push(
+                    clipboard.paste(self.doc, clipboard.Clip(image, x, y), self.view_center())
+                )
+            except ConversionError as exc:
+                self.show_message(str(exc), error=True)
+                return
+            self.show_message("Pasted as a new layer. Move it with the Move tool (V).")
+            return
+        if mime is not None and mime.hasUrls():
+            paths = [Path(u.toLocalFile()) for u in mime.urls() if u.isLocalFile()]
+            if paths:
+                self.add_paths(paths)
+                return
+        self.show_message("There's no picture on the clipboard to paste.")
+
+    def _nudge(self, dx: int, dy: int) -> None:
+        if self.doc is not None:
+            self._push(ops.nudge_layers(self.doc, self.doc.selected_indices, dx, dy))
 
     # ------------------------------------------------------------ document
     def open_paths(self, paths: list[Path]) -> bool:

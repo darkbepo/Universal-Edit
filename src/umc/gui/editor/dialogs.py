@@ -201,3 +201,58 @@ class SaveOptionsDialog(QDialog):
 
     def values(self) -> dict[str, Any]:
         return self.panel.values()
+
+
+def shortcut_rows(tools) -> dict[str, list[tuple[str, str]]]:
+    """(keys, what it does) per group, from the shortcut table, the tools and the INFO lines."""
+    from PySide6.QtGui import QKeySequence
+
+    from umc.gui.editor.shortcuts import GROUPS, INFO, SHORTCUTS
+
+    rows: dict[str, list[tuple[str, str]]] = {g: [] for g in GROUPS}
+    native = QKeySequence.SequenceFormat.NativeText
+    for sc in SHORTCUTS:
+        rows[sc.group].append((QKeySequence(sc.keys[0]).toString(native), sc.label))
+    for tool in tools:
+        if tool.shortcut and tool.shortcut != "U":  # U (rectangle / ellipse) is a table row
+            rows["Tools"].append((tool.shortcut, tool.label))
+    for keys, label, group in INFO:
+        rows[group].append((keys, label))
+    return rows
+
+
+class ShortcutsDialog(QDialog):
+    """The "?" window: every keyboard shortcut, grouped."""
+
+    def __init__(self, tools, parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Keyboard shortcuts")
+        lay = QVBoxLayout(self)
+        columns = QHBoxLayout()
+        columns.setSpacing(28)
+        lay.addLayout(columns)
+        rows = shortcut_rows(tools)
+        groups = list(rows)
+        half = (len(groups) + 1) // 2
+        for part in (groups[:half], groups[half:]):
+            grid = QGridLayout()
+            grid.setHorizontalSpacing(16)
+            grid.setVerticalSpacing(4)
+            r = 0
+            for group in part:
+                grid.addWidget(QLabel(group.upper(), objectName="Section"), r, 0, 1, 2)
+                r += 1
+                for keys, label in rows[group]:
+                    key = QLabel(keys, objectName="ShortcutKey")
+                    key.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
+                    grid.addWidget(key, r, 0, Qt.AlignmentFlag.AlignTop)
+                    grid.addWidget(QLabel(label), r, 1)
+                    r += 1
+                grid.setRowMinimumHeight(r, 10)
+                r += 1
+            grid.setRowStretch(r, 1)
+            columns.addLayout(grid)
+        box = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        box.rejected.connect(self.reject)
+        lay.addWidget(box)
+        self.rows = rows

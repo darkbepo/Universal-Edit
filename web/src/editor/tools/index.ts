@@ -2,6 +2,7 @@
 import type { Rasterizer } from "../raster";
 import type { Tool } from "./base";
 import { FillTool, PickerTool } from "./fill";
+import { MoveTool } from "./move";
 import { BrushTool, EraserTool } from "./paint";
 import { CropTool, SelectTool } from "./select";
 import { EllipseTool, LineTool, RectTool } from "./shapes";
@@ -9,6 +10,7 @@ import { TextTool } from "./text";
 
 export function makeTools(raster: Rasterizer): Tool[] {
   return [
+    new MoveTool(),
     new BrushTool(),
     new EraserTool(),
     new FillTool(),

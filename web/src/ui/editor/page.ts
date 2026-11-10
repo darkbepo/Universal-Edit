@@ -4,7 +4,7 @@
 import { defaults } from "../../core/options";
 import { converterById } from "../../core/registry";
 import type { InputFile } from "../../core/types";
-import { checkSize, composite, EditorError, type EditorDoc } from "../../editor/document";
+import { checkSize, composite, EditorError, selectedIndices, type EditorDoc } from "../../editor/document";
 import { History, type Command } from "../../editor/history";
 import type { RGBA } from "../../editor/layer";
 import { loadLayers, openFiles, type OpenSource } from "../../editor/open";
@@ -16,10 +16,23 @@ import { makeTools } from "../../editor/tools/index";
 import { clearSelection, deselect, selectAll } from "../../editor/tools/select";
 import { addTextLayer } from "../../editor/tools/text";
 import type { ConversionClient } from "../../worker/client";
+import * as clipboard from "../../editor/clipboard";
 import { EditorCanvas } from "./canvas";
-import { brightnessDialog, canvasSizeDialog, resizeDialog, saveDialog } from "./dialogs";
+import { brightnessDialog, canvasSizeDialog, resizeDialog, saveDialog, shortcutsDialog } from "./dialogs";
 import { CropBar, type BarMode } from "./cropbar";
 import { h, LayersPanel, Swatches, ToolBar, ToolSettings } from "./panels";
+import { SHORTCUTS, shortcutFor } from "./shortcuts";
+
+/** Same size and (nearly) the same pixels — the clipboard may round semi-transparent colours. */
+function samePicture(a: { data: Uint8ClampedArray; width: number; height: number }, b: { data: Uint8ClampedArray; width: number; height: number }): boolean {
+  if (a.width !== b.width || a.height !== b.height) return false;
+  for (let i = 0; i < a.data.length; i += 4) {
+    if (Math.abs(a.data[i + 3] - b.data[i + 3]) > 3) return false;
+    if (a.data[i + 3] === 0) continue;
+    for (let c = 0; c < 3; c++) if (Math.abs(a.data[i + c] - b.data[i + c]) > 3 + 255 / Math.max(1, a.data[i + 3])) return false;
+  }
+  return true;
+}
 
 const CROP_HINT = "Drag a rectangle on the picture, then apply it with the button next to it (or Enter).";
 const NATIVE = new Set(["png", "jpg", "jpeg", "webp", "gif", "avif", "bmp", "ico"]);
@@ -73,6 +86,10 @@ export class EditorPage {
   private saveValues = new Map<string, Record<string, never>>();
   saving = false;
   private active = false;
+  /** The last copy: pasted back in place when the system clipboard still holds the same picture,
+   *  or used directly when the browser wouldn't let us write images to the clipboard. */
+  private clip: clipboard.Clip | null = null;
+  private clipOnSystem = false;
 
   constructor(private opts: EditorOptions) {
     this.toolBar = new ToolBar(this.tools, (id) => this.selectTool(id));
@@ -117,7 +134,7 @@ export class EditorPage {
       btn("−", "Zoom out", () => this.canvas.zoomOut()), btn("+", "Zoom in", () => this.canvas.zoomIn()),
       btn("Fit", "Fit to window (Ctrl+0)", () => this.canvas.fit()), btn("100 %", "Actual pixels (Ctrl+1)", () => this.canvas.setZoom(1)),
       h("span", { class: "gap" }), imageMenu,
-      h("div", { class: "spacer" }), this.saveAsBtn, this.saveBtn);
+      h("div", { class: "spacer" }), btn("?", "Keyboard shortcuts (?)", () => void this.showShortcuts()), this.saveAsBtn, this.saveBtn);
     // Crop needs buttons too (Enter isn't available on touch screens): they float next to the
     // rectangle once one is drawn, and also offer "Crop to selection" for a selection.
     this.cropBar = new CropBar((mode) => this.barApply(mode), (mode) => this.barCancel(mode));
@@ -131,6 +148,7 @@ export class EditorPage {
     this.selectTool("brush");
     this.updateButtons();
     window.addEventListener("keydown", (e) => this.key(e));
+    window.addEventListener("paste", (e) => void this.onPaste(e));
     window.addEventListener("keyup", (e) => {
       if (e.key === " ") this.canvas.spaceDown = false;
     });
@@ -330,29 +348,142 @@ export class EditorPage {
       this.canvas.cancelGesture();
       fn();
     };
-    if (mod) {
-      if (k === "z" && !e.shiftKey) run(() => this.canvas.undo());
-      else if (k === "y" || (k === "z" && e.shiftKey)) run(() => this.canvas.redo());
-      else if (k === "a") run(() => this.push(selectAll(this.doc as EditorDoc)));
-      else if (k === "d") run(() => this.push(deselect(this.doc as EditorDoc)));
-      else if (k === "0") run(() => this.canvas.fit());
-      else if (k === "1") run(() => this.canvas.setZoom(1));
-      return;
-    }
-    if (e.altKey) return;
-    if (k === " ") {
+    if (k === " " && !mod) {
       e.preventDefault();
       this.canvas.spaceDown = true;
       return;
     }
-    if (k === "delete" || k === "backspace") return run(() => this.push(clearSelection(this.doc as EditorDoc)));
-    if (k === "enter") return run(() => this.applyCrop());
     if (k === "escape") return run(() => this.discardCrop());
-    if (k === "x") return run(() => this.swatches.swap());
-    if (k === "[" || k === "]") return run(() => this.settings.changeSize(this.tool, k === "]" ? 1.2 : 1 / 1.2));
-    if (k === "u") return run(() => this.selectTool(this.tool.id === "rect" ? "ellipse" : "rect"));
-    const tool = this.tools.find((tt) => tt.shortcut.toLowerCase() === k);
+    const arrows: Record<string, [number, number]> = { arrowleft: [-1, 0], arrowright: [1, 0], arrowup: [0, -1], arrowdown: [0, 1] };
+    if (this.tool.id === "move" && k in arrows && !mod && !e.altKey) {
+      const step = e.shiftKey ? 10 : 1;
+      const [dx, dy] = arrows[k];
+      return run(() => this.push(ops.nudgeLayers(this.doc as EditorDoc, selectedIndices(this.doc as EditorDoc), dx * step, dy * step)));
+    }
+    const shortcut = shortcutFor(e);
+    if (shortcut) {
+      // Ctrl+V: let the browser fire its paste event (that's how we get to read the clipboard).
+      if (shortcut.id === "paste") return;
+      const action = this.actions()[shortcut.id];
+      if (action) return run(action);
+      return;
+    }
+    if (mod || e.altKey) return;
+    const tool = this.tools.find((tt) => tt.shortcut.toLowerCase() === k && tt.shortcut !== "U");
     if (tool) run(() => this.selectTool(tool.id));
+  }
+
+  /** What each shortcut in shortcuts.ts does (the e2e test checks every id has one). */
+  actions(): Record<string, () => void> {
+    const doc = () => this.doc as EditorDoc;
+    const lp = this.layers;
+    return {
+      undo: () => this.canvas.undo(),
+      redo: () => this.canvas.redo(),
+      copy: () => void this.copy(),
+      copy_merged: () => void this.copy(true),
+      cut: () => void this.cut(),
+      paste: () => {},
+      delete: () => (this.layers.list.contains(document.activeElement) ? lp.remove() : this.push(clearSelection(doc()))),
+      save: () => void this.save(),
+      save_as: () => void this.saveAs(),
+      select_all: () => this.push(selectAll(doc())),
+      deselect: () => this.push(deselect(doc())),
+      apply: () => this.applyCrop(),
+      new_layer: () => lp.add(),
+      duplicate: () => lp.duplicate(),
+      merge: () => lp.merge(),
+      layer_up: () => lp.move(1),
+      layer_down: () => lp.move(-1),
+      layer_top: () => lp.moveToEnd(true),
+      layer_bottom: () => lp.moveToEnd(false),
+      select_all_layers: () => lp.selectAll(),
+      zoom_in: () => this.canvas.zoomIn(),
+      zoom_out: () => this.canvas.zoomOut(),
+      fit: () => this.canvas.fit(),
+      actual: () => this.canvas.setZoom(1),
+      help: () => void this.showShortcuts(),
+      toggle_shape: () => this.selectTool(this.tool.id === "rect" ? "ellipse" : "rect"),
+      swap_colours: () => this.swatches.swap(),
+      smaller: () => this.settings.changeSize(this.tool, 1 / 1.2),
+      bigger: () => this.settings.changeSize(this.tool, 1.2),
+    };
+  }
+
+  showShortcuts(): Promise<void> {
+    return shortcutsDialog(this.tools);
+  }
+
+  // ---------------------------------------------------------------- clipboard
+  /** Ctrl+C / Ctrl+Shift+C. The picture also goes to the system clipboard where the browser
+   *  allows it (so it can be pasted into other programs). */
+  async copy(merged = false): Promise<clipboard.Clip | null> {
+    if (!this.doc) return null;
+    const clip = clipboard.copy(this.doc, merged);
+    if (!clip) {
+      this.showMessage("Nothing to copy: the selection doesn't touch this layer.");
+      return null;
+    }
+    this.clip = clip;
+    this.clipOnSystem = false;
+    this.showMessage(`Copied ${clip.width} × ${clip.height} px.`);
+    try {
+      const png = await canvasPng.encode(clip.data, clip.width, clip.height);
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": new Blob([png as BlobPart], { type: "image/png" }) })]);
+      this.clipOnSystem = this.clip === clip;
+    } catch {
+      // No image clipboard here (older browser, no permission): copy / paste still work inside the editor.
+    }
+    return clip;
+  }
+
+  async cut(): Promise<void> {
+    if (!this.doc) return;
+    const before = this.doc;
+    const clip = await this.copy();
+    if (!clip || this.doc !== before) return;
+    const [, cmd] = clipboard.cut(this.doc);
+    this.push(cmd);
+  }
+
+  /** The canvas point in the middle of what the user is looking at. */
+  viewCenter(): [number, number] {
+    return this.canvas.widgetToImage(this.canvas.view.clientWidth / 2, this.canvas.view.clientHeight / 2);
+  }
+
+  private async onPaste(e: ClipboardEvent): Promise<void> {
+    if (!this.active || !this.doc) return;
+    const t = e.target as HTMLElement;
+    if (t.closest?.("dialog") || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName) || t.isContentEditable) return;
+    e.preventDefault();
+    const file = [...(e.clipboardData?.items ?? [])].find((it) => it.kind === "file" && it.type.startsWith("image/"))?.getAsFile();
+    if (!file) {
+      if (this.clip && !this.clipOnSystem) return this.pasteClip(this.clip); // the browser kept the picture from us
+      this.showMessage("There's no picture on the clipboard to paste.");
+      return;
+    }
+    let decoded: Decoded;
+    try {
+      decoded = await decodeBlob(file);
+    } catch {
+      this.showMessage("The picture on the clipboard couldn't be read.", true);
+      return;
+    }
+    // Our own copy comes back without its position (browsers re-encode clipboard pictures).
+    const own = this.clip && samePicture(this.clip, decoded) ? this.clip : null;
+    this.pasteClip(own ?? { ...decoded, x: null, y: null });
+  }
+
+  pasteClip(clip: clipboard.Clip): void {
+    if (!this.doc) return;
+    try {
+      this.push(clipboard.paste(this.doc, clip, this.viewCenter()));
+    } catch (err) {
+      if (!(err instanceof EditorError)) throw err;
+      this.showMessage(err.message, true);
+      return;
+    }
+    this.showMessage("Pasted as a new layer. Move it with the Move tool (V).");
   }
 
   private barApply(mode: BarMode): void {
@@ -576,6 +707,17 @@ export class EditorPage {
       },
       get toolId() {
         return page.tool.id;
+      },
+      /** Shortcut ids in shortcuts.ts that have no action (should be none). */
+      missingActions() {
+        const actions = page.actions();
+        return SHORTCUTS.map((sc) => sc.id).filter((id) => !(id in actions));
+      },
+      pasteClip(data: number[], width: number, height: number) {
+        page.pasteClip({ data: new Uint8ClampedArray(data), width, height, x: null, y: null });
+      },
+      viewCenter() {
+        return page.viewCenter();
       },
       imageToPage(x: number, y: number) {
         const r = page.canvas.view.getBoundingClientRect();

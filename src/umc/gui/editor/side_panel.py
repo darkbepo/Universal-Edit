@@ -39,7 +39,17 @@ def tool_icon(tool_id: str, color: str) -> QIcon:
     p.setPen(pen)
     p.setBrush(Qt.BrushStyle.NoBrush)
     c = QColor(color)
-    if tool_id == "brush":
+    if tool_id == "move":
+        p.drawLine(QPointF(24, 8), QPointF(24, 40))
+        p.drawLine(QPointF(8, 24), QPointF(40, 24))
+        for tip, a, b in (
+            ((24, 6), (19, 12), (29, 12)),
+            ((24, 42), (19, 36), (29, 36)),
+            ((6, 24), (12, 19), (12, 29)),
+            ((42, 24), (36, 19), (36, 29)),
+        ):
+            p.drawPolyline([QPointF(*a), QPointF(*tip), QPointF(*b)])
+    elif tool_id == "brush":
         p.drawLine(QPointF(34, 10), QPointF(20, 26))
         path = QPainterPath(QPointF(20, 26))
         path.cubicTo(QPointF(12, 26), QPointF(14, 36), QPointF(8, 38))

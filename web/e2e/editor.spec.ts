@@ -396,3 +396,119 @@ test("layers: right-click menu", async ({ page }) => {
   await page.keyboard.press("Enter");
   await expect(row(page, 0).locator(".lname")).toHaveText("Top");
 });
+
+// ------------------------------------------------------------------ clipboard, Move tool, shortcuts
+
+type Hook = EditorHook & {
+  missingActions(): string[];
+  viewCenter(): [number, number];
+  doc: EditorHook["doc"] & { selected?: number[] };
+};
+const hook = (page: Page) => page.evaluate(() => {
+  const e = window.__editor as unknown as Hook;
+  return { names: e.doc.layers.map((l) => l.name), pos: e.doc.layers.map((l) => [l.x, l.y]), sizes: e.doc.layers.map((l) => [l.width, l.height]), active: e.doc.active };
+});
+
+test("Ctrl+C / Ctrl+V paste in place through the system clipboard; Ctrl+X cuts", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await openEditor(page);
+  await page.locator(".canvas-host canvas").focus();
+  await page.keyboard.press("Control+c");
+  await expect(page.locator(".editor-status")).toContainText("Copied");
+  // the picture really is on the system clipboard (other programs can paste it)
+  await expect.poll(() => page.evaluate(async () => (await navigator.clipboard.read()).some((it) => it.types.includes("image/png")))).toBe(true);
+  const before = await hook(page);
+  await page.keyboard.press("Control+v");
+  await expect.poll(async () => (await hook(page)).names).toEqual(["img0", "img1", "Pasted 3"]);
+  const after = await hook(page);
+  expect(after.pos[2]).toEqual(before.pos[1]); // back in the same place
+  expect(after.sizes[2]).toEqual(before.sizes[1]);
+  await page.keyboard.press("Control+z");
+  await expect.poll(async () => (await hook(page)).names).toEqual(["img0", "img1"]);
+  await page.keyboard.press("Control+x");
+  await expect.poll(() => page.evaluate(() => (window.__editor as EditorHook).pixel(1, 1, 1)[3])).toBe(0);
+});
+
+test("pasting a picture from another program centres it in view", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await openEditor(page);
+  await page.evaluate(async () => {
+    const c = new OffscreenCanvas(10, 6);
+    const g = c.getContext("2d") as OffscreenCanvasRenderingContext2D;
+    g.fillStyle = "#00ff00";
+    g.fillRect(0, 0, 10, 6);
+    await navigator.clipboard.write([new ClipboardItem({ "image/png": await c.convertToBlob({ type: "image/png" }) })]);
+  });
+  await page.locator(".canvas-host canvas").focus();
+  await page.keyboard.press("Control+v");
+  await expect.poll(async () => (await hook(page)).names.length).toBe(3);
+  const [cx, cy] = await page.evaluate(() => (window.__editor as unknown as Hook).viewCenter());
+  const h = await hook(page);
+  expect(h.sizes[2]).toEqual([10, 6]);
+  expect(h.pos[2]).toEqual([Math.round(cx - 5), Math.round(cy - 3)]);
+  expect(await page.evaluate(([x, y]) => (window.__editor as EditorHook).pixel(x, y, 2), [Math.round(cx), Math.round(cy)])).toEqual([0, 255, 0, 255]);
+  // text on the clipboard: nothing to paste
+  await page.evaluate(() => navigator.clipboard.writeText("hello"));
+  await page.keyboard.press("Control+v");
+  await expect(page.locator(".editor-status")).toContainText("no picture");
+});
+
+test("Move tool: drag, Shift+arrow and arrow nudge, undo", async ({ page }) => {
+  await openEditor(page);
+  await page.keyboard.press("v");
+  await expect.poll(() => page.evaluate(() => (window.__editor as EditorHook).toolId)).toBe("move");
+  const start = (await hook(page)).pos[1];
+  await drag(page, [5, 5], [25, 15]);
+  await expect.poll(async () => (await hook(page)).pos[1]).toEqual([start[0] + 20, start[1] + 10]);
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("Shift+ArrowDown");
+  await expect.poll(async () => (await hook(page)).pos[1]).toEqual([start[0] + 19, start[1] + 20]);
+  for (let i = 0; i < 3; i++) await page.keyboard.press("Control+z");
+  await expect.poll(async () => (await hook(page)).pos[1]).toEqual(start);
+});
+
+test("layer shortcuts, Delete in the layers list, and the ? list", async ({ page }) => {
+  await openEditor(page);
+  expect(await page.evaluate(() => (window.__editor as unknown as Hook).missingActions())).toEqual([]);
+  await page.locator(".canvas-host canvas").focus();
+  await page.keyboard.press("Control+Alt+n");
+  await expect.poll(async () => (await hook(page)).names).toEqual(["img0", "img1", "Layer 3"]);
+  await page.keyboard.press("Control+j");
+  await expect.poll(async () => (await hook(page)).names).toEqual(["img0", "img1", "Layer 3", "Layer 3 copy"]);
+  await page.keyboard.press("Control+[");
+  await expect.poll(async () => (await hook(page)).names[2]).toBe("Layer 3 copy");
+  await page.keyboard.press("Control+Shift+]");
+  await expect.poll(async () => (await hook(page)).names[3]).toBe("Layer 3 copy");
+  await page.keyboard.press("Control+e");
+  await expect.poll(async () => (await hook(page)).names).toEqual(["img0", "img1", "Layer 3"]);
+  await page.keyboard.press("Control+Alt+a");
+  await expect(page.locator(".layers li.selected")).toHaveCount(3);
+  await page.locator(".layers li .lname").first().click(); // select just the top layer (focuses the list)
+  await page.keyboard.press("Delete");
+  await expect.poll(async () => (await hook(page)).names).toEqual(["img0", "img1"]);
+  await page.locator(".canvas-host canvas").focus();
+  await page.keyboard.press("?");
+  const dlg = page.getByRole("dialog", { name: "Keyboard shortcuts" });
+  await expect(dlg).toBeVisible();
+  await expect(dlg).toContainText("Ctrl+Alt+N");
+  await expect(dlg).toContainText("Paste as a new layer");
+  await page.keyboard.press("Escape");
+  await expect(dlg).toHaveCount(0);
+});
+
+test("Ctrl+Plus / Ctrl+Minus zoom the picture, not the page", async ({ page }) => {
+  await openEditor(page);
+  await page.getByRole("button", { name: "100 %" }).click();
+  await page.locator(".canvas-host canvas").focus();
+  const zoom = () => page.evaluate(() => {
+    const a = (window.__editor as EditorHook).imageToPage(0, 0);
+    const b = (window.__editor as EditorHook).imageToPage(100, 0);
+    return b.x - a.x;
+  });
+  const z0 = await zoom();
+  await page.keyboard.press("Control+=");
+  await expect.poll(zoom).toBeGreaterThan(z0);
+  await page.keyboard.press("Control+-");
+  await page.keyboard.press("Control+-");
+  await expect.poll(zoom).toBeLessThan(z0);
+});

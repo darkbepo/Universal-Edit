@@ -6,6 +6,8 @@ import type { RGBA } from "../../editor/layer";
 import type { Tool, ToolContext } from "../../editor/tools/base";
 import { nearestCorner, placeBar, type BarMode, type CropBar } from "./cropbar";
 
+const cursorFor = (tool: Tool) => ({ text: "text", move: "move" })[tool.cursor as string] ?? "crosshair";
+
 const MIN_ZOOM = 0.05;
 const MAX_ZOOM = 32;
 
@@ -99,7 +101,7 @@ export class EditorCanvas {
   setTool(tool: Tool): void {
     this.cancelGesture();
     this.tool = tool;
-    this.view.style.cursor = tool.cursor === "text" ? "text" : "crosshair";
+    this.view.style.cursor = cursorFor(tool);
     this.draw();
   }
 
@@ -441,7 +443,7 @@ export class EditorCanvas {
     }
     if (this.gesture === "pan") {
       this.gesture = null;
-      this.view.style.cursor = this.tool?.cursor === "text" ? "text" : "crosshair";
+      this.view.style.cursor = this.tool ? cursorFor(this.tool) : "crosshair";
       return;
     }
     if ((this.gesture !== "left" && this.gesture !== "right") || !this.tool || !this.doc) return;

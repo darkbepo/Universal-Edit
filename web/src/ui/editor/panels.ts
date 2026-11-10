@@ -20,6 +20,7 @@ export const h = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<
 // ------------------------------------------------------------------ icons (inline SVG, no files)
 
 const ICONS: Record<string, string> = {
+  move: '<path d="M12 3v18M3 12h18"/><path d="m9 6 3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3"/>',
   brush: '<path d="M19 4 9.5 13.5"/><path d="M9.5 13.5c-2.5 0-3 2.5-3 4-.5 1-1.5 1.5-2.5 1.5 3 1.5 7 0 7-3"/>',
   eraser: '<path d="m7 20-3-3 10-10 6 6-7 7z"/><path d="M11 10l6 6"/><path d="M7 20h13"/>',
   fill: '<path d="m4 11 7-7 8 8-7 7z"/><path d="M4 11h15"/><path d="M20 15s2 2.5 2 3.5a2 2 0 0 1-4 0c0-1 2-3.5 2-3.5z"/>',

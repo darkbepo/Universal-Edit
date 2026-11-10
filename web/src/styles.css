@@ -228,6 +228,13 @@ h1 { font-size: 22px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.01em
 .editor-status { display: flex; justify-content: space-between; gap: 12px; padding: 6px 14px; background: var(--surface); border-top: 1px solid var(--border); color: var(--muted); font-size: 13px; }
 .editor-status .msg.error { color: var(--danger); }
 .editor-dialog { border: 1px solid var(--border); border-radius: 14px; background: var(--surface); color: var(--text); padding: 18px 20px; min-width: min(420px, 92vw); }
+.shortcuts-dialog { max-width: min(900px, 94vw); }
+.shortcut-cols { columns: 2 320px; column-gap: 28px; }
+.shortcuts { break-inside: avoid; border-collapse: collapse; margin-bottom: 14px; width: 100%; }
+.shortcuts caption { text-align: left; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding-bottom: 4px; }
+.shortcuts td { padding: 2px 0; vertical-align: top; }
+.shortcuts td:first-child { width: 130px; padding-right: 12px; }
+.shortcuts kbd { font: inherit; font-weight: 600; color: var(--accent); white-space: nowrap; }
 .editor-dialog::backdrop { background: rgba(0,0,0,.35); }
 .editor-dialog h2 { font-size: 16px; margin: 0 0 12px; }
 .editor-dialog .field { display: grid; grid-template-columns: 110px 1fr; align-items: center; gap: 10px; margin: 8px 0; }

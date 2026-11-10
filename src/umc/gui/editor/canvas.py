@@ -24,6 +24,15 @@ def pil_to_qimage(img: Image.Image) -> QImage:
     return QImage(data, img.width, img.height, img.width * 4, QImage.Format.Format_RGBA8888).copy()
 
 
+def qimage_to_pil(img: QImage) -> Image.Image:
+    """Any QImage (e.g. from the clipboard) → a Pillow RGBA image."""
+    img = img.convertToFormat(QImage.Format.Format_RGBA8888)
+    data = bytes(img.constBits())[: img.bytesPerLine() * img.height()]
+    return Image.frombuffer(
+        "RGBA", (img.width(), img.height()), data, "raw", "RGBA", img.bytesPerLine(), 1
+    ).copy()
+
+
 def _checker() -> QPixmap:
     pm = QPixmap(16, 16)
     pm.fill(QColor("#ffffff"))
@@ -40,6 +49,7 @@ class EditorCanvas(QWidget):
     zoom_changed = Signal(float)
     cursor_moved = Signal(int, int)
     text_requested = Signal(float, float)  # text tool clicked at image coordinates
+    nudge_requested = Signal(int, int)  # arrow keys with the Move tool
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -81,7 +91,14 @@ class EditorCanvas(QWidget):
             self._after_change(self.tool.cancel(self.doc))
         self._pressed = None
         self.tool = tool
+        self._restore_cursor()
         self.update()
+
+    def _restore_cursor(self) -> None:
+        if self.tool is not None and self.tool.cursor == "move":
+            self.setCursor(Qt.CursorShape.SizeAllCursor)
+        else:
+            self.unsetCursor()
 
     def refresh(self, rect: Rect | None = None) -> None:
         """Re-composite ``rect`` (canvas coordinates; None = everything) into the cache."""
@@ -384,7 +401,7 @@ class EditorCanvas(QWidget):
     def mouseReleaseEvent(self, e) -> None:  # noqa: N802
         if self._pressed == "pan":
             self._pressed = None
-            self.unsetCursor()
+            self._restore_cursor()
             return
         if self._pressed not in ("left", "right") or self.tool is None:
             return
@@ -411,6 +428,22 @@ class EditorCanvas(QWidget):
             self._space = True
             self.setCursor(Qt.CursorShape.OpenHandCursor)
             return
+        arrows = {
+            Qt.Key.Key_Left: (-1, 0),
+            Qt.Key.Key_Right: (1, 0),
+            Qt.Key.Key_Up: (0, -1),
+            Qt.Key.Key_Down: (0, 1),
+        }
+        if (
+            e.key() in arrows
+            and self.tool is not None
+            and self.tool.id == "move"
+            and self._pressed is None
+        ):
+            step = 10 if e.modifiers() & Qt.KeyboardModifier.ShiftModifier else 1
+            dx, dy = arrows[e.key()]
+            self.nudge_requested.emit(dx * step, dy * step)
+            return
         if e.key() == Qt.Key.Key_Escape and self.tool is not None and self.doc is not None:
             self._pressed = None
             self._after_change(self.tool.cancel(self.doc))
@@ -421,7 +454,7 @@ class EditorCanvas(QWidget):
     def keyReleaseEvent(self, e) -> None:  # noqa: N802
         if e.key() == Qt.Key.Key_Space and not e.isAutoRepeat():
             self._space = False
-            self.unsetCursor()
+            self._restore_cursor()
             return
         super().keyReleaseEvent(e)
 

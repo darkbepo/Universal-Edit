@@ -239,7 +239,7 @@ def _reselect(
     return where[id(active)], {where[id(la)] for la in keep}
 
 
-def _unique_name(doc: Document, base: str) -> str:
+def unique_name(doc: Document, base: str) -> str:
     names = {la.name for la in doc.layers}
     n = len(doc.layers) + 1
     while f"{base} {n}" in names:
@@ -249,7 +249,7 @@ def _unique_name(doc: Document, base: str) -> str:
 
 def add_layer(doc: Document) -> Command:
     layers = list(doc.layers)
-    new = Layer(_unique_name(doc, "Layer"), Image.new("RGBA", (doc.width, doc.height)))
+    new = Layer(unique_name(doc, "Layer"), Image.new("RGBA", (doc.width, doc.height)))
     layers.insert(doc.active + 1, new)
     return _change(doc, "Add layer", layers, doc.active + 1)
 
@@ -444,3 +444,20 @@ def set_visible_layers(doc: Document, indices, visible: bool) -> Command | None:
         return None
     label = ("Show " if visible else "Hide ") + _plural(len(new), "layer", "layers")
     return _replace_many(doc, new, label)
+
+
+def offset_layers(doc: Document, base: list[Layer], indices, dx: int, dy: int) -> list[Layer]:
+    """``base`` with the given layers shifted by (dx, dy) — new Layer objects, images shared."""
+    layers = list(base)
+    for i in _clean(doc, indices):
+        layers[i] = replace(base[i], x=base[i].x + dx, y=base[i].y + dy)
+    return layers
+
+
+def nudge_layers(doc: Document, indices, dx: int, dy: int) -> Command | None:
+    """Move layers by (dx, dy) pixels (arrow keys with the Move tool)."""
+    if (dx, dy) == (0, 0) or not _clean(doc, indices):
+        return None
+    return _change(
+        doc, "Move", offset_layers(doc, doc.layers, indices, dx, dy), doc.active, set(doc.selected)
+    )

@@ -31,7 +31,7 @@ export abstract class Tool {
   abstract readonly label: string;
   abstract readonly shortcut: string;
   readonly options: OptionSpec[] = [];
-  readonly cursor: "cross" | "brush" | "pick" | "text" = "cross";
+  readonly cursor: "cross" | "brush" | "pick" | "text" | "move" = "cross";
 
   press(_doc: EditorDoc, _x: number, _y: number, _ctx: ToolContext): Rect | null {
     return null;

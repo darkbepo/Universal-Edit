@@ -497,9 +497,31 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
          crop tool's pending rectangle ("Apply crop / Cancel") or the select tool's selection
          ("Crop to selection / Deselect"); placed after every repaint. The web side-panel crop
          block is gone; both apps show the hint in the status line.
-      d. Shortcuts + clipboard (desktop, then web): Ctrl+C / Ctrl+Shift+C (merged) / Ctrl+X /
-         Ctrl+V (pastes as a new layer, like Photoshop), Move tool (V, arrow-key nudge), Ctrl+J,
-         Ctrl+E, Ctrl+Shift+N, Ctrl+] / Ctrl+[, Ctrl+Plus / Minus, a "?" shortcut list.
+      d. ✅ Clipboard, Move tool, shortcuts (both apps). Model: `editor/clipboard.py` / `clipboard.ts`
+         (`Clip` = RGBA + the canvas x/y it came from; paste = new selected layer, in place or
+         centred on the view), `tools/move.py` / `move.ts` (first in the tool bar), `ops.nudge_layers`.
+         One shortcut table per app (`gui/editor/shortcuts.py`, `web/src/ui/editor/shortcuts.ts`)
+         drives both the key bindings and the "?" window; tests check every id has an action and no
+         key clashes. Desktop clipboard: Qt, with our x/y in a private mime type. Web: Ctrl+V is
+         left to the browser's `paste` event (no permission prompt); copy writes a PNG with
+         `navigator.clipboard.write` and keeps the clip in memory — browsers re-encode clipboard
+         images, so "is this our copy?" compares pixels (`samePicture`). Chrome reserves
+         Ctrl+Shift+N, so a new layer is Ctrl+Alt+N on the web.
+   5. Next, in this order (owner, Nov 2026; one step at a time, both apps, ship gate each):
+      1. Quick photo fixes: an Adjust menu with live preview — exposure, saturation, vibrance,
+         colour temperature, levels, curves (+ the existing brightness / contrast).
+      2. Filters and looks: blur, sharpen, 8–12 one-click looks (saved step-1 settings).
+      3. More selection tools: ellipse, lasso, polygon lasso, magic wand; add / subtract, invert,
+         feather. The selection becomes a mask (today `doc.selection` is one Rect everywhere).
+      4. Masks and gradients: layer masks, gradient tool, adjustments inside a selection / mask,
+         background blur for portraits.
+      5. Text v2: re-editable text layers, outline, shadow, background box, alignment, watermark.
+      6. Annotation: arrow tool, highlighter, built-in CC0 stickers.
+      7. Pasteboard (owner chose this kind of "artboard"): the area around the canvas holds
+         layers that aren't saved into the image (layers already have x/y outside the canvas).
+      8. Clone stamp, then content-aware fill (opencv-python-headless, Apache-2.0, approved).
+      9. Background removal (desktop onnxruntime + a one-click model download; web
+         @imgly/background-removal, AGPL — both approved by the owner).
 11. Ideas: installer for the app itself (Inno Setup), presets, batch queue.
 
 ## Handoff — read this first (for the next Claude account)

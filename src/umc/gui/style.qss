@@ -291,6 +291,10 @@ QFrame#EditorTopBar QPushButton#Primary {
     border-radius: 8px;
     font-size: 13px;
 }
+QLabel#ShortcutKey {
+    font-weight: 600;
+    color: @accent;
+}
 QFrame#CropBar {
     background: @surface;
     border: 1px solid @border;
