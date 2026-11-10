@@ -106,3 +106,48 @@ def test_write_page_break_indent_hr_pre_quote(tmp_path):
 def test_write_empty_fragment(tmp_path):
     d = _doc(tmp_path, "")
     assert len(d.paragraphs) == 1 and d.paragraphs[0].text == ""
+
+
+def _num_fmt(d, par):
+    num_pr = par._p.pPr.numPr
+    numbering = d.part.numbering_part.element
+    num = next(
+        n for n in numbering.findall(qn("w:num")) if n.get(qn("w:numId")) == str(num_pr.numId.val)
+    )
+    abstract_id = num.find(qn("w:abstractNumId")).get(qn("w:val"))
+    abstract = next(
+        a
+        for a in numbering.findall(qn("w:abstractNum"))
+        if a.get(qn("w:abstractNumId")) == abstract_id
+    )
+    lvl = next(
+        x for x in abstract.findall(qn("w:lvl")) if x.get(qn("w:ilvl")) == str(num_pr.ilvl.val)
+    )
+    return lvl.find(qn("w:numFmt")).get(qn("w:val"))
+
+
+def test_write_mixed_nested_lists_keep_their_kind(tmp_path):
+    d = _doc(tmp_path, "<ul><li>a<ul><li>b<ol><li>c</li></ol></li></ul></li></ul>")
+    assert [_num_fmt(d, p) for p in d.paragraphs] == ["bullet", "bullet", "decimal"]
+    d = _doc(tmp_path, "<ol><li>x<ul><li>y</li></ul></li></ol>")
+    assert [_num_fmt(d, p) for p in d.paragraphs] == ["decimal", "bullet"]
+    assert [p._p.pPr.numPr.ilvl.val for p in d.paragraphs] == [0, 1]
+
+
+def test_write_nested_table_keeps_outer_table_intact(tmp_path):
+    d = _doc(
+        tmp_path,
+        "<table><tr><td><table><tr><td><p>a</p></td></tr><tr><td><p>b</p></td></tr></table>"
+        "</td></tr></table>",
+    )
+    assert len(d.tables) == 1 and len(d.tables[0].rows) == 1
+    inner = d.tables[0].rows[0].cells[0].tables[0]
+    assert [r.cells[0].text for r in inner.rows] == ["a", "b"]
+
+
+def test_write_skips_bad_or_missing_pictures(tmp_path, caplog):
+    d = _doc(tmp_path, '<p>x<img src="img/1.png" width="10"></p>', {"img/1.png": b"not an image"})
+    assert len(d.inline_shapes) == 0 and d.paragraphs[0].text == "x"
+    d = _doc(tmp_path, '<p>x<img src="img/9.png"></p>', {})
+    assert len(d.inline_shapes) == 0
+    assert "img/9.png" in caplog.text

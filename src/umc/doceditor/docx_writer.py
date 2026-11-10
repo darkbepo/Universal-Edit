@@ -8,6 +8,7 @@ tables -> Table Grid, links -> ``w:hyperlink``, spans -> run formatting.
 from __future__ import annotations
 
 import contextlib
+import logging
 import re
 from dataclasses import dataclass, replace
 from io import BytesIO
@@ -26,6 +27,8 @@ from lxml import etree
 
 from umc.doceditor.html_subset import normalise_html
 from umc.doceditor.types import DocImages
+
+log = logging.getLogger(__name__)
 
 _ALIGN = {
     "left": WD_ALIGN_PARAGRAPH.LEFT,
@@ -54,8 +57,6 @@ class _Fmt:
 @dataclass
 class _Ctx:
     images: DocImages
-    bullet_abstract: int
-    number_abstract: int
     numbering: Any  # the <w:numbering> element
 
 
@@ -91,18 +92,41 @@ def _ensure_styles(doc: Any) -> None:
         code.font.size = Pt(10)
 
 
-def _abstract_of(doc: Any, style_name: str) -> int:
-    """The abstract numbering definition a list style points at."""
-    num_id = doc.styles[style_name].element.pPr.numPr.numId.val
-    for num in doc.part.numbering_part.element.findall(qn("w:num")):
-        if num.get(qn("w:numId")) == str(num_id):
-            return int(num.find(qn("w:abstractNumId")).get(qn("w:val")))
-    raise ValueError(f"no numbering for {style_name}")
+def _own_num(ctx: _Ctx, ordered: bool) -> int:
+    """A new numbering with its own definition of one kind (decimal / bullet) at all 9 levels.
 
-
-def _new_num(ctx: _Ctx, ordered: bool) -> int:
-    """A fresh ``w:num`` so every list starts again (numbered ones at 1)."""
-    num = ctx.numbering.add_num(ctx.number_abstract if ordered else ctx.bullet_abstract)
+    The template's abstract definitions only describe level 0, so nested items need this."""
+    ids = [int(a.get(qn("w:abstractNumId"))) for a in ctx.numbering.findall(qn("w:abstractNum"))]
+    abstract = OxmlElement("w:abstractNum")
+    abstract.set(qn("w:abstractNumId"), str(max(ids, default=-1) + 1))
+    multi = OxmlElement("w:multiLevelType")
+    multi.set(qn("w:val"), "hybridMultilevel")
+    abstract.append(multi)
+    for level in range(9):
+        lvl = OxmlElement("w:lvl")
+        lvl.set(qn("w:ilvl"), str(level))
+        for tag, val in (
+            ("w:start", "1"),
+            ("w:numFmt", "decimal" if ordered else "bullet"),
+            ("w:lvlText", f"%{level + 1}." if ordered else "•"),
+            ("w:lvlJc", "left"),
+        ):
+            el = OxmlElement(tag)
+            el.set(qn("w:val"), val)
+            lvl.append(el)
+        ppr = OxmlElement("w:pPr")
+        ind = OxmlElement("w:ind")
+        ind.set(qn("w:left"), str(720 * (level + 1)))
+        ind.set(qn("w:hanging"), "360")
+        ppr.append(ind)
+        lvl.append(ppr)
+        abstract.append(lvl)
+    first_num = ctx.numbering.find(qn("w:num"))
+    if first_num is not None:
+        first_num.addprevious(abstract)
+    else:
+        ctx.numbering.append(abstract)
+    num = ctx.numbering.add_num(int(abstract.get(qn("w:abstractNumId"))))
     if ordered:
         override = OxmlElement("w:lvlOverride")
         override.set(qn("w:ilvl"), "0")
@@ -196,15 +220,22 @@ def _inline(ctx: _Ctx, par: Any, node: etree._Element, fmt: _Fmt, holder: Any) -
 
 
 def _picture(ctx: _Ctx, par: Any, node: etree._Element, holder: Any) -> None:
-    data = ctx.images.get(node.get("src") or "")
+    src = node.get("src") or ""
+    data = ctx.images.get(src)
     if data is None:
+        log.warning("Picture %s has no data; left out of the document", src)
         return
     size: dict[str, Any] = {}
     for key in ("width", "height"):
         with contextlib.suppress(ValueError):
             size[key] = Emu(round(float(node.get(key) or "") * _EMU_PER_PX))
     run = par.add_run()
-    run.add_picture(BytesIO(data), **size)
+    try:
+        run.add_picture(BytesIO(data), **size)
+    except Exception:  # python-docx raises UnrecognizedImageError and friends
+        log.warning("Picture %s is not a readable image; left out of the document", src)
+        run._r.getparent().remove(run._r)
+        return
     _place(par, run, holder)
 
 
@@ -266,17 +297,18 @@ def _write_list(
     node: etree._Element,
     level: int,
     num_id: int | None,
+    num_ordered: bool | None = None,
 ) -> None:
     ordered = _tag(node) == "ol"
-    if num_id is None:  # only top-level lists get their own numbering
-        num_id = _new_num(ctx, ordered)
+    if num_id is None or num_ordered != ordered:  # every top-level list gets its own numbering
+        num_id = _own_num(ctx, ordered)
     style = "List Number" if ordered else "List Bullet"
     for li in node:
         if _tag(li) != "li":
             continue
         for kind, item in _li_parts(li):
             if kind == "list":
-                _write_list(ctx, container, reuse, item, min(level + 1, 9), num_id)
+                _write_list(ctx, container, reuse, item, min(level + 1, 9), num_id, ordered)
                 continue
             par = _new_par(container, reuse, style)
             _paragraph_props(par, item)
@@ -286,8 +318,19 @@ def _write_list(
             _inline(ctx, par, item, _Fmt(), par._p)
 
 
+def _table_rows(table: etree._Element) -> list[etree._Element]:
+    """The table's own rows (not those of tables nested in its cells)."""
+    rows: list[etree._Element] = []
+    for child in table:
+        if _tag(child) == "tr":
+            rows.append(child)
+        elif _tag(child) in ("thead", "tbody", "tfoot"):
+            rows.extend(tr for tr in child if _tag(tr) == "tr")
+    return rows
+
+
 def _write_table(ctx: _Ctx, container: Any, node: etree._Element) -> None:
-    rows = list(node.iter("tr"))
+    rows = _table_rows(node)
     placed: list[tuple[int, int, int, int, etree._Element]] = []  # row, col, rowspan, colspan, td
     taken: set[tuple[int, int]] = set()
     ncols = 0
@@ -386,8 +429,6 @@ def write(html: str, images: DocImages, dest: Path) -> Path:
     _ensure_styles(document)
     ctx = _Ctx(
         images,
-        _abstract_of(document, "List Bullet"),
-        _abstract_of(document, "List Number"),
         document.part.numbering_part.element,
     )
     root = lxml.html.fragment_fromstring(html or "<p></p>", create_parent="div")
