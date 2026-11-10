@@ -285,3 +285,160 @@ def test_thumbnails_clamped_to_visible_area(make):
     tile_w = calls[0].width()
     assert 0 < len(calls) <= t.width() // tile_w + 2
     assert max(r.left() for r in calls) <= t.width()
+
+
+# ------------------------------------------------------------------ editor page
+
+from tests.conftest import needs_ffmpeg  # noqa: E402
+
+
+@pytest.fixture
+def vpage(qtbot, vmedia):
+    from umc.gui.videoedit.editor_page import VideoEditorPage
+
+    pg = VideoEditorPage()
+    qtbot.addWidget(pg)
+    pg.resize(1200, 760)
+    pg.show()
+    assert pg.open_paths([vmedia / "red.mp4", vmedia / "pic.png", vmedia / "music.wav"])
+    yield pg
+    pg._ask_save_changes = lambda: "discard"
+    pg.shutdown()
+
+
+def _main_ids(pg):
+    return [m.id for m in pg.history.project.main]
+
+
+@needs_ffmpeg
+def test_page_open_puts_clips_on_rows(vpage):
+    p = vpage.history.project
+    assert len(p.main) == 2 and len(p.music_rows[0]) == 1
+    assert vpage.media_list.count() == 3
+    assert vpage.timeline.project is p
+
+
+@needs_ffmpeg
+def test_split_shortcut_and_undo(vpage, qtbot):
+    vpage.seek(1.0)
+    vpage.timeline.set_selected(_main_ids(vpage)[0])
+    vpage.timeline.setFocus()
+    qtbot.keyClick(vpage.timeline, Qt.Key.Key_S)
+    assert len(vpage.history.project.main) == 3
+    assert vpage.undo_button.isEnabled()
+    qtbot.keyClick(vpage.timeline, Qt.Key.Key_Z, Qt.KeyboardModifier.ControlModifier)
+    assert len(vpage.history.project.main) == 2
+
+
+@needs_ffmpeg
+def test_inspector_change_is_one_undo_step(vpage):
+    from umc.videoedit.project import length
+
+    before = vpage.history.project
+    vpage.timeline.set_selected(before.main[0].id)
+    spin = vpage.inspector.panel.field_widget("speed")
+    spin.setValue(1.5)
+    spin.setValue(2.0)
+    assert vpage.history.project is before  # still moving: nothing pushed yet
+    spin.editingFinished.emit()
+    assert length(vpage.history.project) < length(before)
+    assert vpage.history.project.main[0].speed == 2.0
+    assert vpage.history.undo_label == "Change speed"
+    vpage.undo_button.click()
+    assert vpage.history.project is before
+    assert not vpage.history.can_undo
+
+
+@needs_ffmpeg
+def test_scrub_newest_request_wins(qtbot, vmedia, tmp_path):
+    from umc.gui.videoedit.editor_page import FrameService
+    from umc.videoedit.media import new_project
+
+    project, _ = new_project([vmedia / "red.mp4"])
+    fs = FrameService(tmp_path)
+    got = []
+    fs.ready.connect(lambda v, t, img: got.append((v, t, img)))
+    try:
+        for v, t in ((1, 0.2), (2, 0.5), (3, 1.0)):
+            fs.request(project, v, t)
+        qtbot.waitUntil(lambda: bool(got), timeout=15_000)
+        qtbot.wait(300)
+        assert [g[0] for g in got] == [3]
+        assert got[0][1] == pytest.approx(1.0) and not got[0][2].isNull()
+    finally:
+        fs.close()
+
+
+def _patch_save_dialog(monkeypatch, path):
+    from PySide6.QtWidgets import QFileDialog
+
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(path), ""))
+
+
+@needs_ffmpeg
+def test_save_and_reopen_project(vpage, qtbot, tmp_path, monkeypatch):
+    out = tmp_path / "proj.umcvideo"
+    _patch_save_dialog(monkeypatch, out)
+    vpage.seek(1.0)
+    vpage.timeline.set_selected(_main_ids(vpage)[0])
+    vpage.split()
+    assert vpage.history.dirty
+    assert vpage.save_as()
+    qtbot.waitUntil(lambda: out.exists() and not vpage.saving, timeout=10_000)
+    assert not vpage.history.dirty
+    saved = vpage.history.project
+    assert vpage.open_paths([out])
+    assert vpage.history.project == saved
+    assert not vpage.history.dirty
+
+
+@needs_ffmpeg
+def test_open_project_with_missing_source_asks(vpage, qtbot, tmp_path, monkeypatch, vmedia):
+    import shutil
+
+    from umc.gui.videoedit.dialogs import LocateDialog
+
+    gone = tmp_path / "gone.mp4"
+    shutil.copy(vmedia / "red.mp4", gone)
+    out = tmp_path / "proj.umcvideo"
+    _patch_save_dialog(monkeypatch, out)
+    assert vpage.open_paths([gone, vmedia / "pic.png"])
+    vpage.save_as()
+    qtbot.waitUntil(lambda: out.exists() and not vpage.saving, timeout=10_000)
+    gone.unlink()
+    asked = []
+    monkeypatch.setattr(LocateDialog, "exec", lambda self: asked.append(self) or 1)
+    assert vpage.open_paths([out])
+    assert asked
+    p = vpage.history.project
+    assert len(p.main) == 1 and all(s.path.name != "gone.mp4" for s in p.sources)
+    assert "gone.mp4" in vpage.message.text()
+
+
+@needs_ffmpeg
+def test_leave_with_unsaved_changes_asks(vpage, monkeypatch):
+    vpage.seek(1.0)
+    vpage.timeline.set_selected(_main_ids(vpage)[0])
+    vpage.split()
+    monkeypatch.setattr(vpage, "_ask_save_changes", lambda: "cancel")
+    assert not vpage.maybe_leave()
+    monkeypatch.setattr(vpage, "_ask_save_changes", lambda: "discard")
+    assert vpage.maybe_leave()
+
+
+def test_textarea_kind_edits_multiline_text(qtbot):
+    from PySide6.QtWidgets import QPlainTextEdit
+
+    from umc.core.options import option_specs
+    from umc.gui.widgets.settings_panel import SettingsPanel
+
+    assert {s.name: s.kind for s in option_specs(TextItem)}["text"] == "textarea"
+    panel = SettingsPanel()
+    qtbot.addWidget(panel)
+    panel.set_schema(TextItem, "", {"text": "one\ntwo"})
+    w = panel.field_widget("text")
+    assert isinstance(w, QPlainTextEdit) and panel.values()["text"] == "one\ntwo"
+    with qtbot.waitSignal(panel.committed):
+        w.setPlainText("three")
+        w.editingFinished.emit()
+    assert panel.values()["text"] == "three"

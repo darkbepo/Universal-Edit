@@ -19,7 +19,18 @@ from dataclasses import dataclass, field
 from typing import Any
 
 # Widget kinds understood by the settings panel.
-KINDS = {"slider", "int", "float", "choice", "bool", "text", "password", "color", "file"}
+KINDS = {
+    "slider",
+    "int",
+    "float",
+    "choice",
+    "bool",
+    "text",
+    "textarea",
+    "password",
+    "color",
+    "file",
+}
 
 
 @dataclass(frozen=True)

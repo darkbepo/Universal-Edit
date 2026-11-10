@@ -184,7 +184,7 @@ class AudioClip:
 @dataclass(frozen=True)
 class TextItem:
     id: str
-    text: str = opt("Text", "Text", kind="text")
+    text: str = opt("Text", "Text", kind="textarea")
     start: float = 0.0
     end: float = 3.0
     anchor: str = opt("bottom", "Position", choices=ANCHORS)
