@@ -11,6 +11,7 @@ import base64
 import binascii
 import html as _html
 import re
+import sys
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
@@ -18,6 +19,7 @@ import lxml.html
 from lxml import etree
 from PIL import ImageColor
 
+from umc.core.errors import ConversionError
 from umc.doceditor.types import MAX_FILE_BYTES, DocImages, next_image_name
 
 # Removed together with everything inside them.
@@ -123,7 +125,8 @@ _WS = re.compile(r"[ \t\r\n\f]+")
 _XML_DECL = re.compile(r"^\s*<\?xml[^>]*\?>", re.I)
 _BR = ("V", "<br>")
 
-# A token is (kind, text): T = text, O = opening tag, C = closing tag, V = void tag.
+# A token is (kind, text): T = text, O = opening tag, C = closing tag, V = void tag,
+# S = a line break the normaliser added between blocks (dropped at the ends).
 _Token = tuple[str, str]
 
 
@@ -198,7 +201,7 @@ def _finalise(tokens: list[_Token], *, pre: bool = False, drop_trailing_br: bool
                 if not text:
                     continue
                 prev_space = text.endswith(" ")
-            elif kind == "V":
+            elif kind in ("V", "S"):
                 prev_space = text == "<br>"
             out.append((kind, text))
         tokens = out
@@ -209,6 +212,9 @@ def _finalise(tokens: list[_Token], *, pre: bool = False, drop_trailing_br: bool
         while i > 0:  # skip closing tags at the end, then trim the last text
             kind, text = tokens[i - 1]
             if kind == "C":
+                i -= 1
+            elif kind == "S":
+                del tokens[i - 1]
                 i -= 1
             elif kind == "T" and text.endswith(" "):
                 tokens[i - 1] = (kind, text.rstrip(" "))
@@ -311,8 +317,22 @@ class _Normaliser:
                 toks.append(("C", "</span>"))
             else:
                 self._inline_children(node, toks)
-        else:  # unknown inline (or a block seen in inline context): keep the content
+        elif tag in _BLOCK:  # a block inside an inline tag: its content becomes a line
+            self._separate(toks)
             self._inline_children(node, toks)
+            self._separate(toks)
+        else:  # unknown inline: keep the content
+            self._inline_children(node, toks)
+
+    @staticmethod
+    def _separate(toks: list[_Token]) -> None:
+        for kind, text in reversed(toks):
+            if kind == "O":
+                continue
+            if kind == "S" or (kind, text) == _BR:
+                return
+            toks.append(("S", "<br>"))
+            return
 
     @staticmethod
     def _span_style(node: etree._Element, *, font: bool) -> str:
@@ -488,14 +508,19 @@ class _Normaliser:
             out.append(f"<table>{''.join(html_rows)}</table>")
 
 
+_UNREADABLE = "This file couldn't be read as HTML."
+
+
 def _parse(html: str) -> etree._Element | None:
     html = _XML_DECL.sub("", html)
     if not html.strip():
         return None
     try:
-        return lxml.html.fragment_fromstring(html, create_parent="div")
-    except (etree.ParserError, ValueError):
-        return None
+        return lxml.html.fragment_fromstring(
+            html, create_parent="div", parser=lxml.html.HTMLParser(huge_tree=True)
+        )
+    except (etree.LxmlError, ValueError) as exc:
+        raise ConversionError(_UNREADABLE, details=str(exc)) from exc
 
 
 def normalise_html(html: str, base_dir: Path | None = None) -> tuple[str, DocImages]:
@@ -511,7 +536,14 @@ def normalise_html(html: str, base_dir: Path | None = None) -> tuple[str, DocIma
     }
     norm = _Normaliser(base_dir, reserved)
     out: list[str] = []
-    norm.blocks(root, out)
+    old_limit = sys.getrecursionlimit()
+    sys.setrecursionlimit(max(old_limit, 20000))  # deeply nested pages recurse deeply
+    try:
+        norm.blocks(root, out)
+    except RecursionError as exc:
+        raise ConversionError(_UNREADABLE, details="nesting too deep") from exc
+    finally:
+        sys.setrecursionlimit(old_limit)
     return "".join(out), norm.images
 
 

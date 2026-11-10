@@ -1,3 +1,5 @@
+import pytest
+
 from tests.doceditor_samples import PNG_1PX, b64
 from umc.doceditor.html_subset import normalise_html, text_length
 from umc.doceditor.types import (
@@ -77,3 +79,27 @@ def test_jpeg_extension_and_roundtrip_of_existing_img_names(tmp_path):
 
 def test_text_length():
     assert text_length("<p>ab <b>c</b></p><p>d</p>") == 5
+
+
+def test_blocks_inside_inline_tags_are_separated():
+    html, _ = normalise_html('<a href="http://a"><div>one</div><div>two</div></a>')
+    assert html == '<p><a href="http://a">one<br>two</a></p>'
+    html, _ = normalise_html("<span><div>one</div><div>two</div></span>")
+    assert html == "<p>one<br>two</p>"
+    assert normalise_html(html)[0] == html
+
+
+def test_deeply_nested_content_survives():
+    html, _ = normalise_html("<div>" * 600 + "x" + "</div>" * 600)
+    assert "x" in html
+
+
+def test_unparseable_html_raises():
+    from umc.core.errors import ConversionError
+
+    with pytest.raises(ConversionError, match="couldn't be read as HTML"):
+        normalise_html("<div>" * 100000 + "x")
+
+
+def test_empty_input_is_empty():
+    assert normalise_html("  \n") == ("", {})
