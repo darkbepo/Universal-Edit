@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from collections.abc import Callable
 from pathlib import Path
 
@@ -74,6 +75,7 @@ class DocEditorPage(QWidget):
     back_requested = Signal()
     opened = Signal()
     save_done = Signal()
+    _open_ended = Signal()  # the open thread finished (also after a cancelled open)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -85,6 +87,10 @@ class DocEditorPage(QWidget):
         self._opening: Path | None = None
         self._retry_path: Path | None = None
         self._open_ok = False
+        self._open_cancel = threading.Event()
+        self._discard_open = False  # the running open was cancelled: ignore its result
+        self._next_open: Path | None = None  # opened when the running open has finished
+        self._open_after_save: Path | None = None  # opened when the running save has finished
         self._jobs: dict[str, tuple[QThread, _Worker]] = {}
         self._pending_tool: tuple[str, str, str, Callable[[], object]] | None = None
         self._save_target: tuple[Path, str] | None = None  # set by Save as / a finished save
@@ -290,6 +296,8 @@ class DocEditorPage(QWidget):
 
     @Slot(str, str, str)
     def _on_tool_missing(self, tool: str, url: str, message: str) -> None:
+        if self._opening is not None and self._discard_open:
+            return
         self.show_message(message, error=True)
         retry = self._retry_open if self._opening is not None else self._retry_save
         self._pending_tool = (tool, url, message, retry)
@@ -305,18 +313,31 @@ class DocEditorPage(QWidget):
 
     # ------------------------------------------------------------ opening
     def open_path(self, path: Path) -> None:
-        """Open ``path`` on a worker thread; ``opened`` is emitted when it's shown."""
-        if self.busy:
-            return
+        """Open ``path`` on a worker thread; ``opened`` is emitted when it's shown.
+
+        While an open runs, it is cancelled and ``path`` opens next (the latest request wins);
+        while a save runs, ``path`` opens after it (with the usual "Save changes?" check).
+        """
         path = Path(path)
+        if self._opening is not None:
+            self._cancel_open()
+            self._next_open = path
+            self.show_message(f"Opening “{path.name}”…")
+            return
+        if self.saving or "save" in self._jobs:
+            self._open_after_save = path
+            self.show_message("Saving… the document will open when it's done.")
+            return
         self._opening = path
         self._open_ok = False
+        self._discard_open = False
+        self._open_cancel = cancel = threading.Event()
         self.view.setEnabled(False)
         self._update_buttons()
         self.show_message(f"Opening “{path.name}”…")
         self._start(
             "open",
-            lambda: open_document(path),
+            lambda: open_document(path, cancel),
             f"Couldn't open “{path.name}”. See the log for details.",
             self._opened_ok,
             self._open_failed,
@@ -324,12 +345,26 @@ class DocEditorPage(QWidget):
             self._open_finished,
         )
 
+    def _cancel_open(self) -> None:
+        self._discard_open = True
+        self._open_cancel.set()
+
+    def _wait_for_open(self) -> None:
+        if self._opening is not None:
+            loop = QEventLoop()
+            self._open_ended.connect(loop.quit)  # connected first, then checked
+            if self._opening is not None:
+                loop.exec()
+            self._open_ended.disconnect(loop.quit)
+
     def _retry_open(self) -> None:
         if self._retry_path is not None:
             self.open_path(self._retry_path)
 
     @Slot(object)
     def _opened_ok(self, opened: OpenedDocument) -> None:
+        if self._discard_open:
+            return
         path = self._opening
         self.view.load(opened)
         self.source, self.source_format = path, opened.source_format
@@ -344,7 +379,8 @@ class DocEditorPage(QWidget):
 
     @Slot(str)
     def _open_failed(self, message: str) -> None:
-        self.show_message(message, error=True)
+        if not self._discard_open:
+            self.show_message(message, error=True)
 
     @Slot()
     def _open_finished(self) -> None:
@@ -352,6 +388,14 @@ class DocEditorPage(QWidget):
         self._retry_path, self._opening = self._opening, None
         self.view.setEnabled(True)
         self._update_buttons()
+        discarded, self._discard_open = self._discard_open, False
+        self._open_ended.emit()
+        if discarded:
+            self.show_message("")
+            nxt, self._next_open = self._next_open, None
+            if nxt is not None:
+                self.open_path(nxt)
+            return
         if self._open_ok:  # emitted once the page is ready to save
             self.view.setFocus()
             self.opened.emit()
@@ -364,8 +408,8 @@ class DocEditorPage(QWidget):
         if found is None or found.ext not in EDITABLE_DOCUMENT_EXTS:
             self.show_message(ONLY_ONE, error=True)
             return
-        if not self.busy and self.maybe_leave():
-            self.open_path(paths[0])
+        if self.saving or self._opening is not None or self.maybe_leave():
+            self.open_path(paths[0])  # remembered / replaces the running open
 
     # ------------------------------------------------------------ saving
     def _ask_lose_parts(self) -> str:
@@ -477,6 +521,12 @@ class DocEditorPage(QWidget):
         self._update_status()
         self.save_done.emit()
         self._show_tool_dialog()
+        path, self._open_after_save = self._open_after_save, None
+        if path is not None:
+            if self.saving:  # a retried save is running: wait for that one
+                self._open_after_save = path
+            elif self.maybe_leave():
+                self.open_path(path)
 
     def _wait_for_save(self) -> bool:
         if self.saving:
@@ -508,6 +558,10 @@ class DocEditorPage(QWidget):
 
     def maybe_leave(self) -> bool:
         """True when it's fine to close the editor (saved, discarded, or nothing changed)."""
+        self._open_after_save = self._next_open = None
+        if self._opening is not None:  # cancel it, wait for its thread, drop its result
+            self._cancel_open()
+            self._wait_for_open()
         if self.saving:
             self._wait_for_save()
         doc = self.view.document()

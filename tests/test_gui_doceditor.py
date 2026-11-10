@@ -835,3 +835,74 @@ def test_back_button_and_undo(qtbot, page, tmp_path):
     assert page.view.toPlainText() == "x" and page.redo_button.isEnabled()
     with qtbot.waitSignal(page.back_requested, timeout=1000):
         page.back_button.click()
+
+
+class _SlowOpen:
+    """open_document stand-in: blocks paths named "slow*" until released or cancelled."""
+
+    def __init__(self):
+        self.started, self.release = threading.Event(), threading.Event()
+        self.cancelled = False
+
+    def __call__(self, path, cancel_event=None):
+        if path.name.startswith("slow"):
+            self.started.set()
+            while not self.release.is_set():
+                if cancel_event is not None and cancel_event.wait(0.01):
+                    self.cancelled = True
+                    raise ConversionError("Cancelled.")
+            return page_mod.OpenedDocument("<p>slow content</p>", {}, "txt")
+        return page_mod.OpenedDocument(f"<p>{path.stem}</p>", {}, "txt")
+
+
+def test_leave_during_open_cancels_it(qtbot, page, tmp_path, monkeypatch):
+    slow = _SlowOpen()
+    monkeypatch.setattr(page_mod, "open_document", slow)
+    opened = []
+    page.opened.connect(lambda: opened.append(1))
+    page.open_path(_txt(tmp_path).with_name("slow.txt"))
+    qtbot.waitUntil(slow.started.is_set, timeout=10000)
+    assert page.maybe_leave()
+    assert slow.cancelled and not page.busy and not page._jobs
+    qtbot.wait(50)  # any late queued result would arrive now
+    assert opened == [] and page.source is None and "slow" not in page.view.toPlainText()
+    assert page.message.objectName() != "Error"
+
+
+def test_second_open_wins(qtbot, page, tmp_path, monkeypatch):
+    slow = _SlowOpen()
+    monkeypatch.setattr(page_mod, "open_document", slow)
+    a, b = tmp_path / "slow.txt", tmp_path / "b.txt"
+    page.open_path(a)
+    qtbot.waitUntil(slow.started.is_set, timeout=10000)
+    texts = []
+    page.opened.connect(lambda: texts.append(page.view.toPlainText()))
+    with qtbot.waitSignal(page.opened, timeout=10000):
+        page.open_path(b)
+        assert page.message.text() == "Opening “b.txt”…"
+    qtbot.waitUntil(lambda: not page.busy, timeout=10000)
+    assert texts == ["b"] and page.source == b and slow.cancelled
+
+
+def test_drop_during_save_opens_after(qtbot, page, tmp_path, monkeypatch, media):
+    p = _txt(tmp_path)
+    _open(qtbot, page, p)
+    started, release = threading.Event(), threading.Event()
+    real = page_mod.save_document
+
+    def slow(content, dest, fmt, cancel_event=None):
+        started.set()
+        release.wait(20)
+        return real(content, dest, fmt, cancel_event)
+
+    monkeypatch.setattr(page_mod, "save_document", slow)
+    _type(page, "y")
+    assert page.save()
+    qtbot.waitUntil(started.is_set, timeout=10000)
+    page.drop_paths([media / "notes.txt"])
+    assert page.message.text() == "Saving… the document will open when it's done."
+    assert page.source == p
+    with qtbot.waitSignal(page.opened, timeout=20000):
+        release.set()
+    assert page.source == media / "notes.txt"
+    assert p.read_text(encoding="utf-8") == "xy\n"
