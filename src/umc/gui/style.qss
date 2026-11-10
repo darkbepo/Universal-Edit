@@ -291,6 +291,18 @@ QFrame#EditorTopBar QPushButton#Primary {
     border-radius: 8px;
     font-size: 13px;
 }
+QToolButton#LookTile {
+    border: 2px solid transparent;
+    border-radius: 10px;
+    padding: 4px;
+}
+QToolButton#LookTile:checked {
+    border-color: @accent;
+    background: @accent_soft;
+}
+QToolButton#LookTile:hover {
+    background: @surface_alt;
+}
 QLabel#ShortcutKey {
     font-weight: 600;
     color: @accent;

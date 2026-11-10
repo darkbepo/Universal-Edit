@@ -4,9 +4,9 @@
 // curves (channel, then all) → saturation / vibrance. The per-channel steps are folded into one
 // 256-entry table per channel first; saturation and vibrance then mix the channels per pixel.
 import type { EditorDoc } from "./document";
-import { PatchCommand, type Command } from "./history";
-import { cropData } from "./layer";
-import { clipRect } from "./tools/base";
+import * as effects from "./effects";
+import type { Effect } from "./effects";
+import type { Command } from "./history";
 
 export const CHANNELS = ["rgb", "r", "g", "b"] as const; // "rgb" = all colours together
 export type Channel = (typeof CHANNELS)[number];
@@ -214,33 +214,37 @@ export function autoLevels(data: Uint8ClampedArray, channel: Channel = "rgb", cl
 }
 
 // ------------------------------------------------------------------ on the document
+// (the generic live-preview / apply code lives in effects.ts; these keep the old names)
+
+/** Adjustments as an Effect (they don't depend on the picture's size). */
+export function asEffect(a: Adjustments): Effect {
+  return { identity: isIdentity(a), apply: (data) => applyData(data, a) };
+}
 
 /** The part of the active layer an adjustment changes (inside the selection), or null. */
 export function regionData(doc: EditorDoc): Uint8ClampedArray | null {
-  const l = doc.layers[doc.active];
-  const region = clipRect(doc, l);
-  return region.empty ? null : cropData(l.data, l.width, region);
+  return effects.regionData(doc)?.data ?? null;
 }
 
 /** The active layer's pixels as they would look with `a` (for the live preview). */
 export function preview(doc: EditorDoc, a: Adjustments): Uint8ClampedArray {
-  const l = doc.layers[doc.active];
-  const out = new Uint8ClampedArray(l.data);
-  const region = clipRect(doc, l);
-  if (region.empty || isIdentity(a)) return out;
-  const part = applyData(cropData(l.data, l.width, region), a);
-  for (let y = 0; y < region.height; y++) out.set(part.subarray(y * region.width * 4, (y + 1) * region.width * 4), ((region.y0 + y) * l.width + region.x0) * 4);
-  return out;
+  return effects.preview(doc, asEffect(a));
 }
 
 /** Apply `a` to the active layer inside the selection — one undo step. */
 export function applyToDocument(doc: EditorDoc, a: Adjustments, label = "Adjust"): Command | null {
-  if (isIdentity(a)) return null;
-  const l = doc.layers[doc.active];
-  const region = clipRect(doc, l);
-  if (region.empty) return null;
-  const before = cropData(l.data, l.width, region);
-  const after = applyData(before, a);
-  for (let y = 0; y < region.height; y++) l.data.set(after.subarray(y * region.width * 4, (y + 1) * region.width * 4), ((region.y0 + y) * l.width + region.x0) * 4);
-  return PatchCommand.fromRegion(label, doc, doc.active, region, before);
+  return effects.applyToDocument(doc, asEffect(a), label);
+}
+
+/** From the JSON form used by the shared test cases and the looks file (Python key names). */
+export function fromSettings(s: Record<string, unknown>): Adjustments {
+  type PyLevels = { black?: number; white?: number; gamma?: number; out_black?: number; out_white?: number };
+  const { levels, curves, ...rest } = s as { levels?: Record<string, PyLevels>; curves?: Record<string, [number, number][]> };
+  const a: Adjustments = { ...(rest as Adjustments) };
+  if (levels) {
+    a.levels = {};
+    for (const [ch, l] of Object.entries(levels)) a.levels[ch as Channel] = { black: l.black ?? 0, white: l.white ?? 255, gamma: l.gamma ?? 1, outBlack: l.out_black ?? 0, outWhite: l.out_white ?? 255 };
+  }
+  if (curves) a.curves = curves as Adjustments["curves"];
+  return a;
 }

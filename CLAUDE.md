@@ -514,7 +514,13 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
          tables, then saturation / vibrance per pixel; curves = Fritsch–Carlson monotone cubic).
          `tests/fixtures/adjust_cases.json` holds expected pixels both test suites check (web
          within 1) — regenerate it from adjust.py only on purpose.
-      2. Filters and looks: blur, sharpen, 8–12 one-click looks (saved step-1 settings).
+      2. ✅ Filters menu (both apps): Blur, Sharpen, Looks. `editor/effects.py` / `effects.ts` is
+         the shared live-preview / apply code for every effect (adjustments too): an effect is
+         `effect(image, scale)` + `identity`, optional `margin()` = extra pixels it reads around
+         the selection (blur). Big previews run on a `reduce`d copy (`scale` < 1). Blur/sharpen on
+         premultiplied colour (desktop Pillow GaussianBlur/UnsharpMask on "RGBa"; web a 3-pass box
+         blur — close, not identical). Looks = lists of Adjust-menu settings in
+         `web/src/editor/looks.json`; `filters.LOOKS` must match it (tested).
       3. More selection tools: ellipse, lasso, polygon lasso, magic wand; add / subtract, invert,
          feather. The selection becomes a mask (today `doc.selection` is one Rect everywhere).
       4. Masks and gradients: layer masks, gradient tool, adjustments inside a selection / mask,

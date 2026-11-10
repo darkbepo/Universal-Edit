@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
 )
 
 from umc.core.errors import ConversionError
-from umc.editor import adjust, clipboard, ops
+from umc.editor import clipboard, effects, ops
 from umc.editor.document import Document, check_size
 from umc.editor.history import History
 from umc.editor.io import load_layers, open_files
@@ -38,12 +38,15 @@ from umc.gui import theme
 from umc.gui.editor.canvas import EditorCanvas, pil_to_qimage, qimage_to_pil
 from umc.gui.editor.crop_bar import CropBar
 from umc.gui.editor.dialogs import (
+    BlurDialog,
     CanvasSizeDialog,
     CurvesDialog,
     LevelsDialog,
+    LooksDialog,
     QuickFixDialog,
     ResizeDialog,
     SaveOptionsDialog,
+    SharpenDialog,
     ShortcutsDialog,
 )
 from umc.gui.editor.layers_panel import LayersPanel
@@ -58,6 +61,9 @@ ADJUST_DIALOGS = {
     "quick_fix": (QuickFixDialog, "Quick fix"),
     "levels": (LevelsDialog, "Levels"),
     "curves": (CurvesDialog, "Curves"),
+    "blur": (BlurDialog, "Blur"),
+    "sharpen": (SharpenDialog, "Sharpen"),
+    "looks": (LooksDialog, "Look"),
 }
 # Marks a clipboard image as ours and remembers where on the canvas it was copied from.
 CLIP_MIME = "application/x-umc-editor-clip"
@@ -250,6 +256,14 @@ class EditorPage(QWidget):
             adjust_menu.addAction(label, lambda o=op: self.run_op(o))
         adjust_button.setMenu(adjust_menu)
         lay.addWidget(adjust_button)
+        filter_button = QToolButton(text="Filters ▾", objectName="SmallMenu")
+        filter_button.setToolTip("Blur, sharpen and one-click looks for the selected layer")
+        filter_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        filter_menu = QMenu(filter_button)
+        for label, op in (("Looks…", "looks"), ("Blur…", "blur"), ("Sharpen…", "sharpen")):
+            filter_menu.addAction(label, lambda o=op: self.run_op(o))
+        filter_button.setMenu(filter_menu)
+        lay.addWidget(filter_button)
         lay.addStretch(1)
         tb("?", "Keyboard shortcuts (?)", lambda: self.show_shortcuts())
         lay.addSpacing(6)
@@ -558,7 +572,7 @@ class EditorPage(QWidget):
             elif name in ADJUST_DIALOGS:
                 dlg = ADJUST_DIALOGS[name][0](self)
                 if dlg.exec():
-                    self.apply_adjustments(dlg.adjustments(), ADJUST_DIALOGS[name][1])
+                    self.apply_effect(dlg.effect(), ADJUST_DIALOGS[name][1])
                 return
             else:
                 layer_only = name.startswith("layer_")
@@ -573,12 +587,12 @@ class EditorPage(QWidget):
             return
         self._push(cmd)
 
-    def apply_adjustments(self, adj: adjust.Adjustments, label: str = "Adjust") -> None:
+    def apply_effect(self, effect: effects.Effect, label: str = "Adjust") -> None:
         if self.doc is None:
             return
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)  # a few seconds on 24 MP photos
         try:
-            cmd = adjust.apply_to_document(self.doc, adj, label)
+            cmd = effects.apply_to_document(self.doc, effect, label)
         finally:
             QApplication.restoreOverrideCursor()
         self._push(cmd)

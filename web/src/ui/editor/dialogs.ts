@@ -2,7 +2,9 @@
 import type { OptionSpec, Values } from "../../core/options";
 import { MAX_SIDE, type EditorDoc } from "../../editor/document";
 import { ANCHORS, type Anchor, type Resample } from "../../editor/ops";
-import { autoLevels as autoLevelsOf, curveTable, histogram as histogramOf, IDENTITY_CURVE, isIdentity, levelsIdentity, NEUTRAL_LEVELS, type Adjustments, type Channel, type Levels } from "../../editor/adjust";
+import { asEffect, autoLevels as autoLevelsOf, curveTable, histogram as histogramOf, IDENTITY_CURVE, levelsIdentity, NEUTRAL_LEVELS, type Adjustments, type Channel, type Levels } from "../../editor/adjust";
+import type { Effect } from "../../editor/effects";
+import * as filters from "../../editor/filters";
 import { SettingsForm } from "../settings";
 import { h } from "./panels";
 
@@ -87,23 +89,23 @@ export async function canvasSizeDialog(doc: EditorDoc): Promise<[number, number,
 /** What an adjustment window needs from the page: the pixels it changes (for the histogram and
  *  Auto) and a live preview (null = show the original). */
 export interface AdjustHost {
-  region: Uint8ClampedArray | null;
-  preview(a: Adjustments | null): void;
+  region: { data: Uint8ClampedArray; width: number; height: number } | null;
+  preview(e: Effect | null): void;
 }
 
 const CHANNEL_LABELS: [Channel, string][] = [["rgb", "All colours"], ["r", "Red"], ["g", "Green"], ["b", "Blue"]];
 const cssVar = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "#888";
 
 /** A modal with live preview, "Hold to see the original" and Reset; resolves to the settings. */
-async function adjustModal(cls: string, title: string, host: AdjustHost, body: (changed: () => void) => { els: HTMLElement[]; read: () => Adjustments; reset: () => void }): Promise<Adjustments | null> {
+async function effectModal(cls: string, title: string, host: AdjustHost, body: (changed: () => void) => { els: HTMLElement[]; read: () => Effect; reset: () => void }): Promise<Effect | null> {
   let timer = 0;
   let holding = false;
   const changed = () => {
     clearTimeout(timer);
     timer = window.setTimeout(() => {
       if (!holding) {
-        const a = built.read();
-        host.preview(isIdentity(a) ? null : a);
+        const e = built.read();
+        host.preview(e.identity ? null : e);
       }
     }, 60);
   };
@@ -124,7 +126,15 @@ async function adjustModal(cls: string, title: string, host: AdjustHost, body: (
   const r = await modal(`adjust ${cls}`, title, [...built.els, h("div", { class: "row" }, hold, h("div", { class: "spacer" }), reset)], "Apply", built.read);
   clearTimeout(timer);
   host.preview(null);
-  return r && !isIdentity(r.value) ? r.value : null;
+  return r && !r.value.identity ? r.value : null;
+}
+
+/** An adjustment window: the same as effectModal, built from Adjustments. */
+function adjustModal(cls: string, title: string, host: AdjustHost, body: (changed: () => void) => { els: HTMLElement[]; read: () => Adjustments; reset: () => void }): Promise<Effect | null> {
+  return effectModal(cls, title, host, (changed) => {
+    const b = body(changed);
+    return { ...b, read: () => asEffect(b.read()) };
+  });
 }
 
 const QUICK_FIELDS: [keyof Adjustments, string, number, number, number, string][] = [
@@ -138,7 +148,7 @@ const QUICK_FIELDS: [keyof Adjustments, string, number, number, number, string][
 ];
 
 /** Exposure, brightness / contrast, temperature / tint, saturation, vibrance, Auto tone. */
-export function quickFixDialog(host: AdjustHost): Promise<Adjustments | null> {
+export function quickFixDialog(host: AdjustHost): Promise<Effect | null> {
   return adjustModal("quick-fix", "Quick fix", host, (changed) => {
     const sliders = QUICK_FIELDS.map(([key, label, min, max, scale, tip]) => {
       const s = h("input", { type: "range", min: String(min), max: String(max), value: "0", ariaLabel: label, title: tip });
@@ -156,7 +166,7 @@ export function quickFixDialog(host: AdjustHost): Promise<Adjustments | null> {
     const auto = h("input", { type: "checkbox" });
     let autoLevels: Levels | null = null;
     auto.addEventListener("change", () => {
-      autoLevels = auto.checked && host.region ? autoLevelsOf(host.region) : null;
+      autoLevels = auto.checked && host.region ? autoLevelsOf(host.region.data) : null;
       changed();
     });
     const read = (): Adjustments => {
@@ -215,9 +225,9 @@ function drawHistogram(ctx: CanvasRenderingContext2D, counts: Uint32Array | unde
 }
 
 /** Histogram with draggable black / mid / white markers, number fields, channels, Auto. */
-export function levelsDialog(host: AdjustHost): Promise<Adjustments | null> {
+export function levelsDialog(host: AdjustHost): Promise<Effect | null> {
   return adjustModal("levels", "Levels", host, (changed) => {
-    const hist = host.region ? histogramOf(host.region) : null;
+    const hist = host.region ? histogramOf(host.region.data) : null;
     const levels = new Map<Channel, Levels>();
     const channel = channelSelect(() => show());
     const current = () => levels.get(channel.value as Channel) ?? { ...NEUTRAL_LEVELS };
@@ -306,7 +316,7 @@ export function levelsDialog(host: AdjustHost): Promise<Adjustments | null> {
     autoBtn.addEventListener("click", () => {
       if (!host.region) return;
       const cur = current();
-      set({ ...autoLevelsOf(host.region, channel.value as Channel), gamma: cur.gamma, outBlack: cur.outBlack, outWhite: cur.outWhite });
+      set({ ...autoLevelsOf(host.region.data, channel.value as Channel), gamma: cur.gamma, outBlack: cur.outBlack, outWhite: cur.outWhite });
     });
     show();
     const row = (label: string, ...kids: HTMLElement[]) => h("div", { class: "field levels-row" }, h("span", {}, label), h("span", { class: "with-unit" }, ...kids));
@@ -331,9 +341,9 @@ export function levelsDialog(host: AdjustHost): Promise<Adjustments | null> {
 }
 
 /** Click to add a point, drag to move it, drag it off the graph to remove it; channels. */
-export function curvesDialog(host: AdjustHost): Promise<Adjustments | null> {
+export function curvesDialog(host: AdjustHost): Promise<Effect | null> {
   return adjustModal("curves", "Curves", host, (changed) => {
-    const hist = host.region ? histogramOf(host.region) : null;
+    const hist = host.region ? histogramOf(host.region.data) : null;
     const curves = new Map<Channel, [number, number][]>();
     const channel = channelSelect(() => draw());
     const points = () => curves.get(channel.value as Channel) ?? IDENTITY_CURVE.map((p) => [...p] as [number, number]);
@@ -456,6 +466,95 @@ export function curvesDialog(host: AdjustHost): Promise<Adjustments | null> {
       reset: () => {
         curves.clear();
         draw();
+      },
+    };
+  });
+}
+
+// ------------------------------------------------------------------ filters (Filters menu)
+
+function rangeRow(label: string, min: number, max: number, value: number, scale: number, unit: string, tip: string, changed: () => void) {
+  const s = h("input", { type: "range", min: String(min), max: String(max), value: String(Math.round(value / scale)), ariaLabel: label, title: tip });
+  const out = h("output");
+  const show = () => (out.textContent = `${scale < 1 ? (+s.value * scale).toFixed(1) : +s.value * scale}${unit}`);
+  s.addEventListener("input", () => {
+    show();
+    changed();
+  });
+  show();
+  return {
+    value: () => +s.value * scale,
+    set: (v: number) => {
+      s.value = String(Math.round(v / scale));
+      show();
+    },
+    row: h("label", { class: "field" }, h("span", {}, label), h("span", { class: "slider-row" }, s, out)),
+  };
+}
+
+export function blurDialog(host: AdjustHost): Promise<Effect | null> {
+  return effectModal("blur", "Blur", host, (changed) => {
+    const radius = rangeRow("Radius", 0, 500, 2, 0.1, " px", "How far colours spread (px)", changed);
+    return { els: [radius.row], read: () => filters.blur(Math.round(radius.value() * 10) / 10), reset: () => radius.set(0) };
+  });
+}
+
+export function sharpenDialog(host: AdjustHost): Promise<Effect | null> {
+  return effectModal("sharpen", "Sharpen", host, (changed) => {
+    const amount = rangeRow("Amount", 0, 500, 100, 1, " %", "How much stronger edges get", changed);
+    const radius = rangeRow("Radius", 1, 100, 1, 0.1, " px", "How wide the edges are that get sharper (px)", changed);
+    const threshold = rangeRow("Threshold", 0, 64, 0, 1, "", "Leave small differences alone (keeps skin and sky smooth)", changed);
+    return {
+      els: [amount.row, radius.row, threshold.row],
+      read: () => filters.sharpen(Math.round(amount.value()), Math.round(radius.value() * 10) / 10, Math.round(threshold.value())),
+      reset: () => {
+        amount.set(0);
+        radius.set(1);
+        threshold.set(0);
+      },
+    };
+  });
+}
+
+/** One-click looks: a tile per look (a small preview of the picture), plus a strength. */
+export function looksDialog(host: AdjustHost): Promise<Effect | null> {
+  return effectModal("looks", "Looks", host, (changed) => {
+    const TILE = 92;
+    // a small copy of the picture for the tiles
+    let thumb = { data: new Uint8ClampedArray([128, 128, 128, 255]), width: 1, height: 1 };
+    if (host.region) {
+      const r = host.region;
+      const k = Math.max(1, Math.ceil(Math.max(r.width, r.height) / TILE));
+      const w = Math.max(1, Math.floor(r.width / k));
+      const ht = Math.max(1, Math.floor(r.height / k));
+      const d = new Uint8ClampedArray(w * ht * 4);
+      for (let y = 0; y < ht; y++) for (let x = 0; x < w; x++) d.set(r.data.subarray(((y * k) * r.width + x * k) * 4, ((y * k) * r.width + x * k) * 4 + 4), (y * w + x) * 4);
+      thumb = { data: d, width: w, height: ht };
+    }
+    let chosen = "";
+    const tiles = new Map<string, HTMLButtonElement>();
+    const grid = h("div", { class: "look-grid", role: "radiogroup", ariaLabel: "Looks" });
+    for (const [name, def] of Object.entries(filters.LOOKS)) {
+      const c = h("canvas", { width: thumb.width, height: thumb.height, class: "look-thumb" });
+      (c.getContext("2d") as CanvasRenderingContext2D).putImageData(new ImageData(filters.look(name).apply(thumb.data, thumb.width, thumb.height) as Uint8ClampedArray<ArrayBuffer>, thumb.width, thumb.height), 0, 0);
+      const b = h("button", { type: "button", class: "look-tile", role: "radio", ariaLabel: def.label }, c, h("span", {}, def.label));
+      b.setAttribute("aria-checked", "false");
+      b.addEventListener("click", () => {
+        chosen = name;
+        for (const [n, t] of tiles) t.setAttribute("aria-checked", String(n === name));
+        changed();
+      });
+      tiles.set(name, b);
+      grid.append(b);
+    }
+    const strength = rangeRow("Strength", 0, 100, 100, 1, " %", "How much of the look", changed);
+    return {
+      els: [grid, strength.row],
+      read: () => filters.look(chosen, Math.round(strength.value()) / 100),
+      reset: () => {
+        chosen = "";
+        for (const t of tiles.values()) t.setAttribute("aria-checked", "false");
+        strength.set(100);
       },
     };
   });

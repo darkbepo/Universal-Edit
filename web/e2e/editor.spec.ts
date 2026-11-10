@@ -610,3 +610,36 @@ test("Curves keeps its end points; Levels treats an empty Output white as 255", 
   expect(Math.max(...after.slice(0, 3))).toBeGreaterThan(100); // not turned black (that would be ≤ 10)
   expect(after.slice(0, 3).some((v, i) => v !== before[i])).toBe(true);
 });
+
+// ------------------------------------------------------------------ Filters menu
+
+const filterMenu = async (page: Page, item: string) => {
+  await page.getByText("Filters ▾").click();
+  await page.getByRole("button", { name: item }).click();
+};
+
+test("Filters: blur and sharpen apply as one undo step each", async ({ page }) => {
+  await openEditor(page);
+  await filterMenu(page, "Blur");
+  await page.locator("dialog.blur").getByLabel("Radius").fill("80");
+  await page.locator("dialog.blur").getByRole("button", { name: "Apply" }).click();
+  await expect.poll(() => page.evaluate(() => (window.__editor as EditorHook).history.canUndo)).toBe(true);
+  await page.getByRole("button", { name: "Undo" }).click();
+  await filterMenu(page, "Sharpen");
+  await page.locator("dialog.sharpen").getByRole("button", { name: "Apply" }).click();
+  await expect.poll(() => page.evaluate(() => (window.__editor as EditorHook).history.canUndo)).toBe(true);
+});
+
+test("Looks: tiles preview each look; choosing one and applying it", async ({ page }) => {
+  await openEditor(page);
+  await filterMenu(page, "Looks");
+  const dlg = page.locator("dialog.looks");
+  await expect(dlg.getByRole("radio")).toHaveCount(11);
+  await dlg.getByRole("radio", { name: "Black & white" }).click();
+  await expect(dlg.getByRole("radio", { name: "Black & white" })).toHaveAttribute("aria-checked", "true");
+  await dlg.getByRole("button", { name: "Apply" }).click();
+  await expect.poll(async () => {
+    const [r, g, b] = await layerPx(page, 5, 5);
+    return r === g && g === b;
+  }).toBe(true);
+});

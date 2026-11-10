@@ -16,10 +16,11 @@ import { makeTools } from "../../editor/tools/index";
 import { clearSelection, deselect, selectAll } from "../../editor/tools/select";
 import { addTextLayer } from "../../editor/tools/text";
 import type { ConversionClient } from "../../worker/client";
-import * as adjust from "../../editor/adjust";
+import * as effects from "../../editor/effects";
+import type { Effect } from "../../editor/effects";
 import * as clipboard from "../../editor/clipboard";
 import { EditorCanvas } from "./canvas";
-import { canvasSizeDialog, curvesDialog, levelsDialog, quickFixDialog, resizeDialog, saveDialog, shortcutsDialog, type AdjustHost } from "./dialogs";
+import { blurDialog, canvasSizeDialog, curvesDialog, levelsDialog, looksDialog, quickFixDialog, resizeDialog, saveDialog, sharpenDialog, shortcutsDialog, type AdjustHost } from "./dialogs";
 import { CropBar, type BarMode } from "./cropbar";
 import { h, LayersPanel, Swatches, ToolBar, ToolSettings } from "./panels";
 import { SHORTCUTS, shortcutFor } from "./shortcuts";
@@ -36,10 +37,13 @@ function samePicture(a: { data: Uint8ClampedArray; width: number; height: number
 }
 
 // Adjust menu: runOp name → (dialog, undo label). Same names as the desktop app.
-const ADJUST_DIALOGS: Record<string, [(host: AdjustHost) => Promise<adjust.Adjustments | null>, string]> = {
+const ADJUST_DIALOGS: Record<string, [(host: AdjustHost) => Promise<Effect | null>, string]> = {
   quick_fix: [quickFixDialog, "Quick fix"],
   levels: [levelsDialog, "Levels"],
   curves: [curvesDialog, "Curves"],
+  blur: [blurDialog, "Blur"],
+  sharpen: [sharpenDialog, "Sharpen"],
+  looks: [looksDialog, "Look"],
 };
 
 const CROP_HINT = "Drag a rectangle on the picture, then apply it with the button next to it (or Enter).";
@@ -138,13 +142,15 @@ export class EditorPage {
       h("div", { class: "menu-items" }, ...this.menuItems([
         ["Quick fix… (exposure, contrast, colours)", "quick_fix"], ["Levels…", "levels"], ["Curves…", "curves"],
       ])));
+    const filterMenu = h("details", { class: "menu" }, h("summary", { class: "btn small", title: "Blur, sharpen and one-click looks for the selected layer" }, "Filters ▾"),
+      h("div", { class: "menu-items" }, ...this.menuItems([["Looks…", "looks"], ["Blur…", "blur"], ["Sharpen…", "sharpen"]])));
     const top = h("div", { class: "editor-top" },
       btn("← Back to Convert", "Leave the editor", () => this.back(), "link"),
       h("span", { class: "gap" }), this.undoBtn, this.redoBtn,
       h("span", { class: "gap" }),
       btn("−", "Zoom out", () => this.canvas.zoomOut()), btn("+", "Zoom in", () => this.canvas.zoomIn()),
       btn("Fit", "Fit to window (Ctrl+0)", () => this.canvas.fit()), btn("100 %", "Actual pixels (Ctrl+1)", () => this.canvas.setZoom(1)),
-      h("span", { class: "gap" }), imageMenu, adjustMenu,
+      h("span", { class: "gap" }), imageMenu, adjustMenu, filterMenu,
       h("div", { class: "spacer" }), btn("?", "Keyboard shortcuts (?)", () => void this.showShortcuts()), this.saveAsBtn, this.saveBtn);
     // Crop needs buttons too (Enter isn't available on touch screens): they float next to the
     // rectangle once one is drawn, and also offer "Crop to selection" for a selection.
@@ -558,12 +564,12 @@ export class EditorPage {
       } else if (name in ADJUST_DIALOGS) {
         const [dialog, label] = ADJUST_DIALOGS[name];
         const host: AdjustHost = {
-          region: adjust.regionData(doc),
-          preview: (a) => this.canvas.setPreviewLayer(doc.active, a ? adjust.preview(doc, a) : null),
+          region: effects.regionData(doc),
+          preview: (e) => this.canvas.setPreviewLayer(doc.active, e ? effects.preview(doc, e) : null),
         };
-        const a = await dialog(host);
+        const e = await dialog(host);
         this.canvas.setPreviewLayer(null, null);
-        if (a && this.doc === doc) cmd = adjust.applyToDocument(doc, a, label);
+        if (e && this.doc === doc) cmd = effects.applyToDocument(doc, e, label);
       } else {
         const layerOnly = name.startsWith("layer_");
         const key = name.replace(/^layer_/, "");

@@ -7,7 +7,9 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
-from PySide6.QtCore import QPointF, Qt, QTimer
+from PIL import Image
+from PySide6.QtCore import QPointF, QSize, Qt, QTimer
+from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
@@ -23,12 +25,14 @@ from PySide6.QtWidgets import (
     QRadioButton,
     QSlider,
     QSpinBox,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
-from umc.editor import adjust, ops
+from umc.editor import adjust, effects, filters, ops
 from umc.editor.document import MAX_SIDE, Document
+from umc.gui.editor.canvas import pil_to_qimage
 from umc.gui.widgets.settings_panel import SettingsPanel
 
 if TYPE_CHECKING:
@@ -133,7 +137,8 @@ class CanvasSizeDialog(_SizeDialog):
 class _AdjustDialog(QDialog):
     """Live preview on the active layer (inside the selection); nothing changes until OK.
 
-    Subclasses build their controls and return the settings from ``adjustments()``.
+    Subclasses build their controls and return what to apply from ``effect()`` (adjustment
+    windows from ``adjustments()``); ``label`` is the undo step's name.
     """
 
     title = "Adjust"
@@ -166,16 +171,19 @@ class _AdjustDialog(QDialog):
     def adjustments(self) -> adjust.Adjustments:
         raise NotImplementedError
 
+    def effect(self) -> effects.Effect:
+        return self.adjustments()
+
     def reset(self) -> None:
         raise NotImplementedError
 
     def update_preview(self) -> None:
         doc = self.page.doc
-        adj = self.adjustments()
-        if doc is None or adj.identity:
+        eff = self.effect()
+        if doc is None or eff.identity:
             self.page.canvas.set_preview_layer(None, None)
             return
-        self.page.canvas.set_preview_layer(doc.active, adjust.preview(doc, adj))
+        self.page.canvas.set_preview_layer(doc.active, effects.preview(doc, eff))
 
     def done(self, result: int) -> None:
         self._timer.stop()
@@ -643,6 +651,108 @@ class CurvesDialog(_AdjustDialog):
     def reset(self) -> None:
         self.curves.clear()
         self.editor.update()
+        self.changed()
+
+
+class BlurDialog(_AdjustDialog):
+    title = "Blur"
+
+    def __init__(self, page: EditorPage) -> None:
+        super().__init__(page)
+        form = QFormLayout()
+        self.radius = _ValueSlider(0, 500, self.changed, 0.1, "{:.1f} px")
+        self.radius.setToolTip("How far colours spread (px)")
+        form.addRow("Radius", self.radius)
+        self.body.addLayout(form)
+        self.radius.set_value(2.0)
+
+    def effect(self) -> effects.Effect:
+        return filters.Blur(round(self.radius.value(), 1))
+
+    def reset(self) -> None:
+        self.radius.set_value(0)
+
+
+class SharpenDialog(_AdjustDialog):
+    title = "Sharpen"
+
+    def __init__(self, page: EditorPage) -> None:
+        super().__init__(page)
+        form = QFormLayout()
+        self.amount = _ValueSlider(0, 500, self.changed, 1, "{:g} %")
+        self.radius = _ValueSlider(1, 100, self.changed, 0.1, "{:.1f} px")
+        self.threshold = _ValueSlider(0, 64, self.changed, 1, "{:g}")
+        self.amount.setToolTip("How much stronger edges get")
+        self.radius.setToolTip("How wide the edges are that get sharper (px)")
+        self.threshold.setToolTip("Leave small differences alone (keeps skin and sky smooth)")
+        form.addRow("Amount", self.amount)
+        form.addRow("Radius", self.radius)
+        form.addRow("Threshold", self.threshold)
+        self.body.addLayout(form)
+        self.amount.set_value(100)
+        self.radius.set_value(1.0)
+
+    def effect(self) -> effects.Effect:
+        return filters.Sharpen(
+            round(self.amount.value()), round(self.radius.value(), 1), round(self.threshold.value())
+        )
+
+    def reset(self) -> None:
+        self.amount.set_value(0)
+        self.radius.set_value(1.0)
+        self.threshold.set_value(0)
+
+
+class LooksDialog(_AdjustDialog):
+    """One-click looks: a tile per look (a small preview of the picture), plus a strength."""
+
+    title = "Looks"
+    TILE = 92
+
+    def __init__(self, page: EditorPage) -> None:
+        super().__init__(page)
+        img = effects.region_image(page.doc) if page.doc else None
+        thumb = (img or Image.new("RGBA", (8, 8), (128, 128, 128, 255))).copy()
+        thumb.thumbnail((self.TILE, self.TILE))
+        grid = QGridLayout()
+        grid.setSpacing(8)
+        self.group = QButtonGroup(self)
+        self.group.setExclusive(True)
+        self.tiles: dict[str, QToolButton] = {}
+        for i, (name, (label, _steps)) in enumerate(filters.LOOKS.items()):
+            b = QToolButton(objectName="LookTile")
+            b.setCheckable(True)
+            b.setText(label)
+            b.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
+            b.setIconSize(QSize(self.TILE, self.TILE))
+            shown = filters.Look(name)(thumb)
+            b.setIcon(QIcon(QPixmap.fromImage(pil_to_qimage(shown))))
+            b.toggled.connect(lambda _on: self.changed())
+            self.group.addButton(b)
+            self.tiles[name] = b
+            grid.addWidget(b, i // 4, i % 4)
+        self.body.addLayout(grid)
+        form = QFormLayout()
+        self.strength = _ValueSlider(0, 100, self.changed, 1, "{:g} %")
+        self.strength.set_value(100)
+        form.addRow("Strength", self.strength)
+        self.body.addLayout(form)
+
+    def chosen(self) -> str:
+        return next((n for n, b in self.tiles.items() if b.isChecked()), "")
+
+    def choose(self, name: str) -> None:
+        self.tiles[name].setChecked(True)
+
+    def effect(self) -> effects.Effect:
+        return filters.Look(self.chosen(), round(self.strength.value()) / 100)
+
+    def reset(self) -> None:
+        self.group.setExclusive(False)
+        for b in self.tiles.values():
+            b.setChecked(False)
+        self.group.setExclusive(True)
+        self.strength.set_value(100)
         self.changed()
 
 

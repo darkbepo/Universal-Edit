@@ -74,6 +74,7 @@ The browser version's source is in [`web/`](web/README.md).
 | Image editor clipboard: copy (Ctrl+C), copy what you see (Ctrl+Shift+C), cut, paste as a new layer — back in place, or centred for pictures from other programs | ✅ | ✅ (copying into other programs needs a browser that allows it) |
 | Image editor Move tool (V): drag the selected layers, arrow keys nudge · layer shortcuts (duplicate, merge, new, up / down / top / bottom) · a "?" list of every shortcut | ✅ | ✅ |
 | Image editor Adjust menu: Quick fix (exposure, brightness, contrast, temperature, tint, saturation, vibrance, auto tone), Levels (histogram, per channel, auto), Curves (per channel) — live preview, "hold to see the original" | ✅ | ✅ |
+| Image editor Filters menu: Blur, Sharpen (amount, radius, threshold), 11 one-click Looks (warm, cool, vivid, black & white, noir, sepia, faded, vintage, dramatic, matte, bright & airy) with strength — live preview | ✅ | ✅ |
 | Layered projects: save and open OpenRaster `.ora` (GIMP and Krita open it too); `.ora` → any image format | ✅ | ✅ |
 | Files never leave your computer | ✅ | ✅ |
 | No install needed | ❌ | ✅ |

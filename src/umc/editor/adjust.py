@@ -19,9 +19,9 @@ from dataclasses import dataclass, field, replace
 import numpy as np
 from PIL import Image
 
+from umc.editor import effects
 from umc.editor.document import Document
-from umc.editor.history import Command, PatchCommand
-from umc.editor.tools.base import clip_rect
+from umc.editor.history import Command
 
 CHANNELS = ("rgb", "r", "g", "b")  # "rgb" = all colours together
 
@@ -69,6 +69,17 @@ class Adjustments:
 
     def with_curve(self, channel: str, points) -> Adjustments:
         return replace(self, curves={**self.curves, channel: tuple(points)})
+
+    def __call__(self, image: Image.Image, scale: float = 1.0) -> Image.Image:
+        return apply(image, self)  # an Effect (effects.py); nothing here depends on the size
+
+    @classmethod
+    def from_settings(cls, settings: dict) -> Adjustments:
+        """From the JSON form used by the shared test cases and the looks file."""
+        s = dict(settings)
+        levels = {k: Levels(**v) for k, v in s.pop("levels", {}).items()}
+        curves = {k: tuple(map(tuple, v)) for k, v in s.pop("curves", {}).items()}
+        return cls(**s, levels=levels, curves=curves)
 
 
 # ------------------------------------------------------------------ per-channel pieces
@@ -238,50 +249,18 @@ def auto_levels(image: Image.Image, channel: str = "rgb", clip: float = 0.005) -
 
 
 # ------------------------------------------------------------------ on the document
+# (the generic live-preview / apply code lives in effects.py; these keep the old names)
 
 
 def region_image(doc: Document) -> Image.Image | None:
-    """The part of the active layer an adjustment changes (inside the selection), or None."""
-    layer = doc.active_layer
-    region = clip_rect(doc, layer)
-    return None if region.empty else layer.image.crop(region.box)
+    return effects.region_image(doc)
 
 
-PREVIEW_PIXELS = 2_000_000  # live previews of bigger areas are worked out on a smaller copy
-
-
-def preview(doc: Document, adj: Adjustments, max_pixels: int = PREVIEW_PIXELS) -> Image.Image:
-    """The active layer as it would look with ``adj`` (for the live preview).
-
-    An area over ``max_pixels`` is adjusted on a reduced copy and scaled back up, so dragging a
-    slider stays smooth on a 24 MP photo (exact at the usual fit-to-window zoom; OK applies the
-    full-resolution result).
-    """
-    layer = doc.active_layer
-    img = layer.image.copy()
-    region = clip_rect(doc, layer)
-    if region.empty or adj.identity:
-        return img
-    part = img.crop(region.box)
-    if region.width * region.height > max_pixels:
-        factor = math.ceil(math.sqrt(region.width * region.height / max_pixels))
-        small = part.reduce(factor)  # box average by a whole number: fast and clean
-        done = apply(small, adj).resize(part.size, Image.Resampling.BILINEAR)
-        done.putalpha(part.getchannel("A"))  # never soften the layer's edges
-    else:
-        done = apply(part, adj)
-    img.paste(done, (region.x0, region.y0))
-    return img
+def preview(
+    doc: Document, adj: Adjustments, max_pixels: int = effects.PREVIEW_PIXELS
+) -> Image.Image:
+    return effects.preview(doc, adj, max_pixels)
 
 
 def apply_to_document(doc: Document, adj: Adjustments, label: str = "Adjust") -> Command | None:
-    """Apply ``adj`` to the active layer inside the selection — one undo step."""
-    if adj.identity:
-        return None
-    layer = doc.active_layer
-    region = clip_rect(doc, layer)
-    if region.empty:
-        return None
-    before = layer.image.crop(region.box)
-    layer.image.paste(apply(before, adj), (region.x0, region.y0))
-    return PatchCommand.from_region(label, doc, doc.active, region, before)
+    return effects.apply_to_document(doc, adj, label)

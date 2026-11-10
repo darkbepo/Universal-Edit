@@ -1,0 +1,94 @@
+"""Anything that changes the active layer's pixels inside the selection with a live preview:
+adjustments, filters and looks.
+
+An effect is a callable ``effect(image, scale=1.0) -> image`` with an ``identity`` flag
+(nothing would change). ``scale`` < 1 means the image was shrunk for a quick preview, so
+effects measured in pixels (blur radius…) shrink with it.
+"""
+
+from __future__ import annotations
+
+import math
+from typing import Protocol
+
+from PIL import Image
+
+from umc.editor.document import Document
+from umc.editor.history import Command, PatchCommand
+from umc.editor.tools.base import clip_rect
+
+PREVIEW_PIXELS = 2_000_000  # live previews of bigger areas are worked out on a smaller copy
+
+
+class Effect(Protocol):
+    @property
+    def identity(self) -> bool: ...
+
+    def __call__(self, image: Image.Image, scale: float = 1.0) -> Image.Image: ...
+
+
+def margin(effect: Effect) -> int:
+    """How many pixels around the area an effect looks at (blur radius…; 0 for colour changes).
+
+    Effects that need neighbours define ``margin()``; they get that much extra of the layer
+    around the selection, so a blur at the selection's edge mixes with what lies beyond it.
+    """
+    fn = getattr(effect, "margin", None)
+    return int(fn()) if fn is not None else 0
+
+
+def _run(layer_image: Image.Image, region, effect: Effect, scale: float = 1.0) -> Image.Image:
+    """``effect`` on ``region`` of the layer, using up to ``margin`` extra pixels around it."""
+    from umc.editor.geometry import Rect
+
+    m = margin(effect)
+    if m <= 0:
+        return effect(layer_image.crop(region.box), scale)
+    full = Rect(0, 0, layer_image.width, layer_image.height)
+    wide = Rect(region.x0 - m, region.y0 - m, region.x1 + m, region.y1 + m).intersect(full)
+    done = effect(layer_image.crop(wide.box), scale)
+    return done.crop(region.offset(-wide.x0, -wide.y0).box)
+
+
+def region_image(doc: Document) -> Image.Image | None:
+    """The part of the active layer an effect changes (inside the selection), or None."""
+    layer = doc.active_layer
+    region = clip_rect(doc, layer)
+    return None if region.empty else layer.image.crop(region.box)
+
+
+def preview(doc: Document, effect: Effect, max_pixels: int = PREVIEW_PIXELS) -> Image.Image:
+    """The active layer as it would look with ``effect`` (for the live preview).
+
+    An area over ``max_pixels`` is worked out on a reduced copy and scaled back up, so dragging
+    a slider stays smooth on a 24 MP photo (exact at the usual fit-to-window zoom; OK applies
+    the full-resolution result).
+    """
+    layer = doc.active_layer
+    img = layer.image.copy()
+    region = clip_rect(doc, layer)
+    if region.empty or effect.identity:
+        return img
+    part = img.crop(region.box)
+    if region.width * region.height > max_pixels:
+        factor = math.ceil(math.sqrt(region.width * region.height / max_pixels))
+        small = part.reduce(factor)  # box average by a whole number: fast and clean
+        done = effect(small, 1 / factor).resize(part.size, Image.Resampling.BILINEAR)
+        done.putalpha(part.getchannel("A"))  # never soften the layer's edges
+    else:
+        done = _run(layer.image, region, effect)
+    img.paste(done, (region.x0, region.y0))
+    return img
+
+
+def apply_to_document(doc: Document, effect: Effect, label: str) -> Command | None:
+    """Apply ``effect`` to the active layer inside the selection — one undo step."""
+    if effect.identity:
+        return None
+    layer = doc.active_layer
+    region = clip_rect(doc, layer)
+    if region.empty:
+        return None
+    before = layer.image.crop(region.box)
+    layer.image.paste(_run(layer.image, region, effect), (region.x0, region.y0))
+    return PatchCommand.from_region(label, doc, doc.active, region, before)

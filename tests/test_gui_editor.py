@@ -836,3 +836,56 @@ def test_levels_fields_show_what_is_applied_and_auto_uses_the_channel(page, qtbo
     dlg.auto_button.click()
     blue = dlg.adjustments().levels["b"]
     assert (blue.black, blue.white, blue.out_black) == (40, 200, 20)
+
+
+# ------------------------------------------------------------------ filters menu
+
+
+def test_blur_and_sharpen_dialogs_preview_and_apply(page, qtbot, monkeypatch):
+    from umc.gui.editor.dialogs import BlurDialog, SharpenDialog
+
+    dlg = BlurDialog(page)
+    qtbot.addWidget(dlg)
+    dlg.update_preview()  # starts at 2 px
+    assert page.canvas._preview_layer is not None and not dlg.effect().identity
+    dlg.reset()
+    assert dlg.effect().identity
+    dlg.reject()
+    assert page.canvas._preview_layer is None and not page.history.can_undo
+
+    def ok(self):
+        self.radius.set_value(3)
+        return 1
+
+    monkeypatch.setattr(BlurDialog, "exec", ok)
+    page.run_op("blur")
+    assert page.history.undo_label == "Blur"
+    monkeypatch.setattr(SharpenDialog, "exec", lambda self: 1)
+    page.run_op("sharpen")
+    assert page.history.undo_label == "Sharpen"
+
+
+def test_looks_dialog_tiles_choose_and_strength(page, qtbot, monkeypatch):
+    from umc.editor import filters
+    from umc.gui.editor.dialogs import LooksDialog
+
+    dlg = LooksDialog(page)
+    qtbot.addWidget(dlg)
+    assert set(dlg.tiles) == set(filters.LOOKS)
+    assert all(not b.icon().isNull() for b in dlg.tiles.values())
+    assert dlg.effect().identity  # nothing chosen yet
+    qtbot.mouseClick(dlg.tiles["bw"], Qt.MouseButton.LeftButton)
+    assert dlg.chosen() == "bw" and dlg.effect() == filters.Look("bw", 1.0)
+    dlg.strength.set_value(40)
+    assert dlg.effect().strength == 0.4
+    dlg.reset()
+    assert dlg.chosen() == ""
+
+    def ok(self):
+        self.choose("bw")
+        return 1
+
+    monkeypatch.setattr(LooksDialog, "exec", ok)
+    page.run_op("looks")
+    r, g, b, _ = page.doc.active_layer.image.getpixel((5, 5))
+    assert r == g == b and page.history.undo_label == "Look"
