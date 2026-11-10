@@ -207,3 +207,56 @@ def test_size_box_focus_in_and_out_changes_nothing(qtbot):
     assert v.content().html == '<p><span style="font-size:14pt">ab</span></p>'
     v.undo()  # one step undoes the whole choice
     assert v.content().html == MIXED and not v.document().isUndoAvailable()
+
+
+def _txt(tmp_path, text="x\n"):
+    p = tmp_path / "a.txt"
+    p.write_text(text, encoding="utf-8")
+    return p
+
+
+def test_save_as_added_suffix_asks_before_replacing(qtbot, page, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    with qtbot.waitSignal(page.opened, timeout=20000):
+        page.open_path(_txt(tmp_path, "new\n"))
+    existing = tmp_path / "notes.v2.txt"
+    existing.write_text("keep me", encoding="utf-8")
+    monkeypatch.setattr(
+        QFileDialog,
+        "getSaveFileName",
+        lambda *a, **k: (str(tmp_path / "notes.v2"), "Plain text (TXT) (*.txt)"),
+    )
+    asked = []
+
+    def answer(box, button):
+        asked.append(box.text())
+        return button
+
+    monkeypatch.setattr(
+        QMessageBox, "exec", lambda box: answer(box, QMessageBox.StandardButton.Cancel)
+    )
+    assert not page.save_as()
+    assert asked == ["“notes.v2.txt” already exists. Replace it?"]
+    assert existing.read_text(encoding="utf-8") == "keep me"
+    monkeypatch.setattr(
+        QMessageBox, "exec", lambda box: answer(box, QMessageBox.StandardButton.Yes)
+    )
+    with qtbot.waitSignal(page.save_done, timeout=30000):
+        assert page.save_as()
+    assert existing.read_text(encoding="utf-8") == "new\n"
+
+
+def test_nested_maybe_leave_returns_false_at_once(qtbot, page, tmp_path):
+    with qtbot.waitSignal(page.opened, timeout=20000):
+        page.open_path(_txt(tmp_path))
+    page.view.document().setModified(True)
+    inner = []
+
+    def ask():
+        inner.append(page.maybe_leave())  # e.g. a second close while the question is open
+        return "discard"
+
+    page._ask_save_changes = ask
+    assert page.maybe_leave() is True
+    assert inner == [False]

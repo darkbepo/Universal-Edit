@@ -98,6 +98,7 @@ class DocEditorPage(QWidget):
         self._save_revision = -1
         self._last_save_ok = False
         self._warned = False
+        self._leaving = False  # maybe_leave() is running
 
         self.view = DocTextView()
         self.format_bar = FormatBar(self.view)
@@ -433,6 +434,16 @@ class DocEditorPage(QWidget):
             QMessageBox.StandardButton.SaveAll: "save_as",
         }.get(QMessageBox.StandardButton(answer), "cancel")
 
+    def _ask_replace(self, path: Path) -> bool:
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle("Replace file?")
+        box.setText(f"“{path.name}” already exists. Replace it?")
+        box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel)
+        box.button(QMessageBox.StandardButton.Yes).setText("Replace")
+        box.setDefaultButton(QMessageBox.StandardButton.Cancel)
+        return QMessageBox.StandardButton(box.exec()) == QMessageBox.StandardButton.Yes
+
     def save(self) -> bool:
         """Save to the opened file (or the last Save as target). False if nothing started."""
         if self.source is None or self.busy:
@@ -468,12 +479,15 @@ class DocEditorPage(QWidget):
         )
         if not path:
             return False
-        path = Path(path)
+        path = confirmed = Path(path)
         ext = path.suffix.lstrip(".").lower()
         ext = EXT_ALIASES.get(ext, ext)
         if ext not in ids:
             ext = ids[filters.index(chosen)] if chosen in filters else current
             path = path.with_name(f"{path.name}.{ext}")
+        # The dialog only asked about the name it returned: ask about the one we will write.
+        if path != confirmed and path.exists() and not self._ask_replace(path):
+            return False
         self._start_save(path, ext)
         return True
 
@@ -559,7 +573,19 @@ class DocEditorPage(QWidget):
         }.get(QMessageBox.StandardButton(answer), "cancel")
 
     def maybe_leave(self) -> bool:
-        """True when it's fine to close the editor (saved, discarded, or nothing changed)."""
+        """True when it's fine to close the editor (saved, discarded, or nothing changed).
+
+        A call made while one is already waiting (in a nested event loop) returns False at
+        once: the outer call decides."""
+        if self._leaving:
+            return False
+        self._leaving = True
+        try:
+            return self._maybe_leave()
+        finally:
+            self._leaving = False
+
+    def _maybe_leave(self) -> bool:
         self._open_after_save = self._next_open = None
         if self._opening is not None:  # cancel it, wait for its thread, drop its result
             self._cancel_open()
