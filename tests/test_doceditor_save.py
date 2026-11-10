@@ -15,7 +15,6 @@ from umc.tools import libreoffice, pandoc
 CONTENT = SaveContent(
     html='<h1>Hi</h1><p>Blåbær <b>bold</b><img src="img/1.png" width="20"></p>',
     images={"img/1.png": PNG_1PX},
-    markdown="# Hi\n\nBlåbær **bold**![](img/1.png)\n",
     plain_text="Hi\nBlåbær bold\n",
 )
 
@@ -84,7 +83,6 @@ def test_save_odt(tmp_path):
 URL_CONTENT = SaveContent(
     html='<p><a href="https://site.com/img/1.png">img/1.png</a><img src="img/1.png"></p>',
     images={"img/1.png": PNG_1PX},
-    markdown='[x](https://site.com/img/1.png) img/1.png ![](img/1.png "t")\n',
     plain_text="",
 )
 
@@ -94,7 +92,7 @@ def test_only_real_picture_references_are_rewritten(tmp_path):
     assert 'href="https://site.com/img/1.png">img/1.png<' in html
     assert html.count("data:image/png") == 1
     md = save_document(URL_CONTENT, tmp_path / "a.md", "md").read_text("utf-8")
-    assert md == '[x](https://site.com/img/1.png) img/1.png ![](a_files/1.png "t")\n'
+    assert md == "[img/1.png](https://site.com/img/1.png)![](a_files/1.png)\n"
 
 
 def test_md_folder_name_is_percent_encoded(tmp_path):
@@ -104,7 +102,7 @@ def test_md_folder_name_is_percent_encoded(tmp_path):
 
 
 def test_md_resave_leaves_no_stale_pictures(tmp_path):
-    two = SaveContent("", {"img/1.png": PNG_1PX, "img/2.png": PNG_1PX}, "![](img/2.png)", "")
+    two = SaveContent('<p><img src="img/2.png"></p>', {"img/1.png": PNG_1PX, "img/2.png": PNG_1PX})
     save_document(two, tmp_path / "a.md", "md")
     save_document(CONTENT, tmp_path / "a.md", "md")
     assert [p.name for p in (tmp_path / "a_files").iterdir()] == ["1.png"]
@@ -125,7 +123,9 @@ def test_md_failed_replace_keeps_folder(tmp_path, monkeypatch):
     monkeypatch.setattr(save_mod.os, "replace", raise_(PermissionError()))
     with pytest.raises(ConversionError):
         save_document(
-            SaveContent("", {"img/1.png": b"new"}, "![](img/1.png)", ""), tmp_path / "a.md", "md"
+            SaveContent('<p><img src="img/1.png"></p>', {"img/1.png": b"new"}),
+            tmp_path / "a.md",
+            "md",
         )
     assert (tmp_path / "a_files" / "1.png").read_bytes() == before
 

@@ -149,6 +149,8 @@ class DocTextView(QTextEdit):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.images: DocImages = {}
+        self.front_matter = ""  # carried from the opened document into content()
+        self.title = ""
         self.setFrameShape(QFrame.Shape.NoFrame)
         self.setAcceptRichText(True)
         self.viewport().setObjectName("DocPage")
@@ -158,6 +160,7 @@ class DocTextView(QTextEdit):
     # ----- loading --------------------------------------------------------
     def load(self, opened: OpenedDocument) -> None:
         self.images = dict(opened.images)
+        self.front_matter, self.title = opened.front_matter, opened.title
         doc = self.document()
         doc.setUndoRedoEnabled(False)
         self.setHtml(_qt_html(normalise_html(opened.html)[0]))
@@ -233,8 +236,9 @@ class DocTextView(QTextEdit):
         return SaveContent(
             html,
             {name: data for name, data in self.images.items() if name in used},
-            doc.toMarkdown(),
             text + "\n" if text else "",
+            front_matter=self.front_matter,
+            title=self.title,
         )
 
     # ----- page column ----------------------------------------------------

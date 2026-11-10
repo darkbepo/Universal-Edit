@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 
 # Picture bytes by the name the HTML refers to them with ("img/1.png").
 DocImages = dict[str, bytes]
@@ -24,6 +25,11 @@ W_NOTES = "footnotes and endnotes"
 W_FIELDS = "fields"
 W_OBJECTS = "embedded objects"
 W_PICTURES = "pictures in a format the editor can't show"
+W_LISTSTYLE = "numbering with letters or Roman numerals"
+W_PAGESTYLE = "page styles, classes and scripts"
+W_WEBPICS = "pictures from the web"
+W_RAWHTML = "embedded HTML the editor doesn't support"
+W_MDEXTRA = "footnotes and other Markdown extras"
 
 
 @dataclass
@@ -32,14 +38,18 @@ class OpenedDocument:
     images: DocImages
     source_format: str
     warnings: list[str] = field(default_factory=list)
+    front_matter: str = ""  # Markdown: the "---" block at the top, kept verbatim
+    title: str = ""  # HTML: the page's <title>
 
 
 @dataclass
 class SaveContent:
     html: str
     images: DocImages
-    markdown: str | None = None
     plain_text: str | None = None
+    front_matter: str = ""  # written back first when saving Markdown
+    title: str = ""  # the <title> of a saved web page (falls back to the file name)
+    template: Path | None = None  # a DOCX whose styles, page setup and headers are kept
 
 
 def warning_text(warnings: list[str]) -> str:

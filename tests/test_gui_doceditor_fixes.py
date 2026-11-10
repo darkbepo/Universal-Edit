@@ -58,3 +58,21 @@ def test_docx_tab_and_spaces_survive_three_saves_in_the_editor(qtbot, page, tmp_
     gui_cycle(qtbot, page, p)
     assert [par.text for par in docx.Document(p).paragraphs] == ["Name:\tJohn    Smith"]
     assert open_document(p).html == f"<p>Name:\tJohn {NBSP * 3}Smith</p>"
+
+
+def test_markdown_round_trip_through_the_editor(qtbot, page, tmp_path):
+    from tests.doceditor_samples import PNG_1PX
+    from tests.test_doceditor_fixes import MD_SAMPLE
+
+    p = tmp_path / "a.md"
+    p.write_bytes(MD_SAMPLE.encode("utf-8"))
+    (tmp_path / "pic.png").write_bytes(PNG_1PX)
+    original = open_document(p)
+    saves = gui_cycle(qtbot, page, p)
+    assert len(set(saves)) == 1  # the first save is already stable
+    text = saves[0].decode("utf-8")
+    assert text.startswith("---\ntitle: x\ntags: [a, b]\n---\n\n# Notes\n")
+    assert "```\ndef f():\n    return 1\n\nprint(f())\n```" in text
+    assert "> A quote that goes on." in text
+    assert "<u>under</u>" in text and "**bold**" in text and "*italic*" in text
+    assert open_document(p).html == original.html

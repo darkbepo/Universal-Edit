@@ -104,7 +104,7 @@ def test_content_has_markdown_and_text(qtbot):
     v = _view(qtbot, "<h1>T</h1><p>x</p>")
     content = v.content()
     assert content.plain_text == "T\nx\n"
-    assert content.markdown.startswith("# T")
+    assert not hasattr(content, "markdown")  # Markdown is written by md_writer from the HTML
 
 
 def test_empty_document_exports_nothing(qtbot):

@@ -99,3 +99,99 @@ def test_docx_tabs_and_spaces_survive_three_saves(tmp_path):
     texts = [par.text for par in docx.Document(p).paragraphs]
     assert texts == ["Name:\tJohn    Smith", "  indented"]
     assert NBSP not in "".join(texts)
+
+
+# ----- Critical 2: our own Markdown writer ----------------------------------------------
+
+MD_SAMPLE = """---
+title: x
+tags: [a, b]
+---
+
+# Notes
+
+Some **bold**, *italic*, <u>under</u> and <s>struck</s> text with a [link](https://example.com/a).
+
+```
+def f():
+    return 1
+
+print(f())
+```
+
+> A quote
+> that goes on.
+
+- one
+    - two
+        - three
+- four
+
+| Name | Age |
+| --- | --- |
+| Ann | 30 |
+| Bob |  |
+
+![](pic.png)
+
+A    B
+"""
+
+
+def test_markdown_survives_three_saves(tmp_path):
+    p = tmp_path / "a.md"
+    p.write_text(MD_SAMPLE, encoding="utf-8")
+    (tmp_path / "pic.png").write_bytes(PNG_1PX)
+    original = open_document(p)
+    assert original.front_matter == "---\ntitle: x\ntags: [a, b]\n---\n"
+    assert "title" not in original.html and "<hr>" not in original.html
+    save_document(content_of(original, p), p, "md")
+    first = p.read_text(encoding="utf-8")
+    opened = cycle(p, "md")
+    assert p.read_text(encoding="utf-8") == first
+    for doc in opened:
+        assert doc.html == original.html
+        assert doc.front_matter == original.front_matter
+        assert list(doc.images.values()) == [PNG_1PX]
+    html = original.html
+    assert "<pre>def f():\n    return 1\n\nprint(f())\n</pre>" in html
+    assert "<blockquote><p>A quote that goes on.</p></blockquote>" in html
+    assert "<ul><li>one<ul><li>two<ul><li>three</li></ul></li></ul></li><li>four</li></ul>" in html
+    assert "<b>bold</b>" in html and "<i>italic</i>" in html
+    assert "<u>under</u>" in html and "<s>struck</s>" in html
+    assert '<a href="https://example.com/a">link</a>' in html
+    assert "<td><p>Ann</p></td>" in html
+    assert first.startswith("---\ntitle: x\ntags: [a, b]\n---\n\n# Notes\n")
+
+
+def test_markdown_keeps_aligned_spaces_and_leading_indent(tmp_path):
+    p = tmp_path / "a.md"
+    html = f"<p>A {NBSP * 3}B</p><p>{NBSP * 2}indented</p><p>\tTabbed</p>"
+    save_document(SaveContent(html, {}), p, "md")
+    for doc in cycle(p, "md"):
+        assert doc.html == html
+    assert "    indented" not in p.read_text(encoding="utf-8")  # never an indented code block
+
+
+@pytest.mark.parametrize(
+    "html",
+    [
+        "<p># not a heading</p><p>- not a list</p><p>1. not a list</p><p>&gt; not a quote</p>",
+        "<p>*stars* _under_ `tick` [brackets] \back &lt;p&gt; &amp;amp; a|b</p>",
+        "<p>---</p><p>```</p><p>~~~</p><p>+ plus</p>",
+        "<h2>Title #</h2><ol><li>a</li><li></li><li>c</li></ol><ul><li>x</li></ul>",
+        "<ul><li>a</li></ul><ul><li>b</li></ul><blockquote><p>q</p></blockquote><hr>",
+        '<p><span style="font-family:Courier New;color:#ff0000">c</span> x<br>y</p>',
+        '<p><a href="https://x.org/a b(1).html">sp</a> <b><i>bi</i></b></p>',
+        "<table><tr><td><p>a|b</p></td><td><p>c</p><p>d</p></td></tr></table>",
+    ],
+)
+def test_markdown_text_never_turns_into_syntax(tmp_path, html):
+    p = tmp_path / "a.md"
+    save_document(SaveContent(html, {}), p, "md")
+    first = p.read_text(encoding="utf-8")
+    doc = open_document(p)
+    expected = html.replace("<td><p>c</p><p>d</p></td>", "<td><p>c<br>d</p></td>")
+    assert doc.html == normalise_html(expected)[0]
+    save_document(content_of(doc, p), p, "md")
+    assert p.read_text(encoding="utf-8") == first

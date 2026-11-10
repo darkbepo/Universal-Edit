@@ -15,6 +15,7 @@ from urllib.parse import quote
 from umc.converters import document as docroute
 from umc.core.errors import ConversionError
 from umc.doceditor.docx_writer import write
+from umc.doceditor.md_writer import to_markdown
 from umc.doceditor.routes import convert_file
 from umc.doceditor.types import DocImages, SaveContent
 from umc.tools import htmlpdf
@@ -32,7 +33,7 @@ _FIRST = [
     ("html", "Web page (HTML)"),
 ]
 _HTML_SRC = re.compile(r'(\bsrc=")(img/[\w.-]+)(")')
-_MD_LINK = re.compile(r'(\]\()(img/[\w.-]+)((?:\s+"[^"]*")?\))')
+_MD_LINK = re.compile(r'((?<!\\)\]\()(img/[\w.-]+)((?:\s+"[^"]*")?\))')
 _OURS = re.compile(r"^\d+\.(png|jpg|gif|bmp|webp)$")
 _MIME = {"jpg": "jpeg", "png": "png", "gif": "gif", "bmp": "bmp", "webp": "webp"}
 
@@ -118,7 +119,6 @@ def _build(
         out.write_text(text, encoding="utf-8", newline="\n")
         return out
     if fmt == "md":
-        text = content.markdown if content.markdown is not None else ""
         link = quote(files_name, safe="()")
         text = _MD_LINK.sub(
             lambda m: (
@@ -126,8 +126,11 @@ def _build(
                 if m.group(2) in content.images
                 else m.group(0)
             ),
-            text,
+            to_markdown(content.html),
         )
+        if content.front_matter:  # kept exactly as it was read
+            front = content.front_matter
+            text = front + ("" if front.endswith("\n") else "\n") + ("\n" + text if text else "")
         if content.images:
             _write_images(content.images, tmp / "_pics", "img/")
         out.write_text(text, encoding="utf-8", newline="\n")
