@@ -19,6 +19,7 @@ class MediaFamily(StrEnum):
     FONT = "font"
     VECTOR = "vector"
     CAD = "cad"
+    PROJECT = "project"  # a video editor project (.umcvideo)
 
 
 # Aliases → canonical extension.
@@ -162,6 +163,7 @@ SUBTITLE_EXTS = {"srt", "vtt", "ass", "ssa", "smi", "lrc"}
 FONT_EXTS = {"ttf", "otf", "woff", "woff2"}
 VECTOR_EXTS = {"svg", "eps", "ps", "ai"}
 CAD_EXTS = {"dxf", "dwg"}
+PROJECT_EXTS = {"umcvideo"}
 COMPOUND_EXTS = ("tar.gz", "tar.xz", "tar.bz2")
 PRESENTATION_EXTS = {"pptx", "ppt", "odp"}
 DOCUMENT_EXTS = TEXT_DOCUMENT_EXTS | SPREADSHEET_EXTS | PRESENTATION_EXTS | DATA_EXTS
@@ -211,6 +213,8 @@ def family_of_ext(ext: str) -> MediaFamily | None:
         return MediaFamily.VECTOR
     if ext in CAD_EXTS:
         return MediaFamily.CAD
+    if ext in PROJECT_EXTS:
+        return MediaFamily.PROJECT
     if ext in DOCUMENT_EXTS:
         return MediaFamily.DOCUMENT
     return None

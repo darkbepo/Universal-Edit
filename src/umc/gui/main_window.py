@@ -47,6 +47,7 @@ FAMILY_NOUN = {
     MediaFamily.FONT: ("font", "fonts"),
     MediaFamily.VECTOR: ("vector graphic", "vector graphics"),
     MediaFamily.CAD: ("CAD drawing", "CAD drawings"),
+    MediaFamily.PROJECT: ("video project", "video projects"),
 }
 ICONS = {
     MediaFamily.IMAGE: "🖼",
@@ -59,6 +60,7 @@ ICONS = {
     MediaFamily.FONT: "🔤",
     MediaFamily.VECTOR: "✒",
     MediaFamily.CAD: "📐",
+    MediaFamily.PROJECT: "🎬",
 }
 
 

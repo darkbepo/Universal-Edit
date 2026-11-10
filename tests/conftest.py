@@ -16,6 +16,7 @@ from umc.core.job import ConversionJob
 from umc.core.registry import targets_for
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+os.environ.setdefault("UMC_NO_AUDIO", "1")
 
 needs_ffmpeg = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")
 needs_soffice = pytest.mark.skipif(
@@ -72,6 +73,33 @@ def media(tmp_path_factory) -> Path:
             page = pdf.new_page()
             page.insert_text((72, 72), f"Page {n + 1}")
         pdf.save(d / "three.pdf")
+    return d
+
+
+@pytest.fixture(scope="session")
+def vmedia(tmp_path_factory) -> Path:
+    """Small known clips for the video editor tests."""
+    if shutil.which("ffmpeg") is None:
+        pytest.skip("ffmpeg not installed")
+    d = tmp_path_factory.mktemp("vmedia")
+
+    def ff(*args: str) -> None:
+        subprocess.run(["ffmpeg", "-loglevel", "error", "-y", *args], check=True)
+
+    def lavfi(spec: str) -> list[str]:
+        return ["-f", "lavfi", "-i", spec]
+
+    sine = lavfi("sine=frequency=440:duration=2")
+    ff(*lavfi("color=red:size=320x240:rate=30:duration=2"), *sine, "-shortest",
+       "-pix_fmt", "yuv420p", str(d / "red.mp4"))  # fmt: skip
+    ff(*lavfi("color=blue:size=320x240:rate=30:duration=2"), "-pix_fmt", "yuv420p",
+       str(d / "blue.mp4"))  # fmt: skip
+    ff(*lavfi("color=green:size=240x320:rate=30:duration=1"),
+       *lavfi("sine=frequency=330:duration=1"), "-shortest", "-pix_fmt", "yuv420p",
+       str(d / "green_tall.mp4"))  # fmt: skip
+    ff("-display_rotation", "90", "-i", str(d / "red.mp4"), "-c", "copy", str(d / "rot.mp4"))
+    Image.new("RGB", (200, 100), "orange").save(d / "pic.png")
+    ff(*lavfi("sine=frequency=880:duration=4"), "-ac", "2", str(d / "music.wav"))
     return d
 
 

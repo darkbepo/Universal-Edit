@@ -43,6 +43,7 @@ class MediaInfo:
     height: int = 0
     fps: float = 0.0
     frame_count: int = 0
+    rotation: int = 0  # display rotation in degrees (0, 90, 180, 270), from the container
 
 
 def _parse_rate(rate: str | None) -> float:
@@ -52,6 +53,23 @@ def _parse_rate(rate: str | None) -> float:
         num, den = rate.split("/", 1)
         return float(num) / float(den) if float(den) else 0.0
     return float(rate)
+
+
+def _rotation(stream: dict | None) -> int:
+    """Display rotation of a video stream (phone clips), normalised to 0/90/180/270."""
+    if not stream:
+        return 0
+    value = None
+    for sd in stream.get("side_data_list") or []:
+        if "rotation" in sd:
+            value = sd["rotation"]
+            break
+    if value is None:
+        value = (stream.get("tags") or {}).get("rotate")
+    try:
+        return int(round(float(value))) % 360 if value is not None else 0
+    except (TypeError, ValueError):
+        return 0
 
 
 def probe(path: Path) -> MediaInfo:
@@ -102,6 +120,7 @@ def probe(path: Path) -> MediaInfo:
         height=int((video or {}).get("height") or 0),
         fps=fps,
         frame_count=frames,
+        rotation=_rotation(video),
     )
 
 
