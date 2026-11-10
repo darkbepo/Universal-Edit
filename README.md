@@ -83,6 +83,7 @@ The browser version's source is in [`web/`](web/README.md).
 | Image editor retouching: clone stamp (S; Alt+click the source, aligned or not, this layer or all layers) and content-aware fill (Select menu: paints the selection over from what surrounds it — blemishes, wires, small objects) | ✅ | ✅ |
 | Image editor background removal (Image menu): hides the background with a layer mask, so it can be touched up with the mask brush; the model is downloaded once (desktop: IS-Net, ~179 MB, SHA-256 checked; website: IMG.LY's IS-Net, ~80 MB, cached by the browser) | ✅ | ✅ |
 | Layered projects: save and open OpenRaster `.ora` (GIMP and Krita open it too); `.ora` → any image format | ✅ | ✅ |
+| **Document editor**: Convert \| Edit for one DOCX, ODT, RTF, DOC, Markdown, TXT or HTML file · headings, fonts, colours, highlight, lists, tables, pictures, links, page breaks · find & replace · undo · save back or as PDF and every document format | ✅ | 🔜 |
 | Files never leave your computer | ✅ | ✅ |
 | No install needed | ❌ | ✅ |
 | Save straight into a folder | ✅ | ✅ Chrome/Edge · ❌ Firefox/Safari (zip instead) |

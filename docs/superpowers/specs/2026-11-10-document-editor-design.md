@@ -1,6 +1,6 @@
 # Document editor (desktop, then website) — design
 
-Date: 2026-11-10 · Roadmap item 10 (text / document editing) · Status: approved design, awaiting spec review
+Date: 2026-11-10 · Roadmap item 10 (text / document editing) · Status: implemented (desktop)
 
 ## Goal
 
