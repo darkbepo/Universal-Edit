@@ -73,7 +73,7 @@ describe("layer masks", () => {
     expect([at(d2.layers[0].data, 20, 5, 5).slice(0, 3), at(d2.layers[0].data, 20, 15, 5).slice(0, 3)]).toEqual([[0, 0, 255], [255, 0, 0]]);
   });
 
-  it("the mask brush hides and reveals, with undo; does nothing without a mask", () => {
+  it("the mask brush hides and reveals, with undo; adds a mask on the first stroke", () => {
     const d = doc();
     ops.addMask(d);
     const h = new History(d);
@@ -89,9 +89,15 @@ describe("layer masks", () => {
     expect(m()).toBe(255);
     h.undo();
     expect(m()).toBe(0);
+    // no mask yet: the first stroke adds one, in the same undo step
     const d2 = doc();
-    expect(t.press(d2, 5, 5, ctx(o))).toBeNull();
-    expect(t.release(d2, 5, 5, ctx(o))).toBeNull();
+    const h2 = new History(d2);
+    t.press(d2, 5, 5, ctx(o));
+    h2.push(t.release(d2, 5, 5, ctx(o)));
+    expect((d2.layers[1].mask as Uint8ClampedArray)[(5 * 20 + 5) * 4]).toBe(0);
+    expect((d2.layers[1].mask as Uint8ClampedArray)[(8 * 20 + 15) * 4]).toBe(255);
+    h2.undo();
+    expect(d2.layers[1].mask ?? null).toBeNull();
   });
 });
 

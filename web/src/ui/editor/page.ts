@@ -177,6 +177,7 @@ export class EditorPage {
       h("div", { class: "editor-status" }, this.message, this.info));
     this.selectTool("brush");
     this.updateButtons();
+    this.closeMenusOnOutsideClick();
     window.addEventListener("keydown", (e) => this.key(e));
     window.addEventListener("paste", (e) => void this.onPaste(e));
     window.addEventListener("keyup", (e) => {
@@ -189,6 +190,21 @@ export class EditorPage {
       }
     });
     if (location.search.includes("e2e")) this.installTestHook();
+  }
+
+  /** Top-bar menus close on a click anywhere else, and opening one closes the others. */
+  private closeMenusOnOutsideClick(): void {
+    const menus = () => [...this.el.querySelectorAll<HTMLDetailsElement>("details.menu")];
+    document.addEventListener("pointerdown", (e) => {
+      for (const m of menus()) if (m.open && !m.contains(e.target as Node)) m.open = false;
+    });
+    for (const m of menus())
+      m.addEventListener("toggle", () => {
+        if (m.open) for (const other of menus()) if (other !== m) other.open = false;
+      });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") for (const m of menus()) if (m.open) m.open = false;
+    });
   }
 
   private menuItems(items: ([string, string] | null)[]): HTMLElement[] {

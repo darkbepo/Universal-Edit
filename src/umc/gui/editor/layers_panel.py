@@ -484,6 +484,14 @@ class LayersPanel(QWidget):
             menu.addAction(f"Hide {word}", lambda: self.set_visible(False))
         if any(not doc.layers[i].visible for i in chosen):
             menu.addAction(f"Show {word}", lambda: self.set_visible(True))
+        if len(chosen) == 1 and len(doc.layers) > 1:
+            only = chosen[0]
+            menu.addAction(
+                "Show all layers"
+                if ops.is_solo(doc, only)
+                else "Show only this layer (Alt+click eye)",
+                lambda: self._run(lambda d: ops.solo_layer(d, only)),
+            )
         menu.addAction("Select all layers", self.select_all)
         if not many:  # layer mask actions for the one selected layer
             menu.addSeparator()
@@ -522,7 +530,11 @@ class LayersPanel(QWidget):
         layer = self.doc.layers[index]
         visible = item.checkState() == Qt.CheckState.Checked
         if visible != layer.visible:
-            self._run(lambda d: ops.set_visible(d, index, visible))
+            alt = QApplication.keyboardModifiers() & Qt.KeyboardModifier.AltModifier
+            if alt:  # Alt+click the eye: show only this layer (again: show all)
+                self._run(lambda d: ops.solo_layer(d, index))
+            else:
+                self._run(lambda d: ops.set_visible(d, index, visible))
         elif item.text() != layer.name:
             name = item.text()
             self._run(lambda d: ops.rename_layer(d, index, name))

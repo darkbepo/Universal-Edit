@@ -269,6 +269,7 @@ class CloneStampTool(_StrokeTool):
 
 class MaskBrushTool(_StrokeTool):
     """Paints the active layer's mask: left button hides (black), right button shows (white).
+    A layer without a mask gets one (all white) on the first stroke, in the same undo step.
 
     It paints an RGBA stand-in of the mask with the normal brush and copies its grey back into
     the mask after every dab; undo is a ``MaskPatchCommand``.
@@ -279,9 +280,14 @@ class MaskBrushTool(_StrokeTool):
 
     def press(self, doc: Document, x: float, y: float, ctx: ToolContext) -> Rect | None:
         layer = doc.active_layer
-        if layer.mask is None:
-            self._layer_index = None
-            return None
+        self._without_mask: list | None = None
+        if layer.mask is None:  # first stroke: give the layer a mask (a new Layer object)
+            from dataclasses import replace
+
+            self._without_mask = list(doc.layers)
+            layer = replace(layer, mask=Image.new("L", layer.image.size, 255))
+            doc.layers = list(doc.layers)
+            doc.layers[doc.active] = layer
         grey = layer.mask
         self._proxy = Layer(
             layer.name,
@@ -312,6 +318,14 @@ class MaskBrushTool(_StrokeTool):
         self.move(doc, x, y, ctx)
         self._layer_index = None
         dirty, self._tiles = self._dirty, {}
+        if self._without_mask is not None:  # undo takes the new mask away again
+            from umc.editor.history import LayerListCommand
+
+            before, self._without_mask = self._without_mask, None
+            sel = set(doc.selected)
+            return LayerListCommand(
+                "Mask brush", before, list(doc.layers), doc.active, doc.active, sel, sel
+            )
         if dirty is None:
             return None
         from umc.editor.history import MaskPatchCommand
@@ -322,6 +336,10 @@ class MaskBrushTool(_StrokeTool):
         )
 
     def cancel(self, doc: Document) -> Rect | None:
+        if getattr(self, "_without_mask", None) is not None:  # drop the mask it added
+            doc.layers, self._without_mask = self._without_mask, None
+            idx, self._layer_index, self._tiles = self._layer_index, None, {}
+            return doc.layers[idx].bounds if idx is not None else None
         if self._layer_index is None or self._dirty is None:
             self._layer_index = None
             return None

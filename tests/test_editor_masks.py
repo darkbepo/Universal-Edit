@@ -96,9 +96,14 @@ def test_mask_brush_hides_and_reveals_with_undo():
     assert doc.active_layer.mask.getpixel((5, 5)) == 255
     h.undo()
     assert doc.active_layer.mask.getpixel((5, 5)) == 0
-    doc2 = _doc()  # no mask: the mask brush does nothing
+    doc2 = _doc()  # no mask yet: the first stroke adds one, in the same undo step
+    h2 = History(doc2)
     tool.press(doc2, 5, 5, _ctx(o))
-    assert tool.release(doc2, 5, 5, _ctx(o)) is None
+    h2.push(tool.release(doc2, 5, 5, _ctx(o)))
+    assert doc2.active_layer.mask.getpixel((5, 5)) == 0
+    assert doc2.active_layer.mask.getpixel((15, 8)) == 255
+    h2.undo()
+    assert doc2.active_layer.mask is None
 
 
 def _gradient(doc, a, b, **kw):

@@ -134,3 +134,23 @@ def test_undo_restores_layers_and_selection(fn):
     assert _state(doc) == before
     h.redo()
     assert _state(doc) == after
+
+
+def test_solo_layer_shows_only_one_then_all_again():
+    from PIL import Image
+
+    from umc.editor import ops
+    from umc.editor.document import Document
+    from umc.editor.history import History
+    from umc.editor.layer import Layer
+
+    doc = Document(4, 4, [Layer(n, Image.new("RGBA", (4, 4))) for n in "abc"])
+    doc.layers[2] = Layer("c", doc.layers[2].image, visible=False)
+    h = History(doc)
+    h.push(ops.solo_layer(doc, 2))
+    assert [la.visible for la in doc.layers] == [False, False, True] and ops.is_solo(doc, 2)
+    h.push(ops.solo_layer(doc, 2))
+    assert [la.visible for la in doc.layers] == [True, True, True]
+    h.undo()
+    h.undo()
+    assert [la.visible for la in doc.layers] == [True, True, False]

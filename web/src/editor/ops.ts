@@ -410,6 +410,23 @@ export function setVisibleLayers(doc: EditorDoc, indices: Iterable<number>, visi
 }
 
 
+/** Show only layer `index` (hide all others); when it already is the only one shown, show every
+ *  layer again. One undo step. Same as solo_layer in ops.py. */
+export function soloLayer(doc: EditorDoc, index: number): Command | null {
+  const updated = new Map<number, Layer>();
+  const alone = isSolo(doc, index) || (doc.layers.length === 1 && doc.layers[0].visible);
+  doc.layers.forEach((l, i) => {
+    const want = alone ? true : i === index;
+    if (l.visible !== want) updated.set(i, withProps(l, { visible: want }));
+  });
+  return updated.size ? replaceMany(doc, updated, alone ? "Show all layers" : "Show only this layer") : null;
+}
+
+/** True when layer `index` is the only visible one (and there are others). */
+export function isSolo(doc: EditorDoc, index: number): boolean {
+  return doc.layers.length > 1 && doc.layers[index].visible && doc.layers.every((l, i) => i === index || !l.visible);
+}
+
 /** `base` with the given layers shifted by (dx, dy) — new Layer objects, pixels shared. */
 export function offsetLayers(doc: EditorDoc, base: Layer[], indices: Iterable<number>, dx: number, dy: number): Layer[] {
   const layers = [...base];

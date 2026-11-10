@@ -1,10 +1,10 @@
 // Brush and eraser: round dabs along the pointer path (port of tools/paint.py). The original
 // pixels are remembered per 128 px tile, only where the stroke goes — never a whole-layer copy.
 import { opt } from "../../core/options";
-import { composite, type EditorDoc } from "../document";
+import { composite, selectedIndices, type EditorDoc } from "../document";
 import { Rect } from "../geometry";
-import { MaskPatchCommand, PatchCommand, type Command } from "../history";
-import { cropData, type Layer, type RGBA } from "../layer";
+import { LayerListCommand, MaskPatchCommand, PatchCommand, type Command } from "../history";
+import { cropData, layerBounds, solidMask, type Layer, type RGBA } from "../layer";
 import { blendPixel, clipRect, colorOf, selectionWeight, Tool, type ToolContext } from "./base";
 
 const TILE = 128;
@@ -273,11 +273,43 @@ export class MaskBrushTool extends StrokeTool {
   }
 
   protected override command(doc: EditorDoc, index: number, dirty: Rect, before: Uint8ClampedArray): Command | null {
+    if (this.withoutMask) {
+      const b = this.withoutMask;
+      this.withoutMask = null;
+      const sel = selectedIndices(doc);
+      return new LayerListCommand(this.label, b, [...doc.layers], doc.active, doc.active, sel, sel);
+    }
     return MaskPatchCommand.fromRegion(this.label, doc, index, dirty, before);
   }
 
+  override release(doc: EditorDoc, x: number, y: number, ctx: ToolContext): Command | null {
+    const cmd = super.release(doc, x, y, ctx);
+    if (cmd || !this.withoutMask) return cmd;
+    // nothing painted (outside the layer), but the mask was added: keep it as one undo step
+    return this.command(doc, doc.active, new Rect(0, 0, 0, 0), new Uint8ClampedArray(0));
+  }
+
+  override cancel(doc: EditorDoc): Rect | null {
+    const r = super.cancel(doc);
+    if (this.withoutMask) {
+      doc.layers = this.withoutMask;
+      this.withoutMask = null;
+      return layerBounds(doc.layers[doc.active]);
+    }
+    return r;
+  }
+
+  /** The layers before the first stroke gave the active layer a mask (undo takes it away). */
+  private withoutMask: Layer[] | null = null;
+
   override press(doc: EditorDoc, x: number, y: number, ctx: ToolContext): Rect | null {
-    if (!doc.layers[doc.active].mask) return null; // no mask: nothing to paint
+    this.withoutMask = null;
+    const l = doc.layers[doc.active];
+    if (!l.mask) {
+      this.withoutMask = [...doc.layers];
+      doc.layers = [...doc.layers];
+      doc.layers[doc.active] = { ...l, mask: solidMask(l.width, l.height, 255) };
+    }
     const black: RGBA = [0, 0, 0, 255];
     const white: RGBA = [255, 255, 255, 255];
     return super.press(doc, x, y, { ...ctx, primary: black, secondary: white });

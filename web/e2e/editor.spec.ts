@@ -878,3 +878,52 @@ test("polygon lasso: Esc drops unfinished corners, so Enter then selects nothing
   await page.keyboard.press("Enter");
   expect(await selState(page)).toBeNull();
 });
+
+test("quick fixes: menus close on an outside click; dragging layers selects no text; Alt+click eye isolates; mask brush adds a mask; picker loupe", async ({ page }) => {
+  await openEditor(page);
+  const undoLabel = () => page.evaluate(() => (window.__editor as EditorHook & { history: { undoLabel: string } }).history.undoLabel);
+  // menus
+  const image = page.locator("details.menu", { has: page.locator("summary", { hasText: "Image ▾" }) });
+  const select = page.locator("details.menu", { has: page.locator("summary", { hasText: "Select ▾" }) });
+  await image.locator("summary").click();
+  await expect(image).toHaveAttribute("open", "");
+  await select.locator("summary").click();
+  await expect(image).not.toHaveAttribute("open", ""); // opening one closes the other
+  await page.locator(".editor-status").click();
+  await expect(select).not.toHaveAttribute("open", "");
+  // dragging a layer row doesn't highlight text
+  const rows = page.locator(".layers li");
+  const a = await rows.nth(0).boundingBox();
+  const b = await rows.nth(1).boundingBox();
+  if (!a || !b) throw new Error("no rows");
+  await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(a.x + a.width / 2, b.y + b.height + 40, { steps: 8 });
+  expect(await page.evaluate(() => String(window.getSelection() ?? ""))).toBe("");
+  await page.mouse.up();
+  // Alt+click an eye: only that layer stays visible; again: all
+  const eye = rows.nth(0).locator('input[type="checkbox"]');
+  const visible = () => page.evaluate(() => (window.__editor as EditorHook).doc.layers.map((l) => (l as unknown as { visible: boolean }).visible));
+  await eye.click({ modifiers: ["Alt"] });
+  await expect.poll(undoLabel).toBe("Show only this layer");
+  expect((await visible()).filter(Boolean).length).toBe(1);
+  await eye.click({ modifiers: ["Alt"] });
+  await expect.poll(visible).toEqual([true, true]);
+  // mask brush on a layer without a mask
+  await page.locator(".canvas-host canvas").focus();
+  await page.keyboard.press("k");
+  const p = await at(page, 10, 10);
+  await page.mouse.click(p.x, p.y);
+  await expect.poll(undoLabel).toBe("Mask brush");
+  await expect(page.locator(".layers li canvas.mask-thumb")).toHaveCount(1);
+  // the picker's loupe appears while held
+  await page.keyboard.press("i");
+  const q = await at(page, 60, 60);
+  const shot = async () => (await page.locator(".canvas-host canvas.view").screenshot()).length;
+  const plain = await shot();
+  await page.mouse.move(q.x, q.y);
+  await page.mouse.down();
+  await page.mouse.move(q.x + 1, q.y + 1);
+  expect(await shot()).not.toBe(plain);
+  await page.mouse.up();
+});

@@ -1154,3 +1154,21 @@ def test_remove_background_sets_a_layer_mask(page, qtbot, monkeypatch):
     qtbot.waitUntil(lambda: page.doc.active_layer.mask is not None)
     assert page.doc.active_layer.mask.getpixel((0, 0)) == 128
     assert page.history.undo_label == "Remove background"
+
+
+def test_colour_picker_shows_a_loupe_while_held(canvas, qtbot):
+    from umc.editor.tools.fill import PickerOptions, PickerTool
+
+    c, doc, _ = canvas
+    c.resize(400, 400)
+    c.set_zoom(1.0)
+    c.set_tool(PickerTool())
+    c.context_provider = lambda: ToolContext((0, 0, 0, 255), (255, 255, 255, 255), PickerOptions())
+    p = c.image_to_widget(90, 90)
+    middle = QPoint(p.x() - 24 - 61, p.y() - 24 - 61)  # the loupe sits up and to the left
+    before = c.grab().toImage().pixelColor(middle)
+    qtbot.mousePress(c, Qt.MouseButton.LeftButton, pos=p)
+    qtbot.mouseMove(c, p)
+    assert c.grab().toImage().pixelColor(middle) != before
+    qtbot.mouseRelease(c, Qt.MouseButton.LeftButton, pos=p)
+    assert c.grab().toImage().pixelColor(middle) == before  # gone again

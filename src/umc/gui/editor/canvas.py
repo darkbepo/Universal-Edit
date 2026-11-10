@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 
 from PIL import Image
@@ -322,6 +323,7 @@ class EditorCanvas(QWidget):
             else:
                 self._ants_path(p, self._selection_path())
         self._paint_tool_outline(p)
+        self._paint_loupe(p)
         if self._mouse is not None and self.tool is not None and self.tool.cursor == "brush":
             opts = self.context_provider().options if self.context_provider else None
             size = getattr(opts, "size", 0)
@@ -335,6 +337,56 @@ class EditorCanvas(QWidget):
                 p.drawEllipse(self._mouse, r + 1, r + 1)
         p.end()
         self._place_bar()
+
+    def _paint_loupe(self, p: QPainter) -> None:
+        """While the colour picker is held: a magnified view of the 11 × 11 pixels around the
+        cursor (the one that will be picked outlined), up and to the left of it."""
+        if (
+            self.tool is None
+            or self.tool.id != "picker"
+            or self._pressed not in ("left", "right")
+            or self._mouse is None
+            or self._cache is None
+        ):
+            return
+        n, cell = 11, 11
+        size, half = n * cell, (n - 1) // 2
+        ix, iy = (math.floor(v) for v in self.widget_to_image(self._mouse))
+        cx, cy = self._mouse.x() - size / 2 - 24, self._mouse.y() - size / 2 - 24
+        if cx - size / 2 < 4:  # keep it on screen
+            cx = self._mouse.x() + size / 2 + 24
+        if cy - size / 2 < 4:
+            cy = self._mouse.y() + size / 2 + 24
+        # a small window: keep it inside, even if it covers the cursor
+        cx = min(max(cx, size / 2 + 4), max(size / 2 + 4, self.width() - size / 2 - 4))
+        cy = min(max(cy, size / 2 + 4), max(size / 2 + 4, self.height() - size / 2 - 4))
+        x0, y0 = cx - size / 2, cy - size / 2
+        src = self._cache.copy(
+            ix - half - self._view.x0, iy - half - self._view.y0, n, n
+        )  # outside the cache comes back transparent
+        circle = QPainterPath()
+        circle.addEllipse(QPointF(cx, cy), size / 2, size / 2)
+        p.save()
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setClipPath(circle)
+        p.fillRect(QRectF(x0, y0, size, size), QColor(128, 128, 128))
+        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, False)
+        p.drawImage(QRectF(x0, y0, size, size), src)
+        p.setPen(QPen(QColor(0, 0, 0, 40), 1))
+        for k in range(1, n):
+            p.drawLine(QPointF(x0 + k * cell, y0), QPointF(x0 + k * cell, y0 + size))
+            p.drawLine(QPointF(x0, y0 + k * cell), QPointF(x0 + size, y0 + k * cell))
+        p.restore()
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.setPen(QPen(QColor("white"), 2))
+        p.drawRect(QRectF(x0 + half * cell, y0 + half * cell, cell, cell))
+        p.setPen(QPen(QColor("black"), 1))
+        p.drawRect(QRectF(x0 + half * cell - 1.5, y0 + half * cell - 1.5, cell + 3, cell + 3))
+        p.setPen(QPen(QColor(0, 0, 0, 140), 3))
+        p.drawPath(circle)
+        p.setPen(QPen(QColor("white"), 1.5))
+        p.drawPath(circle)
 
     @staticmethod
     def _shade_outside(p: QPainter, outer: QRectF, inner: QRectF, color: QColor, alpha: int):

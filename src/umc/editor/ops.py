@@ -439,6 +439,31 @@ def set_visible_layers(doc: Document, indices, visible: bool) -> Command | None:
     return _replace_many(doc, new, label)
 
 
+def solo_layer(doc: Document, index: int) -> Command | None:
+    """Show only layer ``index`` (hide all others); when it already is the only one shown, show
+    every layer again. One undo step (Alt+click an eye, or the layer menu)."""
+    others = [i for i in range(len(doc.layers)) if i != index]
+    alone = doc.layers[index].visible and not any(doc.layers[i].visible for i in others)
+    if alone:
+        new = {i: replace(doc.layers[i], visible=True) for i in others}
+        label = "Show all layers"
+    else:
+        new = {i: replace(doc.layers[i], visible=False) for i in others if doc.layers[i].visible}
+        if not doc.layers[index].visible:
+            new[index] = replace(doc.layers[index], visible=True)
+        label = "Show only this layer"
+    return _replace_many(doc, new, label) if new else None
+
+
+def is_solo(doc: Document, index: int) -> bool:
+    """True when layer ``index`` is the only visible one (and there are others)."""
+    return (
+        len(doc.layers) > 1
+        and doc.layers[index].visible
+        and not any(la.visible for i, la in enumerate(doc.layers) if i != index)
+    )
+
+
 def offset_layers(doc: Document, base: list[Layer], indices, dx: int, dy: int) -> list[Layer]:
     """``base`` with the given layers shifted by (dx, dy) — new Layer objects, images shared."""
     layers = list(base)

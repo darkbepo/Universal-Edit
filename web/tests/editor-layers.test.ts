@@ -132,3 +132,22 @@ describe("undo restores layers and selection", () => {
     });
   }
 });
+
+describe("show only this layer", () => {
+  it("hides the others, then shows all again (mirrors test_editor_layers.py)", async () => {
+    const { soloLayer, isSolo } = await import("../src/editor/ops");
+    const { makeLayer } = await import("../src/editor/layer");
+    const { History } = await import("../src/editor/history");
+    const d = { width: 4, height: 4, layers: ["a", "b", "c"].map((n) => makeLayer(n, 4, 4)), active: 0, selection: null, dirty: false };
+    d.layers[2] = { ...d.layers[2], visible: false };
+    const h = new History(d);
+    h.push(soloLayer(d, 2));
+    expect(d.layers.map((l) => l.visible)).toEqual([false, false, true]);
+    expect(isSolo(d, 2)).toBe(true);
+    h.push(soloLayer(d, 2));
+    expect(d.layers.map((l) => l.visible)).toEqual([true, true, true]);
+    h.undo();
+    h.undo();
+    expect(d.layers.map((l) => l.visible)).toEqual([true, true, false]);
+  });
+});

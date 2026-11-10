@@ -306,7 +306,14 @@ export class LayersPanel {
     for (let i = n - 1; i >= 0; i--) {
       const layer = doc.layers[i];
       const eye = h("input", { type: "checkbox", checked: layer.visible, title: "Show / hide", ariaLabel: `Show ${layer.name}` });
-      eye.addEventListener("click", (e) => e.stopPropagation());
+      eye.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (e.altKey) {
+          // Alt+click the eye: show only this layer (again: show all)
+          e.preventDefault();
+          this.run((d) => ops.soloLayer(d, i));
+        }
+      });
       eye.addEventListener("change", () => this.run((d) => ops.setVisible(d, i, eye.checked)));
       const name = h("span", { class: "lname", title: "Double-click to rename" }, layer.name);
       const arrow = (up: boolean) => {
@@ -460,6 +467,8 @@ export class LayersPanel {
       this.dragging = true;
       this.list.setPointerCapture(e.pointerId);
       this.list.classList.add("dragging");
+      document.body.classList.add("no-select");
+      window.getSelection()?.removeAllRanges();
       if (!selectedIndices(doc).includes(this.press.index)) {
         ops.selectLayer(doc, this.press.index);
         this.anchor = this.press.index;
@@ -493,6 +502,7 @@ export class LayersPanel {
     this.press = null;
     this.dragging = false;
     this.list.classList.remove("dragging");
+    document.body.classList.remove("no-select");
     this.showGap(null);
   }
 
@@ -535,6 +545,10 @@ export class LayersPanel {
     if (!many && doc.layers[doc.active].text) items.push(["Edit text…", () => this.onEditText(doc.active), true]);
     if (chosen.some((i) => doc.layers[i].visible)) items.push([`Hide ${word}`, () => this.setVisible(false), true]);
     if (chosen.some((i) => !doc.layers[i].visible)) items.push([`Show ${word}`, () => this.setVisible(true), true]);
+    if (chosen.length === 1 && doc.layers.length > 1) {
+      const only = chosen[0];
+      items.push([ops.isSolo(doc, only) ? "Show all layers" : "Show only this layer (Alt+click eye)", () => this.run((d) => ops.soloLayer(d, only)), true]);
+    }
     items.push(["Select all layers", () => this.selectAll(), true]);
     if (!many) {
       // layer mask actions for the one selected layer

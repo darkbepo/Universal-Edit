@@ -82,6 +82,7 @@ The browser version's source is in [`web/`](web/README.md).
 | Image editor pasteboard: parts of layers moved past the picture's edge stay visible (faded) around it and can be moved back; they're kept in .ora but never saved into the picture | ✅ | ✅ |
 | Image editor retouching: clone stamp (S; Alt+click the source, aligned or not, this layer or all layers) and content-aware fill (Select menu: paints the selection over from what surrounds it — blemishes, wires, small objects) | ✅ | ✅ |
 | Image editor background removal (Image menu): hides the background with a layer mask, so it can be touched up with the mask brush; the model is downloaded once (desktop: IS-Net, ~179 MB, SHA-256 checked; website: IMG.LY's IS-Net, ~80 MB, cached by the browser) | ✅ | ✅ |
+| Image editor: show only one layer (Alt+click its eye, or the layer menu; again to show all), colour-picker magnifier while the button is held, the mask brush adds a mask by itself | ✅ | ✅ |
 | Layered projects: save and open OpenRaster `.ora` (GIMP and Krita open it too); `.ora` → any image format | ✅ | ✅ |
 | Files never leave your computer | ✅ | ✅ |
 | No install needed | ❌ | ✅ |

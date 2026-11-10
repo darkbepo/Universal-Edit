@@ -205,6 +205,10 @@ h1 { font-size: 22px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.01em
 .swatch input[type="range"] { width: 64px; accent-color: var(--accent); }
 .layers-panel { display: flex; flex-direction: column; gap: 8px; }
 .layers { list-style: none; margin: 0; padding: 4px; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; max-height: 300px; overflow: auto; }
+/* dragging rows must not highlight text (the rename box still can) */
+.layers { user-select: none; -webkit-user-select: none; }
+.layers input { user-select: text; -webkit-user-select: text; }
+body.no-select { user-select: none; -webkit-user-select: none; }
 .layers li { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 8px; cursor: pointer; }
 .layers li.selected { background: var(--accent-soft); }
 .layers.multi li.active { box-shadow: inset 3px 0 0 var(--accent); }

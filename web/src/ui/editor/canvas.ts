@@ -45,6 +45,8 @@ export class EditorCanvas {
   private panFrom = { x: 0, y: 0 };
   private pinch: { dist: number; mid: { x: number; y: number } } | null = null;
   private mouse: { x: number; y: number } | null = null;
+  /** The last pointer position of any kind (mouse, pen, touch), for the colour picker's loupe. */
+  private pointer: { x: number; y: number } | null = null;
   private ants = 0;
   private frame = 0;
   private pattern: CanvasPattern | null = null;
@@ -334,6 +336,7 @@ export class EditorCanvas {
       else this.antsRect(...this.screenRect(doc.selection));
     }
     this.paintToolOutline();
+    this.paintLoupe();
     if (this.mouse && this.tool?.cursor === "brush") {
       const size = Number(this.contextProvider().options.size) || 0;
       const r = (size * this.zoom) / 2;
@@ -424,6 +427,62 @@ export class EditorCanvas {
     ctx.restore();
   }
 
+  /** While the colour picker is held: a magnified view of the pixels around the pointer (11 × 11
+   *  pixels, the one that will be picked outlined), up and to the left so the finger doesn't cover it. */
+  private paintLoupe(): void {
+    if (this.tool?.id !== "picker" || !this.dragging || !this.pointer || !this.cache) return;
+    const ctx = this.ctx;
+    const [ix, iy] = this.widgetToImage(this.pointer.x, this.pointer.y).map(Math.floor);
+    const N = 11;
+    const cell = 11;
+    const size = N * cell;
+    const half = (N - 1) / 2;
+    let cx = this.pointer.x - size / 2 - 24;
+    let cy = this.pointer.y - size / 2 - 24;
+    if (cx - size / 2 < 4) cx = this.pointer.x + size / 2 + 24; // keep it on screen
+    if (cy - size / 2 < 4) cy = this.pointer.y + size / 2 + 24;
+    // a small screen: keep it inside, even if it covers the pointer
+    const vw = this.el.clientWidth;
+    const vh = this.el.clientHeight;
+    cx = Math.min(Math.max(cx, size / 2 + 4), Math.max(size / 2 + 4, vw - size / 2 - 4));
+    cy = Math.min(Math.max(cy, size / 2 + 4), Math.max(size / 2 + 4, vh - size / 2 - 4));
+    const x0 = cx - size / 2;
+    const y0 = cy - size / 2;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, size / 2, 0, Math.PI * 2);
+    ctx.fillStyle = "#808080";
+    ctx.fill();
+    ctx.clip();
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(this.cache, ix - half - this.area.x0, iy - half - this.area.y0, N, N, x0, y0, size, size);
+    ctx.strokeStyle = "rgba(0,0,0,0.15)";
+    ctx.lineWidth = 1;
+    for (let k = 1; k < N; k++) {
+      ctx.beginPath();
+      ctx.moveTo(x0 + k * cell + 0.5, y0);
+      ctx.lineTo(x0 + k * cell + 0.5, y0 + size);
+      ctx.moveTo(x0, y0 + k * cell + 0.5);
+      ctx.lineTo(x0 + size, y0 + k * cell + 0.5);
+      ctx.stroke();
+    }
+    ctx.restore();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "#fff";
+    ctx.strokeRect(x0 + half * cell, y0 + half * cell, cell, cell);
+    ctx.strokeStyle = "#000";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x0 + half * cell - 1.5, y0 + half * cell - 1.5, cell + 3, cell + 3);
+    ctx.beginPath();
+    ctx.arc(cx, cy, size / 2, 0, Math.PI * 2);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(0,0,0,0.55)";
+    ctx.stroke();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = "#fff";
+    ctx.stroke();
+  }
+
   /** The shape a selection tool is drawing (before the pointer is let go). */
   private paintToolOutline(): void {
     const marker = (this.tool as unknown as { marker?: (x: number, y: number) => [number, number] | null } | null)?.marker;
@@ -496,6 +555,7 @@ export class EditorCanvas {
   private down(e: PointerEvent): void {
     if (!this.doc) return;
     const p = this.local(e);
+    this.pointer = p;
     this.pointers.set(e.pointerId, p);
     try {
       this.view.setPointerCapture(e.pointerId);
@@ -545,6 +605,7 @@ export class EditorCanvas {
 
   private moveEvt(e: PointerEvent): void {
     const p = this.local(e);
+    this.pointer = p;
     if (this.pointers.has(e.pointerId)) this.pointers.set(e.pointerId, p);
     this.mouse = e.pointerType === "mouse" ? p : null;
     const [x, y] = this.widgetToImage(p.x, p.y);

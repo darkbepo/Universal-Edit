@@ -583,6 +583,23 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
          files come from IMG.LY's CDN (staticimgly.com) as blob URLs. Vite still emits ORT's own
          24 MB wasm (unused). e2e fakes the model (`__editor.fakeSegmenter()`); the sandbox
          can't reach the CDN, so the real web download is only checked on the live site.
+   6. Owner's feedback round (Nov 2026), in this order, both apps, one step at a time:
+      1. ✅ Quick fixes. Web: `.layers` is `user-select: none` (+ `body.no-select` while a row
+         is dragged) so dragging highlights no text; top-bar `details.menu` close on a pointerdown
+         elsewhere / Esc, and opening one closes the others (`closeMenusOnOutsideClick`). Both:
+         the mask brush gives a mask-less layer an all-white mask on its first stroke (a new Layer
+         object; the stroke's undo is then a `LayerListCommand` that removes it); `ops.solo_layer` /
+         `soloLayer` (Alt+click an eye or the layer menu; again = show all; one undo step);
+         colour-picker loupe (`_paint_loupe` / `paintLoupe`: 11 × 11 cached pixels at 11×, up-left
+         of the pointer, kept on screen).
+      2. Move a selection (drag inside it with a selection tool; arrows nudge).
+      3. Tool rail: grouped (Select → Move & crop → Paint → Retouch → Shapes & text → Adjust →
+         Filters → Effects → Image), icons + names by default, narrowable; menu items become icons.
+      4. Floating windows: every icon opens a movable, minimisable window (several at once,
+         positions remembered); no modal dialogs; layers side stays only layers.
+      5. Live text layers (a layer at once, movable while typing, editable until rasterised).
+      6. Shape layers (rectangle / ellipse / line / arrow keep handles until rasterised / merged).
+      7. Layer effects: drop shadow, colour overlay, glow, outline (live, "fx" badge, kept in .ora).
 11. Ideas: installer for the app itself (Inno Setup), presets, batch queue.
 
 ## Handoff — read this first (for the next Claude account)
