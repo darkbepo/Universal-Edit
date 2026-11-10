@@ -183,10 +183,10 @@ def apply_brightness_contrast(doc: Document, brightness: int, contrast: int) -> 
     region = clip_rect(doc, layer)
     if region.empty:
         return None
-    before = layer.image.copy()
+    before = layer.image.crop(region.box)
     part = brightness_contrast(layer.image.crop(region.box), brightness, contrast)
     layer.image.paste(part, (region.x0, region.y0))
-    return PatchCommand.capture("Brightness / contrast", doc, doc.active, region, before)
+    return PatchCommand.from_region("Brightness / contrast", doc, doc.active, region, before)
 
 
 # ------------------------------------------------------------------ layer list

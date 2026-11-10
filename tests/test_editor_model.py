@@ -126,3 +126,27 @@ def test_layer_list_command():
     assert len(doc.layers) == 1 and doc.active == 0
     h.redo()
     assert len(doc.layers) == 2 and doc.active == 1
+
+
+def test_saved_marker_is_a_state_not_a_length():
+    """Save starts at state A; user undoes and draws (same stack length) → still dirty."""
+    doc = Document.new(10, 10)
+    h = History(doc)
+    for i in range(3):
+        h.push(_paint(doc, i, 0))
+    pos = h.position
+    h.undo()
+    h.push(_paint(doc, 5, 5))
+    h.mark_saved(pos)
+    assert doc.dirty
+
+
+def test_saved_marker_survives_dropped_commands():
+    doc = Document.new(10, 10)
+    h = History(doc, limit_bytes=20)
+    h.mark_saved()
+    for i in range(4):
+        h.push(_paint(doc, i, 0))
+    while h.can_undo:
+        h.undo()
+    assert doc.dirty  # the bottom of the stack is no longer the saved (original) state

@@ -16,6 +16,13 @@ from umc.editor.tools.base import Tool, ToolContext, clip_rect
 SUPERSAMPLE = 4
 
 
+def supersample(area: int) -> int:
+    """Anti-aliasing factor: 4× for normal shapes, less for huge ones (memory: area × s² × 4)."""
+    if area <= 1_000_000:
+        return SUPERSAMPLE
+    return 2 if area <= 4_000_000 else 1
+
+
 @dataclass
 class LineOptions:
     width: int = opt(4, "Width", kind="slider", min=1, max=200, unit="px")
@@ -64,7 +71,11 @@ class _ShapeTool(Tool):
         pad = ctx.options.width + 2
         box = Rect.from_points(*pts)
         box = Rect(box.x0 - pad, box.y0 - pad, box.x1 + pad, box.y1 + pad)
-        s = SUPERSAMPLE
+        bw, bh = self._canvas
+        box = box.intersect(Rect(-pad, -pad, bw + pad, bh + pad))  # nothing off-canvas
+        if box.empty:
+            return None
+        s = supersample(box.width * box.height)
         big = Image.new("RGBa", (box.width * s, box.height * s))
         local = [
             (pts[0] - box.x0) * s,
@@ -84,6 +95,7 @@ class _ShapeTool(Tool):
 
     # ------------------------------------------------------------ gesture
     def press(self, doc: Document, x: float, y: float, ctx: ToolContext) -> Rect | None:
+        self._canvas = (doc.width, doc.height)
         self._start = self._end = (x, y)
         self._overlay = None
         return None
@@ -95,6 +107,8 @@ class _ShapeTool(Tool):
         self._end = (x, y)
         self._overlay = self._render(ctx)
         new = self._overlay_rect()
+        if new is None:
+            return old
         return new.union(old) if old is not None else new
 
     def release(self, doc: Document, x: float, y: float, ctx: ToolContext) -> Command | None:
@@ -113,12 +127,12 @@ class _ShapeTool(Tool):
         region = target.intersect(clip_rect(doc, layer))
         if region.empty:
             return None
-        before = layer.image.copy()
+        before = layer.image.crop(region.box)
         part = layer.image.crop(region.box)
         src = img.crop(region.offset(-target.x0, -target.y0).box)
         part.alpha_composite(src)
         layer.image.paste(part, (region.x0, region.y0))
-        return PatchCommand.capture(self.label, doc, doc.active, region, before)
+        return PatchCommand.from_region(self.label, doc, doc.active, region, before)
 
     def cancel(self, doc: Document) -> Rect | None:
         old = self._overlay_rect()

@@ -116,13 +116,22 @@ class EditorCanvas(QWidget):
         self.history.push(cmd)
         self.changed.emit()
 
+    def cancel_gesture(self) -> None:
+        """Abort a stroke / drag in progress (before undo, crop and other document changes)."""
+        if self._pressed in ("left", "right") and self.tool is not None and self.doc is not None:
+            self._pressed = None
+            self._after_change(self.tool.cancel(self.doc))
+            self.update()
+
     def undo(self) -> None:
+        self.cancel_gesture()
         if self.history and self.history.can_undo:
             self.history.undo()
             self.refresh()
             self.changed.emit()
 
     def redo(self) -> None:
+        self.cancel_gesture()
         if self.history and self.history.can_redo:
             self.history.redo()
             self.refresh()

@@ -319,3 +319,46 @@ def test_registry_has_all_tools():
         "select",
         "crop",
     ]
+
+
+def test_stroke_does_not_copy_whole_layer(monkeypatch):
+    import tracemalloc
+
+    from PIL import Image as PILImage
+
+    doc = Document.new(3000, 3000)
+    sizes = []
+    real_copy = PILImage.Image.copy
+    monkeypatch.setattr(
+        PILImage.Image, "copy", lambda self: sizes.append(self.size) or real_copy(self)
+    )
+    tracemalloc.start()
+    cmd = run_stroke(BrushTool(), doc, [(100, 100), (200, 150)], ctx(BrushOptions(size=20)))
+    _, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    assert (3000, 3000) not in sizes
+    assert peak < 20 * 1024**2
+    assert cmd.rect.width < 200 and cmd.before.getpixel((10, 10))[3] == 0
+    sizes.clear()
+    run_stroke(RectTool(), doc, [(10, 10), (60, 60)], ctx(ShapeOptions()))
+    assert (3000, 3000) not in sizes
+    # fill inside a small hole of an opaque layer: only the hole's area is remembered
+    wall = Document(3000, 3000, [Layer("bg", Image.new("RGBA", (3000, 3000), (0, 0, 0, 255)))])
+    wall.layers[0].image.paste((0, 0, 0, 0), (100, 100, 150, 150))
+    sizes.clear()
+    cmd = run_stroke(FillTool(), wall, [(120, 120), (120, 120)], ctx(FillOptions(tolerance=0)))
+    assert (3000, 3000) not in sizes and cmd.rect == Rect(100, 100, 150, 150)
+
+
+def test_shape_preview_is_bounded_on_large_canvas():
+    doc = Document.new(4000, 3000)
+    tool, c = RectTool(), ctx(ShapeOptions())
+    tool.press(doc, -1000, -1000, c)
+    t = time.perf_counter()
+    tool.move(doc, 5000, 4000, c)
+    elapsed = time.perf_counter() - t
+    img, x, y = tool.preview(doc)
+    assert img.width <= 4000 + 20 and img.height <= 3000 + 20
+    assert elapsed < 1.0
+    tool.release(doc, 5000, 4000, c)
+    assert doc.active_layer.image.getpixel((0, 1500))[3] == 0  # outline is off-canvas

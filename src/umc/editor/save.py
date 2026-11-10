@@ -60,7 +60,8 @@ def save_document(
     if target_id == "ora":
         write_ora(doc, dest)
         return dest
-    with tempfile.TemporaryDirectory(prefix="umc-edit-") as tmp:
+    # The temp folder sits next to dest: os.replace can't move files across drives on Windows.
+    with tempfile.TemporaryDirectory(prefix=".umc-edit-", dir=dest.parent) as tmp:
         job = make_save_job(doc, dest, target_id, option_values, Path(tmp))
         if on_progress is not None:
             job.on_progress = on_progress

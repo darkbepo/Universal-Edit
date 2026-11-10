@@ -109,6 +109,6 @@ def clear_selection(doc: Document) -> Command | None:
     region = clip_rect(doc, layer)
     if region.empty:
         return None
-    before = layer.image.copy()
+    before = layer.image.crop(region.box)
     layer.image.paste(Image.new("RGBA", (region.width, region.height)), (region.x0, region.y0))
-    return PatchCommand.capture("Clear selection", doc, doc.active, region, before)
+    return PatchCommand.from_region("Clear selection", doc, doc.active, region, before)

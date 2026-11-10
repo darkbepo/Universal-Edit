@@ -106,6 +106,7 @@ class TextBox(QPlainTextEdit):
 
 class EditorPage(QWidget):
     back_requested = Signal()
+    save_done = Signal()
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -252,7 +253,7 @@ class EditorPage(QWidget):
             for k in keys if isinstance(keys, tuple) else (keys,):
                 s = QShortcut(QKeySequence(k), self)
                 s.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
-                s.activated.connect(fn)
+                s.activated.connect(lambda f=fn: (self.canvas.cancel_gesture(), f()))
 
         for cls in TOOLS:
             if cls.shortcut != "U":
@@ -586,13 +587,15 @@ class EditorPage(QWidget):
         self._save_thread, self._save_worker = None, None
         self.saving = False
         self._update_buttons()
+        self.save_done.emit()
 
     def _wait_for_save(self) -> bool:
-        if self.saving and self._save_thread is not None:
+        if self.saving:
             loop = QEventLoop()
-            self._save_thread.finished.connect(loop.quit)
+            self.save_done.connect(loop.quit)  # connected first, then checked: no missed signal
             if self.saving:
                 loop.exec()
+            self.save_done.disconnect(loop.quit)
         return self._last_save_ok
 
     # ------------------------------------------------------------ leaving

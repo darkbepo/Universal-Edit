@@ -304,3 +304,24 @@ def test_drop_in_edit_mode_adds_layer(window, media):
     window.handle_drop([str(media / "img1.png")])
     assert len(window.editor.doc.layers) == 2 and window.editor.history.can_undo
     assert len(window.files) == 1  # the converter's list is untouched
+
+
+def test_undo_during_stroke_is_safe(page, qtbot):
+    page.layers.add_button.click()
+    c = page.canvas
+    p = c.image_to_widget(10, 10)
+    qtbot.mousePress(c, Qt.MouseButton.LeftButton, pos=p)
+    c.setFocus()
+    qtbot.keyClick(c, Qt.Key.Key_Z, Qt.KeyboardModifier.ControlModifier)
+    qtbot.mouseMove(c, p + QPoint(20, 0))
+    qtbot.mouseRelease(c, Qt.MouseButton.LeftButton, pos=p + QPoint(20, 0))
+    assert len(page.doc.layers) == 2
+
+
+def test_wait_for_save_waits_until_finished(page):
+    from PySide6.QtCore import QTimer
+
+    page.saving = True
+    QTimer.singleShot(50, page._save_finished)
+    page._wait_for_save()
+    assert not page.saving

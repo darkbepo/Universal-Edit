@@ -93,7 +93,8 @@ class FillTool(Tool):
         if ctx.options.sample_all:
             src = np.asarray(doc.composite(clip.offset(layer.x, layer.y)), dtype=np.uint8)
         else:
-            src = np.asarray(layer.image.crop(clip.box), dtype=np.uint8)
+            whole = clip == Rect(0, 0, *layer.image.size)
+            src = np.asarray(layer.image if whole else layer.image.crop(clip.box), dtype=np.uint8)
         sx, sy = lx - clip.x0, ly - clip.y0
         mask = flood_mask(similar(src, src[sy, sx], ctx.options.tolerance), sx, sy)
         rows, cols = np.flatnonzero(mask.any(axis=1)), np.flatnonzero(mask.any(axis=0))
@@ -101,8 +102,8 @@ class FillTool(Tool):
             return None
         box = Rect(int(cols[0]), int(rows[0]), int(cols[-1]) + 1, int(rows[-1]) + 1)
         region = box.offset(clip.x0, clip.y0)
-        before = layer.image.copy()
-        base = np.asarray(layer.image.crop(region.box), dtype=np.uint8)
+        before = layer.image.crop(region.box)
+        base = np.asarray(before, dtype=np.uint8)
         sub = mask[box.y0 : box.y1, box.x0 : box.x1]
         paste_array(layer.image, paint_mask(base, ctx.color, sub), region)
         self._pending = (doc.active, region, before)
@@ -113,7 +114,7 @@ class FillTool(Tool):
             return None
         idx, region, before = self._pending
         self._pending = None
-        return PatchCommand.capture(self.label, doc, idx, region, before)
+        return PatchCommand.from_region(self.label, doc, idx, region, before)
 
 
 class PickerTool(Tool):

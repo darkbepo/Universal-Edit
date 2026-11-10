@@ -67,6 +67,18 @@ class PatchCommand(Command):
         cmd._origin = (layer.x, layer.y)
         return cmd
 
+    @classmethod
+    def from_region(
+        cls, label: str, doc: Document, layer_index: int, rect: Rect, before: Image.Image
+    ) -> PatchCommand | None:
+        """Like ``capture`` but ``before`` is already just ``rect`` (no whole-layer copy)."""
+        layer = doc.layers[layer_index]
+        if rect.empty:
+            return None
+        cmd = cls(label, layer_index, rect, before, layer.image.crop(rect.box))
+        cmd._origin = (layer.x, layer.y)
+        return cmd
+
     def _apply(self, doc: Document, img: Image.Image) -> None:
         layer = doc.layers[self.layer_index]
         layer.image.paste(img, (self.rect.x0, self.rect.y0))
@@ -173,7 +185,12 @@ class History:
         self.limit_bytes = limit_bytes
         self._undo: list[Command] = []
         self._redo: list[Command] = []
-        self._saved: int | None = 0  # undo-stack length at the last save (None = unreachable)
+        # Each pushed command gets a unique, ever-increasing token; a state is identified by the
+        # token of the command on top of the undo stack (``_base`` when it is empty).
+        self._next_token = 1
+        self._tokens: dict[int, int] = {}  # id(command) → token
+        self._base = 0
+        self._saved: int | None = 0
         self._sync_dirty()
 
     @property
@@ -193,29 +210,31 @@ class History:
         return self._redo[-1].label if self._redo else ""
 
     def _sync_dirty(self) -> None:
-        self.doc.dirty = self._saved != len(self._undo)
+        self.doc.dirty = self._saved != self.position
 
     @property
     def position(self) -> int:
         """Token for the current state; pass it to ``mark_saved`` when a save started earlier."""
-        return len(self._undo)
+        return self._tokens[id(self._undo[-1])] if self._undo else self._base
 
     def mark_saved(self, position: int | None = None) -> None:
-        self._saved = len(self._undo) if position is None else position
+        self._saved = self.position if position is None else position
         self._sync_dirty()
 
     def push(self, cmd: Command | None) -> None:
         if cmd is None:
             return
-        if self._saved is not None and self._saved > len(self._undo):
-            self._saved = None  # the saved state was on the redo branch being discarded
+        for old in self._redo:
+            self._tokens.pop(id(old), None)
         self._redo.clear()
         self._undo.append(cmd)
+        self._tokens[id(cmd)] = self._next_token
+        self._next_token += 1
         total = sum(c.nbytes for c in self._undo)
         while len(self._undo) > 1 and total > self.limit_bytes:
-            total -= self._undo.pop(0).nbytes
-            if self._saved is not None:
-                self._saved = self._saved - 1 if self._saved > 0 else None
+            dropped = self._undo.pop(0)
+            total -= dropped.nbytes
+            self._base = self._tokens.pop(id(dropped))  # the bottom state is now "after dropped"
         self._sync_dirty()
 
     def undo(self) -> Rect | None:

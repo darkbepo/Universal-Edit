@@ -1,5 +1,7 @@
 """Saving an edited document: .ora keeps layers, every other format via the image converter."""
 
+from pathlib import Path
+
 import pytest
 from PIL import Image
 
@@ -79,3 +81,23 @@ def test_selftest_editor_step(tmp_path):
     paths = _editor_check(tmp_path)
     assert [p.suffix for p in paths] == [".ora", ".png", ".jpg"]
     assert all(p.exists() for p in paths)
+
+
+def test_save_moves_within_destination_folder(tmp_path, monkeypatch):
+    """os.replace can't cross drives on Windows: the converter output must be made next to dest."""
+    import os
+
+    import umc.editor.save as save_mod
+
+    dest_dir = tmp_path / "other-drive"
+    dest_dir.mkdir()
+    real = os.replace
+
+    def same_drive_only(src, dst):
+        if dest_dir not in Path(src).resolve().parents:
+            raise OSError(17, "The system cannot move the file to a different disk drive")
+        return real(src, dst)
+
+    monkeypatch.setattr(save_mod.os, "replace", same_drive_only)
+    out = save_document(_doc(), dest_dir / "x.png", "png")
+    assert out.exists() and sorted(p.name for p in dest_dir.iterdir()) == ["x.png"]
