@@ -252,7 +252,7 @@ test("nextImageName", () => { /* empty map → "img/1.png"; after img/1.png and 
     - txt (UTF-8, falling back to windows-1252; NBSP rule), md (front matter + `W_MDEXTRA` / `W_MDFORMAT`), html (`htmlTitle` + report warnings), docx (`readDocx`), odt/rtf (`convert(…, "docx")` then `readDocx`, `sourceFormat` kept, `template = null`);
     - the `MAX_CHARS` check comes after.
   - `SAVE_FORMATS: [ext, label][]` = docx "Word (DOCX)", odt "OpenDocument (ODT)", rtf "Rich Text (RTF)", pdf "PDF", md "Markdown", txt "Plain text (TXT)", html "Web page (HTML)".
-  - `saveDocument(content: SaveContent, fmt: string, stem: string, convert: Convert): Promise<Blob[] | Blob>`:
+  - `saveDocument(content: SaveContent, fmt: string, stem: string, convert: Convert): Promise<{ blob: Blob; name: string }>` (`name` is the download name, e.g. `stem.docx`, or `stem.zip` for Markdown with pictures):
     - docx → `writeDocx(…, content.template)`;
     - html → the standalone page with `data:` pictures and `content.title || stem`;
     - md → front matter + `toMarkdown`. Pictures: the browser can't write a sibling folder, so **md with pictures is saved as a ZIP** (`stem.md` + `stem_files/N.ext`). The download is `stem.zip`, and the page says so;
