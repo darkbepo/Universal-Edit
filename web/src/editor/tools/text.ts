@@ -127,10 +127,12 @@ function watermark(glyphs: Decoded, [w, h]: [number, number]): Decoded {
   return { data: out, width: w, height: h };
 }
 
+const autoName = (spec: TextSpec) => spec.text.trim().split("\n")[0].slice(0, 30);
+
 function textLayer(doc: EditorDoc, raster: Rasterizer, spec: TextSpec, x: number, y: number): Layer {
   const [img, ox, oy] = renderSpec(raster, spec, [doc.width, doc.height]);
   const s: TextSpec = { ...spec, ox, oy };
-  const name = spec.text.trim().split("\n")[0].slice(0, 30);
+  const name = autoName(spec);
   if (spec.watermark) return makeLayer(name, img.width, img.height, img.data, { opacity: WATERMARK_OPACITY, text: s });
   return makeLayer(name, img.width, img.height, img.data, { x: Math.floor(x) - ox, y: Math.floor(y) - oy, text: s });
 }
@@ -162,7 +164,28 @@ export function editTextLayer(doc: EditorDoc, raster: Rasterizer, index: number,
   if (!spec.text.trim()) return ops.deleteLayers(doc, [index]);
   const [x, y] = anchorOf(old);
   const fresh = textLayer(doc, raster, spec, x, y);
-  return ops.replaceLayer(doc, index, "Edit text", spec.watermark ? fresh : withProps(fresh, { opacity: old.opacity }));
+  // keep what the user set on the layer: name (unless it was the automatic one), visibility, mask
+  const oldSpec = old.text as TextSpec | null | undefined;
+  const renamed = !!oldSpec && old.name !== autoName(oldSpec);
+  const keepMask = !!old.mask && fresh.width === old.width && fresh.height === old.height;
+  return ops.replaceLayer(doc, index, "Edit text", withProps(fresh, {
+    name: renamed ? old.name : fresh.name,
+    opacity: spec.watermark ? fresh.opacity : old.opacity,
+    visible: old.visible,
+    mask: keepMask ? old.mask : null,
+  }));
+}
+
+/** True when text layer `index` was changed with other tools since it was drawn (editing the
+ *  text draws it again, so those changes would go). Same as painted_over in text.py. */
+export function paintedOver(doc: EditorDoc, raster: Rasterizer, index: number): boolean {
+  const l = doc.layers[index];
+  const spec = l.text as TextSpec | null | undefined;
+  if (!spec) return false;
+  const [img] = renderSpec(raster, spec, [doc.width, doc.height]);
+  if (img.width !== l.width || img.height !== l.height) return true;
+  for (let k = 0; k < img.data.length; k++) if (img.data[k] !== l.data[k]) return true;
+  return false;
 }
 
 /** The topmost visible (non-watermark) text layer under (x, y), or null. */

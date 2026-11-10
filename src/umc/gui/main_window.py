@@ -545,6 +545,8 @@ class MainWindow(QMainWindow):
         if self.stack.currentIndex() == 1 and not self.editor.maybe_leave():
             event.ignore()
             return
+        if self.editor is not None:
+            self.editor.stop_background_removal()
         if self._worker is not None:
             self._worker.cancel()
             if self._thread is not None:

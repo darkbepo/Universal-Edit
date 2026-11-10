@@ -17,7 +17,7 @@ import { canvasPng, canvasRasterizer, decodeBlob, type Decoded } from "../../edi
 import type { Tool, ToolContext } from "../../editor/tools/base";
 import { makeTools } from "../../editor/tools/index";
 import { clearSelection, deselect, selectAll } from "../../editor/tools/select";
-import { addTextLayer, anchorOf, editTextLayer, makeSpec, textLayerAt, type TextSpec } from "../../editor/tools/text";
+import { addTextLayer, anchorOf, editTextLayer, paintedOver, makeSpec, textLayerAt, type TextSpec } from "../../editor/tools/text";
 import type { ConversionClient } from "../../worker/client";
 import * as effects from "../../editor/effects";
 import type { Effect } from "../../editor/effects";
@@ -667,6 +667,7 @@ export class EditorPage {
       editing = textLayerAt(this.doc, x, y); // a click on a text layer edits it
       if (editing !== null) [x, y] = anchorOf(this.doc.layers[editing]);
     }
+    if (editing !== null && this.doc && paintedOver(this.doc, canvasRasterizer, editing) && !confirm("This text layer was painted on or changed since it was typed. Editing the text draws it again, and those changes will be lost (Undo brings them back). Edit it anyway?")) return;
     this.editingText = editing;
     const textTool = this.tools.find((t) => t.id === "text") as Tool;
     if (editing !== null && this.doc) {

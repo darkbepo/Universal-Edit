@@ -40,6 +40,7 @@ from umc.editor.tools.text import (
     add_text_layer,
     anchor_of,
     edit_text_layer,
+    painted_over,
     text_layer_at,
 )
 from umc.gui import theme
@@ -186,6 +187,7 @@ class EditorPage(QWidget):
         self._save_thread: QThread | None = None
         self._bg_thread: QThread | None = None
         self._bg_worker: _BackgroundWorker | None = None
+        self._bg_cancel: threading.Event | None = None
         self._save_worker: _SaveWorker | None = None
         self._last_save: tuple[Path, str, dict] | None = None
         self._last_save_ok = False
@@ -754,6 +756,16 @@ class EditorPage(QWidget):
             editing = text_layer_at(self.doc, x, y)
             if editing is not None:
                 x, y = anchor_of(self.doc.layers[editing])
+        if editing is not None and painted_over(self.doc, editing):
+            answer = QMessageBox.question(
+                self,
+                "Edit the text again?",
+                "This text layer was painted on or changed since it was typed. Editing the text "
+                "draws it again, and those changes will be lost (Undo brings them back).",
+                QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
+            )
+            if answer != QMessageBox.StandardButton.Ok:
+                return
         self._editing = editing
         if editing is not None:
             self._load_text_style(self.doc.layers[editing].text)
@@ -925,6 +937,8 @@ class EditorPage(QWidget):
         dlg = QProgressDialog("Removing the background…", "Cancel", 0, 100, self)
         dlg.setWindowTitle("Remove background")
         dlg.setMinimumDuration(300)
+        dlg.setAutoReset(False)  # the download reaching 100 % mustn't close it before the analysis
+        dlg.setAutoClose(False)
         dlg.setWindowModality(Qt.WindowModality.WindowModal)
         dlg.canceled.connect(cancel.set)
         thread = QThread(self)
@@ -959,8 +973,18 @@ class EditorPage(QWidget):
         worker.succeeded.connect(thread.quit)
         worker.failed.connect(thread.quit)
         thread.finished.connect(self._bg_finished)
-        self._bg_thread, self._bg_worker = thread, worker
+        self._bg_thread, self._bg_worker, self._bg_cancel = thread, worker, cancel
         thread.start()
+
+    def stop_background_removal(self) -> None:
+        """Cancel a running background removal and wait for its thread (before closing)."""
+        thread = self._bg_thread
+        if thread is None:
+            return
+        if self._bg_cancel is not None:
+            self._bg_cancel.set()
+        thread.quit()
+        thread.wait(30_000)  # a download notices the cancel within a moment; inference ends
 
     def _bg_finished(self) -> None:
         # References are kept until QThread.finished (see CLAUDE.md).

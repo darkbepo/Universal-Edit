@@ -172,3 +172,11 @@ def test_background_blur_needs_a_selection(soften):
     assert (
         effects.apply_to_document(doc, filters.BackgroundBlur(3, soften), "Background blur") is None
     )
+
+
+def test_background_blur_with_everything_selected_changes_nothing():
+    from umc.editor.geometry import Rect
+
+    doc = Document(10, 10, [Layer("photo", Image.new("RGBA", (10, 10), (9, 9, 9, 255)))])
+    doc.selection = Rect(0, 0, 10, 10)
+    assert effects.apply_to_document(doc, filters.BackgroundBlur(3, 0), "Background blur") is None

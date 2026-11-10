@@ -55,3 +55,31 @@ def test_subject_mask_finds_the_subject():
     m = bgremove.subject_mask(img, model=Path(MODEL))
     assert m.size == img.size and m.mode == "L"
     assert m.getpixel((200, 150)) > 200 and m.getpixel((20, 20)) < 50
+
+
+def test_a_failed_or_cancelled_download_leaves_nothing(tmp_path, monkeypatch):
+    import threading
+
+    from umc.core.errors import ConversionCancelled, ConversionError
+    from umc.tools import installer
+
+    monkeypatch.setenv("UMC_TOOLS_DIR", str(tmp_path))
+    part = bgremove.model_path().with_suffix(".part")
+
+    def broken(url, dest, **kw):
+        dest.write_bytes(b"half")
+        raise ConnectionResetError("reset")
+
+    monkeypatch.setattr(installer, "download", broken)
+    with pytest.raises(ConversionError, match="internet connection"):
+        bgremove.ensure_model(lambda f, m: None, threading.Event())
+    assert not part.exists()
+
+    def cancelled(url, dest, **kw):
+        dest.write_bytes(b"half")
+        raise ConversionCancelled()
+
+    monkeypatch.setattr(installer, "download", cancelled)
+    with pytest.raises(ConversionCancelled):
+        bgremove.ensure_model(lambda f, m: None, threading.Event())
+    assert not part.exists()

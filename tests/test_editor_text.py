@@ -111,3 +111,28 @@ def test_text_stays_editable_through_an_ora_file(tmp_path):
     spec = back.layers[1].text
     assert spec is not None and spec.text == "Saved" and spec.box_color == RED and spec.outline == 3
     assert back.layers[0].text is None
+
+
+def test_editing_text_keeps_mask_visibility_and_a_chosen_name():
+    from umc.editor.tools.text import painted_over
+
+    doc = _doc()
+    h = History(doc)
+    h.push(_add(doc, "Hello"))
+    i = doc.active
+    assert not painted_over(doc, i)
+    la = doc.layers[i]
+    doc.layers[i] = replace(
+        la, name="Title", visible=False, mask=Image.new("L", la.image.size, 100)
+    )
+    h.push(edit_text_layer(doc, i, replace(la.text, text="Hello")))
+    e = doc.layers[i]
+    assert e.name == "Title" and not e.visible and e.mask.getpixel((0, 0)) == 100
+    e.image.putpixel((0, 0), (1, 2, 3, 255))  # painted on
+    assert painted_over(doc, i)
+
+
+def test_a_damaged_text_attribute_keeps_the_pixels():
+    from umc.editor.ora import _text_spec
+
+    assert _text_spec("[1]") is None and _text_spec("5") is None and _text_spec("{bad") is None

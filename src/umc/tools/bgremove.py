@@ -66,6 +66,16 @@ def ensure_model(progress: Callable[[float, str], None], cancel_event: threading
             "Check your internet connection and try again.",
             details=exc.details,
         ) from exc
+    except OSError as exc:  # the connection dropped part-way
+        part.unlink(missing_ok=True)
+        raise ConversionError(
+            "Couldn't download the background-removal model. "
+            "Check your internet connection and try again.",
+            details=str(exc),
+        ) from exc
+    except BaseException:  # cancelled: don't leave ~179 MB behind
+        part.unlink(missing_ok=True)
+        raise
     part.replace(dest)
     return dest
 

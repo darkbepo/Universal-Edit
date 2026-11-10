@@ -6,7 +6,7 @@ import { History } from "../src/editor/history";
 import * as ops from "../src/editor/ops";
 import { readOra, writeOra } from "../src/editor/ora";
 import type { Decoded, FontSpec, Rasterizer } from "../src/editor/raster";
-import { addTextLayer, anchorOf, editTextLayer, makeSpec, renderSpec, textLayerAt, turn, type TextSpec } from "../src/editor/tools/text";
+import { addTextLayer, anchorOf, editTextLayer, makeSpec, renderSpec, textLayerAt, paintedOver, turn, type TextSpec } from "../src/editor/tools/text";
 import { fakePng } from "./editor-ora.test";
 import { stubRaster } from "./editor-shapes.test";
 
@@ -95,5 +95,23 @@ describe("text v2", () => {
     const t = back.layers[1].text as TextSpec;
     expect([t.text, t.outline, t.box_color]).toEqual(["Saved", 3, [255, 0, 0, 255]]);
     expect(back.layers[0].text ?? null).toBeNull();
+  });
+});
+
+describe("editing a changed text layer", () => {
+  it("keeps the mask, visibility and a chosen name; notices paint", () => {
+    const d = doc();
+    const h = new History(d);
+    h.push(addTextLayer(d, blocks, spec("Hello"), 50, 40));
+    const i = d.active;
+    expect(paintedOver(d, blocks, i)).toBe(false);
+    const l = d.layers[i];
+    const mask = new Uint8ClampedArray(l.width * l.height * 4).fill(100);
+    d.layers[i] = { ...l, name: "Title", visible: false, mask };
+    h.push(editTextLayer(d, blocks, i, l.text as TextSpec));
+    const e = d.layers[i];
+    expect([e.name, e.visible, e.mask?.[0]]).toEqual(["Title", false, 100]);
+    e.data[0] = 7;
+    expect(paintedOver(d, blocks, i)).toBe(true);
   });
 });

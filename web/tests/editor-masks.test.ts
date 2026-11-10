@@ -163,6 +163,11 @@ describe("background blur", () => {
     expect(Array.from(d.layers[0].data)).toEqual(Array.from(before));
   });
 
+  it("does nothing when everything is selected", () => {
+    const d: EditorDoc = { width: 10, height: 10, active: 0, selection: new Rect(0, 0, 10, 10), dirty: false, layers: [makeLayer("photo", 10, 10, solid(10, 10, [9, 9, 9, 255]))] };
+    expect(effects.applyToDocument(d, filters.backgroundBlur(3, 0), "Background blur")).toBeNull();
+  });
+
   it("does nothing without a selection", () => {
     const d: EditorDoc = { width: 10, height: 10, active: 0, selection: null, dirty: false, layers: [makeLayer("photo", 10, 10, solid(10, 10, [9, 9, 9, 255]))] };
     expect(effects.applyToDocument(d, filters.backgroundBlur(3, 4), "Background blur")).toBeNull();

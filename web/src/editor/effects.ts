@@ -103,6 +103,7 @@ function scoped<T>(doc: EditorDoc, effect: Effect, fn: (ok: boolean) => T): T {
   const saved: [typeof doc.selection, typeof doc.selectionMask] = [doc.selection, doc.selectionMask];
   try {
     sel.invert(doc);
+    if (!doc.selection) return fn(false); // everything was selected: nothing around the subject
     if (soften > 0) sel.feather(doc, soften);
     return fn(true);
   } finally {

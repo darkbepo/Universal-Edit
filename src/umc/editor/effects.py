@@ -54,6 +54,9 @@ def _scope(doc: Document, effect: Effect):
     saved = (doc.selection, doc.selection_mask)
     try:
         sel.invert(doc)
+        if doc.selection is None:  # everything was selected: nothing around the subject
+            yield False
+            return
         if soften > 0:
             sel.feather(doc, soften)
         yield True

@@ -28,7 +28,8 @@ def _text_spec(raw: str | None):
     from umc.editor.tools.text import TextSpec
 
     try:
-        return TextSpec.from_dict(json.loads(raw))
+        d = json.loads(raw)
+        return TextSpec.from_dict(d) if isinstance(d, dict) else None
     except (ValueError, TypeError):
         return None  # a damaged or newer attribute: keep the pixels, lose the editing
 

@@ -173,10 +173,14 @@ def _watermark(glyphs: Image.Image, canvas: tuple[int, int]) -> Image.Image:
     return out
 
 
+def _auto_name(spec: TextSpec) -> str:
+    return spec.text.strip().splitlines()[0][:30]
+
+
 def _text_layer(doc: Document, spec: TextSpec, x: float, y: float) -> Layer:
     img, ox, oy = render_spec(spec, (doc.width, doc.height))
     spec = replace(spec, ox=ox, oy=oy)
-    name = spec.text.strip().splitlines()[0][:30]
+    name = _auto_name(spec)
     if spec.watermark:
         return Layer(name, img, 0, 0, WATERMARK_OPACITY, text=spec)
     return Layer(name, img, x=math.floor(x) - ox, y=math.floor(y) - oy, text=spec)
@@ -223,8 +227,30 @@ def edit_text_layer(doc: Document, index: int, spec: TextSpec) -> Command | None
         return ops.delete_layers(doc, [index])
     x, y = anchor_of(old)
     new = _text_layer(doc, spec, x, y)
-    new = replace(new, name=new.name, opacity=old.opacity if not spec.watermark else new.opacity)
+    renamed = old.text is not None and old.name != _auto_name(old.text)
+    keep_mask = old.mask is not None and old.mask.size == new.image.size
+    new = replace(
+        new,
+        name=old.name if renamed else new.name,
+        opacity=old.opacity if not spec.watermark else new.opacity,
+        visible=old.visible,
+        mask=old.mask if keep_mask else None,
+    )
     return ops._replace(doc, index, "Edit text", new)
+
+
+def painted_over(doc: Document, index: int) -> bool:
+    """True when text layer ``index`` was changed with other tools since it was drawn (editing
+    the text draws it again, so those changes would go)."""
+    from PIL import ImageChops
+
+    layer = doc.layers[index]
+    if layer.text is None:
+        return False
+    img, ox, oy = render_spec(layer.text, (doc.width, doc.height))
+    if img.size != layer.image.size:
+        return True
+    return ImageChops.difference(img, layer.image).getbbox() is not None
 
 
 def text_layer_at(doc: Document, x: float, y: float) -> int | None:
