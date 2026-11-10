@@ -34,6 +34,7 @@ _FIRST = [
 ]
 _HTML_SRC = re.compile(r'(\bsrc=")(img/[\w.-]+)(")')
 _MD_LINK = re.compile(r'((?<!\\)\]\()(img/[\w.-]+)((?:\s+"[^"]*")?\))')
+_MD_IMG = re.compile(r'(<img src=")(img/[\w.-]+)(")')  # sized pictures (raw HTML)
 _OURS = re.compile(r"^\d+\.(png|jpg|gif|bmp|webp)$")
 _MIME = {"jpg": "jpeg", "png": "png", "gif": "gif", "bmp": "bmp", "webp": "webp"}
 
@@ -120,14 +121,13 @@ def _build(
         return out
     if fmt == "md":
         link = quote(files_name, safe="()")
-        text = _MD_LINK.sub(
-            lambda m: (
-                f"{m.group(1)}{link}/{m.group(2).removeprefix('img/')}{m.group(3)}"
-                if m.group(2) in content.images
-                else m.group(0)
-            ),
-            to_markdown(content.html),
-        )
+
+        def to_folder(m: re.Match) -> str:
+            if m.group(2) not in content.images:
+                return m.group(0)
+            return f"{m.group(1)}{link}/{m.group(2).removeprefix('img/')}{m.group(3)}"
+
+        text = _MD_IMG.sub(to_folder, _MD_LINK.sub(to_folder, to_markdown(content.html)))
         if content.front_matter:  # kept exactly as it was read
             front = content.front_matter
             text = front + ("" if front.endswith("\n") else "\n") + ("\n" + text if text else "")

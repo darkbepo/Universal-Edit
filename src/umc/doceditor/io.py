@@ -20,6 +20,7 @@ from umc.doceditor.types import (
     MAX_FILE_BYTES,
     TOO_LARGE,
     W_MDEXTRA,
+    W_MDFORMAT,
     OpenedDocument,
 )
 from umc.tools.htmlpdf import read_text
@@ -30,7 +31,13 @@ MD_EXTENSIONS = ["tables", "fenced_code", "sane_lists"]  # md_writer writes what
 _LONE_EMPTY_ROW = re.compile(r"</thead>\s*<tbody>\s*<tr>\s*(?:<td></td>\s*)+</tr>\s*</tbody>")
 NBSP = "\xa0"
 # Fenced code blocks and `code spans`: their text is never Markdown syntax.
-_CODE = re.compile(r"^ {0,3}(`{3,}|~{3,})[^\n]*\n.*?^ {0,3}\1[^\n]*$|`[^`\n]*`", re.M | re.S)
+_FENCED = re.compile(r"^ {0,3}(`{3,}|~{3,})[^\n]*\n.*?^ {0,3}\1[^\n]*$", re.M | re.S)
+_CODE_SPAN = re.compile(r"(?<!\\)`[^`\n]+`")
+_FOOTNOTE = re.compile(r"(?<!\\)\[\^")
+# What the editor can't show and Markdown saving drops (W_MDFORMAT).
+_SMALL_HEADING = re.compile(r"^ {0,3}#{4,6}(?:[ \t]|$)", re.M)
+_ALT_TEXT = re.compile(r"(?<!\\)!\[[^\]\n]+\]\(")
+_FRONT_KEY = re.compile(r"^[A-Za-z0-9_-]+\s*:")
 # A line that starts a block of raw HTML (Python-Markdown's block-level tags; not comments).
 _BLOCK_HTML = re.compile(
     r"^ {0,3}</?(?:address|article|aside|blockquote|details|div|dl|fieldset|figcaption|figure"
@@ -49,10 +56,11 @@ def _keep_spaces(line: str) -> str:
 
 
 def split_front_matter(text: str) -> tuple[str, str]:
-    """(front matter, rest): a first line "---" up to a later "---" / "..." line, verbatim."""
+    """(front matter, rest): a first line "---", then a "key:" line, up to a later "---" /
+    "..." line, verbatim. Anything else is ordinary Markdown."""
     lines = text.splitlines(keepends=True)
-    if not lines or lines[0].rstrip() != "---":
-        return "", text
+    if len(lines) < 3 or lines[0].rstrip() != "---" or not _FRONT_KEY.match(lines[1]):
+        return "", text  # e.g. a document that starts with a horizontal rule
     for i in range(1, len(lines)):
         if lines[i].rstrip() in ("---", "..."):
             front = "".join(lines[: i + 1]).replace("\r\n", "\n")  # saved with "\n" like the rest
@@ -62,8 +70,14 @@ def split_front_matter(text: str) -> tuple[str, str]:
 
 def _has_markdown_extras(text: str) -> bool:
     """Footnotes or block-level raw HTML, outside code."""
-    text = _CODE.sub("", text)
-    return "[^" in text or _BLOCK_HTML.search(text) is not None
+    text = _CODE_SPAN.sub("", _FENCED.sub("", text))
+    return _FOOTNOTE.search(text) is not None or _BLOCK_HTML.search(text) is not None
+
+
+def _has_dropped_formats(text: str) -> bool:
+    """Inline code spans, level 4-6 headings or picture descriptions, outside fenced code."""
+    text = _FENCED.sub("", text)
+    return any(r.search(text) for r in (_CODE_SPAN, _SMALL_HEADING, _ALT_TEXT))
 
 
 def _txt_to_html(text: str) -> str:
@@ -89,6 +103,8 @@ def open_document(path: Path, cancel_event: threading.Event | None = None) -> Op
         out, images, warnings = normalise_html_report(body, base_dir=path.parent)
         if _has_markdown_extras(text):
             warnings.append(W_MDEXTRA)
+        if _has_dropped_formats(text):
+            warnings.append(W_MDFORMAT)
         doc = OpenedDocument(out, images, "md", warnings, front_matter=front)
     elif ext == "txt":
         doc = OpenedDocument(_txt_to_html(read_text(path)), {}, "txt")

@@ -36,6 +36,8 @@ def _escape(text: str, table: bool) -> str:
             out.append(_ALWAYS[c])
         elif c in _ENTITIES:
             out.append(_ENTITIES[c])
+        elif c == "\t":  # Markdown would read a raw tab as spaces
+            out.append("&#9;")
         elif c == "|" and table:
             out.append("\\|")
         else:
@@ -82,6 +84,13 @@ class _Inline:
         if tag == "br":
             return "<br>"
         if tag == "img":
+            if node.get("width") or node.get("height"):  # Markdown has no size: raw HTML
+                attrs = "".join(
+                    f' {k}="{_html.escape(node.get(k) or "", quote=True)}"'
+                    for k in ("src", "width", "height")
+                    if node.get(k)
+                )
+                return f"<img{attrs}>"
             return f"![]({_link_target(node.get('src') or '')})"
         inner = self._children(node)
         if tag in ("b", "i"):
