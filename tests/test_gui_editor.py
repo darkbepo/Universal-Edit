@@ -1057,3 +1057,25 @@ def test_layer_menu_edit_text(page, qtbot):
     actions["Edit text…"].trigger()
     assert page.tool.id == "text" and page.text_box.toPlainText() == "Menu"
     page.commit_text()
+
+
+def test_stickers_dialog_adds_a_layer(page, qtbot, monkeypatch):
+    from umc.editor.stickers import STICKERS
+    from umc.gui.editor.dialogs import StickersDialog
+
+    dlg = StickersDialog(page)
+    qtbot.addWidget(dlg)
+    assert set(dlg.tiles) == set(STICKERS) and not dlg.ok.isEnabled()
+    qtbot.mouseClick(dlg.tiles["heart"], Qt.MouseButton.LeftButton)
+    assert dlg.chosen() == "heart" and dlg.ok.isEnabled()
+
+    def ok(self):
+        self.tiles["star"].setChecked(True)
+        self.size.setValue(30)
+        return 1
+
+    monkeypatch.setattr(StickersDialog, "exec", ok)
+    n = len(page.doc.layers)
+    page.run_op("stickers")
+    assert len(page.doc.layers) == n + 1
+    assert page.doc.active_layer.image.size == (30, 30)

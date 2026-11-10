@@ -175,6 +175,19 @@ export class EraserTool extends StrokeTool {
   ];
 }
 
+/** A broad see-through marker: crossing your own stroke doesn't darken it. */
+export class HighlighterTool extends StrokeTool {
+  readonly id = "highlighter";
+  readonly label = "Highlighter";
+  readonly shortcut = "H";
+  protected readonly erase = false;
+  override readonly options = [
+    opt.slider("size", "Size", 24, 2, 300, { unit: "px" }),
+    opt.slider("hardness", "Hardness", 90, 0, 100, { unit: "%" }),
+    opt.slider("opacity", "Strength", 40, 5, 100, { unit: "%" }),
+  ];
+}
+
 /** Paints the active layer's mask: left button hides (black), right button shows (white). */
 export class MaskBrushTool extends StrokeTool {
   readonly id = "mask_brush";

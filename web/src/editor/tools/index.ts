@@ -4,21 +4,23 @@ import type { Tool } from "./base";
 import { FillTool, PickerTool } from "./fill";
 import { GradientTool } from "./gradient";
 import { MoveTool } from "./move";
-import { BrushTool, EraserTool, MaskBrushTool } from "./paint";
+import { BrushTool, EraserTool, HighlighterTool, MaskBrushTool } from "./paint";
 import { CropTool, EllipseSelectTool, LassoTool, MagicWandTool, PolygonLassoTool, SelectTool } from "./select";
-import { EllipseTool, LineTool, RectTool } from "./shapes";
+import { ArrowTool, EllipseTool, LineTool, RectTool } from "./shapes";
 import { TextTool } from "./text";
 
 export function makeTools(raster: Rasterizer): Tool[] {
   return [
     new MoveTool(),
     new BrushTool(),
+    new HighlighterTool(),
     new EraserTool(),
     new MaskBrushTool(),
     new FillTool(),
     new GradientTool(),
     new PickerTool(),
     new LineTool(raster),
+    new ArrowTool(raster),
     new RectTool(raster),
     new EllipseTool(raster),
     new TextTool(),

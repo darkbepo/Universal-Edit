@@ -5,6 +5,9 @@ import { ANCHORS, type Anchor, type Resample } from "../../editor/ops";
 import { asEffect, autoLevels as autoLevelsOf, curveTable, histogram as histogramOf, IDENTITY_CURVE, levelsIdentity, NEUTRAL_LEVELS, type Adjustments, type Channel, type Levels } from "../../editor/adjust";
 import type { Effect } from "../../editor/effects";
 import * as filters from "../../editor/filters";
+import type { RGBA } from "../../editor/layer";
+import type { Rasterizer } from "../../editor/raster";
+import { renderSticker, STICKERS } from "../../editor/stickers";
 import { SettingsForm } from "../settings";
 import { h } from "./panels";
 
@@ -566,6 +569,29 @@ export async function featherDialog(): Promise<number | null> {
   const r = num("Radius", 5, 1, 250, "px");
   const res = await modal("feather", "Feather selection", [r.row], "Apply", () => Math.max(0.5, +r.input.value || 0));
   return res?.value ?? null;
+}
+
+/** Pick a built-in sticker and its size (it becomes a new layer in the middle of the view). */
+export async function stickersDialog(raster: Rasterizer, side: number, front: RGBA, back: RGBA): Promise<{ name: string; size: number } | null> {
+  const TILE = 64;
+  let chosen = "";
+  const tiles = new Map<string, HTMLButtonElement>();
+  const grid = h("div", { class: "look-grid", role: "radiogroup", ariaLabel: "Stickers" });
+  for (const [name, def] of Object.entries(STICKERS)) {
+    const c = h("canvas", { width: TILE, height: TILE, class: "look-thumb" });
+    (c.getContext("2d") as CanvasRenderingContext2D).putImageData(new ImageData(renderSticker(raster, name, TILE, front, back) as Uint8ClampedArray<ArrayBuffer>, TILE, TILE), 0, 0);
+    const b = h("button", { type: "button", class: "look-tile sticker-tile", role: "radio", ariaLabel: def.label }, c, h("span", {}, def.label));
+    b.setAttribute("aria-checked", "false");
+    b.addEventListener("click", () => {
+      chosen = name;
+      for (const [n, t] of tiles) t.setAttribute("aria-checked", String(n === name));
+    });
+    tiles.set(name, b);
+    grid.append(b);
+  }
+  const size = num("Size", Math.max(16, Math.floor(side / 4)), 8, 4000, "px");
+  const res = await modal("stickers", "Stickers", [grid, size.row], "Add", () => ({ name: chosen, size: Math.max(8, Math.round(+size.input.value || 0)) }));
+  return res && res.value.name ? res.value : null;
 }
 
 export function backgroundBlurDialog(host: AdjustHost): Promise<Effect | null> {

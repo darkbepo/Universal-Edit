@@ -501,3 +501,23 @@ def invert_mask(doc: Document, index: int | None = None) -> Command | None:
         return None
     flipped = Image.eval(layer.mask, lambda v: 255 - v)
     return _replace(doc, i, "Invert layer mask", replace(layer, mask=flipped))
+
+
+# ------------------------------------------------------------------ stickers
+
+
+def add_sticker(
+    doc: Document,
+    name: str,
+    size: int,
+    center: tuple[float, float],
+    front=(0, 0, 0, 255),
+    back=(255, 255, 255, 255),
+) -> Command:
+    """Sticker ``name`` as a new layer centred on ``center`` (canvas coordinates)."""
+    from umc.editor.stickers import STICKERS, render_sticker
+
+    img = render_sticker(name, max(8, size), front, back)
+    x, y = round(center[0] - img.width / 2), round(center[1] - img.height / 2)
+    layer = Layer(unique_name(doc, STICKERS[name]["label"]), img, x=x, y=y)
+    return add_layers(doc, [layer], "Sticker")

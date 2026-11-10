@@ -108,6 +108,18 @@ def tool_icon(tool_id: str, color: str) -> QIcon:
         p.drawLine(QPointF(12, 36), QPointF(10, 38))
     elif tool_id == "line":
         p.drawLine(QPointF(10, 38), QPointF(38, 10))
+    elif tool_id == "arrow":
+        p.drawLine(QPointF(10, 38), QPointF(34, 14))
+        p.setBrush(c)
+        p.drawPolygon([QPointF(39, 9), QPointF(24, 14), QPointF(34, 24)])
+    elif tool_id == "highlighter":
+        hl = QColor(color)
+        hl.setAlphaF(0.45)
+        p.setPen(QPen(hl, 10, Qt.PenStyle.SolidLine, Qt.PenCapStyle.FlatCap))
+        p.drawLine(QPointF(8, 34), QPointF(40, 34))
+        p.setPen(pen)
+        p.drawPolygon([QPointF(18, 28), QPointF(30, 8), QPointF(38, 13), QPointF(26, 32)])
+        p.drawLine(QPointF(18, 28), QPointF(16, 34))
     elif tool_id == "rect":
         p.drawRoundedRect(QRectF(10, 13, 28, 22), 2, 2)
     elif tool_id == "ellipse":

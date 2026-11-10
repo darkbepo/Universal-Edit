@@ -10,6 +10,7 @@ import type { RGBA } from "../../editor/layer";
 import { loadLayers, openFiles, type OpenSource } from "../../editor/open";
 import * as ops from "../../editor/ops";
 import { writeOra } from "../../editor/ora";
+import { addSticker } from "../../editor/stickers";
 import { canvasPng, canvasRasterizer, decodeBlob, type Decoded } from "../../editor/raster";
 import type { Tool, ToolContext } from "../../editor/tools/base";
 import { makeTools } from "../../editor/tools/index";
@@ -20,7 +21,7 @@ import * as effects from "../../editor/effects";
 import type { Effect } from "../../editor/effects";
 import * as clipboard from "../../editor/clipboard";
 import { EditorCanvas } from "./canvas";
-import { backgroundBlurDialog, blurDialog, canvasSizeDialog, featherDialog, curvesDialog, levelsDialog, looksDialog, quickFixDialog, resizeDialog, saveDialog, sharpenDialog, shortcutsDialog, type AdjustHost } from "./dialogs";
+import { backgroundBlurDialog, blurDialog, canvasSizeDialog, featherDialog, curvesDialog, stickersDialog, levelsDialog, looksDialog, quickFixDialog, resizeDialog, saveDialog, sharpenDialog, shortcutsDialog, type AdjustHost } from "./dialogs";
 import { CropBar, type BarMode } from "./cropbar";
 import { h, LayersPanel, Swatches, ToolBar, ToolSettings } from "./panels";
 import { SHORTCUTS, shortcutFor, toolGroups } from "./shortcuts";
@@ -157,6 +158,7 @@ export class EditorPage {
       btn("−", "Zoom out", () => this.canvas.zoomOut()), btn("+", "Zoom in", () => this.canvas.zoomIn()),
       btn("Fit", "Fit to window (Ctrl+0)", () => this.canvas.fit()), btn("100 %", "Actual pixels (Ctrl+1)", () => this.canvas.setZoom(1)),
       h("span", { class: "gap" }), imageMenu, selectMenu, adjustMenu, filterMenu,
+      btn("Stickers", "Add a sticker (check mark, arrow, bubble…) as a new layer", () => void this.runOp("stickers")),
       h("div", { class: "spacer" }), btn("?", "Keyboard shortcuts (?)", () => void this.showShortcuts()), this.saveAsBtn, this.saveBtn);
     // Crop needs buttons too (Enter isn't available on touch screens): they float next to the
     // rectangle once one is drawn, and also offer "Crop to selection" for a selection.
@@ -584,6 +586,10 @@ export class EditorPage {
       } else if (name === "crop_selection") {
         if (!doc.selection) return this.showMessage("Select an area first (rectangle select, M).");
         cmd = ops.crop(doc, doc.selection);
+      } else if (name === "stickers") {
+        const [front, back] = this.swatches.colors;
+        const r = await stickersDialog(canvasRasterizer, Math.min(doc.width, doc.height), front, back);
+        if (r && this.doc === doc) cmd = addSticker(doc, canvasRasterizer, r.name, r.size, this.viewCenter(), front, back);
       } else if (name === "background_blur" && !doc.selection) {
         return this.showMessage("Select the subject first (lasso, magic wand…): what is around it gets blurred.");
       } else if (name in ADJUST_DIALOGS) {

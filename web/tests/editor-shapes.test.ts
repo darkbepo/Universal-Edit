@@ -61,6 +61,47 @@ export const stubRaster: Rasterizer = {
       }
     return out;
   },
+  draw(box, items) {
+    const out = new Uint8ClampedArray(box.width * box.height * 4);
+    const segDist = (px: number, py: number, [ax, ay]: number[], [bx, by]: number[]) => {
+      const dx = bx - ax;
+      const dy = by - ay;
+      const k = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy || 1)));
+      return Math.hypot(px - (ax + k * dx), py - (ay + k * dy));
+    };
+    const inPoly = (px: number, py: number, pts: number[][]) => {
+      let inside = false;
+      for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+        const [xi, yi] = pts[i];
+        const [xj, yj] = pts[j];
+        if (yi > py !== yj > py && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi) inside = !inside;
+      }
+      return inside;
+    };
+    for (let y = box.y0; y < box.y1; y++)
+      for (let x = box.x0; x < box.x1; x++) {
+        const cx = x + 0.5;
+        const cy = y + 0.5;
+        for (const it of items) {
+          let c: number[] | undefined;
+          if ("line" in it) {
+            for (let i = 1; i < it.line.length; i++) if (segDist(cx, cy, it.line[i - 1], it.line[i]) <= it.width / 2) c = it.stroke;
+          } else {
+            const pts = "poly" in it ? it.poly : null;
+            const [ex0, ey0, ex1, ey1] = "ellipse" in it ? it.ellipse : [0, 0, 0, 0];
+            const ell = (inset: number) => ((cx - (ex0 + ex1) / 2) / ((ex1 - ex0) / 2 - inset)) ** 2 + ((cy - (ey0 + ey1) / 2) / ((ey1 - ey0) / 2 - inset)) ** 2 <= 1;
+            const inside = pts ? inPoly(cx, cy, pts) : ell(0);
+            if (inside) c = it.fill;
+            if (inside && it.stroke && it.width) {
+              const onEdge = pts ? Math.min(...pts.map((p, i) => segDist(cx, cy, p, pts[(i + 1) % pts.length]))) < it.width : !ell(it.width);
+              if (onEdge) c = it.stroke;
+            }
+          }
+          if (c) out.set(c, ((y - box.y0) * box.width + (x - box.x0)) * 4);
+        }
+      }
+    return out;
+  },
   text(text, font, color) {
     const width = 10 * Math.max(1, text.length);
     const height = font.size;
@@ -194,6 +235,6 @@ describe("selection, crop and text", () => {
   });
 
   it("lists the tools in tool-bar order", () => {
-    expect(makeTools(stubRaster).map((t) => t.id)).toEqual(["move", "brush", "eraser", "mask_brush", "fill", "gradient", "picker", "line", "rect", "ellipse", "text", "select", "ellipse_select", "lasso", "polygon_lasso", "wand", "crop"]);
+    expect(makeTools(stubRaster).map((t) => t.id)).toEqual(["move", "brush", "highlighter", "eraser", "mask_brush", "fill", "gradient", "picker", "line", "arrow", "rect", "ellipse", "text", "select", "ellipse_select", "lasso", "polygon_lasso", "wand", "crop"]);
   });
 });

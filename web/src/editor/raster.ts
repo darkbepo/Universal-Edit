@@ -21,6 +21,13 @@ export interface ShapeStyle {
   fill: RGBA;
 }
 
+/** One piece of a drawing (canvas coordinates): a closed polygon, an ellipse in a box, or an open
+ *  line with round ends. Polygon and ellipse outlines are drawn inside the shape, like Pillow. */
+export type DrawItem =
+  | { poly: number[][]; fill?: RGBA; stroke?: RGBA; width?: number }
+  | { ellipse: [number, number, number, number]; fill?: RGBA; stroke?: RGBA; width?: number }
+  | { line: number[][]; stroke: RGBA; width: number };
+
 export interface FontSpec {
   family: string;
   size: number;
@@ -37,6 +44,8 @@ export interface Rasterizer {
   shape(kind: "line" | "rect" | "ellipse", box: Rect, pts: [number, number, number, number], style: ShapeStyle): Uint8ClampedArray;
   /** Text tightly cropped (2 px padding). */
   text(text: string, font: FontSpec, color: RGBA): Decoded;
+  /** RGBA of `box` with `items` drawn in order, anti-aliased (arrows, stickers). */
+  draw(box: Rect, items: DrawItem[]): Uint8ClampedArray;
 }
 
 const css = (c: RGBA) => `rgba(${c[0]},${c[1]},${c[2]},${c[3] / 255})`;
@@ -81,6 +90,44 @@ export const canvasRasterizer: Rasterizer = {
       if (outlined) ctx.stroke();
     }
     return ctx.getImageData(0, 0, box.width, box.height).data; // read back in canvas pixels (not translated)
+  },
+
+  draw(box, items) {
+    const ctx = context(box.width, box.height);
+    ctx.translate(-box.x0, -box.y0);
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    for (const it of items) {
+      ctx.beginPath();
+      if ("line" in it) {
+        it.line.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+        ctx.lineWidth = it.width;
+        ctx.strokeStyle = css(it.stroke);
+        ctx.stroke();
+        continue;
+      }
+      if ("poly" in it) {
+        it.poly.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+        ctx.closePath();
+      } else {
+        const [x0, y0, x1, y1] = it.ellipse;
+        ctx.ellipse((x0 + x1) / 2, (y0 + y1) / 2, Math.abs(x1 - x0) / 2, Math.abs(y1 - y0) / 2, 0, 0, Math.PI * 2);
+      }
+      if (it.fill) {
+        ctx.fillStyle = css(it.fill);
+        ctx.fill();
+      }
+      if (it.stroke && it.width) {
+        // a doubled line clipped to the shape = an outline inside it
+        ctx.save();
+        ctx.clip();
+        ctx.lineWidth = it.width * 2;
+        ctx.strokeStyle = css(it.stroke);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+    return ctx.getImageData(0, 0, box.width, box.height).data;
   },
 
   text(text, font, color) {

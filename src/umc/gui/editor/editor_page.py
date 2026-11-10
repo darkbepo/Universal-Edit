@@ -56,6 +56,7 @@ from umc.gui.editor.dialogs import (
     SaveOptionsDialog,
     SharpenDialog,
     ShortcutsDialog,
+    StickersDialog,
     tool_groups,
 )
 from umc.gui.editor.layers_panel import LayersPanel
@@ -295,6 +296,12 @@ class EditorPage(QWidget):
             filter_menu.addAction(label, lambda o=op: self.run_op(o))
         filter_button.setMenu(filter_menu)
         lay.addWidget(filter_button)
+        sticker_button = QToolButton(text="Stickers", objectName="SmallMenu")
+        sticker_button.setToolTip(
+            "Add a sticker (check mark, arrow, speech bubble…) as a new layer"
+        )
+        sticker_button.clicked.connect(lambda: self.run_op("stickers"))
+        lay.addWidget(sticker_button)
         lay.addStretch(1)
         tb("?", "Keyboard shortcuts (?)", lambda: self.show_shortcuts())
         lay.addSpacing(6)
@@ -623,6 +630,17 @@ class EditorPage(QWidget):
                     "Select the subject first (lasso, magic wand…): what is around it gets blurred."
                 )
                 return
+            elif name == "stickers":
+                dlg = StickersDialog(self)
+                if dlg.exec() and dlg.chosen():
+                    cmd = ops.add_sticker(
+                        doc,
+                        dlg.chosen(),
+                        dlg.size.value(),
+                        self.view_center(),
+                        self.swatches.primary,
+                        self.swatches.secondary,
+                    )
             elif name in ADJUST_DIALOGS:
                 dlg = ADJUST_DIALOGS[name][0](self)
                 if dlg.exec():

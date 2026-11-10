@@ -548,7 +548,14 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
          `ox`/`oy` = where the clicked point sits in the image so re-editing keeps it in place even
          after a move. Transforms (`_moved(op=…)`) drop the spec (it's pixels then). ORA keeps it as
          a `umc-text` JSON attribute on the layer element (same format in both apps).
-      6. Annotation: arrow tool, highlighter, built-in CC0 stickers.
+      6. ✅ Annotation (both apps): `ArrowTool` (L, cycles with Line; head size from
+         `arrow_head` / `arrowHead`, same numbers), `HighlighterTool` (H; a stroke tool at 40 %
+         strength — strokes take the max coverage, so it doesn't build up). Stickers =
+         `editor/stickers.py` (shapes on a 100 grid, colours "front"/"back"/hex, drawn 4×
+         supersampled); `web/src/editor/stickers.json` is its output (`python -m
+         umc.editor.stickers`, test checks they match). Web draws them through the new
+         `Rasterizer.draw(box, items)` (outlines clipped inside, like Pillow). Insert:
+         `ops.add_sticker` / `addSticker`, centred in view, "Stickers" button in the top bar.
       7. Pasteboard (owner chose this kind of "artboard"): the area around the canvas holds
          layers that aren't saved into the image (layers already have x/y outside the canvas).
       8. Clone stamp, then content-aware fill (opencv-python-headless, Apache-2.0, approved).

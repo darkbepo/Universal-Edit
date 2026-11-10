@@ -177,6 +177,20 @@ class EraserTool(_StrokeTool):
     erase = True
 
 
+@dataclass
+class HighlighterOptions:
+    size: int = opt(24, "Size", kind="slider", min=2, max=300, unit="px")
+    hardness: int = opt(90, "Hardness", kind="slider", min=0, max=100, unit="%")
+    opacity: int = opt(40, "Strength", kind="slider", min=5, max=100, unit="%")
+
+
+class HighlighterTool(_StrokeTool):
+    """A broad see-through marker: crossing your own stroke doesn't darken it."""
+
+    id, label, shortcut = "highlighter", "Highlighter", "H"
+    options_cls = HighlighterOptions
+
+
 class MaskBrushTool(_StrokeTool):
     """Paints the active layer's mask: left button hides (black), right button shows (white).
 

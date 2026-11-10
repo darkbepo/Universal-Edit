@@ -773,3 +773,38 @@ test("text: box style, click the text again to edit it, layer menu Edit text…"
   await expect(page.locator("textarea.text-box")).toHaveValue("Hello there");
   await page.keyboard.press("Escape");
 });
+
+// ------------------------------------------------------------------ annotation
+
+test("annotation: L cycles line / arrow, highlighter (H), stickers window adds a layer", async ({ page }) => {
+  await openEditor(page);
+  const undoLabel = () => page.evaluate(() => (window.__editor as EditorHook & { history: { undoLabel: string } }).history.undoLabel);
+  const toolId = () => page.evaluate(() => (window.__editor as EditorHook).toolId);
+  await page.locator(".canvas-host canvas").focus();
+  for (const want of ["line", "arrow"]) {
+    await page.keyboard.press("l");
+    await expect.poll(toolId).toBe(want);
+  }
+  await drag(page, [10, 10], [120, 60]);
+  await expect.poll(undoLabel).toBe("Arrow");
+  await page.keyboard.press("h");
+  await expect.poll(toolId).toBe("highlighter");
+  await drag(page, [10, 80], [120, 80]);
+  await expect.poll(undoLabel).toBe("Highlighter");
+  const layers = await page.locator(".layers li").count();
+  await page.getByRole("button", { name: "Stickers" }).click();
+  const dlg = page.locator("dialog.stickers");
+  await expect(dlg.getByRole("radio")).toHaveCount(11);
+  await dlg.getByRole("radio", { name: "Star" }).click();
+  await dlg.getByRole("button", { name: "Add" }).click();
+  await expect(page.locator(".layers li")).toHaveCount(layers + 1);
+  await expect.poll(undoLabel).toBe("Sticker");
+  // drawn by the browser canvas: the star's middle is its yellow fill
+  const mid = await page.evaluate(() => {
+    const d = (window.__editor as EditorHook).doc as unknown as { layers: { width: number; height: number; data: Uint8ClampedArray }[]; active: number };
+    const l = d.layers[d.active];
+    const i = (Math.floor(l.height * 0.53) * l.width + Math.floor(l.width / 2)) * 4;
+    return Array.from(l.data.slice(i, i + 4));
+  });
+  expect(mid).toEqual([255, 200, 61, 255]);
+});

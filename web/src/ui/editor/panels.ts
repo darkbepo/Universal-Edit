@@ -32,6 +32,8 @@ const ICONS: Record<string, string> = {
   fill: '<path d="m4 11 7-7 8 8-7 7z"/><path d="M4 11h15"/><path d="M20 15s2 2.5 2 3.5a2 2 0 0 1-4 0c0-1 2-3.5 2-3.5z"/>',
   picker: '<path d="m5 19 9-9"/><circle cx="17" cy="7" r="3"/><path d="M5 19l-1 1"/>',
   line: '<path d="M5 19 19 5"/>',
+  arrow: '<path d="M5 19 17 7"/><path d="M20 4 12 7l5 5z" fill="currentColor"/>',
+  highlighter: '<path d="M4 17h16" stroke-width="5" opacity=".45"/><path d="m9 14 6-10 4 2.5-6 10zM9 14l-1 3"/>',
   rect: '<rect x="4" y="6" width="16" height="12" rx="1"/>',
   ellipse: '<ellipse cx="12" cy="12" rx="8" ry="6"/>',
   text: '<path d="M6 6h12M12 6v13"/>',

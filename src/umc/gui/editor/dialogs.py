@@ -756,6 +756,60 @@ class LooksDialog(_AdjustDialog):
         self.changed()
 
 
+class StickersDialog(QDialog):
+    """Pick a built-in sticker and its size; it becomes a new layer in the middle of the view."""
+
+    TILE = 64
+
+    def __init__(self, page: EditorPage) -> None:
+        super().__init__(page)
+        from umc.editor.stickers import STICKERS, render_sticker
+
+        self.setWindowTitle("Stickers")
+        front, back = page.swatches.primary, page.swatches.secondary
+        lay = QVBoxLayout(self)
+        grid = QGridLayout()
+        grid.setSpacing(8)
+        self.group = QButtonGroup(self)
+        self.group.setExclusive(True)
+        self.tiles: dict[str, QToolButton] = {}
+        for i, (name, info) in enumerate(STICKERS.items()):
+            b = QToolButton(objectName="LookTile")
+            b.setCheckable(True)
+            b.setText(info["label"])
+            b.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
+            b.setIconSize(QSize(self.TILE, self.TILE))
+            img = render_sticker(name, self.TILE, front, back)
+            b.setIcon(QIcon(QPixmap.fromImage(pil_to_qimage(img))))
+            b.clicked.connect(lambda _c=False: self.ok.setEnabled(True))
+            if self._uses_swatch(info):
+                b.setToolTip("Drawn in your front colour")
+            self.group.addButton(b)
+            self.tiles[name] = b
+            grid.addWidget(b, i // 4, i % 4)
+        lay.addLayout(grid)
+        form = QFormLayout()
+        doc = page.doc
+        side = min(doc.width, doc.height) if doc else 400
+        self.size = _spin(8, 4000, max(16, side // 4), " px")
+        form.addRow("Size", self.size)
+        lay.addLayout(form)
+        box = _buttons(self)
+        self.ok = box.button(QDialogButtonBox.StandardButton.Ok)
+        self.ok.setText("Add")
+        self.ok.setEnabled(False)
+        lay.addWidget(box)
+
+    @staticmethod
+    def _uses_swatch(info: dict) -> bool:
+        return any(
+            sh.get(k) in ("front", "back") for sh in info["shapes"] for k in ("fill", "stroke")
+        )
+
+    def chosen(self) -> str:
+        return next((n for n, b in self.tiles.items() if b.isChecked()), "")
+
+
 class FeatherDialog(QDialog):
     """Soften the selection's edge by a radius (px)."""
 

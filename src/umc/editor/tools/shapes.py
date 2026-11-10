@@ -66,9 +66,13 @@ class _ShapeTool(Tool):
     def _draw(self, draw: ImageDraw.ImageDraw, pts, ctx: ToolContext, s: int) -> None:
         raise NotImplementedError
 
+    def _pad(self, ctx: ToolContext) -> int:
+        """How far the drawing reaches beyond its points (canvas px)."""
+        return ctx.options.width + 2
+
     def _render(self, ctx: ToolContext) -> tuple[Image.Image, int, int] | None:
         pts = self._points(ctx)
-        pad = ctx.options.width + 2
+        pad = self._pad(ctx)
         box = Rect.from_points(*pts)
         box = Rect(box.x0 - pad, box.y0 - pad, box.x1 + pad, box.y1 + pad)
         bw, bh = self._canvas
@@ -192,3 +196,47 @@ class RectTool(_ShapeTool):
 class EllipseTool(RectTool):
     id, label, shortcut = "ellipse", "Ellipse", "U"
     method = "ellipse"
+
+
+@dataclass
+class ArrowOptions:
+    width: int = opt(6, "Width", kind="slider", min=1, max=200, unit="px")
+    heads: str = opt("end", "Arrowheads", choices=[("end", "At the end"), ("both", "Both ends")])
+    opacity: int = opt(100, "Opacity", kind="slider", min=1, max=100, unit="%")
+
+
+def arrow_head(x0: float, y0: float, x1: float, y1: float, width: float):
+    """(tip polygon, where the line stops) for an arrowhead at (x1, y1) pointing away from
+    (x0, y0). Shared with web/src/editor/tools/shapes.ts."""
+    length = max(4 * width, 14)
+    half = max(2.2 * width, 7)
+    d = math.hypot(x1 - x0, y1 - y0) or 1
+    ux, uy = (x1 - x0) / d, (y1 - y0) / d
+    length = min(length, d * 0.6)
+    bx, by = x1 - ux * length, y1 - uy * length
+    return [(x1, y1), (bx - uy * half, by + ux * half), (bx + uy * half, by - ux * half)], (bx, by)
+
+
+class ArrowTool(LineTool):
+    """A line with an arrowhead at the end (or both ends) — for pointing things out."""
+
+    id, label, shortcut = "arrow", "Arrow", "L"
+    options_cls = ArrowOptions
+
+    def _pad(self, ctx: ToolContext) -> int:
+        return math.ceil(max(2.2 * ctx.options.width, 7)) + ctx.options.width + 2
+
+    def _draw(self, draw, pts, ctx, s):
+        w = max(1, ctx.options.width * s)
+        color = self._premul(ctx.color)
+        x0, y0, x1, y1 = pts
+        tip, (ex, ey) = arrow_head(x0, y0, x1, y1, w)
+        draw.polygon(tip, fill=color)
+        sx, sy = x0, y0
+        if ctx.options.heads == "both":
+            tip0, (sx, sy) = arrow_head(x1, y1, x0, y0, w)
+            draw.polygon(tip0, fill=color)
+        draw.line([sx, sy, ex, ey], fill=color, width=w)
+        if ctx.options.heads != "both":  # round tail
+            r = w / 2
+            draw.ellipse([x0 - r, y0 - r, x0 + r, y0 + r], fill=color)
