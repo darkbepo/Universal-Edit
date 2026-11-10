@@ -490,7 +490,13 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
          `drop-above` / `drop-below`, auto-scroll at the edges, the click after a drag is
          swallowed); right-click / Shift+F10 / menu key opens a fixed `.context-menu` (arrow keys,
          Esc). e2e in `e2e/editor.spec.ts` drags with the real mouse.
-      c. Crop: the Apply / Cancel bar only appears once a rectangle is drawn, next to it (both apps).
+      c. ✅ Crop bar (both apps): `gui/editor/crop_bar.py` / `web/src/ui/editor/cropbar.ts` — same
+         `place_bar` / `placeBar` rules (outside the rectangle next to the corner nearest the
+         release point, flip, then inside; clamped), both tested with the same cases. The canvas
+         owns it (`bar`, `bar_target()` / `barTarget()`), shown only with the pointer up, for the
+         crop tool's pending rectangle ("Apply crop / Cancel") or the select tool's selection
+         ("Crop to selection / Deselect"); placed after every repaint. The web side-panel crop
+         block is gone; both apps show the hint in the status line.
       d. Shortcuts + clipboard (desktop, then web): Ctrl+C / Ctrl+Shift+C (merged) / Ctrl+X /
          Ctrl+V (pastes as a new layer, like Photoshop), Move tool (V, arrow-key nudge), Ctrl+J,
          Ctrl+E, Ctrl+Shift+N, Ctrl+] / Ctrl+[, Ctrl+Plus / Minus, a "?" shortcut list.

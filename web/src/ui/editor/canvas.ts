@@ -4,6 +4,7 @@ import type { Rect } from "../../editor/geometry";
 import type { Command, History } from "../../editor/history";
 import type { RGBA } from "../../editor/layer";
 import type { Tool, ToolContext } from "../../editor/tools/base";
+import { nearestCorner, placeBar, type BarMode, type CropBar } from "./cropbar";
 
 const MIN_ZOOM = 0.05;
 const MAX_ZOOM = 32;
@@ -46,6 +47,10 @@ export class EditorCanvas {
     throw new Error("no context provider");
   };
   onChanged: () => void = () => {};
+  /** Floating Apply / Cancel bar (set by the page), next to the crop rectangle or the selection. */
+  bar: CropBar | null = null;
+  /** Where the last drag ended, in image coordinates (the bar goes next to that corner). */
+  private releaseAt: [number, number] | null = null;
   onColorPicked: (c: RGBA, button: "left" | "right") => void = () => {};
   onCursor: (x: number, y: number) => void = () => {};
   onTextRequested: (x: number, y: number) => void = () => {};
@@ -240,6 +245,7 @@ export class EditorCanvas {
     this.frame = requestAnimationFrame(() => {
       this.frame = 0;
       this.paint();
+      this.placeBar();
     });
   }
 
@@ -294,6 +300,39 @@ export class EditorCanvas {
       ctx.arc(this.mouse.x, this.mouse.y, Math.max(1, r) + 1, 0, Math.PI * 2);
       ctx.stroke();
     }
+  }
+
+  /** [mode, rectangle] the floating bar belongs to, or null to hide it. */
+  barTarget(): [BarMode, Rect] | null {
+    if (!this.doc || !this.tool || this.gesture === "left" || this.gesture === "right") return null;
+    const crop = this.cropRect();
+    if (this.tool.id === "crop" && crop) return ["crop", crop];
+    if (this.tool.id === "select" && this.doc.selection) return ["select", this.doc.selection];
+    return null;
+  }
+
+  private placeBar(): void {
+    const bar = this.bar;
+    if (!bar) return;
+    const target = this.barTarget();
+    if (!target) {
+      if (!bar.el.hidden) bar.hide();
+      return;
+    }
+    const [mode, rect] = target;
+    bar.showFor(mode, rect.width, rect.height);
+    const [x, y, w, h] = this.screenRect(rect);
+    const box: [number, number, number, number] = [x, y, x + w, y + h];
+    let corner: [boolean, boolean] = [true, true];
+    if (this.releaseAt) {
+      const ax = this.origin.x + this.releaseAt[0] * this.zoom;
+      const ay = this.origin.y + this.releaseAt[1] * this.zoom;
+      corner = nearestCorner(box, ax, ay);
+    }
+    const area: [number, number] = [this.el.clientWidth, this.el.clientHeight];
+    const [left, top] = placeBar(box, corner, [bar.el.offsetWidth, bar.el.offsetHeight], area);
+    bar.el.style.left = `${left}px`;
+    bar.el.style.top = `${top}px`;
   }
 
   private antsRect(x: number, y: number, w: number, h: number): void {
@@ -416,6 +455,7 @@ export class EditorCanvas {
     }
     const p = this.local(e);
     const [x, y] = this.widgetToImage(p.x, p.y);
+    this.releaseAt = [x, y];
     const cmd = this.tool.release(this.doc, x, y, this.ctxFor(button, e));
     if (cmd) {
       this.push(cmd);

@@ -443,3 +443,85 @@ def test_opacity_slider_changes_all_selected(four, qtbot):
     assert [la.opacity for la in pg.doc.layers] == [0.4, 1.0, 1.0, 0.4]
     pg.canvas.undo()
     assert all(la.opacity == 1.0 for la in pg.doc.layers)
+
+
+# ------------------------------------------------------------------ crop / selection bar
+
+
+def test_place_bar_beside_the_release_corner():
+    from umc.gui.editor.crop_bar import GAP, MARGIN, nearest_corner, place_bar
+
+    rect = (100, 100, 300, 200)
+    assert nearest_corner(rect, 290, 195) == (True, True)
+    assert nearest_corner(rect, 105, 110) == (False, False)
+    # bottom-right corner: below, right edges aligned
+    assert place_bar(rect, (True, True), (120, 30), (800, 600)) == (180, 200 + GAP)
+    # top-left corner: above, left edges aligned
+    assert place_bar(rect, (False, False), (120, 30), (800, 600)) == (100, 100 - GAP - 30)
+    # no room below → above
+    assert place_bar(rect, (True, True), (120, 30), (800, 230)) == (180, 100 - GAP - 30)
+    # no room above or below → inside the rectangle
+    assert place_bar((0, 0, 300, 200), (True, True), (120, 30), (300, 200)) == (
+        300 - 120 - MARGIN,
+        200 - GAP - 30,
+    )
+    # never outside the canvas
+    x, y = place_bar((-50, 10, 20, 40), (False, True), (120, 30), (800, 600))
+    assert x == MARGIN and y == 40 + GAP
+
+
+def _drag_rect(qtbot, pg, a, b):
+    c = pg.canvas
+    pa, pb = c.image_to_widget(*a), c.image_to_widget(*b)
+    qtbot.mousePress(c, Qt.MouseButton.LeftButton, pos=pa)
+    qtbot.mouseMove(c, pb)
+    c.repaint()
+    assert not pg.crop_bar.isVisible()  # hidden while dragging
+    qtbot.mouseRelease(c, Qt.MouseButton.LeftButton, pos=pb)
+    c.repaint()
+
+
+def test_crop_bar_appears_after_drag_and_applies(page, qtbot):
+    page.select_tool("crop")
+    page.canvas.repaint()
+    assert not page.crop_bar.isVisible() and "Drag a rectangle" in page.message.text()
+    _drag_rect(qtbot, page, (0, 0), (20, 10))
+    bar = page.crop_bar
+    assert bar.isVisible() and bar.size_label.text() == "20 × 10 px"
+    assert bar.apply_button.text() == "Apply crop"
+    corner = page.canvas.image_to_widget(20, 10)
+    assert bar.y() >= corner.y() and abs(bar.geometry().right() - corner.x()) <= 2
+    qtbot.mouseClick(bar.apply_button, Qt.MouseButton.LeftButton)
+    page.canvas.repaint()
+    assert (page.doc.width, page.doc.height) == (20, 10) and not bar.isVisible()
+    page.select_tool("brush")
+    assert "Drag a rectangle" not in page.message.text()
+
+
+def test_crop_bar_cancel_and_escape(page, qtbot):
+    page.select_tool("crop")
+    _drag_rect(qtbot, page, (5, 5), (30, 25))
+    qtbot.mouseClick(page.crop_bar.cancel_button, Qt.MouseButton.LeftButton)
+    page.canvas.repaint()
+    assert not page.crop_bar.isVisible() and page.tool.pending is None
+    _drag_rect(qtbot, page, (5, 5), (30, 25))
+    assert page.crop_bar.isVisible()
+    qtbot.keyClick(page.canvas, Qt.Key.Key_Escape)
+    page.canvas.repaint()
+    assert not page.crop_bar.isVisible() and (page.doc.width, page.doc.height) == (60, 40)
+
+
+def test_selection_bar_crops_or_deselects(page, qtbot):
+    page.select_tool("select")
+    _drag_rect(qtbot, page, (30, 20), (10, 5))  # released at the top-left corner
+    bar = page.crop_bar
+    assert bar.isVisible() and bar.apply_button.text() == "Crop to selection"
+    assert bar.geometry().bottom() <= page.canvas.image_to_widget(10, 5).y()  # above it
+    qtbot.mouseClick(bar.cancel_button, Qt.MouseButton.LeftButton)
+    page.canvas.repaint()
+    assert page.doc.selection is None and not bar.isVisible()
+    _drag_rect(qtbot, page, (10, 5), (30, 20))
+    qtbot.mouseClick(bar.apply_button, Qt.MouseButton.LeftButton)
+    assert (page.doc.width, page.doc.height) == (20, 15)
+    page.canvas.undo()
+    assert (page.doc.width, page.doc.height) == (60, 40)

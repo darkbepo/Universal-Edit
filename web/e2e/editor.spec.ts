@@ -249,16 +249,48 @@ test("double-click renames a layer; Esc cancels", async ({ page }) => {
   await expect(page.locator(".layers li .lname").first()).toHaveText("Sky");
 });
 
-test("crop: Apply button, and Esc discards", async ({ page }) => {
+test("crop: the bar appears next to the rectangle; Apply, Cancel and Esc", async ({ page }) => {
   await openEditor(page);
   await page.keyboard.press("c");
+  const bar = page.getByRole("toolbar", { name: "Crop" });
+  await expect(bar).toBeHidden(); // nothing to apply before a rectangle is drawn
+  await expect(page.locator(".editor-status")).toContainText("Drag a rectangle");
   await drag(page, [0, 0], [200, 100]);
   await page.keyboard.press("Escape");
+  await expect(bar).toBeHidden();
   await page.keyboard.press("Enter");
   expect(await size(page)).toEqual([321, 241]);
+  await drag(page, [20, 20], [200, 100]);
+  await expect(bar).toBeVisible();
+  await expect(bar).toContainText("180 × 80 px");
+  // next to the corner where the drag ended: below it, right edges lined up
+  const corner = await at(page, 200, 100);
+  const box = await bar.boundingBox();
+  if (!box) throw new Error("no layout");
+  expect(box.y).toBeGreaterThanOrEqual(corner.y);
+  expect(Math.abs(box.x + box.width - corner.x)).toBeLessThan(3);
+  await bar.getByRole("button", { name: "Cancel" }).click();
+  await expect(bar).toBeHidden();
+  expect(await size(page)).toEqual([321, 241]);
   await drag(page, [0, 0], [200, 100]);
-  await page.getByRole("button", { name: "Apply crop" }).click();
+  await bar.getByRole("button", { name: "Apply crop" }).click();
   await expect.poll(() => size(page)).toEqual([200, 100]);
+  await expect(bar).toBeHidden();
+});
+
+test("selection: the bar crops to it or deselects", async ({ page }) => {
+  await openEditor(page);
+  await page.keyboard.press("m");
+  const bar = page.getByRole("toolbar", { name: "Crop" });
+  await drag(page, [150, 120], [10, 10]); // ends at the top-left corner
+  await expect(bar).toBeVisible();
+  await bar.getByRole("button", { name: "Deselect" }).click();
+  await expect(bar).toBeHidden();
+  await drag(page, [10, 10], [150, 120]);
+  await bar.getByRole("button", { name: "Crop to selection" }).click();
+  await expect.poll(() => size(page)).toEqual([140, 110]);
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect.poll(() => size(page)).toEqual([321, 241]);
 });
 
 // ------------------------------------------------------------------ layers list

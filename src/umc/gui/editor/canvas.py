@@ -14,6 +14,7 @@ from umc.editor.geometry import Rect
 from umc.editor.history import History
 from umc.editor.tools.base import Tool, ToolContext
 from umc.gui import theme
+from umc.gui.editor.crop_bar import nearest_corner, place_bar
 
 MIN_ZOOM, MAX_ZOOM = 0.05, 32.0
 
@@ -63,6 +64,10 @@ class EditorCanvas(QWidget):
         self._timer = QTimer(self, interval=150)
         self._timer.timeout.connect(self._tick)
         self._timer.start()
+        # Floating Apply / Cancel bar (a CropBar, set by the page), next to the crop rectangle or
+        # the selection; _release_at = where the last drag ended, in image coordinates.
+        self.bar = None
+        self._release_at: tuple[float, float] | None = None
 
     # ------------------------------------------------------------ document
     def set_document(self, doc: Document, history: History) -> None:
@@ -278,6 +283,41 @@ class EditorCanvas(QWidget):
                 p.setPen(QPen(QColor(255, 255, 255, 200), 1))
                 p.drawEllipse(self._mouse, r + 1, r + 1)
         p.end()
+        self._place_bar()
+
+    def bar_target(self) -> tuple[str, Rect] | None:
+        """("crop" | "select", rectangle) the floating bar belongs to, or None to hide it."""
+        if self.doc is None or self.tool is None or self._pressed in ("left", "right"):
+            return None
+        crop = self._crop_rect()
+        if self.tool.id == "crop" and crop is not None:
+            return "crop", crop
+        if self.tool.id == "select" and self.doc.selection is not None:
+            return "select", self.doc.selection
+        return None
+
+    def _place_bar(self) -> None:
+        bar = self.bar
+        if bar is None:
+            return
+        target = self.bar_target()
+        if target is None:
+            if bar.isVisible():
+                bar.hide()
+            return
+        mode, rect = target
+        bar.show_for(mode, rect.width, rect.height)
+        r = self._image_rect(rect)
+        box = (r.left(), r.top(), r.right(), r.bottom())
+        corner = (True, True)
+        if self._release_at is not None:
+            at = self.image_to_widget(*self._release_at)
+            corner = nearest_corner(box, at.x(), at.y())
+        pos = QPoint(
+            *place_bar(box, corner, (bar.width(), bar.height()), (self.width(), self.height()))
+        )
+        if bar.pos() != pos:
+            bar.move(pos)
 
     def _ants_rect(self, p: QPainter, rect: QRectF) -> None:
         p.setBrush(Qt.BrushStyle.NoBrush)
@@ -350,6 +390,7 @@ class EditorCanvas(QWidget):
             return
         button, self._pressed = self._pressed, None
         x, y = self.widget_to_image(e.position())
+        self._release_at = (x, y)
         cmd = self.tool.release(self.doc, x, y, self._ctx(button, e.modifiers()))
         if cmd is not None:
             self.push(cmd)

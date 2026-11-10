@@ -35,6 +35,7 @@ from umc.editor.tools.select import clear_selection, deselect, select_all
 from umc.editor.tools.text import add_text_layer
 from umc.gui import theme
 from umc.gui.editor.canvas import EditorCanvas
+from umc.gui.editor.crop_bar import CropBar
 from umc.gui.editor.dialogs import (
     BrightnessContrastDialog,
     CanvasSizeDialog,
@@ -46,6 +47,7 @@ from umc.gui.editor.side_panel import ColorSwatches, ToolBar, ToolSettings
 
 log = logging.getLogger(__name__)
 
+CROP_HINT = "Drag a rectangle on the picture, then apply it with the button next to it (or Enter)."
 EXT_ALIASES = {"jpeg": "jpg", "tif": "tiff", "heif": "heic"}
 
 
@@ -146,6 +148,10 @@ class EditorPage(QWidget):
         self.canvas.zoom_changed.connect(lambda _z: self._update_info())
         self.canvas.cursor_moved.connect(lambda x, y: self._update_info((x, y)))
         self.canvas.text_requested.connect(self._open_text_box)
+        self.crop_bar = CropBar(self.canvas)
+        self.crop_bar.applied.connect(self._bar_apply)
+        self.crop_bar.cancelled.connect(self._bar_cancel)
+        self.canvas.bar = self.crop_bar
         middle.addWidget(self.canvas, 1)
         middle.addWidget(self._build_side())
         root.addLayout(middle, 1)
@@ -329,6 +335,10 @@ class EditorPage(QWidget):
         self.canvas.set_tool(self.tool)
         self.tool_bar.select(tool_id)
         self.tool_settings.show_tool(self.tool)
+        if tool_id == "crop":
+            self.show_message(CROP_HINT)
+        elif self.message.text() == CROP_HINT:
+            self.show_message("")
 
     def _toggle_shape(self) -> None:
         self.select_tool("ellipse" if self.tool.id == "rect" else "rect")
@@ -421,6 +431,23 @@ class EditorPage(QWidget):
     def apply_brightness_contrast(self, brightness: int, contrast: int) -> None:
         if self.doc is not None:
             self._push(ops.apply_brightness_contrast(self.doc, brightness, contrast))
+
+    def _bar_apply(self, mode: str) -> None:
+        if mode == "crop":
+            self._apply_crop()
+        else:
+            self.run_op("crop_selection")
+        self.canvas.setFocus()
+
+    def _bar_cancel(self, mode: str) -> None:
+        if self.doc is None:
+            return
+        if mode == "crop":
+            self.tool.cancel(self.doc)
+            self.canvas.update()
+        else:
+            self._push(deselect(self.doc))
+        self.canvas.setFocus()
 
     def _apply_crop(self) -> None:
         pending = getattr(self.tool, "pending", None)

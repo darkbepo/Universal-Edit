@@ -18,8 +18,10 @@ import { addTextLayer } from "../../editor/tools/text";
 import type { ConversionClient } from "../../worker/client";
 import { EditorCanvas } from "./canvas";
 import { brightnessDialog, canvasSizeDialog, resizeDialog, saveDialog } from "./dialogs";
+import { CropBar, type BarMode } from "./cropbar";
 import { h, LayersPanel, Swatches, ToolBar, ToolSettings } from "./panels";
 
+const CROP_HINT = "Drag a rectangle on the picture, then apply it with the button next to it (or Enter).";
 const NATIVE = new Set(["png", "jpg", "jpeg", "webp", "gif", "avif", "bmp", "ico"]);
 const MIME: Record<string, string> = { ora: "image/openraster" };
 
@@ -63,7 +65,7 @@ export class EditorPage {
   private saveBtn: HTMLButtonElement;
   private saveAsBtn: HTMLButtonElement;
   private textBox: HTMLTextAreaElement | null = null;
-  private cropActions!: HTMLElement;
+  private cropBar!: CropBar;
   private textAnchor: [number, number] = [0, 0];
   private committing = false;
   private sources: string[] = [];
@@ -116,11 +118,12 @@ export class EditorPage {
       btn("Fit", "Fit to window (Ctrl+0)", () => this.canvas.fit()), btn("100 %", "Actual pixels (Ctrl+1)", () => this.canvas.setZoom(1)),
       h("span", { class: "gap" }), imageMenu,
       h("div", { class: "spacer" }), this.saveAsBtn, this.saveBtn);
-    // Crop needs buttons too: Enter isn't available on touch screens.
-    this.cropActions = h("div", { class: "crop-actions", hidden: true },
-      h("div", { class: "hint" }, "Drag a rectangle, then apply it (Enter) or cancel (Esc)."),
-      h("div", { class: "row" }, btn("Apply crop", "Crop to the rectangle (Enter)", () => this.applyCrop(), "primary small"), btn("Cancel", "Discard the rectangle (Esc)", () => this.discardCrop())));
-    const side = h("div", { class: "editor-side" }, this.settings.el, this.cropActions, h("div", { class: "section" }, "Colours"), this.swatches.el, this.layers.el);
+    // Crop needs buttons too (Enter isn't available on touch screens): they float next to the
+    // rectangle once one is drawn, and also offer "Crop to selection" for a selection.
+    this.cropBar = new CropBar((mode) => this.barApply(mode), (mode) => this.barCancel(mode));
+    this.canvas.el.append(this.cropBar.el);
+    this.canvas.bar = this.cropBar;
+    const side = h("div", { class: "editor-side" }, this.settings.el, h("div", { class: "section" }, "Colours"), this.swatches.el, this.layers.el);
     this.el = h("div", { class: "editor", hidden: true },
       top,
       h("div", { class: "editor-body" }, this.toolBar.el, this.canvas.el, side),
@@ -264,7 +267,8 @@ export class EditorPage {
     this.canvas.setTool(tool);
     this.toolBar.select(id);
     this.settings.show(tool);
-    if (this.cropActions) this.cropActions.hidden = id !== "crop";
+    if (id === "crop") this.showMessage(CROP_HINT);
+    else if (this.message.textContent === CROP_HINT) this.showMessage("");
   }
 
   private push(cmd: Command | null): void {
@@ -349,6 +353,18 @@ export class EditorPage {
     if (k === "u") return run(() => this.selectTool(this.tool.id === "rect" ? "ellipse" : "rect"));
     const tool = this.tools.find((tt) => tt.shortcut.toLowerCase() === k);
     if (tool) run(() => this.selectTool(tool.id));
+  }
+
+  private barApply(mode: BarMode): void {
+    if (mode === "crop") this.applyCrop();
+    else void this.runOp("crop_selection");
+    this.canvas.view.focus();
+  }
+
+  private barCancel(mode: BarMode): void {
+    if (mode === "crop") this.discardCrop();
+    else if (this.doc) this.push(deselect(this.doc));
+    this.canvas.view.focus();
   }
 
   private discardCrop(): void {

@@ -291,6 +291,22 @@ QFrame#EditorTopBar QPushButton#Primary {
     border-radius: 8px;
     font-size: 13px;
 }
+QFrame#CropBar {
+    background: @surface;
+    border: 1px solid @border;
+    border-radius: 10px;
+}
+QPushButton#CropApply {
+    background: @accent;
+    color: @accent_text;
+    border: none;
+    font-weight: 600;
+    padding: 5px 14px;
+    border-radius: 8px;
+}
+QPushButton#CropApply:hover {
+    background: @accent_hover;
+}
 QWidget#EditorToolBar {
     background: @surface;
     border-right: 1px solid @border;
