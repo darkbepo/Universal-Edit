@@ -927,19 +927,25 @@ def window(qtbot, tmp_path, monkeypatch):
 
 def test_switch_for_one_document(qtbot, window, media):
     window.show()
+    # The redesigned top bar always shows Convert | Edit; Edit is enabled only
+    # when the files can be edited.
+    assert window.mode_bar.isVisible() and not window.edit_mode.isEnabled()
     window.add_files([str(media / "doc.md")])
     assert window.edit_kind() == "document"
-    assert window.mode_bar.isVisible()
+    assert window.edit_mode.isEnabled()
+    assert "document editor" in window.edit_mode.toolTip()
     window.add_files([str(media / "notes.txt")])
     assert window.edit_kind() is None
-    assert not window.mode_bar.isVisible()
+    assert not window.edit_mode.isEnabled()
 
 
 def test_no_switch_for_pdf(qtbot, window, media):
     window.show()
     window.add_files([str(media / "three.pdf")])
     assert window.edit_kind() is None
-    assert not window.mode_bar.isVisible()
+    assert not window.edit_mode.isEnabled()
+    window.enter_edit()  # a click on the disabled switch changes nothing
+    assert window.stack.currentIndex() == 0 and window.convert_mode.isChecked()
 
 
 def test_edit_opens_document_editor(qtbot, window, media):
