@@ -181,6 +181,15 @@ src/umc/
     tool_dialog.py       # "LibreOffice/Pandoc needed" → Install it for me (+ manual fallbacks)
     theme.py, style.qss  # light/dark palettes + stylesheet (follows the OS colour scheme)
     widgets/             # DropZone, FormatPicker (pills), SettingsPanel (auto form), FlowLayout
+    editor/              # image editor view: EditorPage (top bar, shortcuts, saving on a QThread),
+                         #   EditorCanvas (zoom/pan, cached composite), ToolBar, LayersPanel, dialogs
+  editor/                # image editor model — pure Python, no Qt
+    document.py, layer.py  # Document (canvas size, layers bottom-first, selection), Layer (RGBA + x/y)
+    history.py           # undo: PatchCommand (changed rect only), LayerList/DocumentState commands
+    tools/               # Tool classes (press/move/release → Command); TOOLS = tool-bar order
+    ops.py               # crop, resize, canvas size, rotate/flip, brightness/contrast, layer ops
+    ora.py, io.py        # OpenRaster read/write; open_files(paths) → one layer per image
+    save.py              # .ora, or composite → ImageConverter (all formats + their options)
   core/                  # pure Python, no Qt
     detect.py            # media family from extension, falling back to magic bytes
     registry.py          # Target dataclass + targets_for(files) across all converters
@@ -442,6 +451,16 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
       until then.
 10. **Editor** (only after 9 is done): image editor (paint/photoshop-like), video timeline
     (trim, join, mix video + images + music), text/document editing and saving.
+   1. ✅ Shell (desktop): a Convert | Edit switch above the file list, shown when every added file
+      is an image; Edit swaps the window (QStackedWidget) to the editor, each image a layer.
+   2. ✅ Image editor, first version (desktop) — spec `docs/superpowers/specs/2026-11-10-image-editor-design.md`:
+      layers (add, duplicate, delete, merge down, reorder, hide, opacity, rename), brush, eraser,
+      fill (tolerance, sample all layers), colour picker, line / rectangle / ellipse, text (new
+      layer), rectangle selection, crop, resize image / canvas, rotate / flip (image or layer),
+      brightness / contrast, undo / redo (patches of the changed rect, 500 MB cap). Saves `.ora`
+      (layers; also readable by the converter) or any image format through `ImageConverter`.
+      Layer objects are replaced, never changed in place, so undo can share them (history.py).
+      Not yet: lasso / magic wand, blend modes, filters, hue / saturation / curves, website.
 11. Ideas: installer for the app itself (Inno Setup), presets, batch queue.
 
 ## Handoff — read this first (for the next Claude account)
@@ -487,10 +506,11 @@ LibreOffice-wasm). The owner hands the project over at this point; the next phas
 Keep the converter untouched; the editor is a second mode of the same window and reuses the
 converters for saving/exporting. Suggested order (most value first), one task per step:
 
-1. **Shell:** a "Convert | Edit" switch at the top of the window (keep it minimal); dropping a
+1. ✅ (desktop) **Shell:** a "Convert | Edit" switch at the top of the window (keep it minimal); dropping a
    single image/video/document while in Edit mode opens the matching editor. Web: same switch in
    `web/src/ui/`. Add GUI tests (pytest-qt) and e2e tests from the start.
-2. **Image editor** (Photoshop-light). Qt-free model in `src/umc/editor/image/` (layers as Pillow
+2. ✅ first version on desktop — see roadmap 10.2 for what's in and what's next.
+   **Image editor** (Photoshop-light). Qt-free model in `src/umc/editor/image/` (layers as Pillow
    RGBA images or numpy arrays, a command/undo stack, selections as masks); Qt view in
    `src/umc/gui/editor/` (`QGraphicsView`, `QUndoStack`). Tools in this order: crop / resize /
    rotate / flip → brightness, contrast, saturation, hue, curves → brush, eraser, fill, shapes,

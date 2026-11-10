@@ -71,3 +71,11 @@ def test_save_unknown_format(tmp_path):
 def test_save_formats_list():
     ids = [fid for fid, _ in SAVE_FORMATS]
     assert ids[0] == "ora" and "png" in ids and "jpg" in ids
+
+
+def test_selftest_editor_step(tmp_path):
+    from umc.selftest import _editor_check
+
+    paths = _editor_check(tmp_path)
+    assert [p.suffix for p in paths] == [".ora", ".png", ".jpg"]
+    assert all(p.exists() for p in paths)

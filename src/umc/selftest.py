@@ -161,6 +161,36 @@ def _cad_check(d: Path, out: Path) -> list[Path]:
     return [pdf_out, png, r12]
 
 
+def _editor_check(d: Path) -> list[Path]:
+    """Image editor: two layers, a brush stroke, .ora round trip, PNG/JPG through the converter."""
+    from PIL import Image
+
+    from umc.editor.document import Document
+    from umc.editor.layer import Layer
+    from umc.editor.ora import read_ora
+    from umc.editor.save import save_document
+    from umc.editor.tools.base import ToolContext
+    from umc.editor.tools.paint import BrushOptions, BrushTool
+
+    base = Layer("base", Image.new("RGBA", (120, 80), (30, 120, 200, 255)))
+    top = Layer("top", Image.new("RGBA", (40, 40), (255, 200, 0, 255)), x=20, y=10, opacity=0.5)
+    doc = Document(120, 80, [base, top])
+    brush, ctx = BrushTool(), ToolContext((255, 0, 0, 255), (255, 255, 255, 255), BrushOptions())
+    brush.press(doc, 10, 10, ctx)
+    brush.move(doc, 100, 60, ctx)
+    if brush.release(doc, 100, 60, ctx) is None:
+        raise RuntimeError("brush stroke changed nothing")
+    d.mkdir(parents=True, exist_ok=True)
+    ora = save_document(doc, d / "edited.ora", "ora")
+    if len(read_ora(ora).layers) != 2:
+        raise RuntimeError("layers lost in .ora round trip")
+    png = save_document(doc, d / "edited.png", "png")
+    jpg = save_document(doc, d / "edited.jpg", "jpg", {"quality": 80})
+    for p in (png, jpg):
+        Image.open(p).load()
+    return [ora, png, jpg]
+
+
 def run(report: Path) -> int:
     from PIL import Image
 
@@ -208,6 +238,7 @@ def run(report: Path) -> int:
                 lambda: _builtin_documents_check(d, out),
             ),
             ("CAD: dxf -> pdf/png, save as R12", lambda: _cad_check(d, out)),
+            ("editor: layers -> ora -> png/jpg", lambda: _editor_check(d / "editor")),
             ("mp4 -> webm", lambda: _convert([out / "img0 slideshow.mp4"], "webm", out)),
             ("mp4 -> gif", lambda: _convert([out / "img0 slideshow.mp4"], "video:gif", out)),
             ("mp4 -> frames", lambda: _convert([out / "img0 slideshow.mp4"], "frames:png", out)),
