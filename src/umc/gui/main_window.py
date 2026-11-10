@@ -36,6 +36,7 @@ from umc.core import options as opts
 from umc.core.detect import DetectedFile, MediaFamily, detect
 from umc.core.job import ConversionJob, file_fractions
 from umc.core.registry import MixedInputError, Target, targets_for
+from umc.doceditor.types import EDITABLE_DOCUMENT_EXTS
 from umc.gui import icons, theme
 from umc.gui.tool_dialog import ToolMissingDialog
 from umc.gui.widgets.drop_zone import DropZone
@@ -98,7 +99,8 @@ class MainWindow(QMainWindow):
         tl.addWidget(title)
         tl.addStretch(1)
 
-        # Convert | Edit — Edit is enabled when every added file can be edited (images)
+        # Convert | Edit — Edit is enabled when the files can be edited: images,
+        # or exactly one editable document
         self.mode_bar = QFrame(objectName="ModeBar")
         mb = QHBoxLayout(self.mode_bar)
         mb.setContentsMargins(3, 3, 3, 3)
@@ -117,6 +119,7 @@ class MainWindow(QMainWindow):
         tl.addWidget(self.mode_bar)
         outer.addWidget(top)
         self.editor = None  # EditorPage, created on first use
+        self.doc_editor = None  # DocEditorPage, created on first use
         self._convert_size = None
 
         # ---------------------------------------------------------- body: two columns
@@ -389,13 +392,8 @@ class MainWindow(QMainWindow):
                 error = str(exc)
         self.input_error.setText(error)
         self.input_error.setVisible(bool(error))
-        can_edit = self.edit_available()
-        self.edit_mode.setEnabled(can_edit)
-        self.edit_mode.setToolTip(
-            "Open the images in the image editor (each image becomes a layer)"
-            if can_edit
-            else "Add images to edit them"
-        )
+        self.edit_mode.setEnabled(self.edit_available())
+        self._update_edit_tooltip()
         # No files yet: the drop zone gets the whole window.
         self.right.setVisible(has_files)
         self.right.setCurrentWidget(self.tabs if targets else self.empty_hint)
@@ -405,14 +403,58 @@ class MainWindow(QMainWindow):
         self._update_buttons()
 
     # ------------------------------------------------------------------ Convert | Edit
+    def edit_kind(self) -> str | None:
+        """ "image" when every file is an image, "document" for one editable document."""
+        if not self.files:
+            return None
+        if all(f.family == MediaFamily.IMAGE for f in self.files):
+            return "image"
+        if (
+            len(self.files) == 1
+            and self.files[0].family == MediaFamily.DOCUMENT
+            and self.files[0].ext in EDITABLE_DOCUMENT_EXTS
+        ):
+            return "document"
+        return None
+
     def edit_available(self) -> bool:
-        return bool(self.files) and all(f.family == MediaFamily.IMAGE for f in self.files)
+        return self.edit_kind() is not None
+
+    def _current_editor(self) -> QWidget | None:
+        """The editor page being shown, or None on the converter screen."""
+        w = self.stack.currentWidget()
+        return w if self.stack.currentIndex() != 0 else None
+
+    def _update_edit_tooltip(self) -> None:
+        kind = self.edit_kind()
+        if kind == "document":
+            tip = "Open the document in the document editor"
+        elif kind == "image":
+            tip = "Open the images in the image editor (each image becomes a layer)"
+        else:
+            tip = "Add images, or one text document, to edit them"
+        self.edit_mode.setToolTip(tip)
 
     def enter_edit(self) -> None:
-        if self.stack.currentIndex() == 1:
+        if self._current_editor() is not None:
             return
-        if not self.edit_available() or self.busy:
+        kind = self.edit_kind()
+        if kind is None or self.busy:
             self.convert_mode.setChecked(True)
+            return
+        if kind == "document":
+            if self.doc_editor is None:
+                from umc.gui.doceditor.doc_editor_page import DocEditorPage
+
+                self.doc_editor = DocEditorPage()
+                self.doc_editor.back_requested.connect(self.leave_edit)
+                self.stack.addWidget(self.doc_editor)
+            self._convert_size = self.size()
+            self.doc_editor.open_path(self.files[0].path)
+            self.stack.setCurrentWidget(self.doc_editor)
+            self.edit_mode.setChecked(True)
+            self.resize(max(self.width(), 1100), max(self.height(), 720))
+            self.doc_editor.view.setFocus()
             return
         if self.editor is None:
             from umc.gui.editor.editor_page import EditorPage
@@ -433,10 +475,11 @@ class MainWindow(QMainWindow):
         self.editor.canvas.setFocus()
 
     def leave_edit(self) -> None:
-        if self.stack.currentIndex() != 1:
+        page = self._current_editor()
+        if page is None:
             self.convert_mode.setChecked(True)
             return
-        if not self.editor.maybe_leave():
+        if not page.maybe_leave():
             self.edit_mode.setChecked(True)
             return
         self.stack.setCurrentIndex(0)
@@ -664,13 +707,17 @@ class MainWindow(QMainWindow):
             self.handle_drop(paths)
 
     def handle_drop(self, paths: list[str]) -> None:
-        if self.stack.currentIndex() == 1 and self.editor is not None:
+        page = self._current_editor()
+        if page is not None and page is self.doc_editor:
+            self.doc_editor.drop_paths([Path(p) for p in self._expand(paths)])
+        elif page is not None:
             self.editor.add_paths([Path(p) for p in self._expand(paths)])
         elif not self.busy:
             self.add_files(paths)
 
     def closeEvent(self, event) -> None:  # noqa: N802
-        if self.stack.currentIndex() == 1 and not self.editor.maybe_leave():
+        page = self._current_editor()
+        if page is not None and not page.maybe_leave():
             event.ignore()
             return
         if self.editor is not None:

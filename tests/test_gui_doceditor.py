@@ -906,3 +906,60 @@ def test_drop_during_save_opens_after(qtbot, page, tmp_path, monkeypatch, media)
         release.set()
     assert page.source == media / "notes.txt"
     assert p.read_text(encoding="utf-8") == "xy\n"
+
+
+# ---------------------------------------------------------------- main window switch
+@pytest.fixture
+def window(qtbot, tmp_path, monkeypatch):
+    from PySide6.QtCore import QCoreApplication
+
+    QCoreApplication.setOrganizationName("UMC-tests")
+    from umc.gui.main_window import MainWindow
+
+    w = MainWindow()
+    w._set_output_dir(tmp_path)
+    qtbot.addWidget(w)
+    return w
+
+
+def test_switch_for_one_document(qtbot, window, media):
+    window.show()
+    window.add_files([str(media / "doc.md")])
+    assert window.edit_kind() == "document"
+    assert window.mode_bar.isVisible()
+    window.add_files([str(media / "notes.txt")])
+    assert window.edit_kind() is None
+    assert not window.mode_bar.isVisible()
+
+
+def test_no_switch_for_pdf(qtbot, window, media):
+    window.show()
+    window.add_files([str(media / "three.pdf")])
+    assert window.edit_kind() is None
+    assert not window.mode_bar.isVisible()
+
+
+def test_edit_opens_document_editor(qtbot, window, media):
+    window.add_files([str(media / "doc.md")])
+    window.enter_edit()
+    qtbot.waitUntil(lambda: "Title" in window.doc_editor.view.toPlainText(), timeout=10000)
+    assert window.stack.currentWidget() is window.doc_editor
+    assert window.edit_mode.isChecked()
+
+
+def test_back_returns_to_convert(qtbot, window, media):
+    window.add_files([str(media / "doc.md")])
+    window.enter_edit()
+    qtbot.waitUntil(lambda: "Title" in window.doc_editor.view.toPlainText(), timeout=10000)
+    window.leave_edit()
+    assert window.stack.currentIndex() == 0
+    assert window.convert_mode.isChecked()
+
+
+def test_images_still_open_image_editor(qtbot, window, media):
+    window.add_files([str(media / "a.png")] if (media / "a.png").exists() else [])
+    if not window.files:
+        window.add_files([str(p) for p in sorted(media.glob("*.png"))[:1]])
+    assert window.edit_kind() == "image"
+    window.enter_edit()
+    assert window.stack.currentWidget() is window.editor
