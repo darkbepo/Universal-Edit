@@ -29,13 +29,20 @@ function paste(dst: Uint8ClampedArray, dstW: number, src: Uint8ClampedArray, r: 
   for (let y = 0; y < r.height; y++) dst.set(src.subarray(y * r.width * 4, (y + 1) * r.width * 4), ((r.y0 + y) * dstW + r.x0) * 4);
 }
 
-/** `effect` on `region` of the layer (layer coordinates), using its margin around it. */
-function run(l: Layer, region: Rect, effect: Effect): Uint8ClampedArray {
+/** `effect` on `region` of the layer (layer coordinates), using its margin around it. With
+ *  `maxPixels` (previews) a bigger area is worked out on a reduced copy and scaled back. */
+function run(l: Layer, region: Rect, effect: Effect, maxPixels?: number): Uint8ClampedArray {
   const m = Math.max(0, Math.ceil(effect.margin ?? 0));
-  if (!m) return effect.apply(cropData(l.data, l.width, region), region.width, region.height, 1);
-  const wide = new Rect(region.x0 - m, region.y0 - m, region.x1 + m, region.y1 + m).intersect(new Rect(0, 0, l.width, l.height));
-  const done = effect.apply(cropData(l.data, l.width, wide), wide.width, wide.height, 1);
-  return cropData(done, wide.width, region.offset(-wide.x0, -wide.y0));
+  const wide = m ? new Rect(region.x0 - m, region.y0 - m, region.x1 + m, region.y1 + m).intersect(new Rect(0, 0, l.width, l.height)) : region;
+  const part = cropData(l.data, l.width, wide);
+  let done: Uint8ClampedArray;
+  if (maxPixels !== undefined && region.width * region.height > maxPixels) {
+    const f = Math.ceil(Math.sqrt((region.width * region.height) / maxPixels));
+    const small = reduce(part, wide.width, wide.height, f);
+    done = enlarge(effect.apply(small.data, small.width, small.height, 1 / f), small.width, small.height, wide.width, wide.height);
+    if (!m) for (let i = 3; i < done.length; i += 4) done[i] = part[i]; // colour changes keep the layer's edges sharp
+  } else done = effect.apply(part, wide.width, wide.height, 1);
+  return wide === region ? done : cropData(done, wide.width, region.offset(-wide.x0, -wide.y0));
 }
 
 /** Box average by a whole number `f` (fast and clean). */
@@ -55,7 +62,7 @@ export function reduce(data: Uint8ClampedArray, w: number, h: number, f: number)
           n++;
         }
       }
-      for (let c = 0; c < 4; c++) out[(y * nw + x) * 4 + c] = sum[c] / n + 0.5;
+      for (let c = 0; c < 4; c++) out[(y * nw + x) * 4 + c] = sum[c] / n; // stored rounded
     }
   }
   return { data: out, width: nw, height: nh };
@@ -77,7 +84,7 @@ export function enlarge(src: Uint8ClampedArray, sw: number, sh: number, w: numbe
       for (let c = 0; c < 4; c++) {
         const a = src[(y0 * sw + x0) * 4 + c] * (1 - tx) + src[(y0 * sw + x1) * 4 + c] * tx;
         const b = src[(y1 * sw + x0) * 4 + c] * (1 - tx) + src[(y1 * sw + x1) * 4 + c] * tx;
-        out[(y * w + x) * 4 + c] = a * (1 - ty) + b * ty + 0.5;
+        out[(y * w + x) * 4 + c] = a * (1 - ty) + b * ty; // stored rounded
       }
     }
   }
@@ -90,14 +97,7 @@ export function preview(doc: EditorDoc, effect: Effect, maxPixels = PREVIEW_PIXE
   const out = new Uint8ClampedArray(l.data);
   const region = clipRect(doc, l);
   if (region.empty || effect.identity) return out;
-  let done: Uint8ClampedArray;
-  if (region.width * region.height > maxPixels) {
-    const part = cropData(l.data, l.width, region);
-    const f = Math.ceil(Math.sqrt((region.width * region.height) / maxPixels));
-    const small = reduce(part, region.width, region.height, f);
-    done = enlarge(effect.apply(small.data, small.width, small.height, 1 / f), small.width, small.height, region.width, region.height);
-    for (let i = 3; i < done.length; i += 4) done[i] = part[i]; // never soften the layer's edges
-  } else done = run(l, region, effect);
+  const done = run(l, region, effect, maxPixels);
   paste(out, l.width, done, region);
   return out;
 }

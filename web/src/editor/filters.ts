@@ -38,7 +38,30 @@ function boxPass(src: Float32Array, dst: Float32Array, w: number, h: number, r: 
   }
 }
 
-/** Gaussian-like blur of RGBA pixels, on premultiplied colour. */
+/** One pass of a real Gaussian kernel along rows or columns, edges clamped (small blurs). */
+function gaussPass(src: Float32Array, dst: Float32Array, w: number, h: number, sigma: number, horizontal: boolean): void {
+  const r = Math.max(1, Math.ceil(3 * sigma));
+  const k = Array.from({ length: 2 * r + 1 }, (_, i) => Math.exp(-((i - r) ** 2) / (2 * sigma * sigma)));
+  const total = k.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < k.length; i++) k[i] /= total;
+  const [len, lines, step, lineStep] = horizontal ? [w, h, 4, w * 4] : [h, w, w * 4, 4];
+  for (let line = 0; line < lines; line++) {
+    const base = line * lineStep;
+    for (let i = 0; i < len; i++) {
+      for (let c = 0; c < 4; c++) {
+        let acc = 0;
+        for (let j = -r; j <= r; j++) acc += k[j + r] * src[base + Math.min(len - 1, Math.max(0, i + j)) * step + c];
+        dst[base + i * step + c] = acc;
+      }
+    }
+  }
+}
+
+/** Below this the three box blurs would all be 1 px wide (no blur at all): use a real kernel. */
+const SMALL_SIGMA = 2;
+
+/** Gaussian blur of RGBA pixels, on premultiplied colour: an exact kernel for small radii,
+ *  three box blurs (fast, close to Gaussian) for big ones. */
 export function blurData(data: Uint8ClampedArray, w: number, h: number, sigma: number): Uint8ClampedArray {
   if (sigma <= 0) return new Uint8ClampedArray(data);
   let a = new Float32Array(data.length);
@@ -49,22 +72,27 @@ export function blurData(data: Uint8ClampedArray, w: number, h: number, sigma: n
     a[i + 2] = data[i + 2] * al;
     a[i + 3] = data[i + 3];
   }
-  let b = new Float32Array(data.length);
-  for (const size of boxes(sigma)) {
-    const r = (size - 1) / 2;
-    boxPass(a, b, w, h, r, true);
-    boxPass(b, a, w, h, r, false);
+  const b = new Float32Array(data.length);
+  if (sigma < SMALL_SIGMA) {
+    gaussPass(a, b, w, h, sigma, true);
+    gaussPass(b, a, w, h, sigma, false);
+  } else {
+    for (const size of boxes(sigma)) {
+      const r = (size - 1) / 2;
+      boxPass(a, b, w, h, r, true);
+      boxPass(b, a, w, h, r, false);
+    }
   }
-  b = a;
+  // Uint8ClampedArray rounds when storing, so no "+ 0.5" here (that would round up twice)
   const out = new Uint8ClampedArray(data.length);
   for (let i = 0; i < data.length; i += 4) {
-    const al = b[i + 3];
-    out[i + 3] = al + 0.5;
-    if (al <= 0) continue;
+    const al = a[i + 3];
+    out[i + 3] = al;
+    if (out[i + 3] === 0) continue;
     const k = 255 / al;
-    out[i] = b[i] * k + 0.5;
-    out[i + 1] = b[i + 1] * k + 0.5;
-    out[i + 2] = b[i + 2] * k + 0.5;
+    out[i] = a[i] * k;
+    out[i + 1] = a[i + 1] * k;
+    out[i + 2] = a[i + 2] * k;
   }
   return out;
 }
@@ -108,7 +136,7 @@ export function look(name: string, strength = 1): Effect {
       for (const step of def.steps) out = applyData(out, fromSettings(step));
       if (strength >= 1) return out === data ? new Uint8ClampedArray(data) : out;
       const mixed = new Uint8ClampedArray(data);
-      for (let i = 0; i < data.length; i += 4) for (let c = 0; c < 3; c++) mixed[i + c] = data[i + c] + (out[i + c] - data[i + c]) * strength + 0.5;
+      for (let i = 0; i < data.length; i += 4) for (let c = 0; c < 3; c++) mixed[i + c] = data[i + c] + (out[i + c] - data[i + c]) * strength;
       return mixed;
     },
   };

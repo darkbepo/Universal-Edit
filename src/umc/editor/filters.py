@@ -11,6 +11,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+import numpy as np
 from PIL import Image, ImageFilter
 
 from umc.editor.adjust import Adjustments
@@ -52,10 +53,18 @@ class Sharpen:
         return math.ceil(3 * self.radius) + 1
 
     def __call__(self, image: Image.Image, scale: float = 1.0) -> Image.Image:
+        """Unsharp mask on the colour only, against a premultiplied blur (so a cut-out's
+        see-through edge keeps its alpha and colour); like web/src/editor/filters.ts."""
+        image = image.convert("RGBA")
         if self.identity:
             return image.copy()
-        f = ImageFilter.UnsharpMask(max(0.1, self.radius * scale), self.amount, self.threshold)
-        return _premultiplied(image, lambda im: im.filter(f))
+        arr = np.asarray(image, dtype=np.float32)
+        soft = np.asarray(Blur(max(0.1, self.radius * scale))(image), dtype=np.float32)
+        diff = arr[..., :3] - soft[..., :3]
+        keep = np.abs(diff) < self.threshold  # differences below the threshold stay as they are
+        out = arr.copy()
+        out[..., :3] = np.where(keep, arr[..., :3], arr[..., :3] + diff * (self.amount / 100))
+        return Image.fromarray(np.clip(np.floor(out + 0.5), 0, 255).astype(np.uint8), "RGBA")
 
 
 # The same looks as web/src/editor/looks.json: name → (label, steps).

@@ -621,6 +621,8 @@ const filterMenu = async (page: Page, item: string) => {
 test("Filters: blur and sharpen apply as one undo step each", async ({ page }) => {
   await openEditor(page);
   await filterMenu(page, "Blur");
+  // the starting radius (2 px) is previewed before any slider is touched
+  await expect.poll(() => page.evaluate(() => (window.__editor as unknown as { previewing(): boolean }).previewing())).toBe(true);
   await page.locator("dialog.blur").getByLabel("Radius").fill("80");
   await page.locator("dialog.blur").getByRole("button", { name: "Apply" }).click();
   await expect.poll(() => page.evaluate(() => (window.__editor as EditorHook).history.canUndo)).toBe(true);

@@ -104,3 +104,58 @@ describe("on the document", () => {
     for (let i = 3; i < fast.length; i += 4) expect(fast[i]).toBe(255);
   });
 });
+
+describe("review fixes", () => {
+  it("small radii and shrunk previews still blur / sharpen", () => {
+    const soft = filters.blur(1).apply(edge(), W, H);
+    expect(Array.from(filters.sharpen(300, 0.5).apply(soft, W, H))).not.toEqual(Array.from(soft));
+    expect(Array.from(filters.blur(2).apply(edge(), W, H, 0.25))).not.toEqual(Array.from(edge())); // previewed at 0.5 px
+    expect(Array.from(filters.blur(0.4).apply(edge(), W, H))).not.toEqual(Array.from(edge()));
+  });
+
+  it("blurring noise keeps its average brightness (no double rounding)", () => {
+    let seed = 7;
+    const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) % 256);
+    const n = 64;
+    const d = new Uint8ClampedArray(n * n * 4);
+    for (let i = 0; i < d.length; i += 4) d.set([rnd(), rnd(), rnd(), 255], i);
+    const mean = (a: Uint8ClampedArray) => {
+      let s = 0;
+      for (let i = 0; i < a.length; i += 4) s += a[i];
+      return s / (a.length / 4);
+    };
+    for (const sigma of [0.5, 2, 6]) expect(Math.abs(mean(filters.blurData(d, n, n, sigma)) - mean(d))).toBeLessThan(0.1);
+  });
+
+  it("sharpen keeps a cut-out's colour and alpha", () => {
+    const d = new Uint8ClampedArray(12 * 4);
+    [60, 120, 180, 240, 255, 255, 255, 255].forEach((a, i) => d.set([200, 200, 200, a], (i + 2) * 4));
+    const out = filters.sharpen(200, 1).apply(d, 12, 1);
+    for (let x = 2; x < 10; x++) expect(px(out, 12, x, 0)).toEqual([200, 200, 200, d[x * 4 + 3]]);
+  });
+
+  it("blur on an offset layer with a selection at its edge; radius bigger than the layer", () => {
+    const ld = new Uint8ClampedArray(10 * 10 * 4);
+    for (let y = 0; y < 10; y++) for (let x = 0; x < 10; x++) ld.set(x < 5 ? [0, 0, 0, 255] : [255, 255, 255, 255], (y * 10 + x) * 4);
+    const doc: EditorDoc = { width: 30, height: 20, active: 0, selection: new Rect(12, 6, 17, 16), dirty: false, layers: [makeLayer("small", 10, 10, ld, { x: 12, y: 6 })] };
+    const h = new History(doc);
+    h.push(effects.applyToDocument(doc, filters.blur(40), "Blur"));
+    const l = doc.layers[0];
+    expect(px(l.data, 10, 4, 5)[0]).toBeGreaterThan(0);
+    expect(px(l.data, 10, 7, 5)[0]).toBe(255);
+    h.undo();
+    expect(px(doc.layers[0].data, 10, 4, 5)[0]).toBe(0);
+  });
+
+  it("a reduced blur preview softens edges like apply", () => {
+    const d = new Uint8ClampedArray(200 * 200 * 4);
+    for (let y = 50; y < 150; y++) for (let x = 50; x < 150; x++) d.set([255, 0, 0, 255], (y * 200 + x) * 4);
+    const doc: EditorDoc = { width: 200, height: 200, active: 0, selection: null, dirty: false, layers: [makeLayer("bg", 200, 200, d)] };
+    const fast = effects.preview(doc, filters.blur(6), 2_000);
+    const exact = effects.preview(doc, filters.blur(6));
+    expect(px(fast, 200, 47, 100)[3]).toBeGreaterThan(0);
+    let diff = 0;
+    for (let i = 3; i < fast.length; i += 4) diff += Math.abs(fast[i] - exact[i]);
+    expect(diff / (fast.length / 4)).toBeLessThan(8);
+  });
+});

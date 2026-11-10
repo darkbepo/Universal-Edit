@@ -110,6 +110,7 @@ async function effectModal(cls: string, title: string, host: AdjustHost, body: (
     }, 60);
   };
   const built = body(changed);
+  changed(); // show the starting settings (Blur opens at 2 px) right away
   const hold = h("button", { class: "btn small", type: "button" }, "Hold to see the original");
   const show = (orig: boolean) => {
     holding = orig;

@@ -102,3 +102,53 @@ def test_filters_apply_inside_the_selection_with_undo():
     assert img.getpixel((12, 5))[0] == 255  # outside untouched
     h.undo()
     assert doc.layers[0].image.getpixel((9, 5))[0] == 0
+
+
+def test_sharpen_keeps_a_cut_outs_colour_and_alpha():
+    img = Image.new("RGBA", (12, 1), (0, 0, 0, 0))
+    for x, a in enumerate((60, 120, 180, 240, 255, 255, 255, 255)):
+        img.putpixel((x + 2, 0), (200, 200, 200, a))
+    out = filters.Sharpen(200, 1)(img)
+    for x in range(2, 10):
+        r, g, b, a = out.getpixel((x, 0))
+        # Pillow blurs premultiplied colour in 8-bit steps, so faint pixels may be off by a
+        # step or two (was +14: a bright fringe); alpha is never touched
+        assert max(abs(v - 200) for v in (r, g, b)) <= 3 and a == img.getpixel((x, 0))[3]
+
+
+def test_small_radius_and_preview_scale_still_change_the_picture():
+    soft = filters.Blur(1)(_edge())
+    assert filters.Sharpen(200, 0.3)(soft).tobytes() != soft.tobytes()
+    assert filters.Blur(2)(_edge(), 0.25).tobytes() != _edge().tobytes()
+
+
+def _offset_doc():
+    """A 30×20 canvas with a 10×10 layer at (12, 6): left half black, right half white."""
+    layer_img = Image.new("RGBA", (10, 10), (0, 0, 0, 255))
+    layer_img.paste((255, 255, 255, 255), (5, 0, 10, 10))
+    return Document(30, 20, [Layer("small", layer_img, x=12, y=6)])
+
+
+def test_blur_on_an_offset_layer_with_a_selection_at_its_edge():
+    from umc.editor.geometry import Rect
+
+    doc = _offset_doc()
+    doc.selection = Rect(12, 6, 17, 16)  # the layer's left (black) half, touching its border
+    h = History(doc)
+    h.push(effects.apply_to_document(doc, filters.Blur(40), "Blur"))  # radius ≫ layer
+    img = doc.layers[0].image
+    assert 0 < img.getpixel((4, 5))[0] < 255  # white bled in from beyond the selection
+    assert img.getpixel((7, 5))[0] == 255  # outside the selection untouched
+    h.undo()
+    assert doc.layers[0].image.getpixel((4, 5))[0] == 0
+
+
+def test_reduced_blur_preview_softens_edges_like_apply():
+    img = Image.new("RGBA", (200, 200), (0, 0, 0, 0))
+    img.paste((255, 0, 0, 255), (50, 50, 150, 150))
+    doc = Document(200, 200, [Layer("bg", img)])
+    fast = effects.preview(doc, filters.Blur(6), max_pixels=2_000)
+    exact = effects.preview(doc, filters.Blur(6))
+    assert fast.getpixel((47, 100))[3] > 0 and exact.getpixel((47, 100))[3] > 0
+    diff = np.abs(np.asarray(fast, dtype=int) - np.asarray(exact, dtype=int))[..., 3]
+    assert diff.mean() < 8
