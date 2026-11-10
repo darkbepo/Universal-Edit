@@ -49,6 +49,7 @@ export const INFO: [string, string, string][] = [
   ["Esc", "Cancel the current drag / crop", "Tools"],
   ["Space + drag", "Pan (also the middle mouse button)", "View"],
   ["Mouse wheel", "Zoom around the cursor", "View"],
+  ["⌘ on a Mac", "Works like Ctrl. ⌘+Shift+[ / ] switch browser tabs there: use the layer menu's Move to top / bottom", "Layers"],
 ];
 
 export const GROUPS = ["Edit", "Selection", "Layers", "View", "Tools"];
@@ -69,17 +70,21 @@ export function parseKey(text: string): Spec {
   return { ctrl: mods.has("ctrl"), shift: mods.has("shift"), alt: mods.has("alt"), key };
 }
 
-/** Does the key press match `text`? Letters match by position too (Ctrl+Alt+A may type "å");
- *  symbols match by key or physical key, so they work whatever Shift is needed to type them. */
+/** Does the key press match `text`? Letters and digits match by the character typed, so every
+ *  keyboard layout gets its own Ctrl+Z / Ctrl+Y; only when a modifier turned the key into
+ *  another character (⌥+A types "å" on a Mac) do they fall back to the physical key. Symbols
+ *  match by key or physical key, so they work whatever Shift is needed to type them. */
 export function matches(e: Pick<KeyboardEvent, "key" | "code" | "ctrlKey" | "metaKey" | "shiftKey" | "altKey">, text: string): boolean {
   const s = parseKey(text);
   if ((e.ctrlKey || e.metaKey) !== s.ctrl || e.altKey !== s.alt) return false;
   const key = e.key.toLowerCase();
-  if (/^[a-z]$/.test(s.key)) return e.shiftKey === s.shift && (key === s.key || e.code === `Key${s.key.toUpperCase()}`);
-  if (/^[0-9]$/.test(s.key)) return e.shiftKey === s.shift && (key === s.key || e.code === `Digit${s.key}`);
+  const typed = /^[a-z0-9]$/.test(key); // a plain letter / digit: trust it, never the position
+  if (/^[a-z]$/.test(s.key)) return e.shiftKey === s.shift && (typed ? key === s.key : e.code === `Key${s.key.toUpperCase()}`);
+  if (/^[0-9]$/.test(s.key)) return e.shiftKey === s.shift && (typed ? key === s.key : e.code === `Digit${s.key}`);
   if (s.key.length > 1) return e.shiftKey === s.shift && key === s.key; // Enter, Delete, F1…
   if (s.key === "?") return key === "?";
-  if (s.key === "+") return key === "+" || (e.code === "Equal" && e.shiftKey);
+  if (s.key === "+") return key === "+" || (e.code === "Equal" && e.shiftKey) || e.code === "NumpadAdd";
+  if (s.key === "-" && e.code === "NumpadSubtract") return e.shiftKey === s.shift;
   // [ ] = - : with Shift they type { } + _ on many layouts, so also accept the physical key
   if (e.shiftKey !== s.shift) return false;
   return key === s.key || e.code === CODES[s.key];

@@ -667,3 +667,22 @@ def test_shortcut_table_has_no_clashes_and_help_lists_everything(page, qtbot, mo
     page.canvas.setFocus()
     qtbot.keyClick(page.canvas, Qt.Key.Key_F1)
     assert opened
+
+
+def test_ctrl_alt_shortcuts_leave_text_fields_alone(page, qtbot):
+    """AltGr is Ctrl+Alt on Windows: Ctrl+Alt+A must not fire while typing (e.g. "ą")."""
+    page.select_tool("text")
+    edit = page.tool_settings.font_box.lineEdit()
+    edit.setFocus()
+    qtbot.keyClick(edit, Qt.Key.Key_A, CTRL | Qt.KeyboardModifier.AltModifier)
+    assert page.doc.selected_indices == [1]
+    page.canvas.setFocus()
+    qtbot.keyClick(page.canvas, Qt.Key.Key_A, CTRL | Qt.KeyboardModifier.AltModifier)
+    assert page.doc.selected_indices == [0, 1]
+    from umc.editor import ops
+
+    ops.select_layer(page.doc, 1)
+    page.layers.refresh(page.doc)
+    page.layers.list.setFocus()
+    qtbot.keyClick(page.layers.list, Qt.Key.Key_A, CTRL | Qt.KeyboardModifier.AltModifier)
+    assert page.doc.selected_indices == [0, 1]

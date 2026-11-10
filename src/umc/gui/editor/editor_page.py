@@ -267,9 +267,19 @@ class EditorPage(QWidget):
 
         def sc(keys, fn) -> None:
             for k in keys:
-                s = QShortcut(QKeySequence(k), self)
-                s.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
-                s.activated.connect(lambda f=fn: (self.canvas.cancel_gesture(), f()))
+                # Windows reports AltGr as Ctrl+Alt, so a page-wide Ctrl+Alt+A would swallow
+                # AltGr+A ("ą") in text fields: Ctrl+Alt keys only work on the canvas / layers.
+                if "Alt" in k:
+                    owners, context = (
+                        (self.canvas, self.layers.list),
+                        Qt.ShortcutContext.WidgetShortcut,
+                    )
+                else:
+                    owners, context = (self,), Qt.ShortcutContext.WidgetWithChildrenShortcut
+                for owner in owners:
+                    s = QShortcut(QKeySequence(k), owner)
+                    s.setContext(context)
+                    s.activated.connect(lambda f=fn: (self.canvas.cancel_gesture(), f()))
 
         def with_doc(fn):
             return lambda: fn(self.doc) if self.doc is not None else None

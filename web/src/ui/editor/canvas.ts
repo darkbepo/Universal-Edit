@@ -304,6 +304,11 @@ export class EditorCanvas {
     }
   }
 
+  /** A stroke / drag is in progress (arrow-key nudges wait for it to end). */
+  get dragging(): boolean {
+    return this.gesture === "left" || this.gesture === "right";
+  }
+
   /** [mode, rectangle] the floating bar belongs to, or null to hide it. */
   barTarget(): [BarMode, Rect] | null {
     if (!this.doc || !this.tool || this.gesture === "left" || this.gesture === "right") return null;

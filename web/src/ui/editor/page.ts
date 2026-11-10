@@ -355,7 +355,8 @@ export class EditorPage {
     }
     if (k === "escape") return run(() => this.discardCrop());
     const arrows: Record<string, [number, number]> = { arrowleft: [-1, 0], arrowright: [1, 0], arrowup: [0, -1], arrowdown: [0, 1] };
-    if (this.tool.id === "move" && k in arrows && !mod && !e.altKey) {
+    const onCanvas = t === this.canvas.view || t === document.body || t === this.el;
+    if (this.tool.id === "move" && k in arrows && !mod && !e.altKey && onCanvas && !this.canvas.dragging) {
       const step = e.shiftKey ? 10 : 1;
       const [dx, dy] = arrows[k];
       return run(() => this.push(ops.nudgeLayers(this.doc as EditorDoc, selectedIndices(this.doc as EditorDoc), dx * step, dy * step)));
@@ -382,7 +383,7 @@ export class EditorPage {
       redo: () => this.canvas.redo(),
       copy: () => void this.copy(),
       copy_merged: () => void this.copy(true),
-      cut: () => void this.cut(),
+      cut: () => this.cut(),
       paste: () => {},
       delete: () => (this.layers.list.contains(document.activeElement) ? lp.remove() : this.push(clearSelection(doc()))),
       save: () => void this.save(),
@@ -417,32 +418,42 @@ export class EditorPage {
   // ---------------------------------------------------------------- clipboard
   /** Ctrl+C / Ctrl+Shift+C. The picture also goes to the system clipboard where the browser
    *  allows it (so it can be pasted into other programs). */
-  async copy(merged = false): Promise<clipboard.Clip | null> {
+  copy(merged = false): clipboard.Clip | null {
     if (!this.doc) return null;
     const clip = clipboard.copy(this.doc, merged);
     if (!clip) {
       this.showMessage("Nothing to copy: the selection doesn't touch this layer.");
       return null;
     }
-    this.clip = clip;
-    this.clipOnSystem = false;
+    this.remember(clip);
     this.showMessage(`Copied ${clip.width} × ${clip.height} px.`);
-    try {
-      const png = await canvasPng.encode(clip.data, clip.width, clip.height);
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": new Blob([png as BlobPart], { type: "image/png" }) })]);
-      this.clipOnSystem = this.clip === clip;
-    } catch {
-      // No image clipboard here (older browser, no permission): copy / paste still work inside the editor.
-    }
     return clip;
   }
 
-  async cut(): Promise<void> {
+  /** Keep `clip` for pasting here, and put it on the system clipboard in the background. */
+  private remember(clip: clipboard.Clip): void {
+    this.clip = clip;
+    this.clipOnSystem = false;
+    void (async () => {
+      try {
+        const png = await canvasPng.encode(clip.data, clip.width, clip.height);
+        await navigator.clipboard.write([new ClipboardItem({ "image/png": new Blob([png as BlobPart], { type: "image/png" }) })]);
+        if (this.clip === clip) this.clipOnSystem = true;
+      } catch {
+        // No image clipboard here (older browser, no permission): copy / paste still work inside the editor.
+      }
+    })();
+  }
+
+  /** Copy and clear in one go (nothing can change the selection or layer in between). */
+  cut(): void {
     if (!this.doc) return;
-    const before = this.doc;
-    const clip = await this.copy();
-    if (!clip || this.doc !== before) return;
-    const [, cmd] = clipboard.cut(this.doc);
+    const [clip, cmd] = clipboard.cut(this.doc);
+    if (!clip) {
+      this.showMessage("Nothing to cut: the selection doesn't touch this layer.");
+      return;
+    }
+    this.remember(clip);
     this.push(cmd);
   }
 
