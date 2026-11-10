@@ -129,6 +129,7 @@ class VideoEditorPage(QWidget):
         self.player.position.connect(self._playing_position)
         self.player.finished.connect(self._play_finished)
         self.player.notice.connect(self.show_message)
+        self.player.failed.connect(lambda msg: self.show_message(msg, error=True))
         self.scanner = MediaScanner(self.tmp, self)
         self.scanner.thumbnails.connect(lambda sid, imgs: self.timeline.set_thumbnails(sid, imgs))
         self.scanner.waveform.connect(lambda sid, peaks: self.timeline.set_waveform(sid, peaks))
@@ -580,7 +581,7 @@ class VideoEditorPage(QWidget):
     def _playing_position(self, t: float) -> None:
         self.playhead = t
         self.timeline.set_playhead(t)
-        self._update_time()
+        self.preview.set_time(t, self.player.total)  # no layout work per tick
 
     def _play_finished(self) -> None:
         self.preview.set_playing(False)

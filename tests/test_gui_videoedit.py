@@ -626,3 +626,145 @@ def test_shutdown_stops_playback(vpage, qtbot, silent):
     qtbot.wait(200)
     vpage.shutdown()
     assert not vpage.player.is_playing
+
+
+# ------------------------------------------------ real-device clock, errors, scans
+
+
+class _LatencyOut:
+    """Like a real device: the clock is what was heard (latency 100 ms) and stops when the
+    queued sound has all been played."""
+
+    silent = False
+
+    def __init__(self, latency=0.1):
+        import time
+
+        self._time = time
+        self._latency = latency
+        self._written = 0
+        self._t0 = None
+        self._closed = False
+
+    def write(self, chunk):
+        from umc.videoedit.audio_out import FRAME_BYTES, SAMPLE_RATE
+
+        if self._t0 is None:
+            self._t0 = self._time.monotonic()
+        self._written += len(chunk) // FRAME_BYTES
+        while not self._closed and self._written / SAMPLE_RATE - self._heard() > 0.5:
+            self._time.sleep(0.01)
+
+    def _heard(self):
+        from umc.videoedit.audio_out import SAMPLE_RATE
+
+        if self._t0 is None:
+            return 0.0
+        return min(self._written / SAMPLE_RATE, self._time.monotonic() - self._t0)
+
+    def played_seconds(self):
+        return max(0.0, self._heard() - self._latency)
+
+    def close(self):
+        self._closed = True
+
+
+@pytest.fixture
+def device(monkeypatch):
+    from umc.videoedit import audio_out
+
+    monkeypatch.setattr(audio_out, "open_output", lambda: _LatencyOut())
+
+
+@needs_ffmpeg
+def test_play_ends_with_device_latency(vpage, qtbot, device):
+    from umc.videoedit.project import length
+
+    total = length(vpage.history.project)
+    vpage.seek(total - 0.3)
+    with qtbot.waitSignal(vpage.player.finished, timeout=5000):
+        vpage.preview.play_button.click()
+    assert vpage.playhead == pytest.approx(total, abs=0.05)
+
+
+@needs_ffmpeg
+def test_loop_with_device_latency(vpage, qtbot, device):
+    from umc.videoedit.project import length
+
+    total = length(vpage.history.project)
+    vpage.preview.loop = True
+    vpage.seek(total - 0.3)
+    vpage.preview.play_button.click()
+    qtbot.waitUntil(lambda: vpage.player.is_playing and vpage.playhead < 0.6, timeout=5000)
+    qtbot.wait(200)
+    assert vpage.player.is_playing
+    vpage.preview.play_button.click()
+
+
+@needs_ffmpeg
+def test_failing_feeder_still_ends_and_reports(vpage, qtbot, silent, monkeypatch):
+    from umc.videoedit import preview
+    from umc.videoedit.project import length
+
+    def broken(self):
+        raise RuntimeError("sound broke")
+        yield b""
+
+    monkeypatch.setattr(preview.PlaybackStreams, "audio", broken)
+    errors = []
+    vpage.player.failed.connect(errors.append)
+    vpage.seek(length(vpage.history.project) - 0.3)
+    with qtbot.waitSignal(vpage.player.finished, timeout=5000):
+        vpage.preview.play_button.click()
+    assert errors
+
+
+@needs_ffmpeg
+def test_playback_failure_is_an_error_message(vpage, qtbot, silent, monkeypatch):
+    from umc.videoedit import preview
+
+    def boom(*a, **k):
+        raise RuntimeError("x")
+
+    monkeypatch.setattr(preview, "PlaybackStreams", boom)
+    vpage.preview.play_button.click()
+    assert vpage.message.objectName() == "Error"
+    assert not vpage.preview.playing
+
+
+@needs_ffmpeg
+def test_shutdown_during_scan_is_quick_and_leaves_nothing(qtbot, vmedia, monkeypatch):
+    import time
+
+    from umc.gui.videoedit.editor_page import VideoEditorPage
+    from umc.videoedit import preview
+
+    started = []
+
+    def slow(*a, **k):
+        started.append(1)
+        time.sleep(2.0)
+        return []
+
+    monkeypatch.setattr(preview, "thumbnails", slow)
+    pg = VideoEditorPage()
+    qtbot.addWidget(pg)
+    assert pg.open_paths([vmedia / "red.mp4"])
+    qtbot.waitUntil(lambda: bool(started), timeout=5000)
+    tmp = pg.tmp
+    t0 = time.monotonic()
+    pg.shutdown()
+    assert time.monotonic() - t0 < 1.0
+    assert not tmp.exists()
+    time.sleep(2.2)  # the abandoned scan ends: it must not bring the folder back
+    assert not tmp.exists()
+
+
+@needs_ffmpeg
+def test_position_signals_are_throttled(vpage, qtbot, silent):
+    seen = []
+    vpage.player.position.connect(seen.append)
+    vpage.preview.play_button.click()
+    qtbot.wait(500)
+    vpage.preview.play_button.click()
+    assert all(b - a >= 1 / 30 - 1e-6 for a, b in zip(seen, seen[1:], strict=False))

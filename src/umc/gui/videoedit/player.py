@@ -7,6 +7,7 @@ import logging
 import math
 import os
 import queue
+import shutil
 import threading
 import time
 from pathlib import Path
@@ -35,6 +36,11 @@ WAVE_MAX = 4000
 _STRAGGLERS: list[object] = []  # threads that outlived their owner; kept until they end
 
 
+def _forget(obj: object) -> None:
+    with contextlib.suppress(ValueError):
+        _STRAGGLERS.remove(obj)
+
+
 class _Run:
     """One playback from ``t0``: the streams, the sound output and the two worker threads."""
 
@@ -43,6 +49,9 @@ class _Run:
         self.stop = threading.Event()
         self.frames: queue.Queue = queue.Queue(MAX_QUEUED_FRAMES)  # (t, bytes), None at the end
         self.error: str | None = None
+        self.feeder_done = False
+        self._last = t0  # last sound clock reading and when it last moved
+        self._moved = time.monotonic()
         self.streams = preview.PlaybackStreams(project, t0, tmp)
         self.size = self.streams.size
         try:
@@ -76,6 +85,7 @@ class _Run:
                 log.exception("preview playback failed")
                 self.error = preview.ERROR
         self._put(None)
+        _forget(threading.current_thread())
 
     def _feed(self) -> None:
         try:
@@ -86,9 +96,21 @@ class _Run:
         except Exception:
             if not self.stop.is_set():
                 log.exception("preview sound failed")
+                self.error = self.error or preview.ERROR
+        finally:
+            self.feeder_done = True
+            _forget(threading.current_thread())
 
     def clock(self) -> float:
-        return self.t0 + self.out.played_seconds()
+        """Where playback is: the sound's clock; once no more sound comes (the end of the
+        stream, a failure) the clock goes on by itself, since a device clock stops then."""
+        audio = self.t0 + self.out.played_seconds()
+        now = time.monotonic()
+        if audio > self._last + 1e-9:
+            self._last, self._moved = audio, now
+        if self.feeder_done:
+            return max(audio, self._last + (now - self._moved))
+        return audio
 
     def shut_down(self) -> None:
         """Stop everything; waits at most about a second for the threads."""
@@ -102,6 +124,8 @@ class _Run:
             if th.is_alive():
                 log.warning("Preview thread %s didn't stop in time", th.name)
                 _STRAGGLERS.append(th)
+                if not th.is_alive():
+                    _forget(th)
 
 
 class Player(QObject):
@@ -110,12 +134,16 @@ class Player(QObject):
     frame = Signal(QImage)
     position = Signal(float)
     finished = Signal()
-    notice = Signal(str)
+    notice = Signal(str)  # information
+    failed = Signal(str)  # an error to show as one
 
     def __init__(self, tmp: Path, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self.tmp = Path(tmp)
         self.loop = False
+        self.total = 0.0  # length of the project being played (computed once per play)
+        self._fps = 30.0
+        self._last_pos = -1.0
         self._run: _Run | None = None
         self._project: Project | None = None
         self._held: tuple[float, bytes] | None = None
@@ -135,8 +163,11 @@ class Player(QObject):
             run = _Run(project, t, self.tmp)
         except Exception:
             log.exception("couldn't start the preview playback")
-            self.notice.emit(preview.ERROR)
+            self.failed.emit(preview.ERROR)
             return
+        self.total = length(project)
+        self._fps = run.streams.fps
+        self._last_pos = -1.0
         self._project, self._run, self._held = project, run, None
         if run.out.silent and not os.environ.get("UMC_NO_AUDIO") and not self._announced:
             self._announced = True
@@ -177,17 +208,20 @@ class Player(QObject):
         if ended:
             self._ended(run, project)
             return
-        self.position.emit(min(clock, length(project)))
+        pos = min(clock, self.total)
+        if pos - self._last_pos >= 1 / self._fps - 1e-9:
+            self._last_pos = pos
+            self.position.emit(pos)
 
     def _ended(self, run: _Run, project: Project) -> None:
         error = run.error
         self.stop()
         if error:
-            self.notice.emit(error)
-        if self.loop and not error and length(project) > 0:
+            self.failed.emit(error)
+        if self.loop and not error and self.total > 0:
             self.play(project, 0.0)
             return
-        self.position.emit(length(project))
+        self.position.emit(self.total)
         self.finished.emit()
 
 
@@ -215,7 +249,7 @@ class _ScanWorker(QObject):
 
     @Slot(object)
     def scan(self, source: Source) -> None:
-        if self.closed:
+        if self.closed or not self.tmp.exists():
             return
         try:
             if source.kind in ("video", "image"):
@@ -225,6 +259,8 @@ class _ScanWorker(QObject):
                 self.wave.emit(source.id, preview.waveform(source, wave_buckets(source)))
         except Exception:
             log.warning("couldn't scan %s for the timeline", source.path, exc_info=True)
+        if self.closed:  # the page is gone: leave nothing behind in its folder
+            shutil.rmtree(self.tmp, ignore_errors=True)
 
 
 class MediaScanner(QObject):
@@ -287,8 +323,8 @@ class MediaScanner(QObject):
         self._closed = True
         self._worker.closed = True
         self._thread.quit()
-        if not self._thread.wait(5_000):
-            log.warning("Thumbnail thread didn't stop within 5 s; letting it finish")
+        if not self._thread.wait(300):
+            log.warning("Thumbnail thread didn't stop quickly; letting it finish")
             entry = (self._thread, self._worker)
             self._thread.setParent(None)
             _STRAGGLERS.append(entry)
