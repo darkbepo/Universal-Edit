@@ -69,6 +69,7 @@ The browser version's source is in [`web/`](web/README.md).
 | CAD drawings: DXF → SVG, PNG, JPG (layer colours or print black-on-white) | ✅ | ✅ |
 | CAD drawings: DWG in (one-click LibreDWG install), → PDF on paper sizes, save as another DXF version | ✅ | ❌ |
 | **Image editor**: Convert \| Edit switch, layers (opacity, hide, reorder, merge), brush, eraser, fill, colour picker, shapes, text, rectangle selection, crop, resize, rotate / flip, brightness / contrast, undo | ✅ | ✅ |
+| Image editor layers: select several (Ctrl / Shift+click), drag to reorder, ▲▼ arrows on each layer, right-click menu (duplicate, delete, merge, move to top / bottom, show / hide) | ✅ | coming next |
 | Layered projects: save and open OpenRaster `.ora` (GIMP and Krita open it too); `.ora` → any image format | ✅ | ✅ |
 | Files never leave your computer | ✅ | ✅ |
 | No install needed | ❌ | ✅ |

@@ -121,18 +121,24 @@ class LayerListCommand(Command):
         after: list[Layer],
         active_before: int,
         active_after: int,
+        selected_before: set[int] | None = None,
+        selected_after: set[int] | None = None,
     ) -> None:
         self.label = label
         self.before, self.after = list(before), list(after)
         self.active_before, self.active_after = active_before, active_after
+        self.selected_before = set(selected_before or ())
+        self.selected_after = set(selected_after or ())
 
     def undo(self, doc: Document) -> None:
         doc.layers = list(self.before)
         doc.active = self.active_before
+        doc.selected = set(self.selected_before)
 
     def redo(self, doc: Document) -> None:
         doc.layers = list(self.after)
         doc.active = self.active_after
+        doc.selected = set(self.selected_after)
 
     @property
     def nbytes(self) -> int:

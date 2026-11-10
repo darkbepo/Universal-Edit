@@ -346,23 +346,12 @@ class EditorPage(QWidget):
     def _on_changed(self) -> None:
         if self.doc is None:
             return
-        if self.layers.list.count() != len(self.doc.layers) or self._layers_differ():
+        if not self.layers.in_sync(self.doc):
             self.layers.refresh(self.doc)
         else:
             self.layers.refresh_thumbnails()
         self._update_buttons()
         self._update_info()
-
-    def _layers_differ(self) -> bool:
-        for row in range(self.layers.list.count()):
-            layer = self.doc.layers[len(self.doc.layers) - 1 - row]
-            item = self.layers.list.item(row)
-            visible = item.checkState() == Qt.CheckState.Checked
-            if item.text() != layer.name or visible != layer.visible:
-                return True
-        return self.layers.list.currentRow() != len(self.doc.layers) - 1 - self.doc.active or (
-            self.layers.opacity.value() != round(self.doc.active_layer.opacity * 100)
-        )
 
     def _update_buttons(self) -> None:
         h = self.history

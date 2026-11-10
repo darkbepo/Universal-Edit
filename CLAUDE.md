@@ -471,6 +471,22 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
       "Save to a file…" (Chrome/Edge) uses `showSaveFilePicker` and Ctrl+S overwrites it. The web
       image converter reads `.ora` via its `mergedimage.png`. e2e: `e2e/editor.spec.ts` (the page
       exposes `window.__editor` only with `?e2e` in the URL).
+   4. Layers list and shortcuts (owner's request, Nov 2026), one task at a time, desktop first:
+      a. ✅ desktop layers: `Document.selected` (+ `selected_indices`, always includes `active`,
+         restored by undo through `LayerListCommand`); ops `select_layers`, `move_layers_to` (drag:
+         a gap 0…n), `move_layers_by` (arrows), `duplicate_layers`, `delete_layers` (≥ 1 stays),
+         `merge_layers` (hidden ones dropped, like Merge down), `set_opacity_layers`,
+         `set_visible_layers`. `gui/editor/layers_panel.py`: `LayerList` (ExtendedSelection; ▲▼
+         painted by `LayerDelegate`, clicks caught in `mousePressEvent`; drops reported as a gap and
+         answered with `IgnoreAction`, so Qt never moves/deletes rows itself — the list is rebuilt
+         from the model), right-click menu `build_menu`. The Up / Down buttons are gone (owner:
+         arrows on the row are clearer). Offscreen Qt can't run a real drag, so the drop test
+         calls `dropEvent` directly — check a real mouse drag on Windows.
+      b. web layers (same behaviour in `web/src/editor/ops.ts` + `ui/editor/panels.ts`).
+      c. Crop: the Apply / Cancel bar only appears once a rectangle is drawn, next to it (both apps).
+      d. Shortcuts + clipboard (desktop, then web): Ctrl+C / Ctrl+Shift+C (merged) / Ctrl+X /
+         Ctrl+V (pastes as a new layer, like Photoshop), Move tool (V, arrow-key nudge), Ctrl+J,
+         Ctrl+E, Ctrl+Shift+N, Ctrl+] / Ctrl+[, Ctrl+Plus / Minus, a "?" shortcut list.
 11. Ideas: installer for the app itself (Inno Setup), presets, batch queue.
 
 ## Handoff — read this first (for the next Claude account)

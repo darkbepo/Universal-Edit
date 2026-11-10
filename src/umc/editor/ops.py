@@ -192,10 +192,19 @@ def apply_brightness_contrast(doc: Document, brightness: int, contrast: int) -> 
 # ------------------------------------------------------------------ layer list
 
 
-def _change(doc: Document, label: str, layers: list[Layer], active: int) -> Command:
-    before, active_before = list(doc.layers), doc.active
+def _change(
+    doc: Document,
+    label: str,
+    layers: list[Layer],
+    active: int,
+    selected: set[int] | None = None,
+) -> Command:
+    before, active_before, selected_before = list(doc.layers), doc.active, set(doc.selected)
     doc.layers, doc.active = layers, active
-    return LayerListCommand(label, before, list(layers), active_before, active)
+    doc.selected = set(selected or ())
+    return LayerListCommand(
+        label, before, list(layers), active_before, active, selected_before, set(doc.selected)
+    )
 
 
 def _replace_active(doc: Document, label: str, new: Layer) -> Command:
@@ -203,9 +212,31 @@ def _replace_active(doc: Document, label: str, new: Layer) -> Command:
 
 
 def _replace(doc: Document, index: int, label: str, new: Layer) -> Command:
+    return _replace_many(doc, {index: new}, label)
+
+
+def _replace_many(doc: Document, new: dict[int, Layer], label: str) -> Command:
     layers = list(doc.layers)
-    layers[index] = new
-    return _change(doc, label, layers, doc.active)
+    for index, layer in new.items():
+        layers[index] = layer
+    return _change(doc, label, layers, doc.active, set(doc.selected))
+
+
+def _clean(doc: Document, indices) -> list[int]:
+    n = len(doc.layers)
+    return sorted({i for i in indices if 0 <= i < n})
+
+
+def _plural(n: int, one: str, many: str) -> str:
+    return one if n == 1 else many
+
+
+def _reselect(
+    doc: Document, layers: list[Layer], keep: list[Layer], active: Layer
+) -> tuple[int, set[int]]:
+    """Helper for reorders: find the kept/active Layer objects again in the new order."""
+    where = {id(la): i for i, la in enumerate(layers)}
+    return where[id(active)], {where[id(la)] for la in keep}
 
 
 def _unique_name(doc: Document, base: str) -> str:
@@ -232,19 +263,41 @@ def add_layers(doc: Document, new_layers: list[Layer], label: str = "Add images"
 
 
 def duplicate_layer(doc: Document) -> Command:
-    layers = list(doc.layers)
-    copy = doc.active_layer.copy()
-    copy.name = f"{copy.name} copy"
-    layers.insert(doc.active + 1, copy)
-    return _change(doc, "Duplicate layer", layers, doc.active + 1)
+    return duplicate_layers(doc, [doc.active])
+
+
+def duplicate_layers(doc: Document, indices) -> Command | None:
+    """Each layer gets a copy right above it; the copies become the selection."""
+    chosen = set(_clean(doc, indices))
+    if not chosen:
+        return None
+    layers: list[Layer] = []
+    copies: dict[int, int] = {}
+    for i, layer in enumerate(doc.layers):
+        layers.append(layer)
+        if i in chosen:
+            copy = layer.copy()
+            copy.name = f"{layer.name} copy"
+            copies[i] = len(layers)
+            layers.append(copy)
+    active = copies.get(doc.active, copies[max(chosen)])
+    label = _plural(len(chosen), "Duplicate layer", "Duplicate layers")
+    return _change(doc, label, layers, active, set(copies.values()))
 
 
 def delete_layer(doc: Document) -> Command | None:
-    if len(doc.layers) <= 1:
+    return delete_layers(doc, [doc.active])
+
+
+def delete_layers(doc: Document, indices) -> Command | None:
+    """Delete the given layers; at least one layer always stays."""
+    chosen = _clean(doc, indices)
+    if not chosen or len(chosen) >= len(doc.layers):
         return None
-    layers = list(doc.layers)
-    del layers[doc.active]
-    return _change(doc, "Delete layer", layers, max(0, doc.active - 1))
+    gone = set(chosen)
+    layers = [la for i, la in enumerate(doc.layers) if i not in gone]
+    label = _plural(len(chosen), "Delete layer", "Delete layers")
+    return _change(doc, label, layers, max(0, chosen[0] - 1))
 
 
 def merge_down(doc: Document) -> Command | None:
@@ -263,19 +316,97 @@ def merge_down(doc: Document) -> Command | None:
     return _change(doc, "Merge down", layers, i - 1)
 
 
-def move_layer(doc: Document, delta: int) -> Command | None:
-    i = doc.active
-    j = max(0, min(len(doc.layers) - 1, i + delta))
-    if i == j:
+def merge_layers(doc: Document, indices) -> Command | None:
+    """Flatten several layers into one, placed where the top one was and named after it.
+
+    Hidden layers are dropped (like Merge down does), unless all of them are hidden.
+    """
+    chosen = _clean(doc, indices)
+    if len(chosen) < 2:
         return None
+    group = [doc.layers[i] for i in chosen]
+    shown = [la for la in group if la.visible] or group
+    box = shown[0].bounds
+    for la in shown[1:]:
+        box = box.union(la.bounds)
+    img = Image.new("RGBA", (box.width, box.height))
+    for la in shown:
+        img.alpha_composite(with_opacity(la.image, la.opacity), (la.x - box.x0, la.y - box.y0))
+    top = group[-1]
+    merged = Layer(top.name, img, box.x0, box.y0, 1.0, any(la.visible for la in group))
+    gone = set(chosen)
+    position = chosen[-1] - (len(chosen) - 1)
+    layers = [la for i, la in enumerate(doc.layers) if i not in gone]
+    layers.insert(position, merged)
+    return _change(doc, "Merge layers", layers, position)
+
+
+def move_layer(doc: Document, delta: int) -> Command | None:
+    return move_layers_by(doc, [doc.active], delta)
+
+
+def move_layers_by(doc: Document, indices, delta: int) -> Command | None:
+    """Move each layer one step up (+1) or down (−1); a layer stops at the top / bottom
+    or against another moving layer that can't go further."""
+    chosen = _clean(doc, indices)
+    if not chosen or delta == 0:
+        return None
+    step = 1 if delta > 0 else -1
     layers = list(doc.layers)
-    layers.insert(j, layers.pop(i))
-    return _change(doc, "Move layer", layers, j)
+    keep = [layers[i] for i in chosen]
+    active = layers[doc.active]
+    for _ in range(abs(delta)):
+        moving = {id(la) for la in keep}
+        order = range(len(layers) - 1, -1, -1) if step > 0 else range(len(layers))
+        for i in order:
+            j = i + step
+            if id(layers[i]) in moving and 0 <= j < len(layers) and id(layers[j]) not in moving:
+                layers[i], layers[j] = layers[j], layers[i]
+    if all(a is b for a, b in zip(layers, doc.layers, strict=True)):
+        return None
+    new_active, selected = _reselect(doc, layers, keep, active)
+    label = _plural(len(chosen), "Move layer", "Move layers")
+    return _change(doc, label, layers, new_active, selected)
+
+
+def move_layers_to(doc: Document, indices, gap: int) -> Command | None:
+    """Move layers (keeping their order) into the gap below ``doc.layers[gap]``.
+
+    ``gap`` counts in the current list: 0 = bottom, ``len(doc.layers)`` = top. This is what
+    dragging rows in the layers list does.
+    """
+    chosen = _clean(doc, indices)
+    if not chosen:
+        return None
+    gap = max(0, min(len(doc.layers), gap))
+    gone = set(chosen)
+    keep = [doc.layers[i] for i in chosen]
+    rest = [la for i, la in enumerate(doc.layers) if i not in gone]
+    at = gap - sum(1 for i in chosen if i < gap)
+    layers = rest[:at] + keep + rest[at:]
+    if all(a is b for a, b in zip(layers, doc.layers, strict=True)):
+        return None
+    active = doc.layers[doc.active]
+    if id(active) not in {id(la) for la in keep}:
+        active = keep[-1]
+    new_active, selected = _reselect(doc, layers, keep, active)
+    label = _plural(len(chosen), "Move layer", "Move layers")
+    return _change(doc, label, layers, new_active, selected)
 
 
 def select_layer(doc: Document, index: int) -> None:
     """Changing the active layer isn't an undo step."""
     doc.active = max(0, min(len(doc.layers) - 1, index))
+    doc.selected = {doc.active}
+
+
+def select_layers(doc: Document, indices, active: int | None = None) -> None:
+    """Select several layers; ``active`` (default: the top one) is the one tools paint on."""
+    chosen = _clean(doc, indices)
+    if not chosen:
+        return
+    doc.active = active if active in chosen else chosen[-1]
+    doc.selected = set(chosen)
 
 
 def rename_layer(doc: Document, index: int, name: str) -> Command | None:
@@ -286,14 +417,30 @@ def rename_layer(doc: Document, index: int, name: str) -> Command | None:
 
 
 def set_opacity(doc: Document, index: int, opacity: float) -> Command | None:
+    return set_opacity_layers(doc, [index], opacity)
+
+
+def set_opacity_layers(doc: Document, indices, opacity: float) -> Command | None:
     opacity = max(0.0, min(1.0, opacity))
-    if abs(opacity - doc.layers[index].opacity) < 1e-6:
-        return None
-    return _replace(doc, index, "Layer opacity", replace(doc.layers[index], opacity=opacity))
+    new = {
+        i: replace(doc.layers[i], opacity=opacity)
+        for i in _clean(doc, indices)
+        if abs(opacity - doc.layers[i].opacity) >= 1e-6
+    }
+    return _replace_many(doc, new, "Layer opacity") if new else None
 
 
 def set_visible(doc: Document, index: int, visible: bool) -> Command | None:
-    if doc.layers[index].visible == visible:
+    return set_visible_layers(doc, [index], visible)
+
+
+def set_visible_layers(doc: Document, indices, visible: bool) -> Command | None:
+    new = {
+        i: replace(doc.layers[i], visible=visible)
+        for i in _clean(doc, indices)
+        if doc.layers[i].visible != visible
+    }
+    if not new:
         return None
-    label = "Show layer" if visible else "Hide layer"
-    return _replace(doc, index, label, replace(doc.layers[index], visible=visible))
+    label = ("Show " if visible else "Hide ") + _plural(len(new), "layer", "layers")
+    return _replace_many(doc, new, label)

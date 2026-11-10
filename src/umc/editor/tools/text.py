@@ -61,10 +61,13 @@ def add_text_layer(
         return None
     img = render_text(text, family, size, bold, italic, color)
     name = text.strip().splitlines()[0][:30]
-    before, active_before = list(doc.layers), doc.active
+    before, active_before, selected_before = list(doc.layers), doc.active, set(doc.selected)
     doc.layers.insert(doc.active + 1, Layer(name, img, x=int(x), y=int(y)))
     doc.active += 1
-    return LayerListCommand("Text", before, list(doc.layers), active_before, doc.active)
+    doc.selected = set()
+    return LayerListCommand(
+        "Text", before, list(doc.layers), active_before, doc.active, selected_before, set()
+    )
 
 
 class TextTool(Tool):

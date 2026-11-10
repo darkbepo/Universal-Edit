@@ -325,3 +325,121 @@ def test_wait_for_save_waits_until_finished(page):
     QTimer.singleShot(50, page._save_finished)
     page._wait_for_save()
     assert not page.saving
+
+
+# ------------------------------------------------------------------ layers list
+
+
+@pytest.fixture
+def four(page):
+    """The page with four layers: (top) Layer 4, Layer 3, second, first (bottom)."""
+    page.layers.add_button.click()
+    page.layers.add_button.click()
+    assert [la.name for la in page.doc.layers] == ["first", "second", "Layer 3", "Layer 4"]
+    return page
+
+
+def _row_names(pg):
+    return [pg.layers.list.item(r).text() for r in range(pg.layers.list.count())]
+
+
+def _click_row(qtbot, pg, row, modifier=Qt.KeyboardModifier.NoModifier):
+    lst = pg.layers.list
+    rect = lst.visualItemRect(lst.item(row))
+    qtbot.mouseClick(lst.viewport(), Qt.MouseButton.LeftButton, modifier, rect.center())
+
+
+def test_ctrl_and_shift_click_select_several_layers(four, qtbot):
+    pg = four
+    _click_row(qtbot, pg, 0)
+    _click_row(qtbot, pg, 2, Qt.KeyboardModifier.ControlModifier)
+    assert pg.doc.selected_indices == [1, 3] and pg.doc.active == 1
+    _click_row(qtbot, pg, 1)
+    _click_row(qtbot, pg, 3, Qt.KeyboardModifier.ShiftModifier)
+    assert pg.doc.selected_indices == [0, 1, 2]
+    assert pg.layers.merge_button.text() == "Merge layers"
+    _click_row(qtbot, pg, 1)
+    assert pg.doc.selected_indices == [2] and pg.layers.merge_button.text() == "Merge down"
+
+
+def test_ctrl_click_never_leaves_nothing_selected(four, qtbot):
+    pg = four
+    _click_row(qtbot, pg, 1)
+    _click_row(qtbot, pg, 1, Qt.KeyboardModifier.ControlModifier)
+    assert pg.doc.selected_indices == [2] and len(pg.layers.list.selectedItems()) == 1
+
+
+def test_row_arrows_move_layer(four, qtbot):
+    from umc.gui.editor.layers_panel import arrow_rects
+
+    pg = four
+    lst = pg.layers.list
+    up, down = arrow_rects(lst.visualItemRect(lst.item(3)))  # bottom row: "first"
+    assert lst.arrow_at(down.center()) is None  # already at the bottom
+    qtbot.mouseClick(lst.viewport(), Qt.MouseButton.LeftButton, pos=up.center())
+    assert _row_names(pg) == ["Layer 4", "Layer 3", "first", "second"]
+    assert pg.doc.active_layer.name == "first" and pg.history.undo_label == "Move layer"
+    pg.canvas.undo()
+    assert _row_names(pg) == ["Layer 4", "Layer 3", "second", "first"]
+
+
+def test_drop_moves_selected_layers(four, qtbot):
+    from PySide6.QtCore import QMimeData
+    from PySide6.QtGui import QDropEvent
+
+    pg = four
+    lst = pg.layers.list
+    _click_row(qtbot, pg, 2)
+    _click_row(qtbot, pg, 3, Qt.KeyboardModifier.ControlModifier)  # second + first
+
+    class Drop(QDropEvent):
+        def source(self):
+            return lst
+
+    top = lst.visualItemRect(lst.item(0))
+    pos = QPointF(top.center().x(), top.top() + 2)  # upper half of the top row → gap 0
+    assert lst.gap_at(pos.toPoint()) == 0
+    event = Drop(
+        pos,
+        Qt.DropAction.MoveAction,
+        QMimeData(),
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    lst.dropEvent(event)
+    assert event.dropAction() == Qt.DropAction.IgnoreAction  # Qt must not delete rows itself
+    qtbot.waitUntil(lambda: _row_names(pg)[0] != "Layer 4")
+    assert _row_names(pg) == ["second", "first", "Layer 4", "Layer 3"]
+    assert sorted(lst.row(i) for i in lst.selectedItems()) == [0, 1]
+    pg.canvas.undo()
+    assert _row_names(pg) == ["Layer 4", "Layer 3", "second", "first"]
+
+
+def test_context_menu_actions(four, qtbot):
+    pg = four
+    _click_row(qtbot, pg, 0)
+    _click_row(qtbot, pg, 1, Qt.KeyboardModifier.ControlModifier)
+    menu = pg.layers.build_menu(0)
+    actions = {a.text(): a for a in menu.actions() if a.text()}
+    assert "Rename…" not in actions  # only for one layer
+    assert not actions["Move up"].isEnabled()
+    actions["Hide 2 layers"].trigger()
+    assert [la.visible for la in pg.doc.layers] == [True, True, False, False]
+    assert pg.layers.list.item(0).checkState() == Qt.CheckState.Unchecked
+    menu = pg.layers.build_menu(0)
+    actions = {a.text(): a for a in menu.actions() if a.text()}
+    actions["Move to bottom"].trigger()
+    assert _row_names(pg) == ["second", "first", "Layer 4", "Layer 3"]
+    actions = {a.text(): a for a in pg.layers.build_menu(2).actions() if a.text()}
+    actions["Merge 2 layers"].trigger()
+    assert _row_names(pg) == ["second", "first", "Layer 4"]
+
+
+def test_opacity_slider_changes_all_selected(four, qtbot):
+    pg = four
+    _click_row(qtbot, pg, 0)
+    _click_row(qtbot, pg, 3, Qt.KeyboardModifier.ControlModifier)
+    pg.layers.opacity.setValue(40)
+    assert [la.opacity for la in pg.doc.layers] == [0.4, 1.0, 1.0, 0.4]
+    pg.canvas.undo()
+    assert all(la.opacity == 1.0 for la in pg.doc.layers)

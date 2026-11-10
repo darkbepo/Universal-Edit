@@ -38,6 +38,9 @@ class Document:
     active: int = 0
     selection: Rect | None = None
     dirty: bool = field(default=False)
+    # Layers selected in the layers list (several with Ctrl/Shift+click). The active layer is
+    # always one of them: it's the one tools paint on. Not an undo step by itself.
+    selected: set[int] = field(default_factory=set)
 
     @classmethod
     def new(cls, width: int, height: int) -> Document:
@@ -47,6 +50,12 @@ class Document:
     @property
     def active_layer(self) -> Layer:
         return self.layers[self.active]
+
+    @property
+    def selected_indices(self) -> list[int]:
+        """Selected layer indices, bottom first; always includes the active layer."""
+        n = len(self.layers)
+        return sorted({i for i in self.selected if 0 <= i < n} | {self.active})
 
     @property
     def bounds(self) -> Rect:
