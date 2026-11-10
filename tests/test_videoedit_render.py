@@ -360,3 +360,101 @@ def test_many_pictures_keep_the_command_line_short(tmp_path):
     assert len(subprocess.list2cmdline(plan.args)) < 8000
     out = render_to(p, tmp_path / "out.mp4", tmp_path, audio=False)
     assert durations(out)[0] == pytest.approx(12.0, abs=0.1)
+
+
+# --- text titles (ASS) -------------------------------------------------------------------
+
+
+def test_build_ass_escaping():
+    from umc.videoedit.text_ass import build_ass
+
+    ass = build_ass([TextItem("t", "a{b}\\c\nline2", 0.0, 1.0)], (320, 240))
+    assert "a\\{b\\}\\\\c\\Nline2" in ass
+    assert "PlayResX: 320" in ass and "PlayResY: 240" in ass
+    assert "WrapStyle: 0" in ass and "ScaledBorderAndShadow: yes" in ass
+
+
+def test_build_ass_position_and_size():
+    from umc.videoedit.text_ass import build_ass
+
+    ass = build_ass([TextItem("t", "Hi", 0.0, 1.0, size=8.0)], (320, 240))
+    assert "\\an2\\pos(160,228)" in ass
+    style = next(line for line in ass.splitlines() if line.startswith("Style:"))
+    assert style.split(",")[2] == "19"
+    top_left = build_ass(
+        [TextItem("t", "Hi", 0.0, 1.0, anchor="top-left", x_offset=10)], (320, 240)
+    )
+    assert "\\an7\\pos(48,12)" in top_left
+
+
+def test_build_ass_negative_start_partial_fade():
+    from umc.videoedit.text_ass import build_ass
+
+    # fade-in of 1 s that began 0.4 s before the window: 40 % done at time 0
+    ass = build_ass([TextItem("t", "Hi", -0.4, 2.0, fade_in=1.0)], (320, 240))
+    dialogue = next(line for line in ass.splitlines() if line.startswith("Dialogue:"))
+    assert "0:00:00.00,0:00:02.00" in dialogue
+    assert "\\fade(153,0,255,0,600,2000,2000)" in dialogue
+    # past the fade-in already: no fade at all
+    done = build_ass([TextItem("t", "Hi", -2.0, 2.0, fade_in=1.0)], (320, 240))
+    assert "\\fad" not in done
+
+
+def _text_proj(src, item, **settings):
+    return _proj(src, [_clip("a", "blue")], text=[item], **settings)
+
+
+def test_render_text_visible(src, tmp_path):
+    item = TextItem("t", "HELLO", 0.0, 1.5, anchor="center", size=20.0, outline=0.0)
+    out = render_to(_text_proj(src, item), tmp_path / "out.mp4", tmp_path)
+    for t, expect in ((1.0, True), (1.8, False)):
+        img = np.asarray(frame_at(out, t))
+        h, w = img.shape[:2]
+        centre = img[h // 3 : 2 * h // 3, w // 3 : 2 * w // 3]
+        bright = int((centre[..., 0] > 200).sum())
+        assert (bright > 50) == expect, (t, bright)
+
+
+def test_render_text_box_colour(src, tmp_path):
+    item = TextItem(
+        "t",
+        "HELLO",
+        0.0,
+        1.5,
+        anchor="center",
+        size=20.0,
+        box=True,
+        box_colour="#ff0000",
+        box_opacity=100,
+        outline=6.0,
+    )
+    out = render_to(_text_proj(src, item), tmp_path / "out.mp4", tmp_path)
+    img = np.asarray(frame_at(out, 1.0)).astype(int)
+    h, w = img.shape[:2]
+    red = (img[..., 0] > 200) & (img[..., 1] < 60) & (img[..., 2] < 60)
+    # the box surrounds the text, so red appears in the middle band of the frame
+    assert int(red[h // 3 : 2 * h // 3].sum()) > 200
+
+
+def test_text_escaping_and_unicode_path(src, tmp_path, vmedia):
+    odd = tmp_path / "Ærø 'it' {x}.mp4"
+    shutil.copy(vmedia / "red.mp4", odd)
+    sources = (probe_source(odd, "r"),)
+    text = TextItem("t", "Ærø ✓ {b} \\ 'q'", 0.0, 1.0)
+    p = Project(ProjectSettings(), sources, (VideoClip("c", "r", 0.0, 1.0),), ((text,),))
+    out = render_to(p, tmp_path / "out.mp4", tmp_path)
+    assert durations(out)[0] == pytest.approx(1.0, abs=FRAME + 1e-3)
+
+
+def test_text_window_matches_full_render(src, tmp_path):
+    item = TextItem("t", "HELLO", 0.5, 2.0, anchor="center", size=25.0, outline=0.0)
+    p = _text_proj(src, item)
+    full = render_to(p, tmp_path / "full.mp4", tmp_path)
+    for t in (0.4, 0.8, 1.2, 1.9):
+        w = window(p, t, t + FRAME)
+        part = render_to(
+            w.project, tmp_path / f"w{t}.mp4", tmp_path, lead=w.lead, duration=w.duration
+        )
+        x = np.asarray(frame_at(part, 0.0), dtype=np.float64)
+        y = np.asarray(frame_at(full, t), dtype=np.float64)
+        assert np.abs(x - y).mean() < 6, t

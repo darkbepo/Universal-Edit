@@ -6,23 +6,29 @@ Export runs the plan at full size; the preview runs it small on a ``Window`` sli
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
+import logging
 import os
+import shutil
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from PIL import ImageOps
 
 from umc.converters.imaging import flatten, open_image
+from umc.converters.subtitles import fonts_dir
 from umc.converters.video import atempo_chain
 from umc.core.errors import ConversionError
+from umc.editor.fonts import find_font
 from umc.videoedit.project import (
     AudioClip,
     MainItem,
     PictureClip,
     Project,
     Source,
+    TextItem,
     VideoClip,
     clip_duration,
     layout,
@@ -30,6 +36,9 @@ from umc.videoedit.project import (
     output_fps,
     output_size,
 )
+from umc.videoedit.text_ass import build_ass
+
+log = logging.getLogger(__name__)
 
 SAMPLE_RATE = 48000
 _AFORMAT = f"aresample={SAMPLE_RATE},aformat=sample_fmts=fltp:channel_layouts=stereo"
@@ -191,9 +200,46 @@ def _music_chain(clip: AudioClip, k: int, label: str) -> str:
     return ",".join(filters) + label
 
 
-def _text_filter(project: Project, lead: float) -> str:
-    """Hook for Task 6 (text overlays). Returns ``,filter…`` or nothing."""
-    return ""
+def _copy_fonts(items: list[TextItem], tmp: Path) -> None:
+    """The bundled DejaVu folder plus each chosen font, in ``tmp/fonts`` (kept between builds)."""
+    fonts = tmp / "fonts"
+    if not fonts.exists():
+        bundled = fonts_dir()
+        if bundled:
+            part = tmp / f"fonts_{uuid.uuid4().hex[:8]}.part"
+            try:
+                shutil.copytree(bundled, part)
+                with contextlib.suppress(OSError):  # a build at the same time got there first
+                    os.replace(part, fonts)
+            finally:
+                shutil.rmtree(part, ignore_errors=True)
+    fonts.mkdir(parents=True, exist_ok=True)
+    for t in items:
+        found = find_font(t.font, t.bold, t.italic) if t.font else None
+        if found and not (fonts / found.name).exists():
+            try:
+                shutil.copyfile(found, fonts / found.name)
+            except OSError:
+                log.warning("Could not copy font %s", found)
+
+
+def _text_filter(
+    project: Project, lead: float, total: float, size: tuple[int, int], tmp: Path
+) -> str:
+    """``,ass=…`` for the text items, or nothing. Runs after the window trim, so event times
+    are shifted by ``-lead`` (an item at 1.0 with lead 0.3 shows from 0.7)."""
+    items = [
+        replace(t, start=t.start - lead, end=t.end - lead)
+        for row in project.text_rows
+        for t in row
+        if t.text and t.end - lead > 0 and t.start - lead < total
+    ]
+    if not items:
+        return ""
+    _copy_fonts(items, tmp)
+    name = f"text_{uuid.uuid4().hex[:8]}.ass"
+    (tmp / name).write_text(build_ass(items, size), encoding="utf-8")
+    return f",ass={name}:fontsdir=fonts"
 
 
 def build_render(
@@ -267,7 +313,7 @@ def build_render(
         final = []
         if lead > 0 or duration is not None:
             final.append(f"trim=start={_f(lead)}:duration={_f(total)},setpts=PTS-STARTPTS")
-        chain = ",".join(final or ["null"]) + _text_filter(project, lead)
+        chain = ",".join(final or ["null"]) + _text_filter(project, lead, total, (w, h), tmp)
         graph.append(f"[vmain]{chain}[vout]")
         video_label = "[vout]"
 
