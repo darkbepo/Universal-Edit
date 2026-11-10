@@ -8,6 +8,9 @@ import { PatchCommand, type Command } from "./history";
 import { cropData, layerBounds } from "./layer";
 
 export const RADIUS = 5;
+/** Selected pixels the browser fills without freezing the page for more than a few seconds
+ *  (it runs on the page; the desktop app has no limit). */
+export const MAX_HOLE = 1_500_000;
 const KNOWN = 0;
 const BAND = 1;
 const INSIDE = 2;
@@ -176,6 +179,7 @@ export function contentAwareFill(doc: EditorDoc, radius = RADIUS): Command | nul
     count++;
   }
   if (!count) return null;
+  if (count > MAX_HOLE) throw new EditorError("That selection is too big to fill in the browser — select a smaller area, or use the desktop app.");
   if (count === weight.length) throw new EditorError("Leave some of the picture unselected around it to fill from.");
   const local = region.offset(-layer.x, -layer.y);
   const before = cropData(layer.data, layer.width, local);

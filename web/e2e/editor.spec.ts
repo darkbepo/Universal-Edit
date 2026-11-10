@@ -863,3 +863,18 @@ test("Remove background hides the background with a layer mask (model faked)", a
   const corner = await pixel(page, 0, 0);
   expect(corner[3]).toBeGreaterThan(0); // the pixels themselves are kept
 });
+
+test("polygon lasso: Esc drops unfinished corners, so Enter then selects nothing", async ({ page }) => {
+  await openEditor(page);
+  await page.locator(".canvas-host canvas").focus();
+  await page.keyboard.press("q");
+  await page.keyboard.press("q");
+  await expect.poll(() => page.evaluate(() => (window.__editor as EditorHook).toolId)).toBe("polygon_lasso");
+  for (const [x, y] of [[5, 5], [60, 5], [30, 40]] as [number, number][]) {
+    const p = await at(page, x, y);
+    await page.mouse.click(p.x, p.y);
+  }
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Enter");
+  expect(await selState(page)).toBeNull();
+});

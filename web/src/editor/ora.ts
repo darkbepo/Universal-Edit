@@ -1,5 +1,6 @@
 // OpenRaster (.ora): a ZIP of PNG layers plus stack.xml — the same format the desktop app writes
 // (src/umc/editor/ora.py) and GIMP / Krita read.
+import { makeSpec } from "./tools/text";
 import { strFromU8, strToU8, unzipSync, zipSync, type Zippable } from "fflate";
 import { checkSize, composite, EditorError, type EditorDoc } from "./document";
 import { layerPixels, makeLayer, type Layer } from "./layer";
@@ -86,7 +87,8 @@ function parseText(raw: string | undefined): unknown {
   if (!raw) return null;
   try {
     const t = JSON.parse(raw);
-    return t && typeof t.text === "string" ? t : null;
+    // fill in anything missing (an older or foreign file) so drawing it again can't fail
+    return t && typeof t === "object" && typeof t.text === "string" ? makeSpec(t.text, t) : null;
   } catch {
     return null; // keep the pixels, lose the editing
   }

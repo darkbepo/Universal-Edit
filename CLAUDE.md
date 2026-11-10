@@ -558,7 +558,8 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
          `ops.add_sticker` / `addSticker`, centred in view, "Stickers" button in the top bar.
       7. ✅ Pasteboard (both apps; the owner's choice of "artboard"): `Document.pasteboard(step)` /
          `pasteboard(doc, step)` = canvas ∪ visible layer bounds, at most half the longer side past
-         each edge, overhang rounded up to `step` (= longer side / 8) so a drag doesn't rebuild the
+         each edge (less on big pictures: the whole area stays within `PASTEBOARD_BUDGET`, 40 MP
+         desktop / 16 MP web), overhang rounded up to `step` (= longer side / 8) so a drag doesn't rebuild the
          cache on every move. The canvas cache covers that area (`composite(…, clip=False)`),
          drawn faded outside the picture with a thin border; pan limits use it, but the view is
          only re-clamped on full refreshes (never mid-drag). Saving composites the canvas only.
@@ -569,7 +570,8 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
          desktop `editor/inpaint.py` = OpenCV `cv2.inpaint` TELEA (opencv-python-headless,
          Apache-2.0, already pulled in by pdf2docx; checked by `--self-test`); web
          `editor/inpaint.ts` = own Telea port (fast marching, premultiplied average). Both work on
-         the selection's box + a margin and blend soft selection edges.
+         the selection's box + a margin and blend soft selection edges. The web fill runs on the
+         page, so it refuses selections above `MAX_HOLE` (1.5 MP).
       9. ✅ Background removal (both apps) = a layer mask (`ops.mask_from` / `maskFrom`, combined
          with an existing mask; pixels untouched). Desktop `tools/bgremove.py`: IS-Net
          general-use ONNX (Apache-2.0) from rembg's fixed `v0.0.0` release, SHA-256 + size

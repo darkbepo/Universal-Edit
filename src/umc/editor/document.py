@@ -30,6 +30,22 @@ def with_opacity(img: Image.Image, opacity: float) -> Image.Image:
     return Image.merge("RGBA", (r, g, b, a))
 
 
+PASTEBOARD_BUDGET = 40_000_000  # pixels the canvas + pasteboard may cover (web: 16 MP)
+
+
+def pasteboard_margin(w: int, h: int, budget: int) -> int:
+    """How far the pasteboard may reach past each edge: half the longer side, but at most what
+    keeps (w + 2m) × (h + 2m) within ``budget``."""
+    import math
+
+    cap = budget
+    if cap <= w * h:
+        return 0
+    # 4m² + 2(w + h)m + wh − cap = 0
+    m = (-(w + h) + math.sqrt((w + h) ** 2 - 4 * (w * h - cap))) / 4
+    return max(0, min(max(w, h) // 2, int(m)))
+
+
 @dataclass(eq=False)
 class Document:
     width: int
@@ -67,10 +83,11 @@ class Document:
     def pasteboard(self, step: int = 1) -> Rect:
         """The area the editor shows: the canvas plus the parts of visible layers lying around it
         (the "pasteboard" — shown, but never saved into the picture). Reaches at most half the
-        canvas's longer side past each edge; with ``step`` > 1 it is rounded outwards to steps, so
-        dragging a layer around doesn't change it on every move."""
+        canvas's longer side past each edge, less on big pictures so the whole area stays within
+        ``PASTEBOARD_BUDGET`` pixels (the view caches it). With ``step`` > 1 it is rounded
+        outwards to steps, so dragging a layer around doesn't change it on every move."""
         out = self.bounds
-        m = max(self.width, self.height) // 2
+        m = pasteboard_margin(self.width, self.height, PASTEBOARD_BUDGET)
         limit = Rect(-m, -m, self.width + m, self.height + m)
         for la in self.layers:
             if la.visible and la.opacity > 0:

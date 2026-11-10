@@ -1056,7 +1056,36 @@ def test_layer_menu_edit_text(page, qtbot):
     actions = {a.text(): a for a in page.layers.build_menu(0).actions() if a.text()}
     actions["Edit text…"].trigger()
     assert page.tool.id == "text" and page.text_box.toPlainText() == "Menu"
+    label = page.history.undo_label
     page.commit_text()
+    assert page.history.undo_label == label  # unchanged text: no extra undo step
+
+
+def test_re_editing_boxed_text_keeps_the_outline_colour(page, qtbot):
+    from dataclasses import replace
+
+    from umc.editor.tools.text import edit_text_layer
+
+    page.select_tool("text")
+    c = page.canvas
+    qtbot.mouseClick(c, Qt.MouseButton.LeftButton, pos=c.image_to_widget(5, 5))
+    page.text_box.setPlainText("Hi")
+    page.commit_text()
+    i = page.doc.active
+    spec = replace(
+        page.doc.layers[i].text,
+        box=True,
+        outline=2,
+        outline_color=(255, 0, 0, 255),
+        box_color=(0, 0, 255, 255),
+    )
+    page._push(edit_text_layer(page.doc, i, spec))
+    page.edit_text(i)
+    page.text_box.setPlainText("Hi there")
+    page.commit_text()
+    t = page.doc.layers[i].text
+    assert t.text == "Hi there" and t.outline_color == (255, 0, 0, 255)
+    assert t.box_color == (0, 0, 255, 255)
 
 
 def test_stickers_dialog_adds_a_layer(page, qtbot, monkeypatch):

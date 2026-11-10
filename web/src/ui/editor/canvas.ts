@@ -103,6 +103,7 @@ export class EditorCanvas {
 
   // ---------------------------------------------------------------- document
   setDocument(doc: EditorDoc, history: History): void {
+    this.cancelGesture();
     this.doc = doc;
     this.history = history;
     this.previewLayer = null;
@@ -111,7 +112,7 @@ export class EditorCanvas {
   }
 
   setTool(tool: Tool): void {
-    this.cancelGesture();
+    if (tool !== this.tool) this.cancelGesture();
     this.tool = tool;
     this.view.style.cursor = cursorFor(tool);
     this.draw();
@@ -152,8 +153,11 @@ export class EditorCanvas {
   }
 
   // ---------------------------------------------------------------- history
-  cancelGesture(): void {
-    if ((this.gesture === "left" || this.gesture === "right") && this.tool && this.doc) {
+  /** Abort a stroke / drag; `corners` also drops a polygon lasso's unfinished corners (Esc,
+   *  tool change, new picture — but not the shortcuts that finish it). */
+  cancelGesture(corners = true): void {
+    const pending = corners && !!(this.tool as unknown as { outline?: unknown } | null)?.outline;
+    if ((this.gesture === "left" || this.gesture === "right" || pending) && this.tool && this.doc) {
       this.gesture = null;
       const r = this.tool.cancel(this.doc);
       if (r) this.refresh(r);

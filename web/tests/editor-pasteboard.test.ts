@@ -37,3 +37,13 @@ describe("pasteboard", () => {
     expect(composite(d, new Rect(0, -10, 120, 80)).length).toBe(100 * 80 * 4);
   });
 });
+
+describe("pasteboard memory budget", () => {
+  it("shrinks the margin on big pictures", async () => {
+    const { pasteboardMargin } = await import("../src/editor/document");
+    expect(pasteboardMargin(100, 80, 16_000_000)).toBe(50);
+    const m = pasteboardMargin(4000, 3000, 16_000_000);
+    expect(m > 0 && (4000 + 2 * m) * (3000 + 2 * m) <= 16_000_000).toBe(true);
+    expect(pasteboardMargin(5000, 4000, 16_000_000)).toBe(0);
+  });
+});

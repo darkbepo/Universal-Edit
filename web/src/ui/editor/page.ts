@@ -13,6 +13,7 @@ import { writeOra } from "../../editor/ora";
 import { addSticker } from "../../editor/stickers";
 import { contentAwareFill } from "../../editor/inpaint";
 import { MASK_TARGET } from "../../converters/bgremove";
+import { CloneStampTool } from "../../editor/tools/paint";
 import { canvasPng, canvasRasterizer, decodeBlob, type Decoded } from "../../editor/raster";
 import type { Tool, ToolContext } from "../../editor/tools/base";
 import { makeTools } from "../../editor/tools/index";
@@ -295,6 +296,7 @@ export class EditorPage {
     this.doc = doc;
     this.history = new History(doc);
     this.canvas.setDocument(doc, this.history);
+    for (const t of this.tools) if (t instanceof CloneStampTool) [t.source, t.offset] = [null, null]; // points of the old picture
     this.layers.render(doc);
     this.updateButtons();
     this.updateInfo();
@@ -374,7 +376,7 @@ export class EditorPage {
     if ((k === "enter" || k === " ") && t !== document.body && t !== this.canvas.view && t !== this.el) return;
     const run = (fn: () => void) => {
       e.preventDefault();
-      this.canvas.cancelGesture();
+      this.canvas.cancelGesture(false);
       fn();
     };
     if (k === " " && !mod) {
@@ -382,7 +384,7 @@ export class EditorPage {
       this.canvas.spaceDown = true;
       return;
     }
-    if (k === "escape") return run(() => this.discardCrop());
+    if (k === "escape") return run(() => (this.canvas.cancelGesture(), this.discardCrop()));
     const arrows: Record<string, [number, number]> = { arrowleft: [-1, 0], arrowright: [1, 0], arrowup: [0, -1], arrowdown: [0, 1] };
     const onCanvas = t === this.canvas.view || t === document.body || t === this.el;
     if (this.tool.id === "move" && k in arrows && !mod && !e.altKey && onCanvas && !this.canvas.dragging) {
@@ -733,6 +735,13 @@ export class EditorPage {
       });
       const editing = this.editingText;
       this.editingText = null;
+      const old = editing !== null ? (this.doc.layers[editing]?.text as TextSpec | null | undefined) : null;
+      if (old) {
+        // the back swatch showed only one of the two colours: keep the other one
+        if (old.box) spec.outline_color = old.outline_color;
+        else spec.box_color = old.box_color;
+        if (JSON.stringify({ ...spec, ox: old.ox, oy: old.oy }) === JSON.stringify({ ...makeSpec(old.text), ...old })) return; // no change: no undo step
+      }
       if (editing !== null && editing < this.doc.layers.length) this.push(editTextLayer(this.doc, canvasRasterizer, editing, spec));
       else this.push(addTextLayer(this.doc, canvasRasterizer, spec, x, y));
       this.canvas.view.focus();

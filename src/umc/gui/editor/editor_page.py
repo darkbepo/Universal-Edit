@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -389,7 +390,9 @@ class EditorPage(QWidget):
                 for owner in owners:
                     s = QShortcut(QKeySequence(k), owner)
                     s.setContext(context)
-                    s.activated.connect(lambda f=fn: (self.canvas.cancel_gesture(), f()))
+                    s.activated.connect(
+                        lambda f=fn: (self.canvas.cancel_gesture(corners=False), f())
+                    )
 
         def with_doc(fn):
             return lambda: fn(self.doc) if self.doc is not None else None
@@ -537,6 +540,9 @@ class EditorPage(QWidget):
         self.sources = sources or []
         self._last_save = None
         self.canvas.set_document(doc, self.history)
+        for tool in self.tools.values():
+            if hasattr(tool, "offset") and hasattr(tool, "source"):  # clone: old picture's points
+                tool.source, tool.offset = None, None
         self.layers.refresh(doc)
         self.show_message("")
         self._update_buttons()
@@ -814,6 +820,13 @@ class EditorPage(QWidget):
         family = self.tool_settings.font_family()
         editing, self._editing = getattr(self, "_editing", None), None
         if editing is not None and editing < len(self.doc.layers):
+            old = self.doc.layers[editing].text
+            if old is not None:
+                # the back swatch showed only one of the two colours: keep the other one
+                if old.box:
+                    style["outline_color"] = old.outline_color
+                else:
+                    style["box_color"] = old.box_color
             spec = TextSpec(
                 text,
                 family,
@@ -823,6 +836,8 @@ class EditorPage(QWidget):
                 tuple(self.swatches.primary),
                 **style,
             )
+            if old is not None and replace(spec, ox=old.ox, oy=old.oy) == old:
+                return None  # opened and closed without a change: no undo step
             return edit_text_layer(self.doc, editing, spec)
         return add_text_layer(
             self.doc,

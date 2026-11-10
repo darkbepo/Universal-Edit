@@ -54,10 +54,22 @@ export const docBounds = (doc: EditorDoc) => new Rect(0, 0, doc.width, doc.heigh
 /** The area the editor shows: the canvas plus the parts of visible layers lying around it (the
  *  "pasteboard" — shown, never saved). At most half the longer side past each edge; `step` > 1
  *  rounds the overhang up to whole steps. Same as Document.pasteboard in document.py. */
-export function pasteboard(doc: EditorDoc, step = 1): Rect {
+/** Pixels the canvas + pasteboard may cover: the view caches the whole area, and browsers (iOS
+ *  Safari above all) refuse canvases much bigger. The desktop allows 40 MP. */
+export const PASTEBOARD_BUDGET = 16_000_000;
+
+/** How far the pasteboard may reach past each edge: half the longer side, but at most what keeps
+ *  (w + 2m) × (h + 2m) within `budget`. Same as pasteboard_margin in document.py. */
+export function pasteboardMargin(w: number, h: number, budget: number): number {
+  if (budget <= w * h) return 0;
+  const m = (-(w + h) + Math.sqrt((w + h) ** 2 - 4 * (w * h - budget))) / 4;
+  return Math.max(0, Math.min(Math.floor(Math.max(w, h) / 2), Math.floor(m)));
+}
+
+export function pasteboard(doc: EditorDoc, step = 1, budget = PASTEBOARD_BUDGET): Rect {
   const bounds = docBounds(doc);
   let out = bounds;
-  const m = Math.floor(Math.max(doc.width, doc.height) / 2);
+  const m = pasteboardMargin(doc.width, doc.height, budget);
   const limit = new Rect(-m, -m, doc.width + m, doc.height + m);
   for (const l of doc.layers) if (l.visible && l.opacity > 0) out = out.union(layerBounds(l).intersect(limit));
   if (step > 1 && !out.equals(bounds)) {

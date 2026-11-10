@@ -113,10 +113,10 @@ export function crop(doc: EditorDoc, rect: Rect): Command | null {
   const layers = doc.layers.map((l) => {
     const shifted = layerBounds(l).offset(-r.x0, -r.y0);
     const keep = shifted.intersect(canvas);
-    if (keep.empty) return withProps(l, { data: new Uint8ClampedArray(4), width: 1, height: 1, x: 0, y: 0, mask: null });
+    if (keep.empty) return withProps(l, { text: null, data: new Uint8ClampedArray(4), width: 1, height: 1, x: 0, y: 0, mask: null });
     const box = keep.offset(-shifted.x0, -shifted.y0);
     const mask = l.mask ? cropData(l.mask, l.width, box) : null; // the layer mask follows
-    return withProps(l, { data: cropData(l.data, l.width, box), mask, width: keep.width, height: keep.height, x: keep.x0, y: keep.y0 });
+    return withProps(l, { text: null, data: cropData(l.data, l.width, box), mask, width: keep.width, height: keep.height, x: keep.x0, y: keep.y0 });
   });
   return setState(doc, "Crop", r.width, r.height, layers);
 }
@@ -130,7 +130,7 @@ export function resizeImage(doc: EditorDoc, width: number, height: number, resam
     const nw = Math.max(1, Math.round(l.width * sx));
     const nh = Math.max(1, Math.round(l.height * sy));
     const mask = l.mask ? resizer(l.mask, l.width, l.height, nw, nh, resample) : null;
-    return withProps(l, { data: resizer(l.data, l.width, l.height, nw, nh, resample), mask, width: nw, height: nh, x: Math.round(l.x * sx), y: Math.round(l.y * sy) });
+    return withProps(l, { text: null, data: resizer(l.data, l.width, l.height, nw, nh, resample), mask, width: nw, height: nh, x: Math.round(l.x * sx), y: Math.round(l.y * sy) });
   });
   return setState(doc, "Resize image", width, height, layers);
 }
@@ -156,14 +156,14 @@ export function rotate(doc: EditorDoc, degrees: number, layerOnly = false): Comm
     const mask = l.mask ? rotateData(l.mask, l.width, l.height, deg)[0] : null;
     const x = l.x + Math.floor((l.width - nw) / 2);
     const y = l.y + Math.floor((l.height - nh) / 2);
-    return replace(doc, doc.active, `Rotate layer ${deg}°`, withProps(l, { data, mask, width: nw, height: nh, x, y }));
+    return replace(doc, doc.active, `Rotate layer ${deg}°`, withProps(l, { text: null, data, mask, width: nw, height: nh, x, y }));
   }
   const { width: w, height: h } = doc;
   const layers = doc.layers.map((l) => {
     const [data, nw, nh] = rotateData(l.data, l.width, l.height, deg);
     const mask = l.mask ? rotateData(l.mask, l.width, l.height, deg)[0] : null;
     const [x, y] = deg === 90 ? [h - (l.y + l.height), l.x] : deg === 180 ? [w - (l.x + l.width), h - (l.y + l.height)] : [l.y, w - (l.x + l.width)];
-    return withProps(l, { data, mask, width: nw, height: nh, x, y });
+    return withProps(l, { text: null, data, mask, width: nw, height: nh, x, y });
   });
   const [nw, nh] = deg === 180 ? [w, h] : [h, w];
   return setState(doc, `Rotate ${deg}°`, nw, nh, layers);
@@ -174,10 +174,11 @@ export function flip(doc: EditorDoc, horizontal: boolean, layerOnly = false): Co
   if (layerOnly) {
     const l = doc.layers[doc.active];
     const mask = l.mask ? flipData(l.mask, l.width, l.height, horizontal) : null;
-    return replace(doc, doc.active, `${label} (layer)`, withProps(l, { data: flipData(l.data, l.width, l.height, horizontal), mask }));
+    return replace(doc, doc.active, `${label} (layer)`, withProps(l, { text: null, data: flipData(l.data, l.width, l.height, horizontal), mask }));
   }
   const layers = doc.layers.map((l) =>
     withProps(l, {
+      text: null, // flipped text is just pixels now (like the desktop's _moved)
       data: flipData(l.data, l.width, l.height, horizontal),
       mask: l.mask ? flipData(l.mask, l.width, l.height, horizontal) : null,
       x: horizontal ? doc.width - (l.x + l.width) : l.x,

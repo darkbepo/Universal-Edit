@@ -2,6 +2,7 @@
 // themselves are drawn by the browser; the e2e tests check that part).
 import { describe, expect, it } from "vitest";
 import { newDoc, type EditorDoc } from "../src/editor/document";
+import { Rect } from "../src/editor/geometry";
 import { History } from "../src/editor/history";
 import * as ops from "../src/editor/ops";
 import { readOra, writeOra } from "../src/editor/ora";
@@ -113,5 +114,16 @@ describe("editing a changed text layer", () => {
     expect([e.name, e.visible, e.mask?.[0]]).toEqual(["Title", false, 100]);
     e.data[0] = 7;
     expect(paintedOver(d, blocks, i)).toBe(true);
+  });
+});
+
+describe("transformed text", () => {
+  it("is just pixels after a rotate, flip, resize or crop", () => {
+    for (const op of [(d: EditorDoc) => ops.rotate(d, 90, true), (d: EditorDoc) => ops.flip(d, true, false), (d: EditorDoc) => ops.crop(d, new Rect(0, 0, 200, 150))]) {
+      const d = doc();
+      addTextLayer(d, blocks, spec("Hi"), 50, 40);
+      op(d);
+      expect(d.layers[d.active].text ?? null).toBeNull();
+    }
   });
 });

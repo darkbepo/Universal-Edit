@@ -43,3 +43,12 @@ def test_saving_uses_only_the_canvas_but_the_view_shows_the_rest():
     assert view.size == (120, 90)
     assert view.getpixel((110, 0)) == (255, 0, 0, 255)  # off the canvas, on the pasteboard
     assert doc.composite(Rect(0, -10, 120, 80)).size == (100, 80)
+
+
+def test_pasteboard_stays_within_the_memory_budget():
+    from umc.editor.document import pasteboard_margin
+
+    assert pasteboard_margin(100, 80, 40_000_000) == 50  # small pictures: half the longer side
+    m = pasteboard_margin(6000, 4000, 40_000_000)
+    assert 0 < m < 3000 and (6000 + 2 * m) * (4000 + 2 * m) <= 40_000_000
+    assert pasteboard_margin(8000, 6000, 40_000_000) == 0  # already over: no pasteboard
