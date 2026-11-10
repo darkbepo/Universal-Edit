@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import gc
+import logging
+import shutil
+import subprocess
 import sys
+import threading
 import time
 import types
 
@@ -8,6 +13,7 @@ import numpy as np
 import pytest
 
 from tests.conftest import needs_ffmpeg
+from umc.core.errors import ConversionCancelled
 from umc.videoedit import audio_out, preview
 from umc.videoedit.audio_out import NullAudioOut, open_output
 from umc.videoedit.media import probe_source
@@ -37,7 +43,36 @@ def _red_blue(src):
 
 
 def _leftover(tmp):
-    return sorted(p.name for p in tmp.glob("*") if p.suffix in (".txt", ".ass"))
+    return sorted(p.name for p in tmp.glob("*") if p.suffix in (".txt", ".ass", ".log"))
+
+
+@pytest.fixture
+def spawned(monkeypatch):
+    """Every FFmpeg process the preview starts."""
+    procs = []
+    real = preview.ffmpeg.ffmpeg_popen
+
+    def spy(*args, **kw):
+        procs.append(real(*args, **kw))
+        return procs[-1]
+
+    monkeypatch.setattr(preview.ffmpeg, "ffmpeg_popen", spy)
+    return procs
+
+
+def _all_ended(procs, timeout=5.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if all(p.poll() is not None for p in procs):
+            return True
+        time.sleep(0.05)
+    return False
+
+
+def _mean_diff(a: bytes, b: bytes) -> float:
+    x = np.frombuffer(a, dtype=np.uint8).astype(np.int16)
+    y = np.frombuffer(b, dtype=np.uint8).astype(np.int16)
+    return float(np.abs(x - y).mean())
 
 
 def test_preview_size():
@@ -202,3 +237,172 @@ def test_sounddevice_out_callback(monkeypatch):
     assert bytes(buf) == b"\x01\x00" * 80 + bytes(80)
     assert out.played_seconds() == pytest.approx(100 / 48000)
     out.close()
+
+
+# --- fix round 1 ---------------------------------------------------------------------------
+
+
+@needs_ffmpeg
+def test_playback_logs_a_failed_chunk(src, vmedia, tmp_path, caplog, monkeypatch):
+    monkeypatch.setattr(preview, "CHUNK_SECONDS", 1.0)
+    gone = tmp_path / "gone.mp4"
+    shutil.copyfile(vmedia / "red.mp4", gone)
+    source = probe_source(gone, "gone")
+    project = Project(ProjectSettings(), (source,), (VideoClip("a", "gone", 0.0, 2.0),))
+    gone.unlink()
+    with (
+        caplog.at_level(logging.WARNING, logger="umc.videoedit.preview"),
+        PlaybackStreams(project, 0.0, tmp_path / "t") as streams,
+    ):
+        frames = list(streams.frames())
+        sound = b"".join(streams.audio())
+    assert abs(len(frames) - 60) <= 1  # padded with the background
+    assert abs(len(sound) - 2 * 48000 * 4) <= 4800
+    text = caplog.text
+    assert "0.000" in text and "1.000" in text and "2.000" in text  # both chunks' ranges
+    assert "gone.mp4" in text  # the reason from FFmpeg's log
+    assert _leftover(tmp_path / "t") == []
+
+
+@needs_ffmpeg
+def test_playback_ok_logs_nothing(src, tmp_path, caplog, monkeypatch):
+    monkeypatch.setattr(preview, "CHUNK_SECONDS", 0.5)
+    with (
+        caplog.at_level(logging.WARNING, logger="umc.videoedit.preview"),
+        PlaybackStreams(_red_blue(src), 0.0, tmp_path) as streams,
+    ):
+        list(streams.frames())
+        b"".join(streams.audio())
+    assert caplog.records == []
+
+
+def test_thumbnails_skip_to_key_frames_with_a_long_timeout(tmp_path, monkeypatch):
+    seen = {}
+
+    def fake(args, **kw):
+        seen["args"], seen["kw"] = list(args), kw
+        return b""
+
+    monkeypatch.setattr(preview.ffmpeg, "ffmpeg_bytes", fake)
+    long = Source("v", tmp_path / "v.mp4", "video", 3600.0, 640, 360, 30.0, True)
+    thumbnails(long, 10, 40, tmp_path)
+    args = seen["args"]
+    assert (
+        args.index("-skip_frame") < args.index("-i")
+        and args[args.index("-skip_frame") + 1] == "nokey"
+    )
+    assert seen["kw"]["timeout"] >= 60 + 3600 / 10
+
+
+@needs_ffmpeg
+def test_with_closes_every_process(src, tmp_path, spawned, monkeypatch):
+    monkeypatch.setattr(preview, "CHUNK_SECONDS", 0.5)
+    with PlaybackStreams(_red_blue(src), 0.0, tmp_path) as streams:
+        it = streams.frames()
+        for _ in range(10):  # past the half: the next chunk is prefetched
+            next(it)
+        assert len(spawned) == 2
+    assert _all_ended(spawned)
+    assert _leftover(tmp_path) == []
+
+
+@needs_ffmpeg
+def test_closing_a_generator_kills_the_prefetched_chunk(src, tmp_path, spawned, monkeypatch):
+    monkeypatch.setattr(preview, "CHUNK_SECONDS", 0.5)
+    streams = PlaybackStreams(_red_blue(src), 0.0, tmp_path)
+    it = streams.frames()
+    for _ in range(10):
+        next(it)
+    it.close()
+    assert len(spawned) == 2 and _all_ended(spawned)
+    assert all(not c.procs for c in streams._chunks)  # finished processes are dropped
+    streams.close()
+
+
+@needs_ffmpeg
+def test_abandoned_streams_kill_their_processes(src, tmp_path, spawned):
+    streams = PlaybackStreams(_red_blue(src), 0.0, tmp_path)
+    streams._open(streams._chunks[0], "video")
+    streams._open(streams._chunks[0], "audio")
+    del streams
+    gc.collect()
+    assert len(spawned) == 2 and _all_ended(spawned)
+
+
+@needs_ffmpeg
+def test_still_can_be_cancelled(src, tmp_path):
+    cancel = threading.Event()
+    cancel.set()
+    with pytest.raises(ConversionCancelled):
+        still(_red_blue(src), 1.0, tmp_path, cancel_event=cancel)
+    assert _leftover(tmp_path) == []
+
+
+@needs_ffmpeg
+def test_playback_seam_matches_stills(tmp_path, monkeypatch):
+    """Across a chunk join every frame is the one ``still`` shows at that time."""
+    ramp = tmp_path / "ramp.mp4"
+    subprocess.run(
+        ["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i",
+         "color=black:s=64x48:r=30:d=1,format=yuv420p,geq=lum='16+N*7':cb=128:cr=128",
+         "-c:v", "libx264", "-crf", "0", "-pix_fmt", "yuv420p", str(ramp)],
+        check=True,
+    )  # fmt: skip
+    source = probe_source(ramp, "ramp")
+    project = Project(ProjectSettings(), (source,), (VideoClip("a", "ramp", 0.0, 1.0),))
+    monkeypatch.setattr(preview, "CHUNK_SECONDS", 0.5)
+    tmp = tmp_path / "t"
+    with PlaybackStreams(project, 0.0, tmp) as streams:
+        frames = list(streams.frames())
+    assert len(frames) == 30
+    for k in range(30):  # the join is between frames 14 and 15; stills hit every frame
+        t, data = frames[k]
+        assert t == pytest.approx(k / 30)
+        assert _mean_diff(data, still(project, t, tmp)) < 6, k
+    # and neighbouring frames really differ, so a skip or repeat would show
+    assert _mean_diff(frames[14][1], frames[15][1]) > 6
+
+
+def test_sounddevice_out_latency_inactive_and_start_failure(monkeypatch):
+    made = {}
+
+    class FakeStream:
+        latency = 0.01
+        active = True
+        fail = False
+        closed = False
+
+        def __init__(self, **kw):
+            made.update(kw)
+            made["stream"] = self
+
+        def start(self):
+            if FakeStream.fail:
+                raise RuntimeError("no device")
+
+        def stop(self):
+            pass
+
+        def close(self):
+            FakeStream.closed = True
+
+    monkeypatch.setitem(
+        sys.modules, "sounddevice", types.SimpleNamespace(RawOutputStream=FakeStream)
+    )
+    out = audio_out.SoundDeviceOut()
+    out.write(bytes(4 * 960))  # 20 ms
+    assert out.played_seconds() == 0.0  # nothing played yet; never below 0
+    buf = bytearray(4 * 960)
+    made["callback"](buf, 960, None, None)
+    assert out.played_seconds() == pytest.approx(0.02 - 0.01)
+    made["stream"].active = False  # e.g. the device was unplugged
+    started = time.monotonic()
+    out.write(bytes(4 * 48000 * 2))  # 2 s: more than the queue limit
+    out.write(bytes(4 * 4800))
+    assert time.monotonic() - started < 1.0  # didn't wait for a dead stream
+    out.close()
+
+    FakeStream.fail = True
+    with pytest.raises(RuntimeError):
+        audio_out.SoundDeviceOut()
+    assert FakeStream.closed

@@ -13,6 +13,7 @@ import re
 import subprocess
 import threading
 import uuid
+import weakref
 from collections import OrderedDict
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -22,6 +23,7 @@ import numpy as np
 from PIL import ImageOps
 
 from umc.converters.imaging import open_image
+from umc.core.errors import ConversionError
 from umc.tools import ffmpeg, process
 from umc.videoedit.export import GROUP_SIZE
 from umc.videoedit.project import Project, Source, layout, length, output_fps, output_size
@@ -34,6 +36,8 @@ PREVIEW_HEIGHT = 360
 CHUNK_SECONDS = 30.0
 AUDIO_BLOCK = 4800  # samples per audio() block (0.1 s)
 _AUDIO_FRAME = 4  # bytes per stereo s16le sample
+WAVEFORM_RATE = 1000  # Hz, mono; enough for peaks
+_FULL_DECODE_SECONDS = 120.0  # thumbnails may decode every frame of clips up to this long
 ERROR = "Couldn't show the preview."
 
 
@@ -71,16 +75,40 @@ def _delete(files: list[Path]) -> None:
 
 
 def _read(proc: subprocess.Popen, n: int) -> bytes:
-    "Up to `n` bytes of stdout; nothing once the pipe was closed by `close()`."
+    """Up to ``n`` bytes of stdout; nothing once the pipe was closed by ``close()``."""
     try:
         return proc.stdout.read(n) if proc.stdout else b""
     except (ValueError, OSError):
         return b""
 
 
+def _stop(proc: subprocess.Popen) -> None:
+    """Kill ``proc`` if it still runs and close its pipe."""
+    if proc.poll() is None:
+        process._kill(proc)
+    if proc.stdout is not None:
+        with contextlib.suppress(OSError):
+            proc.stdout.close()
+
+
+def _tail(path: Path | None, lines: int = 6) -> str:
+    if path is None:
+        return ""
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    return " | ".join(line.strip() for line in text.splitlines()[-lines:] if line.strip())
+
+
 def _plan(
     project: Project, start: float, end: float, tmp: Path, size: tuple[int, int], *, video: bool
 ) -> RenderPlan:
+    if video:
+        # The graph rounds times to 1 ms, so a start exactly on a frame (2/30 = 0.0667 ->
+        # 0.067) would skip that frame. Starting a little earlier (under a quarter frame) keeps
+        # it; the caller limits the frame count. Sound stays sample-exact.
+        start = max(0.0, start - min(0.002, 0.25 / output_fps(project)))
     win = window(project, start, end)
     return build_render(
         win.project,
@@ -93,7 +121,14 @@ def _plan(
     )
 
 
-def still(project: Project, t: float, tmp: Path, height: int = PREVIEW_HEIGHT) -> bytes:
+def still(
+    project: Project,
+    t: float,
+    tmp: Path,
+    height: int = PREVIEW_HEIGHT,
+    *,
+    cancel_event: threading.Event | None = None,
+) -> bytes:
     """One RGB24 frame (``w*h*3`` bytes) at timeline time ``t``."""
     size = preview_size(project, height)
     if t >= length(project) or t < 0:
@@ -102,7 +137,9 @@ def still(project: Project, t: float, tmp: Path, height: int = PREVIEW_HEIGHT) -
     try:
         args = [*plan.args, "-map", plan.video_label or "", "-frames:v", "1"]
         args += ["-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1"]
-        data = ffmpeg.ffmpeg_bytes(args, cwd=plan.cwd, error_message=ERROR)
+        data = ffmpeg.ffmpeg_bytes(
+            args, cwd=plan.cwd, cancel_event=cancel_event, error_message=ERROR
+        )
     finally:
         _delete(_plan_files(plan))
     need = size[0] * size[1] * 3
@@ -138,12 +175,41 @@ class StillCache:
 class _Chunk:
     first: int  # frame index from the start time
     end: int  # one past the last frame
-    procs: dict[str, subprocess.Popen] = field(default_factory=dict)
-    files: dict[str, list[Path]] = field(default_factory=dict)
+    procs: dict[str, subprocess.Popen] = field(default_factory=dict)  # running ones only
+    files: dict[str, list[Path]] = field(default_factory=dict)  # graph, .ass, stderr log
+    logs: dict[str, Path] = field(default_factory=dict)
+    done: set[str] = field(default_factory=set)  # never start these kinds again
+
+
+class _State:
+    """What ``close()`` needs, kept apart so ``weakref.finalize`` doesn't hold the streams."""
+
+    def __init__(self, chunks: list[_Chunk]) -> None:
+        self.lock = threading.Lock()
+        self.closed = False
+        self.chunks = chunks
+
+
+def _shutdown(state: _State) -> None:
+    with state.lock:
+        state.closed = True
+        procs = [p for c in state.chunks for p in c.procs.values()]
+        files = [f for c in state.chunks for fs in c.files.values() for f in fs]
+        for c in state.chunks:
+            c.procs.clear()
+            c.files.clear()
+            c.done.update(("video", "audio"))
+    for p in procs:
+        _stop(p)
+    _delete(files)
 
 
 class PlaybackStreams:
-    """Frames and sound from ``t`` to the end, rendered chunk by chunk ahead of playback."""
+    """Frames and sound from ``t`` to the end, rendered chunk by chunk ahead of playback.
+
+    Use as a context manager (or call ``close()``); an abandoned object still stops its
+    processes when it is garbage collected.
+    """
 
     def __init__(self, project: Project, t: float, tmp: Path, height: int = PREVIEW_HEIGHT) -> None:
         self.project = project
@@ -151,9 +217,15 @@ class PlaybackStreams:
         self.tmp = Path(tmp)
         self._fps = output_fps(project)
         self._size = preview_size(project, height)
-        self._lock = threading.Lock()
-        self._closed = False
         self._chunks = self._split()
+        self._state = _State(self._chunks)
+        self._finalizer = weakref.finalize(self, _shutdown, self._state)
+
+    def __enter__(self) -> PlaybackStreams:
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        self.close()
 
     @property
     def fps(self) -> float:
@@ -162,6 +234,10 @@ class PlaybackStreams:
     @property
     def size(self) -> tuple[int, int]:
         return self._size
+
+    @property
+    def _closed(self) -> bool:
+        return self._state.closed
 
     def _split(self) -> list[_Chunk]:
         total = length(self.project)
@@ -184,20 +260,23 @@ class PlaybackStreams:
     def _samples(self, frame: int) -> int:
         return round(frame * SAMPLE_RATE / self._fps)
 
+    def _range(self, chunk: _Chunk, kind: str) -> tuple[float, float]:
+        if kind == "video":
+            return self.start + chunk.first / self._fps, self.start + chunk.end / self._fps
+        return (
+            self.start + self._samples(chunk.first) / SAMPLE_RATE,
+            self.start + self._samples(chunk.end) / SAMPLE_RATE,
+        )
+
     def _open(self, chunk: _Chunk, kind: str) -> subprocess.Popen | None:
-        """Start (once) the chunk's video or audio process."""
-        with self._lock:
-            if self._closed:
+        """Start (once) the chunk's video or audio process; ``None`` once closed."""
+        with self._state.lock:
+            if self._state.closed or kind in chunk.done:
                 return None
             if kind in chunk.procs:
                 return chunk.procs[kind]
             video = kind == "video"
-            if video:
-                start = self.start + chunk.first / self._fps
-                end = self.start + chunk.end / self._fps
-            else:
-                start = self.start + self._samples(chunk.first) / SAMPLE_RATE
-                end = self.start + self._samples(chunk.end) / SAMPLE_RATE
+            start, end = self._range(chunk, kind)
             plan = _plan(self.project, start, end, self.tmp, self._size, video=video)
             args = [*plan.args]
             if video:
@@ -208,26 +287,50 @@ class PlaybackStreams:
                 args += ["-map", plan.audio_label or "", "-t", f"{n / SAMPLE_RATE:.6f}"]
                 args += ["-f", "s16le", "-acodec", "pcm_s16le", "-ar", str(SAMPLE_RATE)]
                 args += ["-ac", "2", "pipe:1"]
-            chunk.files[kind] = _plan_files(plan)
+            log_path = self.tmp / f"chunk_{uuid.uuid4().hex[:8]}.log"
+            chunk.files[kind] = [*_plan_files(plan), log_path]
+            chunk.logs[kind] = log_path
             try:
-                proc = ffmpeg.ffmpeg_popen(args, cwd=plan.cwd)
+                proc = ffmpeg.ffmpeg_popen(args, cwd=plan.cwd, stderr_path=log_path)
             except Exception:
                 _delete(chunk.files.pop(kind))
                 raise
             chunk.procs[kind] = proc
             return proc
 
+    def _report(self, chunk: _Chunk, kind: str, proc: subprocess.Popen) -> None:
+        """Log why a chunk's output ran short (padding hides it from the viewer)."""
+        try:
+            code = proc.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            code = None
+        start, end = self._range(chunk, kind)
+        log.warning(
+            "Preview %s for %.3f-%.3f s ended early (exit code %s): %s",
+            kind,
+            start,
+            end,
+            code,
+            _tail(chunk.logs.get(kind)) or "no message",
+        )
+
     def _finish(self, chunk: _Chunk, kind: str) -> None:
-        with self._lock:
-            proc = chunk.procs.get(kind)
+        with self._state.lock:
+            chunk.done.add(kind)
+            proc = chunk.procs.pop(kind, None)
             files = chunk.files.pop(kind, [])
-        if proc is not None and proc.poll() is None:
-            process._kill(proc)  # it may have a little more than we read
+            chunk.logs.pop(kind, None)
+        if proc is not None:
+            _stop(proc)  # it may have a little more than we read
         _delete(files)
 
     def _prefetch(self, index: int, kind: str) -> None:
         if index + 1 < len(self._chunks):
             self._open(self._chunks[index + 1], kind)
+
+    def _drop_next(self, index: int, kind: str) -> None:
+        if index + 1 < len(self._chunks):
+            self._finish(self._chunks[index + 1], kind)
 
     def frames(self) -> Iterator[tuple[float, bytes]]:
         """(timeline time, RGB24 frame) from the start time to the end, without gaps."""
@@ -239,6 +342,7 @@ class PlaybackStreams:
             count = chunk.end - chunk.first
             last: bytes | None = None
             dry = False
+            complete = False
             try:
                 for j in range(count):
                     if j == count // 2:
@@ -247,15 +351,18 @@ class PlaybackStreams:
                     if len(data) < need:
                         if self._closed:
                             return
+                        if not dry:
+                            self._report(chunk, "video", proc)
                         dry = True
                         # Repeat the last frame (or show the background) so the timing stays.
                         data = last if last is not None else _background(self.project, self._size)
                     last = data
                     yield self.start + (chunk.first + j) / self._fps, data
+                complete = True
             finally:
                 self._finish(chunk, "video")
-            if self._closed:
-                return
+                if not complete:  # stopped early: the prefetched chunk isn't needed
+                    self._drop_next(i, "video")
 
     def audio(self) -> Iterator[bytes]:
         """s16le 48 kHz stereo from the start time to the end, in blocks of 0.1 s."""
@@ -267,6 +374,7 @@ class PlaybackStreams:
             half = remaining // 2
             prefetched = False
             dry = False
+            complete = False
             try:
                 while remaining > 0:
                     if not prefetched and remaining <= half:
@@ -277,29 +385,21 @@ class PlaybackStreams:
                     if len(data) < size:
                         if self._closed:
                             return
+                        if not dry:
+                            self._report(chunk, "audio", proc)
                         dry = True
                         data += bytes(size - len(data))  # pad with silence to stay in step
                     remaining -= size
                     yield data
+                complete = True
             finally:
                 self._finish(chunk, "audio")
-            if self._closed:
-                return
+                if not complete:
+                    self._drop_next(i, "audio")
 
     def close(self) -> None:
         """Stop every process and delete the build files; safe to call more than once."""
-        with self._lock:
-            self._closed = True
-            procs = [p for c in self._chunks for p in c.procs.values()]
-            files = [f for c in self._chunks for fs in c.files.values() for f in fs]
-            for c in self._chunks:
-                c.files.clear()
-        for p in procs:
-            if p.poll() is None:
-                process._kill(p)
-            with contextlib.suppress(Exception):
-                p.stdout.close()
-        _delete(files)
+        self._finalizer()
 
 
 def thumbnails(source: Source, count: int, height: int, tmp: Path) -> list[Path]:
@@ -316,24 +416,56 @@ def thumbnails(source: Source, count: int, height: int, tmp: Path) -> list[Path]
     if source.kind != "video" or count <= 0:
         return []
     rate = count / max(source.duration, 0.001)
-    args = ["-i", str(source.path), "-an", "-vf", f"fps={rate:.6f},scale=-2:{height}"]
-    args += ["-frames:v", str(count), "-q:v", "5", "-y", f"{stem}_%03d.jpg"]
-    ffmpeg.ffmpeg_bytes(args, cwd=tmp, timeout=120.0, error_message=ERROR)
-    return sorted(tmp.glob(f"{stem}_*.jpg"))
+    timeout = 60.0 + source.duration / 10
+
+    def run(key_frames_only: bool) -> list[Path]:
+        # Key frames only: decoding every frame of a long video would take minutes.
+        args = ["-skip_frame", "nokey"] if key_frames_only else []
+        args += ["-i", str(source.path), "-an", "-vf", f"fps={rate:.6f},scale=-2:{height}"]
+        args += ["-frames:v", str(count), "-q:v", "5", "-y", f"{stem}_%03d.jpg"]
+        ffmpeg.ffmpeg_bytes(args, cwd=tmp, timeout=timeout, error_message=ERROR)
+        return sorted(tmp.glob(f"{stem}_*.jpg"))
+
+    found = run(True)
+    if len(found) < count and source.duration <= _FULL_DECODE_SECONDS:
+        found = run(False)  # a short clip with few key frames: decoding it all is cheap
+    if found and len(found) < count:  # still too few key frames: repeat the last one
+        found += [found[-1]] * (count - len(found))
+    return found
 
 
 def waveform(source: Source, buckets: int) -> list[float]:
-    """Peak level (0 to 1) per bucket of the source's sound; ``[]`` without sound."""
+    """Peak level (0 to 1) per bucket of the source's sound; ``[]`` without sound.
+
+    Decoded at 1 kHz mono and read in pieces, so a long file never sits in memory whole.
+    """
     if not source.has_audio or source.kind == "image" or buckets <= 0:
         return []
-    args = ["-i", str(source.path), "-vn", "-ac", "1", "-ar", "8000"]
+    args = ["-i", str(source.path), "-vn", "-ac", "1", "-ar", str(WAVEFORM_RATE)]
     args += ["-f", "s16le", "-acodec", "pcm_s16le", "pipe:1"]
-    data = ffmpeg.ffmpeg_bytes(args, timeout=120.0, error_message=ERROR)
-    samples = np.frombuffer(data[: len(data) - len(data) % 2], dtype=np.int16)
-    if samples.size == 0:
+    expected = max(1, round(source.duration * WAVEFORM_RATE))
+    peaks = np.zeros(buckets, dtype=np.int32)
+    seen = 0
+    carry = b""
+    proc = ffmpeg.ffmpeg_popen(args)
+    try:
+        while True:
+            block = _read(proc, 1 << 16)
+            if not block:
+                break
+            block = carry + block
+            usable = len(block) - len(block) % 2
+            carry = block[usable:]
+            samples = np.abs(np.frombuffer(block[:usable], dtype=np.int16).astype(np.int32))
+            index = (np.arange(seen, seen + samples.size, dtype=np.int64) * buckets) // expected
+            np.maximum.at(peaks, np.minimum(index, buckets - 1), samples)
+            seen += samples.size
+        code = proc.wait(timeout=10)
+    finally:
+        _stop(proc)
+    if code != 0:
+        log.warning("Waveform of %s failed (exit code %s)", source.path, code)
+        raise ConversionError(ERROR, details=f"ffmpeg exit code {code}")
+    if seen == 0:
         return []
-    peaks = [
-        float(np.abs(part.astype(np.int32)).max()) / 32768.0 if part.size else 0.0
-        for part in np.array_split(samples, buckets)
-    ]
-    return [min(1.0, p) for p in peaks]
+    return [min(1.0, float(p) / 32768.0) for p in peaks]

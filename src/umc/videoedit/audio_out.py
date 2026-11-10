@@ -68,10 +68,20 @@ class SoundDeviceOut:
         self._cond = threading.Condition()
         self._played = 0  # frames really played
         self._closed = False
+        self._latency = 0.0
         self._stream = sounddevice.RawOutputStream(
             samplerate=SAMPLE_RATE, channels=CHANNELS, dtype="int16", callback=self._callback
         )
-        self._stream.start()
+        try:
+            self._stream.start()
+        except Exception:
+            try:
+                self._stream.close()
+            except Exception:
+                log.warning("Couldn't close the sound output", exc_info=True)
+            raise
+        latency = getattr(self._stream, "latency", 0.0)
+        self._latency = float(latency) if isinstance(latency, int | float) else 0.0
 
     def _callback(self, outdata, frames, _time, _status) -> None:  # noqa: ANN001
         need = frames * FRAME_BYTES
@@ -88,14 +98,19 @@ class SoundDeviceOut:
     def write(self, chunk: bytes) -> None:
         limit = int(MAX_QUEUED * SAMPLE_RATE) * FRAME_BYTES
         with self._cond:
-            while not self._closed and len(self._buf) > limit:
+            while not self._closed and len(self._buf) > limit and self._active():
                 self._cond.wait(timeout=0.1)
             if not self._closed:
                 self._buf += chunk
 
+    def _active(self) -> bool:
+        """False once the stream stopped (device gone): then nothing would drain the queue."""
+        return bool(getattr(self._stream, "active", True))
+
     def played_seconds(self) -> float:
+        """Seconds actually heard: played frames minus what is still in the device's latency."""
         with self._cond:
-            return self._played / SAMPLE_RATE
+            return max(0.0, self._played / SAMPLE_RATE - self._latency)
 
     def close(self) -> None:
         with self._cond:
