@@ -3,6 +3,16 @@
 The output is a fragment (no <html>/<body>) and is deterministic and idempotent, so other
 modules can compare it with ``==``. Pictures are pulled out into a ``DocImages`` dict and the
 HTML refers to them as ``img/{n}.{ext}``.
+
+The subset: blocks ``p``, ``h1``-``h3``, ``blockquote`` (of ``p``), ``pre`` (one per code
+paragraph), ``ul`` / ``ol`` / ``li`` (nested lists inside ``li``; empty items are kept; text
+after a nested list becomes the next item), ``table`` / ``tr`` / ``td`` (``colspan``,
+``rowspan``; ``<table style="border:none">`` = no borders), ``hr``. Paragraph styles
+``text-align``, ``margin-left:{36*n}pt``, ``page-break-before:always``. Inline ``b``, ``i``,
+``u``, ``s``, ``a href``, ``img src width height``, ``br``, ``span style`` (``font-family``,
+``font-size:{n}pt``, ``color``, ``background-color``; CSS bold / italic / underline / strike
+on a span become tags). Text: runs of spaces and line breaks collapse to one space; tabs and
+no-break spaces (U+00A0) are kept; ``pre`` keeps everything.
 """
 
 from __future__ import annotations
