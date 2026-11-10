@@ -528,18 +528,21 @@ class TimelineView(QWidget):
         assert self.project is not None
         return self._sources[item.source].path.name  # type: ignore[attr-defined]
 
-    @staticmethod
-    def _paint_thumbs(p: QPainter, images: list[QImage], rect: QRect) -> None:
+    def _paint_thumbs(self, p: QPainter, images: list[QImage], rect: QRect) -> None:
         if not images:
             return
         h = rect.height() - WAVE_H
         w = max(1, round(h * images[0].width() / max(1, images[0].height())))
         n = max(1, -(-rect.width() // w))
         first = max(0, (HEADER_WIDTH - rect.left()) // w)
-        last = min(n, (int(p.clipBoundingRect().right()) - rect.left()) // w + 1)
+        last = min(n, (self.width() - rect.left()) // w + 1)
         for i in range(first, last):
             img = images[min(len(images) - 1, i * len(images) // n)]
-            p.drawImage(QRect(rect.left() + i * w, rect.top(), w, h), img)
+            self._draw_thumb(p, img, QRect(rect.left() + i * w, rect.top(), w, h))
+
+    @staticmethod
+    def _draw_thumb(p: QPainter, img: QImage, target: QRect) -> None:
+        p.drawImage(target, img)
 
     def _paint_wave(self, p: QPainter, peaks: list[float], rect: QRect, item: object) -> None:
         if not peaks or self.project is None:

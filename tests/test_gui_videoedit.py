@@ -270,3 +270,18 @@ def test_noop_drag_not_emitted(make, qtbot):
     y = _y(t, "main")
     with qtbot.assertNotEmitted(t.edit):
         _drag(qtbot, t, QPoint(t.x_for(1), y), QPoint(t.x_for(1.5), y))  # same index
+
+
+def test_thumbnails_clamped_to_visible_area(make):
+    from PySide6.QtGui import QImage
+
+    t = make(_project([VideoClip("c1", "v", 0.0, 10.0)]))  # 800 px/s -> 8000 px wide
+    t.pixels_per_second = 800.0
+    img = QImage(64, 36, QImage.Format.Format_RGB32)
+    t.set_thumbnails("v", [img])
+    calls = []
+    t._draw_thumb = lambda p, i, r: calls.append(r)
+    t.grab()
+    tile_w = calls[0].width()
+    assert 0 < len(calls) <= t.width() // tile_w + 2
+    assert max(r.left() for r in calls) <= t.width()
