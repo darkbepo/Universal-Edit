@@ -1,11 +1,26 @@
 from __future__ import annotations
 
+from io import BytesIO
+
 import docx
-from docx.enum.text import WD_ALIGN_PARAGRAPH
+import pytest
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
+from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
-from tests.doceditor_samples import PNG_1PX
+from tests.doceditor_samples import CASES, PNG_1PX
+from umc.core.errors import ConversionError
+from umc.doceditor.docx_reader import read
 from umc.doceditor.docx_writer import write
+from umc.doceditor.html_subset import normalise_html
+from umc.doceditor.types import (
+    W_COMMENTS,
+    W_FIELDS,
+    W_HEADERS,
+    W_NOTES,
+    W_PICTURES,
+    W_TRACKED,
+)
 
 
 def _doc(tmp_path, html, images=None):
@@ -151,3 +166,117 @@ def test_write_skips_bad_or_missing_pictures(tmp_path, caplog):
     d = _doc(tmp_path, '<p>x<img src="img/9.png"></p>', {})
     assert len(d.inline_shapes) == 0
     assert "img/9.png" in caplog.text
+
+
+# ----- reader ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("html", CASES)
+def test_round_trip(tmp_path, html):
+    expected, _ = normalise_html(html)
+    assert read(write(html, {}, tmp_path / "o.docx")).html == expected
+
+
+def test_nested_lists_round_trip(tmp_path):
+    html = "<ul><li>a<ul><li>b<ol><li>c</li></ol></li></ul></li></ul><ol><li>d</li></ol>"
+    assert read(write(html, {}, tmp_path / "o.docx")).html == normalise_html(html)[0]
+
+
+def test_list_in_table_cell(tmp_path):
+    html = "<table><tr><td><ul><li>a</li><li>b</li></ul></td></tr></table>"
+    assert read(write(html, {}, tmp_path / "o.docx")).html == normalise_html(html)[0]
+
+
+def test_rowspan_round_trip(tmp_path):
+    html = (
+        '<table><tr><td rowspan="2"><p>a</p></td><td><p>b</p></td></tr>'
+        "<tr><td><p>c</p></td></tr></table>"
+    )
+    assert read(write(html, {}, tmp_path / "o.docx")).html == normalise_html(html)[0]
+
+
+def test_picture_round_trip(tmp_path):
+    html = '<p><img src="img/1.png" width="96"></p>'
+    got = read(write(html, {"img/1.png": PNG_1PX}, tmp_path / "o.docx"))
+    assert got.images == {"img/1.png": PNG_1PX}
+    assert 'src="img/1.png"' in got.html and 'width="96"' in got.html
+
+
+def test_unicode_round_trip(tmp_path):
+    html = "<p>Blåbærgrød — Привет — 你好 — 😀</p>"
+    assert read(write(html, {}, tmp_path / "o.docx")).html == html
+
+
+def test_page_break_run_splits_paragraph(tmp_path):
+    d = docx.Document()
+    d.add_paragraph("a").add_run().add_break(WD_BREAK.PAGE)
+    d.paragraphs[0].add_run("b")
+    d.save(tmp_path / "p.docx")
+    assert read(tmp_path / "p.docx").html == '<p>a</p><p style="page-break-before:always">b</p>'
+
+
+def test_word_styles_and_headings(tmp_path):
+    d = docx.Document()
+    d.add_heading("Top", 4)  # Heading 4 -> h3
+    d.add_paragraph("x", style="Title")
+    d.save(tmp_path / "s.docx")
+    assert read(tmp_path / "s.docx").html == "<h3>Top</h3><h1>x</h1>"
+
+
+def test_warnings(tmp_path):
+    d = docx.Document()
+    d.add_paragraph("x")
+    d.sections[0].header.paragraphs[0].text = "Head"
+    if not hasattr(d, "add_comment"):
+        pytest.skip("python-docx without comment support")
+    d.add_comment(d.paragraphs[0].runs or [d.paragraphs[0].add_run("y")], text="note")
+    p = tmp_path / "w.docx"
+    d.save(p)
+    assert {W_HEADERS, W_COMMENTS} <= set(read(p).warnings)
+
+
+def test_tracked_changes_warn(tmp_path):
+    d = docx.Document()
+    run = d.add_paragraph().add_run("kept")
+    ins = OxmlElement("w:ins")
+    ins.set(qn("w:id"), "1")
+    ins.set(qn("w:author"), "A")
+    run._r.addprevious(ins)
+    ins.append(run._r)
+    d.save(tmp_path / "t.docx")
+    got = read(tmp_path / "t.docx")
+    assert W_TRACKED in got.warnings and "kept" in got.html
+
+
+def test_notes_and_fields_warn(tmp_path):
+    d = docx.Document()
+    par = d.add_paragraph("a")
+    ref = OxmlElement("w:footnoteReference")
+    ref.set(qn("w:id"), "1")
+    par.add_run()._r.append(ref)
+    fld = OxmlElement("w:fldSimple")
+    fld.set(qn("w:instr"), "DATE")
+    par._p.append(fld)
+    d.save(tmp_path / "n.docx")
+    assert {W_NOTES, W_FIELDS} <= set(read(tmp_path / "n.docx").warnings)
+
+
+def test_unsupported_picture_warns(tmp_path):
+    d = docx.Document()
+    d.add_paragraph().add_run().add_picture(BytesIO(PNG_1PX))
+    part = next(r.target_part for r in d.part.rels.values() if r.reltype.endswith("/image"))
+    part._blob = b"not an image"
+    part._content_type = "image/x-emf"
+    d.save(tmp_path / "e.docx")
+    got = read(tmp_path / "e.docx")
+    assert W_PICTURES in got.warnings and "<img" not in got.html and got.images == {}
+
+
+def test_plain_docx_has_no_warnings(tmp_path):
+    assert read(write("<p>a</p>", {}, tmp_path / "o.docx")).warnings == []
+
+
+def test_unreadable_docx_is_a_plain_error(tmp_path):
+    (tmp_path / "bad.docx").write_bytes(b"nope")
+    with pytest.raises(ConversionError):
+        read(tmp_path / "bad.docx")
