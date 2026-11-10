@@ -62,6 +62,10 @@ def open_image(path: Path) -> Image.Image:
     try:
         if path.suffix.lower() in RAW_EXTS:
             return _open_raw(path)
+        if path.suffix.lower() == ".ora":
+            from umc.editor.ora import read_ora
+
+            return read_ora(path).composite()
         img = Image.open(path)
         img.load()
         return img

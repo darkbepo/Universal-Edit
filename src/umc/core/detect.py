@@ -63,6 +63,7 @@ IMAGE_EXTS = {
     "pcx",
     "dds",
     "psd",
+    "ora",  # OpenRaster (layered; written by the editor, GIMP, Krita)
     # camera RAW
     "cr2",
     "cr3",
