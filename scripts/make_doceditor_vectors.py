@@ -16,13 +16,18 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(ROOT / "src"), str(ROOT)]
 
-from tests.doceditor_samples import CASES, PNG_1PX  # noqa: E402
+from tests.doceditor_samples import CASES  # noqa: E402
 from umc.doceditor.html_subset import normalise_html_report  # noqa: E402
 from umc.doceditor.io import open_document  # noqa: E402
 from umc.doceditor.md_writer import to_markdown  # noqa: E402
 
 OUT = ROOT / "tests" / "fixtures" / "doceditor-vectors.json"
 NBSP = "\u00a0"
+# A fixed 1x1 PNG (not encoded at run time, so the vectors never depend on the Pillow/zlib build).
+PNG_B64 = (
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+)
+PNG_1PX = base64.b64decode(PNG_B64)
 
 NORMALISE = [
     # sanitising: scripts, classes, inline styles, fonts, headings
@@ -74,7 +79,7 @@ MARKDOWN = [
     {"md": "| A | B |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |\n"},
     {"md": "---\ntitle: Hello\ntags: [a, b]\n---\n\n# Body\n\ntext\n"},
     {"md": "---\n\n# After a rule\n\ntext\n\n---\n\nmore\n"},
-    {"md": 'Sized: <img src="img/1.png" width="20">\n', "images": {"img/1.png": PNG_1PX}},
+    {"md": 'Sized: <img src="img/1.png" width="20">\n'},
     {"md": "A [link](https://example.com/) and an ![alt](https://example.com/x.png)\n"},
     {"md": "Text with `code` and a footnote[^1].\n\n[^1]: note\n"},
     {"md": "#### Small\n\nline one  \nline two\n"},
