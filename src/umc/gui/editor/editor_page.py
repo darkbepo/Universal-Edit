@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
 )
 
 from umc.core.errors import ConversionError
-from umc.editor import clipboard, effects, ops
+from umc.editor import clipboard, effects, ops, selection
 from umc.editor.document import Document, check_size
 from umc.editor.history import History
 from umc.editor.io import load_layers, open_files
@@ -41,6 +41,7 @@ from umc.gui.editor.dialogs import (
     BlurDialog,
     CanvasSizeDialog,
     CurvesDialog,
+    FeatherDialog,
     LevelsDialog,
     LooksDialog,
     QuickFixDialog,
@@ -48,6 +49,7 @@ from umc.gui.editor.dialogs import (
     SaveOptionsDialog,
     SharpenDialog,
     ShortcutsDialog,
+    tool_groups,
 )
 from umc.gui.editor.layers_panel import LayersPanel
 from umc.gui.editor.shortcuts import SHORTCUTS
@@ -244,6 +246,22 @@ class EditorPage(QWidget):
             layer_menu.addAction(label, lambda o=op: self.run_op(o))
         image.setMenu(menu)
         lay.addWidget(image)
+        select_button = QToolButton(text="Select ▾", objectName="SmallMenu")
+        select_button.setToolTip("Select all, deselect, invert, feather")
+        select_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        select_menu = QMenu(select_button)
+        for label, fn in (
+            (
+                "Select all",
+                lambda: self._push(selection.select_all(self.doc)) if self.doc else None,
+            ),
+            ("Deselect", lambda: self._push(selection.deselect(self.doc)) if self.doc else None),
+            ("Invert", lambda: self._push(selection.invert(self.doc)) if self.doc else None),
+            ("Feather…", self.feather),
+        ):
+            select_menu.addAction(label, fn)
+        select_button.setMenu(select_menu)
+        lay.addWidget(select_button)
         adjust_button = QToolButton(text="Adjust ▾", objectName="SmallMenu")
         adjust_button.setToolTip("Fix the tones and colours of the selected layer")
         adjust_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
@@ -329,7 +347,9 @@ class EditorPage(QWidget):
             "save_as": self.save_as,
             "select_all": with_doc(lambda d: self._push(select_all(d))),
             "deselect": with_doc(lambda d: self._push(deselect(d))),
-            "apply": self._apply_crop,
+            "apply": self._apply,
+            "invert_selection": with_doc(lambda d: self._push(selection.invert(d))),
+            "feather": self.feather,
             "new_layer": lp.add,
             "duplicate": lp.duplicate,
             "merge": lp.merge,
@@ -343,7 +363,6 @@ class EditorPage(QWidget):
             "fit": self.canvas.fit,
             "actual": lambda: self.canvas.set_zoom(1.0),
             "help": self.show_shortcuts,
-            "toggle_shape": self._toggle_shape,
             "swap_colours": self.swatches.swap,
             "smaller": lambda: self.tool_settings.change_size(self.tool, 1 / 1.2),
             "bigger": lambda: self.tool_settings.change_size(self.tool, 1.2),
@@ -352,9 +371,8 @@ class EditorPage(QWidget):
         assert not missing, f"shortcut table and actions differ: {missing}"
         for shortcut in SHORTCUTS:
             sc(shortcut.keys, actions[shortcut.id])
-        for cls in TOOLS:
-            if cls.shortcut != "U":  # U toggles rectangle / ellipse (above)
-                sc((cls.shortcut,), lambda tid=cls.id: self.select_tool(tid))
+        for letter, group in tool_groups(TOOLS).items():  # a shared letter cycles its tools
+            sc((letter,), lambda ids=[t.id for t in group]: self._cycle_tool(ids))
 
     def show_shortcuts(self) -> None:
         ShortcutsDialog(TOOLS, self).exec()
@@ -499,8 +517,25 @@ class EditorPage(QWidget):
         elif self.message.text() == CROP_HINT:
             self.show_message("")
 
-    def _toggle_shape(self) -> None:
-        self.select_tool("ellipse" if self.tool.id == "rect" else "rect")
+    def _cycle_tool(self, ids: list[str]) -> None:
+        """The first tool of the group, or the next one if a tool of it is already chosen."""
+        if self.tool.id in ids:
+            self.select_tool(ids[(ids.index(self.tool.id) + 1) % len(ids)])
+        else:
+            self.select_tool(ids[0])
+
+    def _apply(self) -> None:
+        """Enter: finish a polygon lasso, or apply the crop."""
+        if not self.canvas.finish_tool():
+            self._apply_crop()
+
+    def feather(self) -> None:
+        if self.doc is None or self.doc.selection is None:
+            self.show_message("Select an area first.")
+            return
+        dlg = FeatherDialog(self)
+        if dlg.exec():
+            self._push(selection.feather(self.doc, dlg.radius.value()))
 
     # ------------------------------------------------------------ changes
     def _push(self, cmd) -> None:

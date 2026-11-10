@@ -83,7 +83,18 @@ def preview(doc: Document, effect: Effect, max_pixels: int = PREVIEW_PIXELS) -> 
     if region.empty or effect.identity:
         return img
     img.paste(_run(layer.image, region, effect, max_pixels), (region.x0, region.y0))
+    _masked(doc, img, layer, region)
     return img
+
+
+def _masked(doc: Document, img: Image.Image, layer, region) -> None:
+    """Mix the changed ``region`` of ``img`` with the layer's original by the selection."""
+    from umc.editor.layer import Layer
+    from umc.editor.tools.base import restrict
+
+    if doc.selection_mask is None:
+        return
+    restrict(doc, Layer(layer.name, img, layer.x, layer.y), region, layer.image.crop(region.box))
 
 
 def apply_to_document(doc: Document, effect: Effect, label: str) -> Command | None:
@@ -96,4 +107,7 @@ def apply_to_document(doc: Document, effect: Effect, label: str) -> Command | No
         return None
     before = layer.image.crop(region.box)
     layer.image.paste(_run(layer.image, region, effect), (region.x0, region.y0))
+    from umc.editor.tools.base import restrict
+
+    restrict(doc, layer, region, before)  # shaped / soft selections
     return PatchCommand.from_region(label, doc, doc.active, region, before)

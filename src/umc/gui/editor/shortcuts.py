@@ -36,7 +36,9 @@ SHORTCUTS: tuple[Shortcut, ...] = (
     # Selection
     Shortcut("select_all", ("Ctrl+A",), "Select all", "Selection"),
     Shortcut("deselect", ("Ctrl+D",), "Deselect", "Selection"),
-    Shortcut("apply", ("Enter", "Return"), "Apply the crop", "Selection"),
+    Shortcut("invert_selection", ("Ctrl+Shift+I",), "Invert the selection", "Selection"),
+    Shortcut("feather", ("Shift+F6",), "Feather (soften) the selection…", "Selection"),
+    Shortcut("apply", ("Enter", "Return"), "Apply the crop · finish a polygon", "Selection"),
     # Layers
     Shortcut("new_layer", ("Ctrl+Shift+N",), "New layer", "Layers"),
     Shortcut("duplicate", ("Ctrl+J",), "Duplicate layers", "Layers"),
@@ -53,7 +55,6 @@ SHORTCUTS: tuple[Shortcut, ...] = (
     Shortcut("actual", ("Ctrl+1",), "Actual pixels (100 %)", "View"),
     Shortcut("help", ("?", "F1"), "Show this list", "View"),
     # Tools (besides the tool letters)
-    Shortcut("toggle_shape", ("U",), "Rectangle / ellipse (press again to switch)", "Tools"),
     Shortcut("swap_colours", ("X",), "Swap colours", "Tools"),
     Shortcut("smaller", ("[",), "Smaller brush", "Tools"),
     Shortcut("bigger", ("]",), "Bigger brush", "Tools"),
@@ -61,6 +62,12 @@ SHORTCUTS: tuple[Shortcut, ...] = (
 
 # Shown in the list but handled elsewhere (canvas keys and mouse), so not bound by the page.
 INFO: tuple[tuple[str, str, str], ...] = (
+    (
+        "Shift / Alt + select",
+        "Add to / take from the selection (both: keep the overlap)",
+        "Selection",
+    ),
+    ("Double-click", "Finish a polygon lasso", "Selection"),
     ("Arrow keys", "Move tool: nudge 1 px (Shift: 10 px)", "Tools"),
     ("Shift + drag", "Move tool: keep to one direction · shapes: keep square", "Tools"),
     ("Esc", "Cancel the current drag / crop", "Tools"),

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import numpy as np
 from PIL import Image
 
 from umc.editor import ops
@@ -16,6 +17,7 @@ from umc.editor.document import Document, check_size
 from umc.editor.geometry import Rect
 from umc.editor.history import Command, PatchCommand
 from umc.editor.layer import Layer
+from umc.editor.tools.base import restrict
 
 
 @dataclass
@@ -34,13 +36,25 @@ def copy(doc: Document, merged: bool = False) -> Clip | None:
         region = doc.bounds if doc.selection is None else doc.selection.intersect(doc.bounds)
         if region.empty:
             return None
-        return Clip(doc.composite(region), region.x0, region.y0)
+        return Clip(_shaped(doc, doc.composite(region), region), region.x0, region.y0)
     layer = doc.active_layer
     region = layer.bounds if doc.selection is None else layer.bounds.intersect(doc.selection)
     if region.empty:
         return None
     image = layer.image.crop(region.offset(-layer.x, -layer.y).box)
-    return Clip(image, region.x0, region.y0)
+    return Clip(_shaped(doc, image, region), region.x0, region.y0)
+
+
+def _shaped(doc: Document, image: Image.Image, region: Rect) -> Image.Image:
+    """``image`` (of canvas ``region``) with the selection's shape taken into its alpha."""
+    from umc.editor.selection import weight
+
+    w = weight(doc, region)
+    if w is None:
+        return image
+    arr = np.asarray(image.convert("RGBA"), dtype=np.float32)
+    arr[..., 3] *= w
+    return Image.fromarray(np.floor(arr + 0.5).astype(np.uint8), "RGBA")
 
 
 def cut(doc: Document) -> tuple[Clip | None, Command | None]:
@@ -53,6 +67,7 @@ def cut(doc: Document) -> tuple[Clip | None, Command | None]:
     region = region.offset(-layer.x, -layer.y)
     before = layer.image.crop(region.box)
     layer.image.paste(Image.new("RGBA", (region.width, region.height)), (region.x0, region.y0))
+    restrict(doc, layer, region, before)  # shaped / soft selections clear only that much
     return clip, PatchCommand.from_region("Cut", doc, doc.active, region, before)
 
 

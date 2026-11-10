@@ -318,6 +318,10 @@ def test_registry_has_all_tools():
         "ellipse",
         "text",
         "select",
+        "ellipse_select",
+        "lasso",
+        "polygon_lasso",
+        "wand",
         "crop",
     ]
 

@@ -756,6 +756,21 @@ class LooksDialog(_AdjustDialog):
         self.changed()
 
 
+class FeatherDialog(QDialog):
+    """Soften the selection's edge by a radius (px)."""
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Feather selection")
+        form = QFormLayout(self)
+        self.radius = QDoubleSpinBox()
+        self.radius.setRange(0.5, 250)
+        self.radius.setValue(5)
+        self.radius.setSuffix(" px")
+        form.addRow("Radius", self.radius)
+        form.addRow(_buttons(self))
+
+
 class SaveOptionsDialog(QDialog):
     def __init__(self, target_id: str, values: dict[str, Any], parent=None) -> None:
         super().__init__(parent)
@@ -772,6 +787,15 @@ class SaveOptionsDialog(QDialog):
         return self.panel.values()
 
 
+def tool_groups(tools) -> dict[str, list]:
+    """Tools by shortcut letter, in tool-bar order (a letter shared by several cycles them)."""
+    groups: dict[str, list] = {}
+    for t in tools:
+        if t.shortcut:
+            groups.setdefault(t.shortcut, []).append(t)
+    return groups
+
+
 def shortcut_rows(tools) -> dict[str, list[tuple[str, str]]]:
     """(keys, what it does) per group, from the shortcut table, the tools and the INFO lines."""
     from PySide6.QtGui import QKeySequence
@@ -782,9 +806,11 @@ def shortcut_rows(tools) -> dict[str, list[tuple[str, str]]]:
     native = QKeySequence.SequenceFormat.NativeText
     for sc in SHORTCUTS:
         rows[sc.group].append((QKeySequence(sc.keys[0]).toString(native), sc.label))
-    for tool in tools:
-        if tool.shortcut and tool.shortcut != "U":  # U (rectangle / ellipse) is a table row
-            rows["Tools"].append((tool.shortcut, tool.label))
+    for letter, group in tool_groups(tools).items():  # one row per letter: "M  Rectangle / Ellipse"
+        label = " / ".join(t.label for t in group)
+        rows["Tools"].append(
+            (letter, label + (" (press again to switch)" if len(group) > 1 else ""))
+        )
     for keys, label, group in INFO:
         rows[group].append((keys, label))
     return rows

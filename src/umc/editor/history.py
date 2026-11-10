@@ -160,7 +160,7 @@ class DocumentStateCommand(Command):
         doc.width, doc.height, layers = state
         doc.layers = list(layers)
         doc.active = min(doc.active, len(doc.layers) - 1)
-        doc.selection = None
+        doc.selection, doc.selection_mask = None, None
 
     def undo(self, doc: Document) -> None:
         self._set(doc, self.before)
@@ -174,15 +174,29 @@ class DocumentStateCommand(Command):
 
 
 class SelectionCommand(Command):
-    def __init__(self, before: Rect | None, after: Rect | None, label: str = "Select") -> None:
+    """The selection before and after: its rectangle and (for other shapes) its mask."""
+
+    def __init__(
+        self,
+        before: Rect | None,
+        after: Rect | None,
+        label: str = "Select",
+        mask_before: Image.Image | None = None,
+        mask_after: Image.Image | None = None,
+    ) -> None:
         self.label = label
         self.before, self.after = before, after
+        self.mask_before, self.mask_after = mask_before, mask_after
 
     def undo(self, doc: Document) -> None:
-        doc.selection = self.before
+        doc.selection, doc.selection_mask = self.before, self.mask_before
 
     def redo(self, doc: Document) -> None:
-        doc.selection = self.after
+        doc.selection, doc.selection_mask = self.after, self.mask_after
+
+    @property
+    def nbytes(self) -> int:
+        return sum(m.width * m.height for m in (self.mask_before, self.mask_after) if m is not None)
 
 
 class History:

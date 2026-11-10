@@ -6,7 +6,14 @@ from umc.editor.tools.base import Tool
 from umc.editor.tools.fill import FillTool, PickerTool
 from umc.editor.tools.move import MoveTool
 from umc.editor.tools.paint import BrushTool, EraserTool
-from umc.editor.tools.select import CropTool, SelectTool
+from umc.editor.tools.select import (
+    CropTool,
+    EllipseSelectTool,
+    LassoTool,
+    MagicWandTool,
+    PolygonLassoTool,
+    SelectTool,
+)
 from umc.editor.tools.shapes import EllipseTool, LineTool, RectTool
 from umc.editor.tools.text import TextTool
 
@@ -21,5 +28,9 @@ TOOLS: list[type[Tool]] = [
     EllipseTool,
     TextTool,
     SelectTool,
+    EllipseSelectTool,
+    LassoTool,
+    PolygonLassoTool,
+    MagicWandTool,
     CropTool,
 ]

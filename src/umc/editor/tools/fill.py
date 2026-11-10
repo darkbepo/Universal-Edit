@@ -10,7 +10,15 @@ from umc.core.options import opt
 from umc.editor.document import Document
 from umc.editor.geometry import Rect
 from umc.editor.history import Command, PatchCommand
-from umc.editor.tools.base import RGBA, Tool, ToolContext, blend_over, clip_rect, paste_array
+from umc.editor.tools.base import (
+    RGBA,
+    Tool,
+    ToolContext,
+    blend_over,
+    clip_rect,
+    paste_array,
+    restrict,
+)
 
 
 @dataclass
@@ -106,6 +114,7 @@ class FillTool(Tool):
         base = np.asarray(before, dtype=np.uint8)
         sub = mask[box.y0 : box.y1, box.x0 : box.x1]
         paste_array(layer.image, paint_mask(base, ctx.color, sub), region)
+        restrict(doc, layer, region, before)  # shaped / soft selections
         self._pending = (doc.active, region, before)
         return region.offset(layer.x, layer.y)
 

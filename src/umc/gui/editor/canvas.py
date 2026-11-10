@@ -6,15 +6,18 @@ from collections.abc import Callable
 
 from PIL import Image
 from PySide6.QtCore import QPoint, QPointF, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QBrush, QColor, QImage, QPainter, QPen, QPixmap
+from PySide6.QtGui import QBrush, QColor, QImage, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import QWidget
 
 from umc.editor.document import Document
 from umc.editor.geometry import Rect
 from umc.editor.history import History
+from umc.editor.selection import outline as selection_outline
 from umc.editor.tools.base import Tool, ToolContext
 from umc.gui import theme
 from umc.gui.editor.crop_bar import nearest_corner, place_bar
+
+SELECT_TOOLS = ("select", "ellipse_select", "lasso", "polygon_lasso", "wand")
 
 MIN_ZOOM, MAX_ZOOM = 0.05, 32.0
 
@@ -78,6 +81,8 @@ class EditorCanvas(QWidget):
         # the selection; _release_at = where the last drag ended, in image coordinates.
         self.bar = None
         self._release_at: tuple[float, float] | None = None
+        self._outline_key = None
+        self._outline_path = QPainterPath()
 
     # ------------------------------------------------------------ document
     def set_document(self, doc: Document, history: History) -> None:
@@ -239,7 +244,11 @@ class EditorCanvas(QWidget):
 
     # ------------------------------------------------------------ painting
     def _tick(self) -> None:
-        if self.doc is not None and (self.doc.selection is not None or self._crop_rect()):
+        if self.doc is not None and (
+            self.doc.selection is not None
+            or self._crop_rect()
+            or getattr(self.tool, "outline", None) is not None
+        ):
             self._ants = (self._ants + 1) % 8
             self.update()
 
@@ -287,7 +296,11 @@ class EditorCanvas(QWidget):
             )
             self._ants_rect(p, inner)
         if self.doc.selection is not None:
-            self._ants_rect(p, self._image_rect(self.doc.selection))
+            if self.doc.selection_mask is None:
+                self._ants_rect(p, self._image_rect(self.doc.selection))
+            else:
+                self._ants_path(p, self._selection_path())
+        self._paint_tool_outline(p)
         if self._mouse is not None and self.tool is not None and self.tool.cursor == "brush":
             opts = self.context_provider().options if self.context_provider else None
             size = getattr(opts, "size", 0)
@@ -309,7 +322,9 @@ class EditorCanvas(QWidget):
         crop = self._crop_rect()
         if self.tool.id == "crop" and crop is not None:
             return "crop", crop
-        if self.tool.id == "select" and self.doc.selection is not None:
+        if self.tool.id in SELECT_TOOLS and self.doc.selection is not None:
+            if getattr(self.tool, "outline", None) is not None:
+                return None  # a polygon still being drawn
             return "select", self.doc.selection
         return None
 
@@ -336,6 +351,52 @@ class EditorCanvas(QWidget):
         if bar.pos() != pos:
             bar.move(pos)
 
+    def _selection_path(self) -> QPainterPath:
+        """The selection's outline in canvas pixels (cached until the selection changes)."""
+        key = (id(self.doc.selection_mask), self.doc.selection)
+        if self._outline_key != key:
+            path = QPainterPath()
+            for x0, y0, x1, y1 in selection_outline(self.doc):
+                path.moveTo(x0, y0)
+                path.lineTo(x1, y1)
+            self._outline_key, self._outline_path = key, path
+        return self._outline_path
+
+    def _ants_path(self, p: QPainter, path: QPainterPath) -> None:
+        p.save()
+        p.translate(self._origin)
+        p.scale(self.zoom, self.zoom)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        white = QPen(QColor("white"), 1)
+        white.setCosmetic(True)  # 1 screen pixel whatever the zoom
+        p.setPen(white)
+        p.drawPath(path)
+        pen = QPen(QColor("black"), 1, Qt.PenStyle.DashLine)
+        pen.setCosmetic(True)
+        pen.setDashOffset(self._ants)
+        p.setPen(pen)
+        p.drawPath(path)
+        p.restore()
+
+    def _paint_tool_outline(self, p: QPainter) -> None:
+        """The shape a selection tool is drawing (before the mouse is let go)."""
+        outline = getattr(self.tool, "outline", None)
+        if outline is None:
+            return
+        kind, geo = outline
+        path = QPainterPath()
+        if kind == "rect":
+            path.addRect(QRectF(geo.x0, geo.y0, geo.width, geo.height))
+        elif kind == "ellipse":
+            path.addEllipse(QRectF(geo.x0, geo.y0, geo.width, geo.height))
+        elif geo:
+            path.moveTo(*geo[0])
+            for pt in geo[1:]:
+                path.lineTo(*pt)
+            if self.tool.id == "polygon_lasso" and self._mouse is not None:
+                path.lineTo(*self.widget_to_image(self._mouse))  # where the next corner goes
+        self._ants_path(p, path)
+
     def _ants_rect(self, p: QPainter, rect: QRectF) -> None:
         p.setBrush(Qt.BrushStyle.NoBrush)
         p.setPen(QPen(QColor("white"), 1))
@@ -354,6 +415,8 @@ class EditorCanvas(QWidget):
         ctx = self.context_provider()
         ctx.button = button
         ctx.shift = bool(modifiers & Qt.KeyboardModifier.ShiftModifier)
+        ctx.alt = bool(modifiers & Qt.KeyboardModifier.AltModifier)
+        ctx.zoom = self.zoom
         return ctx
 
     def mousePressEvent(self, e) -> None:  # noqa: N802
@@ -413,6 +476,22 @@ class EditorCanvas(QWidget):
             self.push(cmd)
             self.refresh(cmd.repaint())
         self.update()
+
+    def mouseDoubleClickEvent(self, e) -> None:  # noqa: N802
+        """Double-click finishes a polygon lasso."""
+        if self.tool is not None and hasattr(self.tool, "finish") and self.doc is not None:
+            self.finish_tool()
+            return
+        super().mouseDoubleClickEvent(e)
+
+    def finish_tool(self) -> bool:
+        """Finish a tool that collects clicks (polygon lasso); True if it had something."""
+        finish = getattr(self.tool, "finish", None)
+        if finish is None or self.doc is None or not getattr(self.tool, "points", None):
+            return False
+        self.push(finish(self.doc))
+        self.update()
+        return True
 
     def leaveEvent(self, _e) -> None:  # noqa: N802
         self._mouse = None

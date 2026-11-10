@@ -672,7 +672,7 @@ def test_shortcut_table_has_no_clashes_and_help_lists_everything(page, qtbot, mo
     from umc.gui.editor.shortcuts import SHORTCUTS
 
     keys = [QKeySequence(k).toString() for s in SHORTCUTS for k in s.keys]
-    keys += [t.shortcut for t in TOOLS if t.shortcut != "U"]
+    keys += sorted({t.shortcut for t in TOOLS if t.shortcut})  # a shared letter cycles its tools
     assert len(keys) == len(set(keys)), "two actions share a key"
     rows = dialogs.shortcut_rows(TOOLS)
     labels = {label for group in rows.values() for _, label in group}
@@ -889,3 +889,78 @@ def test_looks_dialog_tiles_choose_and_strength(page, qtbot, monkeypatch):
     page.run_op("looks")
     r, g, b, _ = page.doc.active_layer.image.getpixel((5, 5))
     assert r == g == b and page.history.undo_label == "Look"
+
+
+# ------------------------------------------------------------------ selection tools
+
+
+def _canvas_drag(qtbot, pg, a, b, modifier=Qt.KeyboardModifier.NoModifier):
+    c = pg.canvas
+    pa, pb = c.image_to_widget(*a), c.image_to_widget(*b)
+    qtbot.mousePress(c, Qt.MouseButton.LeftButton, modifier, pa)
+    qtbot.mouseMove(c, pb)
+    qtbot.mouseRelease(c, Qt.MouseButton.LeftButton, modifier, pb)
+
+
+def test_tool_letters_cycle_shared_tools(page, qtbot):
+    c = page.canvas
+    c.setFocus()
+    for key, ids in (
+        (Qt.Key.Key_M, ("select", "ellipse_select", "select")),
+        (Qt.Key.Key_Q, ("lasso", "polygon_lasso", "lasso")),
+        (Qt.Key.Key_U, ("rect", "ellipse", "rect")),
+    ):
+        for want in ids:
+            qtbot.keyClick(c, key)
+            assert page.tool.id == want
+    qtbot.keyClick(c, Qt.Key.Key_W)
+    assert page.tool.id == "wand"
+
+
+def test_shift_and_alt_drags_combine_selections(page, qtbot):
+    import numpy as np
+
+    from umc.editor import selection
+
+    page.select_tool("select")
+    _canvas_drag(qtbot, page, (0, 0), (10, 10))
+    _canvas_drag(qtbot, page, (20, 0), (30, 10), Qt.KeyboardModifier.ShiftModifier)
+    m = np.asarray(selection.full_mask(page.doc)) > 127
+    assert m[5, 5] and m[5, 25] and not m[5, 15]
+    page.select_tool("ellipse_select")
+    _canvas_drag(qtbot, page, (0, 0), (30, 10), Qt.KeyboardModifier.AltModifier)
+    m = np.asarray(selection.full_mask(page.doc)) > 127
+    assert not m[5, 5] and m[0, 0]  # the middle of the ellipse was taken away
+    page.canvas.repaint()  # the shaped marching ants paint without errors
+    assert page.crop_bar.isVisible() and page.crop_bar.apply_button.text() == "Crop to selection"
+
+
+def test_polygon_lasso_double_click_and_enter_finish(page, qtbot):
+    c = page.canvas
+    page.select_tool("polygon_lasso")
+    for p in ((2, 2), (40, 2), (20, 30)):
+        qtbot.mouseClick(c, Qt.MouseButton.LeftButton, pos=c.image_to_widget(*p))
+    assert page.doc.selection is None and len(page.tool.points) == 3
+    c.repaint()
+    qtbot.mouseDClick(c, Qt.MouseButton.LeftButton, pos=c.image_to_widget(20, 30))
+    assert page.doc.selection is not None and page.tool.points == []
+    page.canvas.undo()
+    for p in ((2, 2), (40, 2), (20, 30)):
+        qtbot.mouseClick(c, Qt.MouseButton.LeftButton, pos=c.image_to_widget(*p))
+    c.setFocus()
+    qtbot.keyClick(c, Qt.Key.Key_Return)
+    assert page.doc.selection is not None
+
+
+def test_select_menu_invert_and_feather(page, qtbot, monkeypatch):
+    from umc.editor.geometry import Rect
+    from umc.gui.editor.dialogs import FeatherDialog
+
+    page.select_tool("select")
+    _canvas_drag(qtbot, page, (0, 0), (20, 40))
+    page.canvas.setFocus()
+    qtbot.keyClick(page.canvas, Qt.Key.Key_I, CTRL | SHIFT)
+    assert page.doc.selection == Rect(20, 0, 60, 40)
+    monkeypatch.setattr(FeatherDialog, "exec", lambda self: 1)
+    qtbot.keyClick(page.canvas, Qt.Key.Key_F6, SHIFT)
+    assert page.doc.selection_mask is not None and page.history.undo_label == "Feather selection"

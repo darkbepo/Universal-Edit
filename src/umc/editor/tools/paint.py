@@ -11,7 +11,14 @@ from umc.core.options import opt
 from umc.editor.document import Document
 from umc.editor.geometry import Rect
 from umc.editor.history import Command, PatchCommand
-from umc.editor.tools.base import Tool, ToolContext, blend_over, clip_rect, paste_array
+from umc.editor.tools.base import (
+    Tool,
+    ToolContext,
+    blend_over,
+    clip_rect,
+    paste_array,
+    selection_weight,
+)
 
 
 @dataclass
@@ -134,6 +141,9 @@ class _StrokeTool(Tool):
                 ys, xs = np.mgrid[part.y0 : part.y1, part.x0 : part.x1].astype(np.float32)
                 d = np.hypot(xs + 0.5 - cx, ys + 0.5 - cy)
                 mask = np.clip((radius - d) / soft, 0.0, 1.0) * strength
+                sel = selection_weight(doc, layer, part)
+                if sel is not None:
+                    mask *= sel  # soft / shaped selections paint partly
                 sl = (
                     slice(part.y0 - trect.y0, part.y1 - trect.y0),
                     slice(part.x0 - trect.x0, part.x1 - trect.x0),

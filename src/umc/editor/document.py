@@ -36,7 +36,10 @@ class Document:
     height: int
     layers: list[Layer]
     active: int = 0
-    selection: Rect | None = None
+    selection: Rect | None = None  # the rectangle around what is selected (canvas coordinates)
+    # How much of each pixel in that rectangle is selected ("L", the rectangle's size); None =
+    # all of it. See selection.py.
+    selection_mask: Image.Image | None = None
     dirty: bool = field(default=False)
     # Layers selected in the layers list (several with Ctrl/Shift+click). The active layer is
     # always one of them: it's the one tools paint on. Not an undo step by itself.

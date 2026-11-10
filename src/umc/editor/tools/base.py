@@ -24,6 +24,8 @@ class ToolContext:
     shift: bool = False
     button: str = "left"  # "left" | "right"
     font_family: str = "DejaVu Sans"
+    alt: bool = False
+    zoom: float = 1.0  # screen pixels per canvas pixel (for "click near a point" tolerances)
 
     @property
     def color(self) -> RGBA:
@@ -65,6 +67,36 @@ def clip_rect(doc: Document, layer: Layer) -> Rect:
     if doc.selection is not None:
         r = r.intersect(doc.selection)
     return r.offset(-layer.x, -layer.y) if not r.empty else EMPTY
+
+
+def selection_weight(doc: Document, layer: Layer, region: Rect) -> np.ndarray | None:
+    """How much each pixel of ``region`` (layer coordinates, inside ``clip_rect``) is selected,
+    0…1 (float32 H×W); None = all of it."""
+    from umc.editor.selection import weight
+
+    return weight(doc, region.offset(layer.x, layer.y))
+
+
+def restrict(doc: Document, layer: Layer, region: Rect, before: Image.Image) -> None:
+    """Keep a change to ``region`` of ``layer`` only where (and as much as) it is selected.
+
+    ``before`` is that region's original pixels; the new ones are mixed with them by the
+    selection's strength, on premultiplied colour so soft edges keep their colour.
+    """
+    w = selection_weight(doc, layer, region)
+    if w is None or region.empty:
+        return
+    after = np.asarray(layer.image.crop(region.box), dtype=np.float32)
+    base = np.asarray(before.convert("RGBA"), dtype=np.float32)
+    a0, a1 = base[..., 3:] / 255.0, after[..., 3:] / 255.0
+    p0, p1 = base[..., :3] * a0, after[..., :3] * a1
+    t = w[..., None]
+    alpha = a0 + (a1 - a0) * t
+    rgb = (p0 + (p1 - p0) * t) / np.where(alpha > 0, alpha, 1.0)
+    out = np.empty_like(after)
+    out[..., :3] = rgb
+    out[..., 3:] = alpha * 255.0
+    paste_array(layer.image, np.clip(np.floor(out + 0.5), 0, 255).astype(np.uint8), region)
 
 
 def blend_over(base: np.ndarray, color: RGBA, coverage: np.ndarray) -> np.ndarray:

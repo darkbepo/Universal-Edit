@@ -11,7 +11,7 @@ from umc.core.options import opt
 from umc.editor.document import Document
 from umc.editor.geometry import Rect
 from umc.editor.history import Command, PatchCommand
-from umc.editor.tools.base import Tool, ToolContext, clip_rect
+from umc.editor.tools.base import Tool, ToolContext, clip_rect, restrict
 
 SUPERSAMPLE = 4
 
@@ -132,6 +132,7 @@ class _ShapeTool(Tool):
         src = img.crop(region.offset(-target.x0, -target.y0).box)
         part.alpha_composite(src)
         layer.image.paste(part, (region.x0, region.y0))
+        restrict(doc, layer, region, before)  # shaped / soft selections
         return PatchCommand.from_region(self.label, doc, doc.active, region, before)
 
     def cancel(self, doc: Document) -> Rect | None:

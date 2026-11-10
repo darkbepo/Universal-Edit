@@ -45,7 +45,7 @@ def _set_state(doc: Document, label: str, width: int, height: int, layers: list[
     before = _state(doc)
     doc.width, doc.height, doc.layers = width, height, layers
     doc.active = min(doc.active, len(layers) - 1)
-    doc.selection = None
+    doc.selection, doc.selection_mask = None, None
     return DocumentStateCommand(label, before, _state(doc))
 
 
