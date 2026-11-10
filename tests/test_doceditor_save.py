@@ -40,7 +40,8 @@ def test_save_txt_md_unicode(tmp_path):
     txt = save_document(CONTENT, tmp_path / "a.txt", "txt")
     assert txt.read_text("utf-8") == "Hi\nBlåbær bold\n"
     md = save_document(CONTENT, tmp_path / "a.md", "md").read_text("utf-8")
-    assert "![](a_files/1.png)" in md and (tmp_path / "a_files" / "1.png").exists()
+    assert '<img src="a_files/1.png" width="20">' in md  # sized: raw HTML
+    assert (tmp_path / "a_files" / "1.png").exists()
 
 
 def test_save_pdf_without_tools(tmp_path, monkeypatch):
@@ -97,7 +98,7 @@ def test_only_real_picture_references_are_rewritten(tmp_path):
 
 def test_md_folder_name_is_percent_encoded(tmp_path):
     md = save_document(CONTENT, tmp_path / "my notes.md", "md").read_text("utf-8")
-    assert "![](my%20notes_files/1.png)" in md
+    assert '<img src="my%20notes_files/1.png" width="20">' in md
     assert (tmp_path / "my notes_files" / "1.png").exists()
 
 
@@ -112,7 +113,7 @@ def test_md_foreign_folder_untouched(tmp_path):
     (tmp_path / "a_files").mkdir()
     (tmp_path / "a_files" / "notes.txt").write_text("mine")
     md = save_document(CONTENT, tmp_path / "a.md", "md").read_text("utf-8")
-    assert "![](a_files%20(1)/1.png)" in md
+    assert '<img src="a_files%20(1)/1.png" width="20">' in md
     assert [p.name for p in (tmp_path / "a_files").iterdir()] == ["notes.txt"]
     assert (tmp_path / "a_files (1)" / "1.png").exists()
 
