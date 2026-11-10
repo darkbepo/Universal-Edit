@@ -281,18 +281,19 @@ def window(qtbot, tmp_path, monkeypatch):
     return w
 
 
-def test_switch_hidden_for_non_images(window, media):
+def test_edit_disabled_for_non_images(window, media):
+    assert window.mode_bar.isVisible() and not window.edit_mode.isEnabled()
     window.add_files([str(media / "doc.md")])
-    assert not window.mode_bar.isVisible()
+    assert not window.edit_mode.isEnabled()
     window.clear_files()
-    assert not window.mode_bar.isVisible()
+    assert not window.edit_mode.isEnabled()
 
 
-def test_switch_shown_for_images(window, media):
+def test_edit_enabled_for_images(window, media):
     window.add_files([str(media / "img0.png"), str(media / "img1.png")])
-    assert window.mode_bar.isVisible() and window.convert_mode.isChecked()
+    assert window.edit_mode.isEnabled() and window.convert_mode.isChecked()
     window.add_files([str(media / "doc.md")])  # mixed → no editing
-    assert not window.mode_bar.isVisible()
+    assert not window.edit_mode.isEnabled()
 
 
 def test_edit_and_back(window, media, monkeypatch):

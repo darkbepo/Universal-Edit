@@ -1,13 +1,17 @@
-// The single page: drop files → pick a format → (optional) settings → Convert → download.
+// The single page: drop files → queue → pick a format (or open Settings) → Convert → download.
+// Wide screens: files on the left, "Convert to" / "Settings" sideways tabs on the right, a bottom
+// bar with status, progress and Convert. Narrow screens stack the same parts in one column.
 import { zipSync } from "fflate";
 import { detect } from "../core/detect";
 import { defaults, type Values } from "../core/options";
+import { fileFractions } from "../core/progress";
 import { converterById, targetsFor } from "../core/registry";
 import type { InputFile, OutputFile, Target } from "../core/types";
 import { ConversionClient, JobCancelled } from "../worker/client";
+import { groupIcon, icon } from "./icons";
+import { fmtSize, Queue } from "./queue";
 import { SettingsForm } from "./settings";
 
-const ICON: Record<string, string> = { image: "🖼", video: "🎞", audio: "🎵", document: "📄", model: "🧊", archive: "🗜", subtitle: "💬", font: "🔤", vector: "✒", cad: "📐" };
 const NOUN: Record<string, [string, string]> = { image: ["image", "images"], video: ["video", "videos"], audio: ["audio file", "audio files"], document: ["document", "documents"], model: ["3D model", "3D models"], archive: ["archive", "archives"], subtitle: ["subtitle file", "subtitle files"], font: ["font", "fonts"], vector: ["vector graphic", "vector graphics"], cad: ["CAD drawing", "CAD drawings"] };
 
 const h = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> & { class?: string } = {}, ...children: (Node | string)[]) => {
@@ -23,8 +27,7 @@ const h = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLEle
 // that the desktop app is much faster for these.
 const SLOW_IN_BROWSER = new Set(["video", "gif", "frames", "slideshow", "subtitles-video"]);
 const DESKTOP_URL = "https://github.com/darkbepo/Universal-Media-Converter#desktop-app-for-the-heavy-stuff";
-
-const fmtSize =(n: number) => (n < 1024 ? `${n} B` : n < 1 << 20 ? `${(n / 1024).toFixed(0)} KB` : `${(n / (1 << 20)).toFixed(1)} MB`);
+const MAX_RESULTS = 200;
 
 export function mountApp(root: HTMLElement): void {
   const client = new ConversionClient();
@@ -34,58 +37,79 @@ export function mountApp(root: HTMLElement): void {
   let outputs: OutputFile[] = [];
   let objectURLs: string[] = [];
   const remembered: Record<string, Values> = {};
+  const folded = new Set<string>(readFolded());
 
-  // ---------------------------------------------------------------- layout
+  // ---------------------------------------------------------------- top bar
   const picker = h("input", { type: "file", multiple: true, hidden: true });
-  const drop = h("div", { class: "drop", tabIndex: 0, role: "button", ariaLabel: "Add files" },
-    h("div", { class: "icon" }, "⬆"), h("div", { class: "title" }, "Drop files here"),
-    h("div", { class: "sub" }, "or click to browse — images, videos, audio, documents or 3D models"));
-  const filesLabel = h("span");
-  const clearBtn = h("button", { class: "link" }, "Clear");
-  const fileList = h("ul", { class: "file-list" });
-  const filesHint = h("div", { class: "hint" }, "Drag to reorder · × removes");
-  const filesCard = h("div", { class: "card", hidden: true }, h("div", { class: "files-head" }, filesLabel, clearBtn), fileList, filesHint);
-  const note = h("div", { class: "note", hidden: true });
-  // Convert | Edit — only when every added file is an image (the editor loads on demand)
   // "Convert mode" as its accessible name, so it never collides with the Convert action button.
   const convertMode = h("button", { class: "seg", type: "button", ariaLabel: "Convert mode" }, "Convert");
-  const editMode = h("button", { class: "seg", type: "button", title: "Open the images in the image editor (each image becomes a layer)" }, "Edit");
-  const modeBar = h("div", { class: "mode", hidden: true, role: "group", ariaLabel: "Mode" }, convertMode, editMode);
+  const editMode = h("button", { class: "seg", type: "button" }, "Edit");
+  const modeBar = h("div", { class: "mode", role: "group", ariaLabel: "Mode" }, convertMode, editMode);
   convertMode.setAttribute("aria-pressed", "true");
   editMode.setAttribute("aria-pressed", "false");
   let editor: import("./editor/page").EditorPage | null = null;
   let editing = false;
-  const formatSection = h("div", { class: "section", hidden: true }, "Convert to");
-  const formats = h("div");
+  const topbar = h("header", { class: "topbar" },
+    h("div", { class: "brand" }, h("span", { class: "logo" }, icon("transform", 18)), h("h1", {}, "Universal Media Converter")),
+    h("span", { class: "badge", title: "Everything is processed in your browser. Nothing is uploaded." }, icon("lock", 14), "Files never leave your device"),
+    h("div", { class: "spacer" }),
+    modeBar);
+
+  // ---------------------------------------------------------------- left: drop zone, results, queue
+  const dropTitle = h("div", { class: "title" }, "Drop files here or click to browse");
+  const drop = h("div", { class: "drop", tabIndex: 0, role: "button", ariaLabel: "Add files" },
+    h("div", { class: "icon" }, icon("upload", 34)), dropTitle,
+    h("div", { class: "sub" }, "Images, video, audio, documents, 3D models, fonts and more"));
+  const note = h("div", { class: "note", hidden: true });
+
+  const resultsLabel = h("span");
+  const zipBtn = h("button", { class: "link", hidden: true }, icon("download", 16), "Download all (.zip)");
+  const folderBtn = h("button", { class: "link", hidden: true }, icon("folder", 16), "Save to folder…");
+  const resultsList = h("ul", { class: "file-list results" });
+  const resultsMore = h("div", { class: "hint", hidden: true });
+  const resultsCard = h("section", { class: "card results-card", hidden: true, ariaLabel: "Results" },
+    h("div", { class: "results-head" }, resultsLabel, h("span", { class: "actions" }, zipBtn, folderBtn)), resultsList, resultsMore);
+
+  const filesLabel = h("span");
+  const clearBtn = h("button", { class: "link" }, "Clear");
+  const queue = new Queue();
+  const filesHint = h("div", { class: "hint" }, "Drag to reorder · × removes");
+  const filesCard = h("section", { class: "card queue-card", hidden: true, ariaLabel: "Queue" },
+    h("div", { class: "files-head" }, filesLabel, clearBtn), queue.el, filesHint);
+  const left = h("div", { class: "left" }, drop, note, resultsCard, filesCard);
+
+  // ---------------------------------------------------------------- right: Convert to | Settings
+  const formats = h("div", { class: "cards" });
   const speedTip = h("div", { class: "hint speed-tip", hidden: true },
     "Video is slower in the browser. The ",
     h("a", { href: DESKTOP_URL, target: "_blank", rel: "noopener" }, "Windows desktop app"),
     " uses your whole processor and converts video much faster.");
-  const disclosure = h("button", { class: "disclosure", hidden: true });
+  const cog = h("button", { class: "icon-btn cog", type: "button", ariaLabel: "Settings", title: "Settings for this format" }, icon("settings", 18));
+  const convertPane = h("section", { class: "pane convert-pane", ariaLabel: "Convert to" },
+    h("div", { class: "pane-head" }, h("span", { class: "pane-icon" }, icon("transform", 18)), h("h2", {}, "Convert to"), h("div", { class: "spacer" }), cog),
+    h("div", { class: "pane-body" }, speedTip, formats));
+  const stripLabel = h("span", { class: "strip-label" }, "Convert to");
+  const strip = h("button", { class: "strip", type: "button", hidden: true, ariaLabel: "Convert to", title: "Back to the output formats" }, icon("transform", 20), stripLabel);
   const form = new SettingsForm(() => {
     if (target) remembered[target.converterId] = form.values();
   });
-  const resetBtn = h("button", { class: "link" }, "Reset to defaults");
-  const settingsCard = h("div", { class: "card", hidden: true }, form.el, h("div", { class: "row" }, h("div", { class: "spacer" }), resetBtn));
-  const resultsCard = h("div", { class: "card", hidden: true });
+  const settingsTitle = h("h2", {}, "Settings");
+  const resetBtn = h("button", { class: "link", title: "Reset every setting to its default" }, "Reset");
+  const settingsPane = h("section", { class: "pane settings-pane", hidden: true, ariaLabel: "Settings" },
+    h("div", { class: "pane-head" }, h("span", { class: "pane-icon" }, icon("settings", 18)), settingsTitle, h("div", { class: "spacer" }), resetBtn),
+    h("div", { class: "pane-body" }, form.el));
+  const right = h("div", { class: "right", hidden: true }, strip, convertPane, settingsPane);
 
+  const workspace = h("div", { class: "workspace empty" }, left, right);
+
+  // ---------------------------------------------------------------- bottom bar
   const progressFill = h("div");
   const progress = h("div", { class: "progress", hidden: true }, progressFill);
   const status = h("div", { class: "status" });
-  const zipBtn = h("button", { class: "btn", hidden: true }, "Download all (.zip)");
-  const folderBtn = h("button", { class: "btn", hidden: true }, "Save to folder…");
   const convertBtn = h("button", { class: "primary", disabled: true }, "Convert");
-  const bar = h("div", { class: "bar" }, h("div", { class: "bar-inner" }, progress, status,
-    h("div", { class: "row" }, zipBtn, folderBtn, h("div", { class: "spacer" }), convertBtn)));
+  const bar = h("div", { class: "bar" }, h("div", { class: "bar-inner" }, status, progress, convertBtn));
 
-  root.append(
-    h("main", { class: "app" },
-      h("div", { class: "header" },
-        h("div", {}, h("h1", {}, "Universal Media Converter"), h("p", { class: "subtitle" }, "Images, video, audio and documents — drop it in, pick a format.")),
-        h("span", { class: "badge", title: "Everything is processed in your browser. Nothing is uploaded." }, "🔒 Files never leave your device")),
-      picker, drop, modeBar, filesCard, note, formatSection, formats, speedTip, disclosure, settingsCard, resultsCard),
-    bar,
-  );
+  root.append(h("main", { class: "app" }, picker, topbar, workspace), bar);
 
   // ---------------------------------------------------------------- files
   async function addFiles(list: FileList | File[]) {
@@ -114,23 +138,39 @@ export function mountApp(root: HTMLElement): void {
     if (picker.files) void addFiles(picker.files);
     picker.value = "";
   });
-  for (const el of [document.body]) {
-    el.addEventListener("dragover", (e) => {
-      if (busy || !e.dataTransfer?.types.includes("Files")) return;
-      e.preventDefault();
-      drop.classList.add("hover");
-    });
-    el.addEventListener("dragleave", (e) => {
-      if (e.relatedTarget === null) drop.classList.remove("hover");
-    });
-    el.addEventListener("drop", (e) => {
-      drop.classList.remove("hover");
-      if (busy || !e.dataTransfer?.files.length) return;
-      e.preventDefault();
-      void addFiles(e.dataTransfer.files);
-    });
-  }
+  document.body.addEventListener("dragover", (e) => {
+    if (busy || !e.dataTransfer?.types.includes("Files")) return;
+    e.preventDefault();
+    drop.classList.add("hover");
+  });
+  document.body.addEventListener("dragleave", (e) => {
+    if (e.relatedTarget === null) drop.classList.remove("hover");
+  });
+  document.body.addEventListener("drop", (e) => {
+    drop.classList.remove("hover");
+    if (busy || !e.dataTransfer?.files.length) return;
+    e.preventDefault();
+    void addFiles(e.dataTransfer.files);
+  });
+
+  queue.onRemove = (i) => {
+    files.splice(i, 1);
+    refresh();
+  };
+  queue.onReorder = (from, to) => {
+    const [moved] = files.splice(from, 1);
+    files.splice(to, 0, moved);
+    refresh();
+  };
+  clearBtn.addEventListener("click", () => {
+    if (busy) return;
+    files = [];
+    refresh();
+  });
+
+  // ---------------------------------------------------------------- Convert | Edit
   const appMain = root.querySelector("main.app") as HTMLElement;
+  const canEdit = () => files.length > 0 && files.every((f) => f.family === "image");
   function showConverter() {
     editing = false;
     editor?.hide();
@@ -140,14 +180,14 @@ export function mountApp(root: HTMLElement): void {
     editMode.setAttribute("aria-pressed", "false");
   }
   async function enterEdit() {
-    if (editing || busy || modeBar.hidden) return;
+    if (editing || busy || !canEdit()) return;
     if (!editor) {
       const { mountEditor } = await import("./editor/page");
       editor = mountEditor(root, { client, onBack: showConverter });
     }
     editMode.disabled = true;
     const ok = await editor.open(files);
-    editMode.disabled = false;
+    editMode.disabled = !canEdit();
     if (!ok) {
       note.textContent = editor.lastError();
       note.hidden = false;
@@ -166,63 +206,32 @@ export function mountApp(root: HTMLElement): void {
     showConverter();
   });
 
-  clearBtn.addEventListener("click", () => {
-    files = [];
-    refresh();
-  });
-
-  let dragIndex = -1;
-  function renderFiles() {
-    fileList.replaceChildren(...files.map((f, i) => {
-      const remove = h("button", { class: "icon-btn", title: "Remove", ariaLabel: `Remove ${f.name}` }, "×");
-      remove.addEventListener("click", () => {
-        files.splice(i, 1);
-        refresh();
-      });
-      const li = h("li", { draggable: true }, ICON[f.family], h("span", { class: "fname", title: f.name }, f.name), h("span", { class: "fsize" }, fmtSize(f.file.size)), remove);
-      li.addEventListener("dragstart", (e) => {
-        dragIndex = i;
-        li.classList.add("dragging");
-        e.dataTransfer?.setData("text/plain", String(i));
-      });
-      li.addEventListener("dragend", () => li.classList.remove("dragging"));
-      li.addEventListener("dragover", (e) => {
-        if (dragIndex >= 0) e.preventDefault();
-      });
-      li.addEventListener("drop", (e) => {
-        if (dragIndex < 0) return;
-        e.preventDefault();
-        e.stopPropagation();
-        const [moved] = files.splice(dragIndex, 1);
-        files.splice(i, 0, moved);
-        dragIndex = -1;
-        renderFiles();
-      });
-      return li;
-    }));
-  }
-
   // ---------------------------------------------------------------- targets & settings
   function refresh(extraNote = "") {
     if (!busy) {
       clearResults();
       sticky = false;
     }
-    drop.classList.toggle("compact", files.length > 0);
-    drop.querySelector(".title")!.textContent = files.length ? "+  Add more files" : "Drop files here";
-    filesCard.hidden = !files.length;
+    const has = files.length > 0;
+    workspace.classList.toggle("empty", !has);
+    drop.classList.toggle("compact", has);
+    dropTitle.textContent = has ? "Add more files" : "Drop files here or click to browse";
+    drop.querySelector(".icon")!.replaceChildren(icon(has ? "plus" : "upload", has ? 18 : 34));
+    filesCard.hidden = !has;
     filesHint.hidden = files.length < 2;
-    modeBar.hidden = !files.length || files.some((f) => f.family !== "image");
+    right.hidden = !has;
+    editMode.disabled = !canEdit();
+    editMode.title = canEdit() ? "Open the images in the image editor (each image becomes a layer)" : "Add images to edit them";
     const fams = new Set(files.map((f) => f.family));
     filesLabel.textContent = fams.size === 1
-      ? `${files.length} ${NOUN[files[0].family][files.length === 1 ? 0 : 1]}`
-      : `${files.length} files`;
-    renderFiles();
+      ? `Queue · ${files.length} ${NOUN[files[0].family][files.length === 1 ? 0 : 1]}`
+      : `Queue · ${files.length} files`;
+    queue.set(files);
     const { targets, note: why } = targetsFor(files);
     const text = [extraNote, why].filter(Boolean).join(" ");
     note.textContent = text;
     note.hidden = !text;
-    formatSection.hidden = !targets.length;
+    right.classList.toggle("no-targets", !targets.length);
     renderTargets(targets);
   }
 
@@ -233,18 +242,46 @@ export function mountApp(root: HTMLElement): void {
     for (const t of targets) groups.set(t.group, [...(groups.get(t.group) ?? []), t]);
     let restored: Target | null = null;
     for (const [name, items] of groups) {
-      const pills = h("div", { class: "pills" });
+      const tiles = h("div", { class: "tiles" });
       for (const t of items) {
-        const b = h("button", { class: "pill", title: t.hint ?? "" }, t.label);
+        const b = h("button", { class: "pill tile", title: t.hint ?? t.label, type: "button" }, icon(groupIcon(t.group), 22), h("span", {}, t.label));
         b.setAttribute("aria-pressed", String(t.id === keep));
         b.dataset.target = t.id;
         b.addEventListener("click", () => selectTarget(t));
-        pills.append(b);
+        tiles.append(b);
         if (t.id === keep) restored = t;
       }
-      formats.append(h("div", { class: "group-heading" }, name), pills);
+      const badge = h("span", { class: "badge-pill" });
+      const head = h("button", { class: "card-head", type: "button" }, icon("chevron", 16, "ico chev"), h("span", { class: "card-title" }, name));
+      const card = h("div", { class: "cat-card" }, h("div", { class: "card-row" }, head, badge), tiles);
+      card.dataset.group = name;
+      const open = !folded.has(name) || items.some((t) => t.id === keep);
+      setCardOpen(card, open);
+      head.addEventListener("click", () => {
+        const now = card.classList.contains("closed");
+        setCardOpen(card, now);
+        if (now) folded.delete(name);
+        else folded.add(name);
+        localStorageSet("folded-groups", JSON.stringify([...folded]));
+      });
+      formats.append(card);
     }
     selectTarget(restored);
+  }
+
+  function setCardOpen(card: HTMLElement, open: boolean) {
+    card.classList.toggle("closed", !open);
+    card.querySelector(".card-head")!.setAttribute("aria-expanded", String(open));
+    updateBadge(card);
+  }
+
+  function updateBadge(card: HTMLElement) {
+    const badge = card.querySelector(".badge-pill") as HTMLElement;
+    const chosen = card.querySelector<HTMLButtonElement>('.tile[aria-pressed="true"]');
+    const count = card.querySelectorAll(".tile").length;
+    badge.textContent = chosen ? chosen.textContent ?? "" : card.classList.contains("closed") ? String(count) : "";
+    badge.classList.toggle("count", !chosen);
+    badge.hidden = !badge.textContent;
   }
 
   function selectTarget(t: Target | null) {
@@ -254,7 +291,8 @@ export function mountApp(root: HTMLElement): void {
     }
     target = t;
     speedTip.hidden = !(t && SLOW_IN_BROWSER.has(t.converterId));
-    for (const b of formats.querySelectorAll<HTMLButtonElement>(".pill")) b.setAttribute("aria-pressed", String(b.dataset.target === t?.id));
+    for (const b of formats.querySelectorAll<HTMLButtonElement>(".tile")) b.setAttribute("aria-pressed", String(b.dataset.target === t?.id));
+    for (const c of formats.querySelectorAll<HTMLElement>(".cat-card")) updateBadge(c);
     if (t) {
       localStorageSet("last-target", t.id);
       const conv = converterById(t.converterId);
@@ -262,28 +300,35 @@ export function mountApp(root: HTMLElement): void {
     } else {
       form.render([], "", {});
     }
-    updateSettingsVisibility();
+    const available = Boolean(t) && form.hasVisibleFields();
+    cog.hidden = !available;
+    stripLabel.textContent = t?.label ?? "Convert to";
+    settingsTitle.textContent = t ? `Settings · ${t.label}` : "Settings";
+    if (!available) showFormats();
     updateButtons();
   }
 
-  let settingsOpen = localStorageGet("settings-open") === "1";
-  disclosure.addEventListener("click", () => {
-    settingsOpen = !settingsOpen;
-    localStorageSet("settings-open", settingsOpen ? "1" : "0");
-    updateSettingsVisibility();
-  });
+  function showSettings() {
+    if (cog.hidden) return;
+    convertPane.hidden = true;
+    strip.hidden = false;
+    settingsPane.hidden = false;
+    right.classList.add("settings-open");
+  }
+  function showFormats() {
+    settingsPane.hidden = true;
+    strip.hidden = true;
+    convertPane.hidden = false;
+    right.classList.remove("settings-open");
+  }
+  cog.addEventListener("click", showSettings);
+  strip.addEventListener("click", showFormats);
   resetBtn.addEventListener("click", () => {
     if (!target) return;
     const conv = converterById(target.converterId);
     delete remembered[conv.id];
     form.render(conv.options, target.id, defaults(conv.options));
   });
-  function updateSettingsVisibility() {
-    const available = Boolean(target) && form.hasVisibleFields();
-    disclosure.hidden = !available;
-    disclosure.textContent = `${settingsOpen ? "▾" : "▸"}  Settings`;
-    settingsCard.hidden = !(available && settingsOpen);
-  }
 
   // ---------------------------------------------------------------- convert
   // A result/error/cancel message stays until the user changes something.
@@ -295,14 +340,23 @@ export function mountApp(root: HTMLElement): void {
   }
 
   function updateButtons() {
-    convertBtn.disabled = !busy && !(files.length && target);
+    const ready = files.length > 0 && target !== null;
+    convertBtn.disabled = !busy && !ready;
     convertBtn.textContent = busy ? "Cancel" : "Convert";
     convertBtn.classList.toggle("danger", busy);
     drop.style.pointerEvents = busy ? "none" : "";
+    queue.locked = busy;
+    workspace.classList.toggle("busy", busy);
     zipBtn.hidden = busy || outputs.length < 2;
     folderBtn.hidden = busy || !outputs.length || !("showDirectoryPicker" in window);
     if (!busy && !sticky) {
-      setStatus(!files.length ? "Add files to get started." : !target ? "Choose an output format." : `Ready to convert ${files.length} file${files.length === 1 ? "" : "s"} to ${target.label}.`);
+      if (!files.length) setStatus("Add files to get started.");
+      else if (!target) setStatus("Choose an output format.");
+      else {
+        const fams = new Set(files.map((f) => f.family));
+        const what = fams.size === 1 ? `${files.length} ${NOUN[files[0].family][files.length === 1 ? 0 : 1]}` : `${files.length} files`;
+        setStatus(`${what} → ${target.label}`);
+      }
     }
   }
 
@@ -316,6 +370,7 @@ export function mountApp(root: HTMLElement): void {
     clearResults();
     progress.hidden = false;
     progressFill.style.width = "0%";
+    queue.setFractions(fileFractions(0, files.length));
     setStatus("Starting…");
     updateButtons();
     const conv = converterById(target.converterId);
@@ -324,17 +379,22 @@ export function mountApp(root: HTMLElement): void {
     try {
       outputs = await client.run(target, files, options, (f, msg) => {
         progressFill.style.width = `${(f * 100).toFixed(1)}%`;
+        queue.setFractions(fileFractions(f, files.length));
         if (msg) setStatus(`${msg} — ${Math.round(f * 100)}%`);
       });
       progressFill.style.width = "100%";
+      queue.markDone();
       const secs = ((performance.now() - started) / 1000).toFixed(1);
       setStatus(`Done in ${secs} s — ${outputs.length === 1 ? outputs[0].name : `${outputs.length} files`} ready.`, "success", true);
       showResults();
     } catch (e) {
       progress.hidden = true;
-      if (e instanceof JobCancelled) setStatus("Cancelled.", "", true);
-      else {
+      if (e instanceof JobCancelled) {
+        queue.markCancelled();
+        setStatus("Cancelled.", "", true);
+      } else {
         console.error(e, (e as { details?: string }).details);
+        queue.markFailed((e as Error).message);
         setStatus((e as Error).message, "error", true);
       }
     } finally {
@@ -349,24 +409,28 @@ export function mountApp(root: HTMLElement): void {
     objectURLs = [];
     outputs = [];
     resultsCard.hidden = true;
-    resultsCard.replaceChildren();
+    resultsList.replaceChildren();
     progress.hidden = true;
     status.classList.remove("error");
   }
 
   function showResults() {
     const total = outputs.reduce((n, o) => n + o.data.byteLength, 0);
-    const list = h("ul", { class: "file-list results" });
-    for (const o of outputs.slice(0, 200)) {
+    resultsList.replaceChildren();
+    for (const o of outputs.slice(0, MAX_RESULTS)) {
       const url = URL.createObjectURL(new Blob([o.data as BlobPart], { type: o.type }));
       objectURLs.push(url);
       const leaf = o.name.split("/").pop()!;
-      list.append(h("li", {}, h("a", { href: url, download: leaf, className: "fname" }, o.name), h("span", { class: "fsize" }, fmtSize(o.data.byteLength))));
+      resultsList.append(h("li", {}, icon("check", 18, "ico ok"),
+        h("a", { href: url, download: leaf, className: "fname", title: `Download ${leaf}` }, o.name),
+        h("span", { class: "fsize" }, fmtSize(o.data.byteLength)),
+        h("span", { class: "dl", ariaHidden: "true" }, icon("download", 16))));
     }
-    const more = outputs.length > 200 ? h("div", { class: "hint" }, `…and ${outputs.length - 200} more — use “Download all”.`) : "";
-    resultsCard.replaceChildren(h("div", { class: "files-head" }, `${outputs.length} file${outputs.length === 1 ? "" : "s"} · ${fmtSize(total)}`), list, more);
+    resultsMore.textContent = outputs.length > MAX_RESULTS ? `…and ${outputs.length - MAX_RESULTS} more — use “Download all”.` : "";
+    resultsMore.hidden = outputs.length <= MAX_RESULTS;
+    resultsLabel.textContent = `Results · ${outputs.length} file${outputs.length === 1 ? "" : "s"} · ${fmtSize(total)}`;
     resultsCard.hidden = false;
-    if (outputs.length === 1) (list.querySelector("a") as HTMLAnchorElement).click(); // single file: download right away
+    if (outputs.length === 1) (resultsList.querySelector("a") as HTMLAnchorElement).click(); // single file: download right away
   }
 
   zipBtn.addEventListener("click", () => {
@@ -398,6 +462,15 @@ export function mountApp(root: HTMLElement): void {
   });
 
   refresh();
+}
+
+function readFolded(): string[] {
+  try {
+    const v: unknown = JSON.parse(localStorageGet("folded-groups") ?? "[]");
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
 }
 
 function localStorageGet(key: string): string | null {

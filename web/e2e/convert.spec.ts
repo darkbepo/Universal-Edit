@@ -10,8 +10,23 @@ async function load(page: Page, files: string[]) {
   await page.locator('input[type="file"]').first().setInputFiles(files);
 }
 
-async function convert(page: Page, targetId: string, timeout = 150_000) {
+// Choose an output format the way a person would: if Settings is open, go back to "Convert to",
+// pick the tile, then open Settings again with the cog.
+async function pick(page: Page, targetId: string) {
+  const strip = page.getByRole("button", { name: "Convert to" });
+  const settingsWereOpen = await strip.isVisible();
+  if (settingsWereOpen) await strip.click();
   await page.locator(`.pill[data-target="${targetId}"]`).click();
+  const cog = page.getByRole("button", { name: "Settings" });
+  if (settingsWereOpen && (await cog.isVisible())) await cog.click();
+}
+
+async function convert(page: Page, targetId: string, timeout = 150_000) {
+  // While Settings is open the format tiles are hidden; keep Settings open when the target is
+  // already the chosen one, otherwise go back to "Convert to" and pick it.
+  const tile = page.locator(`.pill[data-target="${targetId}"]`);
+  const chosenBehindSettings = !(await tile.isVisible()) && (await tile.getAttribute("aria-pressed")) === "true";
+  if (!chosenBehindSettings) await pick(page, targetId);
   await page.getByRole("button", { name: "Convert", exact: true }).click();
   await expect(page.locator(".status")).toHaveClass(/success|error/, { timeout });
   await expect(page.locator(".status")).toHaveClass(/success/);
@@ -38,9 +53,74 @@ test("png → jpg", async ({ page }) => {
   expect([...data.subarray(0, 3)]).toEqual([0xff, 0xd8, 0xff]);
 });
 
+test.describe("Convert screen layout", () => {
+  test("empty page is one big drop zone", async ({ page }) => {
+    await page.goto("./");
+    await expect(page.locator(".drop")).toBeVisible();
+    await expect(page.locator(".right")).toBeHidden();
+    await expect(page.getByRole("button", { name: "Edit", exact: true })).toBeDisabled();
+    await page.locator('input[type="file"]').first().setInputFiles([fx("img0.png")]);
+    await expect(page.locator(".right")).toBeVisible();
+    await expect(page.locator(".drop")).toHaveClass(/compact/);
+  });
+
+  test("queue rows finish one by one and results list every output", async ({ page }) => {
+    await load(page, [fx("img0.png"), fx("img1.png")]);
+    await expect(page.locator(".queue li")).toHaveCount(2);
+    await expect(page.locator(".queue li").first()).toContainText("img0.png");
+    await convert(page, "webp");
+    await expect(page.locator('.queue li[data-state="done"]')).toHaveCount(2);
+    await expect(page.locator(".results li")).toHaveCount(2);
+    await expect(page.locator(".results-head")).toContainText("Results · 2 files");
+  });
+
+  test("a failed file is marked in the queue", async ({ page }) => {
+    await page.goto("./");
+    await page.locator('input[type="file"]').first().setInputFiles([{ name: "broken.png", mimeType: "image/png", buffer: Buffer.from("not a png") }]);
+    await pick(page, "jpg");
+    await page.getByRole("button", { name: "Convert", exact: true }).click();
+    await expect(page.locator(".status")).toHaveClass(/error/, { timeout: 60_000 });
+    await expect(page.locator('.queue li[data-state="error"]')).toHaveCount(1);
+  });
+
+  test("Settings replaces the formats with a strip, and the strip brings them back", async ({ page }) => {
+    await load(page, [fx("img0.png")]);
+    await pick(page, "jpg");
+    await page.getByRole("button", { name: "Settings" }).click();
+    await expect(page.locator(".form")).toBeVisible();
+    await expect(page.locator(".settings-pane h2")).toHaveText("Settings · JPG");
+    await expect(page.locator('.pill[data-target="jpg"]')).toBeHidden();
+    const strip = page.getByRole("button", { name: "Convert to" });
+    await expect(strip).toContainText("JPG");
+    await strip.click();
+    await expect(page.locator('.pill[data-target="jpg"]')).toBeVisible();
+    await expect(page.locator(".form")).toBeHidden();
+  });
+
+  test("category cards fold and stay folded", async ({ page }) => {
+    await load(page, [fx("img0.png")]);
+    const card = page.locator('.cat-card[data-group="Archive"]');
+    await expect(card.locator(".tile").first()).toBeVisible();
+    await card.locator(".card-head").click();
+    await expect(card.locator(".tile").first()).toBeHidden();
+    await expect(card.locator(".badge-pill")).toHaveText(String(await card.locator(".tile").count()));
+    await load(page, [fx("img1.png")]);
+    await expect(page.locator('.cat-card[data-group="Archive"]')).toHaveClass(/closed/);
+  });
+
+  test("narrow screens stack the columns", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await load(page, [fx("img0.png")]);
+    const leftBox = await page.locator(".left").boundingBox();
+    const rightBox = await page.locator(".right").boundingBox();
+    expect(leftBox!.y + leftBox!.height).toBeLessThanOrEqual(rightBox!.y);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  });
+});
+
 test("png → avif with resize", async ({ page }) => {
   await load(page, [fx("img0.png")]);
-  await page.locator(`.pill[data-target="avif"]`).click();
+  await pick(page, "avif");
   await page.getByRole("button", { name: /Settings/ }).click();
   await page.locator("#opt-resize").selectOption({ label: "Scale by percentage" });
   const data = await downloadSingle(page, "avif");
@@ -94,7 +174,7 @@ test("crossfade slideshow of 8 pictures → MP4", async ({ page }) => {
   // One FFmpeg input per picture: with automatic thread counts this needed more than
   // ffmpeg.wasm's 32 pool workers on many-core PCs and hung after the first frame.
   await load(page, [...Array(8).keys()].map((i) => fx(`img${i}.png`)));
-  await page.locator(`.pill[data-target="slideshow:mp4"]`).click();
+  await pick(page, "slideshow:mp4");
   await page.getByRole("button", { name: /Settings/ }).click();
   await page.locator("#opt-transition").selectOption({ label: "Crossfade" });
   const data = await downloadSingle(page, "slideshow:mp4");
@@ -116,7 +196,7 @@ test("PDF pages → PNG images", async ({ page }) => {
 
 test("PDF → A4 with page range", async ({ page }) => {
   await load(page, [fx("three.pdf")]);
-  await page.locator(`.pill[data-target="doc:pdf"]`).click();
+  await pick(page, "doc:pdf");
   await page.getByRole("button", { name: /Settings/ }).click();
   await page.locator("#opt-page_range").fill("2-3");
   const data = await downloadSingle(page, "doc:pdf");
@@ -153,7 +233,7 @@ test.describe("data formats", () => {
 test.describe("target file size", () => {
   const MB = 1024 * 1024;
   const setTarget = async (page: Page, target: string, value: string) => {
-    await page.locator(`.pill[data-target="${target}"]`).click();
+    await pick(page, target);
     if (!(await page.locator(".form").isVisible())) await page.getByRole("button", { name: /Settings/ }).click();
     await page.locator(target.startsWith("jpg") ? "#opt-target_size_kb" : "#opt-target_size_mb").fill(value);
   };
@@ -191,7 +271,7 @@ test.describe("target file size", () => {
 test.describe("PDF tools", () => {
   const openPdf = async (data: Buffer) => (await import("mupdf")).Document.openDocument(new Uint8Array(data), "application/pdf").asPDF()!;
   const settings = async (page: Page, target: string) => {
-    await page.locator(`.pill[data-target="${target}"]`).click();
+    await pick(page, target);
     if (!(await page.locator(".form").isVisible())) await page.getByRole("button", { name: /Settings/ }).click();
   };
 
@@ -245,7 +325,7 @@ test.describe("PDF tools", () => {
     await load(page, [lockedPath]);
     await settings(page, "pdf:unlock");
     await page.locator("#opt-password").fill("wrong");
-    await page.locator('.pill[data-target="pdf:unlock"]').click();
+    await pick(page, "pdf:unlock");
     await page.getByRole("button", { name: "Convert", exact: true }).click();
     await expect(page.locator(".status")).toHaveClass(/error/, { timeout: 60_000 });
     await expect(page.locator(".status")).toContainText("password");
@@ -360,7 +440,7 @@ test.describe("video", () => {
 
   test("audio settings: mono, trimmed", async ({ page }) => {
     await load(page, [fx("tone.wav")]);
-    await page.locator('.pill[data-target="wav"]').click();
+    await pick(page, "wav");
     await page.getByRole("button", { name: /Settings/ }).click();
     await page.locator("#opt-channels").selectOption({ label: "Mono" });
     await page.locator("#opt-end").fill("1");
@@ -371,7 +451,7 @@ test.describe("video", () => {
 
   test("cancel stops a conversion", async ({ page }) => {
     await load(page, [fx("clip.mp4")]);
-    await page.locator(`.pill[data-target="mkv"]`).click();
+    await pick(page, "mkv");
     await page.getByRole("button", { name: "Convert", exact: true }).click();
     await page.getByRole("button", { name: "Cancel" }).click();
     await expect(page.locator(".status")).toHaveText("Cancelled.");
@@ -446,7 +526,7 @@ test.describe("OCR", () => {
 
   test("two scans → one searchable PDF (Danish data downloaded and verified)", async ({ page }) => {
     await load(page, [fx("scan.png"), fx("img0.png")]);
-    await page.locator('.pill[data-target="ocr:pdf"]').click();
+    await pick(page, "ocr:pdf");
     await page.getByRole("button", { name: /Settings/ }).click();
     await page.locator("#opt-language").selectOption({ label: "Danish" });
     const data = await downloadSingle(page, "ocr:pdf");
@@ -504,7 +584,7 @@ test.describe("archives", () => {
 
   test("password-protected ZIP: asks, then opens with the password", async ({ page }) => {
     await load(page, [fx("sample-aes.zip")]);
-    await page.locator('.pill[data-target="archive:extract"]').click();
+    await pick(page, "archive:extract");
     await page.getByRole("button", { name: "Convert", exact: true }).click();
     await expect(page.locator(".status")).toHaveClass(/error/, { timeout: 60_000 });
     await expect(page.locator(".status")).toContainText("password");
@@ -529,7 +609,7 @@ test.describe("subtitles", () => {
   test("old Windows-1252 SRT → VTT, shifted", async ({ page }) => {
     test.skip(!hasVideo(), "needs ffmpeg"); // the fixtures' generator also needs it for video
     await load(page, [fx("old.srt")]);
-    await page.locator('.pill[data-target="vtt"]').click();
+    await pick(page, "vtt");
     await page.getByRole("button", { name: /Settings/ }).click();
     await page.locator("#opt-shift").fill("2.5");
     const vtt = (await downloadSingle(page, "vtt")).toString("utf8");
@@ -555,7 +635,7 @@ test.describe("subtitles", () => {
   test("burn into video draws on the picture", async ({ page }) => {
     test.skip(!hasVideo(), "needs ffmpeg");
     await load(page, [fx("clip.mp4"), fx("movie.da.srt")]);
-    await page.locator('.pill[data-target="burn:mp4"]').click();
+    await pick(page, "burn:mp4");
     await page.getByRole("button", { name: /Settings/ }).click();
     await page.locator("#opt-font_size").fill("80");
     const mp4 = await downloadSingle(page, "burn:mp4");
@@ -604,7 +684,7 @@ test.describe("fonts", () => {
 
   test("subset to Latin and to typed characters", async ({ page }) => {
     await load(page, [fx("DejaVuSans.ttf")]);
-    await page.locator('.pill[data-target="woff2"]').click();
+    await pick(page, "woff2");
     await page.getByRole("button", { name: /Settings/ }).click();
     await page.locator("#opt-subset").selectOption({ label: "Latin (English, Western Europe)" });
     const latin = await downloadSingle(page, "woff2");
@@ -619,7 +699,7 @@ test.describe("fonts", () => {
 
   test("WOFF2 with TrueType outlines → OTF explains it needs the desktop app", async ({ page }) => {
     await load(page, [fx("DejaVuSans.woff2")]);
-    await page.locator('.pill[data-target="otf"]').click();
+    await pick(page, "otf");
     await page.getByRole("button", { name: "Convert", exact: true }).click();
     await expect(page.locator(".status")).toHaveClass(/error/, { timeout: 60_000 });
     await expect(page.locator(".status")).toContainText("desktop app");
@@ -666,7 +746,7 @@ test.describe("vector", () => {
     const svg = (await downloadSingle(page, "svg")).toString("utf8");
     expect(svg).toContain("<svg");
     expect(svg).toContain("<path");
-    await page.locator('.pill[data-target="vec:jpg"]').click();
+    await pick(page, "vec:jpg");
     await page.getByRole("button", { name: /Settings/ }).click();
     await page.locator("#opt-width_px").fill("600");
     const jpg = await downloadSingle(page, "vec:jpg");
@@ -684,7 +764,7 @@ test.describe("vector", () => {
   for (const mode of ["color", "binary"]) {
     test(`trace a picture to SVG (${mode})`, async ({ page }) => {
       await load(page, [fx("shapes.png")]);
-      await page.locator('.pill[data-target="trace:svg"]').click();
+      await pick(page, "trace:svg");
       await page.getByRole("button", { name: /Settings/ }).click();
       await page.locator("#opt-colour_mode").selectOption({ label: mode === "color" ? "Full colour" : "Black & white" });
       const svg = await downloadSingle(page, "trace:svg");
@@ -709,13 +789,13 @@ test.describe("vector", () => {
 test.describe("CAD", () => {
   test("DXF → SVG keeps layer colours; → PNG on a dark background", async ({ page }) => {
     await load(page, [fx("plan.dxf")]);
-    await page.locator('.pill[data-target="cad:svg"]').click();
+    await pick(page, "cad:svg");
     await page.getByRole("button", { name: /Settings/ }).click();
     await page.locator("#opt-colours").selectOption({ label: "Layer colours on white" });
     const svg = (await downloadSingle(page, "cad:svg")).toString("utf8");
     expect(svg).toContain("rgb(255, 0, 0)");
     expect(svg).toContain("rgb(0, 0, 255)");
-    await page.locator('.pill[data-target="cad:png"]').click();
+    await pick(page, "cad:png");
     await page.locator("#opt-colours").selectOption({ label: "Layer colours on black (like the CAD screen)" });
     await page.locator("#opt-width_px").fill("800");
     const png = await downloadSingle(page, "cad:png");
@@ -751,7 +831,7 @@ test.describe("WebCodecs video (VP9 / AV1)", () => {
     return JSON.parse(execFileSync("ffprobe", ["-v", "error", "-print_format", "json", "-show_streams", fx(name)]).toString()).streams as { codec_type: string; codec_name: string; height?: number }[];
   };
   const pickCodec = async (page: Page, target: string, label: string) => {
-    await page.locator(`.pill[data-target="${target}"]`).click();
+    await pick(page, target);
     await page.getByRole("button", { name: /Settings/ }).click();
     await page.locator("#opt-video_codec").selectOption({ label });
   };

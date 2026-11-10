@@ -204,6 +204,32 @@ def _editor_check(d: Path) -> list[Path]:
     return [ora, png, jpg]
 
 
+def _icon_check(d: Path) -> list[Path]:
+    """Convert screen icons: Tabler SVG markup rendered by QtSvg (needs the QtSvg module)."""
+    from PySide6.QtCore import QByteArray, QRectF, Qt
+    from PySide6.QtGui import QImage, QPainter
+    from PySide6.QtSvg import QSvgRenderer
+
+    from umc.gui.icon_data import ICONS
+    from umc.gui.icons import svg
+
+    d.mkdir(parents=True, exist_ok=True)
+    for name in ICONS:
+        renderer = QSvgRenderer(QByteArray(svg(name, "#000000")))
+        if not renderer.isValid():
+            raise RuntimeError(f"icon {name!r} is not valid SVG")
+    image = QImage(48, 48, QImage.Format.Format_ARGB32)
+    image.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(image)
+    QSvgRenderer(QByteArray(svg("upload", "#5b5ef0"))).render(painter, QRectF(0, 0, 48, 48))
+    painter.end()
+    if not any(image.pixelColor(x, y).alpha() for x in range(48) for y in range(48)):
+        raise RuntimeError("icon rendered empty")
+    out = d / "upload.png"
+    image.save(str(out))
+    return [out]
+
+
 def run(report: Path) -> int:
     from PIL import Image
 
@@ -252,6 +278,7 @@ def run(report: Path) -> int:
             ),
             ("CAD: dxf -> pdf/png, save as R12", lambda: _cad_check(d, out)),
             ("editor: layers -> ora -> png/jpg", lambda: _editor_check(d / "editor")),
+            ("convert screen icons (QtSvg)", lambda: _icon_check(d / "icons")),
             ("mp4 -> webm", lambda: _convert([out / "img0 slideshow.mp4"], "webm", out)),
             ("mp4 -> gif", lambda: _convert([out / "img0 slideshow.mp4"], "video:gif", out)),
             ("mp4 -> frames", lambda: _convert([out / "img0 slideshow.mp4"], "frames:png", out)),

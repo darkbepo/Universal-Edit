@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QDragEnterEvent, QDropEvent, QMouseEvent
-from PySide6.QtWidgets import QFileDialog, QFrame, QLabel, QVBoxLayout
+from PySide6.QtWidgets import QBoxLayout, QFileDialog, QFrame, QLabel, QSizePolicy, QVBoxLayout
+
+from umc.gui import icons, theme
+
+SUBTITLE = "Images, video, audio, documents, 3D models, fonts and more"
 
 
 class DropZone(QFrame):
@@ -15,27 +19,50 @@ class DropZone(QFrame):
         self.setObjectName("DropZone")
         self.setAcceptDrops(True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        layout = QVBoxLayout(self)
-        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.setSpacing(4)
-        self.icon = QLabel("⬆")
-        self.icon.setObjectName("DropIcon")
-        self.title = QLabel("Drop files here")
-        self.title.setObjectName("DropTitle")
-        self.subtitle = QLabel("or click to browse — images, videos, audio, documents or 3D models")
-        self.subtitle.setObjectName("Muted")
+        self.setToolTip("Drop files or folders here, or click to choose files")
+        outer = QVBoxLayout(self)
+        outer.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._row = QBoxLayout(QBoxLayout.Direction.TopToBottom)
+        self._row.setSpacing(6)
+        self._row.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        outer.addLayout(self._row)
+        self.icon = QLabel(objectName="DropIcon")
+        self.title = QLabel(objectName="DropTitle")
+        self.subtitle = QLabel(SUBTITLE, objectName="Muted")
+        self.subtitle.setWordWrap(True)
+        self.subtitle.setMinimumWidth(240)
         for w in (self.icon, self.title, self.subtitle):
             w.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            layout.addWidget(w)
+            self._row.addWidget(w, 0, Qt.AlignmentFlag.AlignCenter)
+        self.compact = False
         self.set_compact(False)
 
     def set_compact(self, compact: bool) -> None:
         """Compact mode once files are loaded: a slim "add more" bar."""
-        self.icon.setVisible(not compact)
+        self.compact = compact
+        self.setProperty("compact", compact)
+        self.style().unpolish(self)
+        self.style().polish(self)
         self.subtitle.setVisible(not compact)
-        self.title.setText("+  Add more files" if compact else "Drop files here")
-        self.setMinimumHeight(52 if compact else 190)
-        self.setMaximumHeight(52 if compact else 16777215)
+        self._row.setDirection(
+            QBoxLayout.Direction.LeftToRight if compact else QBoxLayout.Direction.TopToBottom
+        )
+        self._row.setSpacing(8 if compact else 6)
+        self.title.setText("Add more files" if compact else "Drop files here or click to browse")
+        if compact:
+            self.setMinimumHeight(48)
+            self.setMaximumHeight(48)
+            self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        else:
+            self.setMinimumHeight(220)
+            self.setMaximumHeight(16777215)
+            self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+        self.retint()
+
+    def retint(self) -> None:
+        pal = theme.palette()
+        name, size = ("plus", 18) if self.compact else ("upload", 34)
+        self.icon.setPixmap(icons.pixmap(name, size, pal["accent"]))
 
     def _set_hover(self, on: bool) -> None:
         self.setProperty("hover", on)

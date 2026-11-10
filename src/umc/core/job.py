@@ -51,6 +51,16 @@ class ConversionJob:
         return cb
 
 
+def file_fractions(overall: float, n: int) -> list[float]:
+    """Per-file progress (0..1 each) from the overall fraction 0..1.
+
+    Converters report progress in equal slices per input file (``i / n … (i + 1) / n``), so
+    file ``i`` is ``overall · n − i``, clamped.
+    """
+    overall = max(0.0, min(1.0, overall))
+    return [max(0.0, min(1.0, overall * n - i)) for i in range(n)]
+
+
 def unique_path(directory: Path, stem: str, ext: str) -> Path:
     """``directory/stem.ext``, or ``stem (1).ext`` etc. if that already exists."""
     suffix = f".{ext}" if ext else ""
