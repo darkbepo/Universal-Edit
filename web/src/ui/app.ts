@@ -46,6 +46,14 @@ export function mountApp(root: HTMLElement): void {
   const filesHint = h("div", { class: "hint" }, "Drag to reorder · × removes");
   const filesCard = h("div", { class: "card", hidden: true }, h("div", { class: "files-head" }, filesLabel, clearBtn), fileList, filesHint);
   const note = h("div", { class: "note", hidden: true });
+  // Convert | Edit — only when every added file is an image (the editor loads on demand)
+  const convertMode = h("button", { class: "seg", type: "button" }, "Convert");
+  const editMode = h("button", { class: "seg", type: "button", title: "Open the images in the image editor (each image becomes a layer)" }, "Edit");
+  const modeBar = h("div", { class: "mode", hidden: true, role: "group", ariaLabel: "Mode" }, convertMode, editMode);
+  convertMode.setAttribute("aria-pressed", "true");
+  editMode.setAttribute("aria-pressed", "false");
+  let editor: import("./editor/page").EditorPage | null = null;
+  let editing = false;
   const formatSection = h("div", { class: "section", hidden: true }, "Convert to");
   const formats = h("div");
   const speedTip = h("div", { class: "hint speed-tip", hidden: true },
@@ -74,13 +82,23 @@ export function mountApp(root: HTMLElement): void {
       h("div", { class: "header" },
         h("div", {}, h("h1", {}, "Universal Media Converter"), h("p", { class: "subtitle" }, "Images, video, audio and documents — drop it in, pick a format.")),
         h("span", { class: "badge", title: "Everything is processed in your browser. Nothing is uploaded." }, "🔒 Files never leave your device")),
-      picker, drop, filesCard, note, formatSection, formats, speedTip, disclosure, settingsCard, resultsCard),
+      picker, drop, modeBar, filesCard, note, formatSection, formats, speedTip, disclosure, settingsCard, resultsCard),
     bar,
   );
 
   // ---------------------------------------------------------------- files
   async function addFiles(list: FileList | File[]) {
     const skipped: string[] = [];
+    if (editing && editor) {
+      // In Edit mode new images become layers of the open picture.
+      const images: InputFile[] = [];
+      for (const f of Array.from(list)) {
+        const d = await detect(f);
+        if (d?.family === "image") images.push(d);
+      }
+      if (images.length) await editor.addFiles(images);
+      return;
+    }
     for (const f of Array.from(list)) {
       const d = await detect(f);
       if (!d) skipped.push(f.name);
@@ -111,6 +129,42 @@ export function mountApp(root: HTMLElement): void {
       void addFiles(e.dataTransfer.files);
     });
   }
+  const appMain = root.querySelector("main.app") as HTMLElement;
+  function showConverter() {
+    editing = false;
+    editor?.hide();
+    appMain.hidden = false;
+    bar.hidden = false;
+    convertMode.setAttribute("aria-pressed", "true");
+    editMode.setAttribute("aria-pressed", "false");
+  }
+  async function enterEdit() {
+    if (editing || busy || modeBar.hidden) return;
+    if (!editor) {
+      const { mountEditor } = await import("./editor/page");
+      editor = mountEditor(root, { client, onBack: showConverter });
+    }
+    editMode.disabled = true;
+    const ok = await editor.open(files);
+    editMode.disabled = false;
+    if (!ok) {
+      note.textContent = editor.lastError();
+      note.hidden = false;
+      return;
+    }
+    editing = true;
+    appMain.hidden = true;
+    bar.hidden = true;
+    convertMode.setAttribute("aria-pressed", "false");
+    editMode.setAttribute("aria-pressed", "true");
+    editor.show();
+  }
+  editMode.addEventListener("click", () => void enterEdit());
+  convertMode.addEventListener("click", () => {
+    if (editing && editor && !editor.maybeLeave()) return;
+    showConverter();
+  });
+
   clearBtn.addEventListener("click", () => {
     files = [];
     refresh();
@@ -157,6 +211,7 @@ export function mountApp(root: HTMLElement): void {
     drop.querySelector(".title")!.textContent = files.length ? "+  Add more files" : "Drop files here";
     filesCard.hidden = !files.length;
     filesHint.hidden = files.length < 2;
+    modeBar.hidden = !files.length || files.some((f) => f.family !== "image");
     const fams = new Set(files.map((f) => f.family));
     filesLabel.textContent = fams.size === 1
       ? `${files.length} ${NOUN[files[0].family][files.length === 1 ? 0 : 1]}`

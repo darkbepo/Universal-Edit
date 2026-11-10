@@ -54,10 +54,24 @@ export const imageConverter: Converter = {
     const out: OutputFile[] = [];
     for (const [i, f] of files.entries()) {
       ctx.progress(i / files.length, `Converting ${f.name} (${i + 1}/${files.length})`);
-      const bytes = new Uint8Array(await f.file.arrayBuffer());
+      let bytes = new Uint8Array(await f.file.arrayBuffer());
+      let ext = f.ext;
+      if (ext === "ora") {
+        // OpenRaster: convert its flattened copy (mergedimage.png), as the desktop app does.
+        const { unzipSync } = await import("fflate");
+        const merged = (() => {
+          try {
+            return unzipSync(bytes, { filter: (z) => z.name === "mergedimage.png" })["mergedimage.png"];
+          } catch {
+            return undefined;
+          }
+        })();
+        if (!merged) throw new ConversionError(`Couldn't open “${f.name}” as an OpenRaster file.`);
+        [bytes, ext] = [merged, "png"];
+      }
       let data: Uint8Array;
       try {
-        data = readFrames(M, bytes, f.ext, (images) => {
+        data = readFrames(M, bytes, ext, (images) => {
           const animated = Boolean(o.keep_animation) && ANIMATED.includes(target.id) && images.length > 1;
           if (animated) images.coalesce();
           const frames = animated ? [...images] : [images[0]];

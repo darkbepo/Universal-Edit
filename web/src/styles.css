@@ -159,3 +159,71 @@ h1 { font-size: 22px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.01em
   .row .btn { flex: 1 1 0; padding: 8px 10px; }
   .row .spacer { display: none; }
 }
+
+/* ---------------------------------------------------------------- Convert | Edit */
+.mode { display: inline-flex; margin-top: 12px; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--surface); }
+.mode .seg { background: none; border: none; padding: 6px 22px; cursor: pointer; min-width: 80px; }
+.mode .seg + .seg { border-left: 1px solid var(--border); }
+.mode .seg[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); font-weight: 600; }
+
+/* ---------------------------------------------------------------- image editor */
+.editor { position: fixed; inset: 0; display: grid; grid-template-rows: auto 1fr auto; background: var(--bg); z-index: 10; }
+.editor-top { display: flex; align-items: center; gap: 6px; padding: 8px 12px; background: var(--surface); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.editor-top .gap { width: 10px; }
+.editor-top .spacer { flex: 1; }
+.btn.small { padding: 5px 12px; border-radius: 8px; }
+.btn.small:disabled { color: var(--muted); background: var(--bg); cursor: default; }
+.primary.small { padding: 6px 20px; border-radius: 8px; font-size: 14px; }
+.menu { position: relative; }
+.menu > summary { list-style: none; display: inline-block; }
+.menu > summary::-webkit-details-marker { display: none; }
+.menu-items { position: absolute; top: calc(100% + 4px); left: 0; z-index: 20; min-width: 220px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 6px; box-shadow: 0 8px 24px rgba(0,0,0,.15); }
+.menu-item { display: block; width: 100%; text-align: left; background: none; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; }
+.menu-item:hover { background: var(--surface-alt); }
+.menu-items hr { border: none; border-top: 1px solid var(--border); margin: 4px 0; }
+.editor-body { display: grid; grid-template-columns: auto 1fr 290px; min-height: 0; }
+.tool-bar { display: flex; flex-direction: column; gap: 4px; padding: 8px 6px; background: var(--surface); border-right: 1px solid var(--border); overflow: auto; }
+.tool { width: 40px; height: 40px; display: grid; place-items: center; background: none; border: 1px solid transparent; border-radius: 10px; cursor: pointer; color: var(--text); }
+.tool:hover { background: var(--surface-alt); }
+.tool[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
+.canvas-host { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+.canvas-host canvas.view { position: absolute; inset: 0; touch-action: none; outline: none; display: block; }
+.text-box { position: absolute; background: transparent; border: 1px dashed #888; padding: 0; margin: 0; resize: none; overflow: hidden; line-height: 1.2; outline: none; white-space: pre; }
+.editor-side { background: var(--surface); border-left: 1px solid var(--border); padding: 12px 14px; overflow: auto; display: flex; flex-direction: column; gap: 6px; }
+.editor-side .section { margin: 6px 0 4px; }
+.tool-settings .form { grid-template-columns: 80px 1fr; gap: 8px 10px; }
+.tool-settings .slider-row output { min-width: 52px; }
+.font-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.font-row select { flex: 1; background: var(--surface-alt); border: 1px solid transparent; border-radius: 8px; padding: 6px 8px; }
+.swatches { display: flex; align-items: center; gap: 10px; }
+.swatch { display: flex; flex-direction: column; gap: 4px; width: 64px; }
+.swatch input[type="color"] { width: 64px; height: 34px; border: 1px solid var(--border); border-radius: 8px; padding: 2px; background: var(--surface); cursor: pointer; }
+.swatch input[type="range"] { width: 64px; accent-color: var(--accent); }
+.layers-panel { display: flex; flex-direction: column; gap: 8px; }
+.layers { list-style: none; margin: 0; padding: 4px; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; max-height: 300px; overflow: auto; }
+.layers li { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 8px; cursor: pointer; }
+.layers li.active { background: var(--accent-soft); }
+.layers li input[type="checkbox"] { accent-color: var(--accent); }
+.layers .thumb { width: 40px; height: 40px; border-radius: 4px; background: repeating-conic-gradient(#d9d9d9 0 25%, #fff 0 50%) 0 0 / 10px 10px; flex-shrink: 0; }
+.layers .lname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.layers .rename { flex: 1; min-width: 0; background: var(--surface); border: 1px solid var(--accent); border-radius: 6px; padding: 2px 6px; }
+.opacity-row { display: flex; align-items: center; gap: 8px; }
+.opacity-row input { flex: 1; accent-color: var(--accent); }
+.opacity-row output { min-width: 44px; text-align: right; }
+.layer-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.editor-status { display: flex; justify-content: space-between; gap: 12px; padding: 6px 14px; background: var(--surface); border-top: 1px solid var(--border); color: var(--muted); font-size: 13px; }
+.editor-status .msg.error { color: var(--danger); }
+.editor-dialog { border: 1px solid var(--border); border-radius: 14px; background: var(--surface); color: var(--text); padding: 18px 20px; min-width: min(420px, 92vw); }
+.editor-dialog::backdrop { background: rgba(0,0,0,.35); }
+.editor-dialog h2 { font-size: 16px; margin: 0 0 12px; }
+.editor-dialog .field { display: grid; grid-template-columns: 110px 1fr; align-items: center; gap: 10px; margin: 8px 0; }
+.editor-dialog .field input[type="text"], .editor-dialog .field input[type="number"], .editor-dialog .field select { width: 100%; background: var(--surface-alt); border: 1px solid transparent; border-radius: 8px; padding: 6px 8px; }
+.editor-dialog .with-unit { display: flex; align-items: center; gap: 6px; }
+.editor-dialog .check { display: flex; align-items: center; gap: 6px; margin: 8px 0 8px 120px; }
+.editor-dialog .form { margin-top: 10px; }
+@media (max-width: 900px) {
+  .editor { position: fixed; overflow: auto; grid-template-rows: auto auto auto auto; }
+  .editor-body { grid-template-columns: 1fr; grid-template-rows: auto 60vh auto; }
+  .tool-bar { flex-direction: row; overflow-x: auto; border-right: none; border-bottom: 1px solid var(--border); }
+  .editor-side { border-left: none; border-top: 1px solid var(--border); }
+}

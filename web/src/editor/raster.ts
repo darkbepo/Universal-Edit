@@ -76,7 +76,7 @@ export const canvasRasterizer: Rasterizer = {
       if (filled) ctx.fill();
       if (outlined) ctx.stroke();
     }
-    return ctx.getImageData(box.x0, box.y0, box.width, box.height).data;
+    return ctx.getImageData(0, 0, box.width, box.height).data; // read back in canvas pixels (not translated)
   },
 
   text(text, font, color) {

@@ -10,6 +10,7 @@ const ALIASES: Record<string, string> = {
 export const IMAGE_EXTS = new Set([
   "png", "jpg", "webp", "bmp", "tiff", "gif", "ico", "heic", "avif", "tga", "ppm", "pgm",
   "pbm", "pcx", "dds", "psd", "jp2", "qoi", "jxl",
+  "ora", // OpenRaster (layered; written by the editor, GIMP, Krita)
   // camera RAW
   "cr2", "cr3", "crw", "nef", "nrw", "arw", "srf", "sr2", "dng", "orf", "raf", "rw2", "pef",
   "srw", "x3f", "3fr", "iiq", "mrw", "kdc", "dcr", "erf", "mef", "mos",
