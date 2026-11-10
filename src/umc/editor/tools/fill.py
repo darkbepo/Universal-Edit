@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import numpy as np
@@ -146,7 +147,8 @@ class PickerTool(Tool):
         self.picked_button = "left"
 
     def press(self, doc: Document, x: float, y: float, ctx: ToolContext) -> Rect | None:
-        self.picked = self._sample(doc, int(x), int(y), ctx.options.sample_all)
+        # floor, like the loupe (int() would pick pixel 0 for -1 < x < 0)
+        self.picked = self._sample(doc, math.floor(x), math.floor(y), ctx.options.sample_all)
         self.picked_button = ctx.button
         return None
 

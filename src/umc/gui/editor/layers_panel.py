@@ -532,7 +532,15 @@ class LayersPanel(QWidget):
         if visible != layer.visible:
             alt = QApplication.keyboardModifiers() & Qt.KeyboardModifier.AltModifier
             if alt:  # Alt+click the eye: show only this layer (again: show all)
-                self._run(lambda d: ops.solo_layer(d, index))
+                cmd = ops.solo_layer(self.doc, index)
+                if cmd is None:  # nothing to change (e.g. one layer): undo Qt's own toggle
+                    self._updating = True
+                    item.setCheckState(
+                        Qt.CheckState.Checked if layer.visible else Qt.CheckState.Unchecked
+                    )
+                    self._updating = False
+                else:
+                    self.command.emit(cmd)
             else:
                 self._run(lambda d: ops.set_visible(d, index, visible))
         elif item.text() != layer.name:
