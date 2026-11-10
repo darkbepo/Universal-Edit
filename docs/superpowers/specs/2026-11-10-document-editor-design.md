@@ -39,7 +39,7 @@ mammoth (used by the converter) is not used for editing: it drops fonts, colours
 
 ## Editor layout
 
-- **Top bar:** Back to Convert · Undo · Redo · zoom (−/+, 100 %) · Save · Save as…
+- **Top bar:** Back to Convert · Undo · Redo · Save · Save as…
 - **Formatting bar** (one row, wraps with the existing `FlowLayout` on narrow windows):
   paragraph style (Normal, Heading 1, Heading 2, Heading 3, Quote, Code) · font family · font
   size · Bold · Italic · Underline · Strikethrough · text colour · highlight colour · align
@@ -48,7 +48,7 @@ mammoth (used by the converter) is not used for editing: it drops fonts, colours
   state at the cursor (e.g. Bold is checked inside bold text).
 - **Table menu** (when the cursor is in a table): insert row above / below, insert column
   left / right, delete row / column / table, merge / split cells.
-- **Centre:** the document as a white page-width column (A4 width at 100 % zoom) on the window
+- **Centre:** the document as a white page-width column (A4 width) on the window
   background, scrolling continuously. Page breaks are drawn as a thin dashed line labelled
   "Page break"; real pages only exist in PDF output.
 - **Find & replace bar** (Ctrl+F / Ctrl+H), slides in above the page: find next / previous,
@@ -62,7 +62,9 @@ mammoth (used by the converter) is not used for editing: it drops fonts, colours
 Ctrl+B / I / U · Ctrl+Shift+X strikethrough · Ctrl+Alt+1 / 2 / 3 headings · Ctrl+Alt+0 Normal ·
 Ctrl+L / E / R / J alignment · Ctrl+Shift+L bullet list · Ctrl+K link · Ctrl+Enter page break ·
 Ctrl+Space clear formatting · Ctrl+Z / Ctrl+Y (and Ctrl+Shift+Z) · Ctrl+F / Ctrl+H ·
-Ctrl+S / Ctrl+Shift+S · Ctrl+= / Ctrl+− / Ctrl+0 zoom.
+Ctrl+S / Ctrl+Shift+S.
+
+No zoom in this version: `QTextEdit` can't scale text that has an explicit point size.
 
 ## The exchange format (editor HTML)
 
@@ -77,9 +79,9 @@ The Qt-free code and the editor talk through one HTML subset, documented in
 - Pictures are referenced as `src="img/N.ext"` with the bytes kept beside the HTML in a
   `DocImages` map; the GUI loads them as `QTextDocument` resources.
 
-Qt's `toHtml()` output (inline styles, `-qt-` properties, `<p>` with font-weight spans for
-headings) is normalised into this subset by `normalise_qt_html()`, so writers never parse
-Qt quirks themselves.
+The GUI never parses Qt's own `toHtml()` (inline styles, `-qt-` properties, flat lists with
+`-qt-list-indent`): `gui/doceditor/html_export.py` walks the `QTextDocument` (frames, tables,
+blocks, lists, fragments) and writes the subset directly, so the writers only ever see it.
 
 ## Opening (`src/umc/doceditor/io.py`, no Qt)
 
@@ -133,14 +135,15 @@ plain-language message; details go to the log.
 
 ```
 src/umc/doceditor/          # Qt-free
-  html_subset.py            # the allowed tags / styles, normalise_qt_html(), normalise_html()
+  html_subset.py            # the allowed tags / styles, normalise_html()
   docx_reader.py            # DOCX → subset HTML + images + warnings (python-docx)
   docx_writer.py            # subset HTML + images → DOCX (python-docx)
   io.py                     # open_document(): per-format readers, convert-through-DOCX
   save.py                   # save_document(): per-format writers, convert-from-DOCX
 src/umc/gui/doceditor/      # Qt
   doc_editor_page.py        # page layout, top bar, open / save wiring, banner, status bar
-  text_view.py              # QTextEdit subclass: page column, zoom, page-break lines, images
+  text_view.py              # QTextEdit subclass: page column, page-break lines, images
+  html_export.py            # QTextDocument → subset HTML (+ Markdown / plain text)
   format_bar.py             # formatting bar + table menu, state follows the cursor
   find_bar.py               # find & replace
 src/umc/gui/main_window.py  # Convert | Edit also for one editable document
@@ -156,8 +159,8 @@ must include its default template (`docx/templates/*`) as data.
   pictures, links, alignment, indent, page breaks); reading a DOCX made by LibreOffice /
   Word-style fixtures generated in `conftest.py`; warnings are reported for headers, comments
   and tracked changes.
-- `tests/test_doceditor_io.py`: MD / TXT / HTML open into the subset; `normalise_qt_html` on
-  real `QTextDocument.toHtml()` samples stored as text; save to each target opens again (PDF
+- `tests/test_doceditor_io.py`: MD / TXT / HTML open into the subset; load → export through
+  the `QTextDocument` gives back the same subset (GUI test); save to each target opens again (PDF
   has the text, DOCX re-reads equal); ODT / RTF round-trip skipped when Pandoc / LibreOffice
   are missing; size limits.
 - `tests/test_gui_doceditor.py` (pytest-qt, offscreen): the switch appears for one DOCX / MD /
