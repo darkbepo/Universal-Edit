@@ -57,8 +57,8 @@ def _grade(label: str) -> int:
     return opt(0, label, kind="slider", min=-100, max=100)
 
 
-def _volume() -> float:
-    return opt(1.0, "Volume", kind="slider", min=0.0, max=2.0, step=0.01, unit="%")
+def _volume() -> int:
+    return opt(100, "Volume", kind="slider", min=0, max=200, unit="%")
 
 
 @dataclass(frozen=True)
@@ -131,7 +131,7 @@ class VideoClip:
     speed: float = opt(
         1.0, "Speed", kind="float", min=0.25, max=4.0, step=0.25, decimals=2, unit="×"
     )
-    volume: float = _volume()
+    volume: int = _volume()
     mute: bool = opt(False, "Mute")
     fade_in: float = _fade("Fade in")
     fade_out: float = _fade("Fade out")
@@ -175,7 +175,7 @@ class AudioClip:
     start: float
     in_: float
     out: float
-    volume: float = _volume()
+    volume: int = _volume()
     fade_in: float = _fade("Fade in")
     fade_out: float = _fade("Fade out")
     loop_until: float = 0.0
@@ -205,9 +205,7 @@ class TextItem:
     )
     box: bool = opt(False, "Background box")
     box_colour: str = opt("#000000", "Box colour", kind="color")
-    box_opacity: float = opt(
-        0.5, "Box opacity", kind="slider", min=0.0, max=1.0, step=0.01, unit="%"
-    )
+    box_opacity: int = opt(50, "Box opacity", kind="slider", min=0, max=100, unit="%")
     fade_in: float = _fade("Fade in")
     fade_out: float = _fade("Fade out")
 

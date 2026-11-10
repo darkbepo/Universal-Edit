@@ -83,3 +83,13 @@ def test_option_specs_cover_inspector_fields():
     names = {s.name for s in option_specs(VideoClip)}
     assert {"speed", "volume", "fit", "brightness"} <= names
     assert not names & {"id", "source"}
+
+
+def test_percentage_sliders_use_whole_percent_values():
+    from umc.videoedit.project import AudioClip
+
+    for cls in (VideoClip, AudioClip):
+        spec = next(s for s in option_specs(cls) if s.name == "volume")
+        assert (spec.default, spec.max, spec.unit) == (100, 200, "%")
+    spec = next(s for s in option_specs(TextItem) if s.name == "box_opacity")
+    assert (spec.default, spec.max, spec.unit) == (50, 100, "%")
