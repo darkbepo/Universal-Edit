@@ -52,3 +52,77 @@ def test_new_document_and_bounds():
     assert len(doc.layers) == 1 and doc.active_layer.name == "Background"
     assert doc.bounds == Rect(0, 0, 30, 20) and not doc.dirty
     assert doc.layers[0].bounds == Rect(0, 0, 30, 20)
+
+
+# ------------------------------------------------------------------ history
+
+from umc.editor.history import History, LayerListCommand, PatchCommand, snapshot_layers  # noqa: E402
+
+
+def _paint(doc, x, y, color=(255, 0, 0, 255)):
+    before = doc.active_layer.image.copy()
+    doc.active_layer.image.putpixel((x, y), color)
+    return PatchCommand.capture("Brush", doc, doc.active, Rect(x, y, x + 1, y + 1), before)
+
+
+def test_patch_undo_redo():
+    doc = Document.new(10, 10)
+    h = History(doc)
+    h.push(_paint(doc, 3, 3))
+    assert h.can_undo and h.undo_label == "Brush"
+    h.undo()
+    assert doc.active_layer.image.getpixel((3, 3))[3] == 0 and h.can_redo
+    h.redo()
+    assert doc.active_layer.image.getpixel((3, 3)) == (255, 0, 0, 255)
+
+
+def test_capture_empty_rect_is_none():
+    doc = Document.new(10, 10)
+    assert PatchCommand.capture("x", doc, 0, Rect(0, 0, 0, 0), doc.layers[0].image) is None
+
+
+def test_redo_cleared_on_push():
+    doc = Document.new(10, 10)
+    h = History(doc)
+    h.push(_paint(doc, 1, 1))
+    h.undo()
+    h.push(_paint(doc, 2, 2))
+    assert not h.can_redo
+
+
+def test_memory_limit_drops_oldest():
+    doc = Document.new(10, 10)
+    h = History(doc, limit_bytes=10)  # one 1x1 patch = 8 bytes (before + after)
+    h.push(_paint(doc, 1, 1))
+    h.push(_paint(doc, 2, 2))
+    h.undo()
+    assert not h.can_undo
+    assert doc.active_layer.image.getpixel((1, 1))[3] == 255
+
+
+def test_dirty_tracks_saved_position():
+    doc = Document.new(10, 10)
+    h = History(doc)
+    h.push(_paint(doc, 1, 1))
+    assert doc.dirty
+    h.mark_saved()
+    assert not doc.dirty
+    h.push(_paint(doc, 2, 2))
+    assert doc.dirty
+    h.undo()
+    assert not doc.dirty
+    h.undo()
+    assert doc.dirty
+
+
+def test_layer_list_command():
+    doc = Document.new(10, 10)
+    h = History(doc)
+    before = snapshot_layers(doc)
+    doc.layers.append(Layer("Layer 2", Image.new("RGBA", (10, 10))))
+    doc.active = 1
+    h.push(LayerListCommand("Add layer", before, list(doc.layers), 0, 1))
+    h.undo()
+    assert len(doc.layers) == 1 and doc.active == 0
+    h.redo()
+    assert len(doc.layers) == 2 and doc.active == 1
