@@ -256,6 +256,11 @@ class History:
         return bool(self._undo)
 
     @property
+    def last(self) -> Command | None:
+        """The command undo would take back next (None when there is none)."""
+        return self._undo[-1] if self._undo else None
+
+    @property
     def can_redo(self) -> bool:
         return bool(self._redo)
 

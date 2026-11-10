@@ -943,6 +943,8 @@ test("selection: drag inside to move it (move cursor), arrows nudge, undo", asyn
   await page.keyboard.press("ArrowRight");
   await page.keyboard.press("Shift+ArrowDown");
   await expect.poll(() => selState(page)).toEqual({ box: [16, 20, 36, 35], masked: false });
-  for (let i = 0; i < 3; i++) await page.keyboard.press("Control+z");
+  await page.keyboard.press("Control+z"); // both arrow presses are one step
+  await expect.poll(() => selState(page)).toEqual({ box: [15, 10, 35, 25], masked: false });
+  await page.keyboard.press("Control+z");
   await expect.poll(() => selState(page)).toEqual({ box: [5, 5, 25, 20], masked: false });
 });

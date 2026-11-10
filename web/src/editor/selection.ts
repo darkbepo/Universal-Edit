@@ -6,7 +6,7 @@
 // Shapes are combined by mode: "replace", "add" (Shift), "subtract" (Alt), "intersect" (both).
 import { composite, docBounds, type EditorDoc } from "./document";
 import { Rect } from "./geometry";
-import { SelectionCommand, type Command } from "./history";
+import { SelectionCommand, type Command, type History } from "./history";
 import { blurData } from "./filters";
 import { candidatesOf, floodMask } from "./flood";
 
@@ -204,8 +204,6 @@ export function weight(doc: EditorDoc, rect: Rect): Float32Array | null {
   return out;
 }
 
-/** The edges of the selected area (≥ half selected) as merged horizontal and vertical segments
- *  [x0, y0, x1, y1] in canvas coordinates — what the marching ants follow. */
 /** True when canvas point (x, y) is inside the selected area (at least half selected). */
 export function contains(doc: EditorDoc, x: number, y: number): boolean {
   const sel = doc.selection;
@@ -250,6 +248,31 @@ export function moveSelection(doc: EditorDoc, dx: number, dy: number, base?: [Re
   if (!doc.selection || (dx === 0 && dy === 0)) return null;
   const [rect, mask] = shifted(doc, doc.selection, doc.selectionMask ?? null, dx, dy);
   return setSelection(doc, rect, mask, label);
+}
+
+/** The edges of the selected area (≥ half selected) as merged horizontal and vertical segments
+ *  [x0, y0, x1, y1] in canvas coordinates — what the marching ants follow. */
+/** Arrow keys: move the selection outline by (dx, dy). A run of nudges is one undo step,
+ *  measured from where it started, so the canvas edge trims it only once. Same as
+ *  nudge_selection in selection.py. Returns true when something changed. */
+export function nudgeSelection(doc: EditorDoc, history: History, dx: number, dy: number): boolean {
+  const last = history.last;
+  const run = last instanceof SelectionCommand ? last.nudge : null;
+  let base: [Rect | null, Uint8Array | null] = [doc.selection, doc.selectionMask ?? null];
+  const after = last instanceof SelectionCommand ? last.after : undefined;
+  const sameRect = doc.selection === after || (!!doc.selection && !!after && doc.selection.equals(after));
+  if (run && last instanceof SelectionCommand && sameRect && (doc.selectionMask ?? null) === last.maskAfter) {
+    base = run.base;
+    history.undo();
+    dx += run.dx;
+    dy += run.dy;
+  }
+  const cmd = moveSelection(doc, dx, dy, base);
+  if (cmd instanceof SelectionCommand) {
+    cmd.nudge = { base, dx, dy };
+    history.push(cmd);
+  }
+  return !!cmd || !!run;
 }
 
 export function outline(doc: EditorDoc): [number, number, number, number][] {

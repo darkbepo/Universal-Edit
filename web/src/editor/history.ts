@@ -196,12 +196,15 @@ export class DocStateCommand implements Command {
 
 /** The selection before and after: its rectangle and (for other shapes) its mask. */
 export class SelectionCommand implements Command {
+  /** Set by arrow-key nudges: where the run of nudges started and how far it has gone. */
+  nudge: { base: [Rect | null, Uint8Array | null]; dx: number; dy: number } | null = null;
+
   constructor(
     private before: Rect | null,
-    private after: Rect | null,
+    readonly after: Rect | null,
     public label = "Select",
     private maskBefore: Uint8Array | null = null,
-    private maskAfter: Uint8Array | null = null,
+    readonly maskAfter: Uint8Array | null = null,
   ) {}
 
   undo(doc: EditorDoc): void {
@@ -238,6 +241,11 @@ export class History {
     readonly limitBytes = 500 * 2 ** 20,
   ) {
     this.sync();
+  }
+
+  /** The command undo would take back next (null when there is none). */
+  get last(): Command | null {
+    return this.undoStack[this.undoStack.length - 1] ?? null;
   }
 
   get canUndo(): boolean {

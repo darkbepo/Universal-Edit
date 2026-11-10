@@ -416,7 +416,13 @@ export class EditorPage {
       // arrows move the selection outline (Shift: 10 px)
       const step = e.shiftKey ? 10 : 1;
       const [dx, dy] = arrows[k];
-      return run(() => this.push(selection.moveSelection(this.doc as EditorDoc, dx * step, dy * step)));
+      return run(() => {
+        // a run of nudges is one undo step (see nudgeSelection)
+        if (selection.nudgeSelection(this.doc as EditorDoc, this.history as History, dx * step, dy * step)) {
+          this.changed();
+          this.canvas.draw();
+        }
+      });
     }
     const shortcut = shortcutFor(e);
     if (shortcut) {

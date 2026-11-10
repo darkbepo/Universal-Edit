@@ -231,3 +231,36 @@ describe("moving a selection", () => {
     expect(selection.contains(d, 30, 10)).toBe(false);
   });
 });
+
+describe("moving a selection: clicks, cancel and nudge runs", () => {
+  it("a small wobble when zoomed out is still a click; cancel restores", () => {
+    const d = doc();
+    const t = new SelectTool();
+    drag(t, d, [5, 5], [15, 10]);
+    const c = ctx({}, { zoom: 0.25 });
+    t.press(d, 8, 7, c);
+    t.move(d, 12, 7, c);
+    expect(t.release(d, 12, 7, c)).not.toBeNull();
+    expect(d.selection).toBeNull();
+    drag(t, d, [5, 5], [15, 10]);
+    t.press(d, 8, 7, ctx());
+    t.move(d, 20, 20, ctx());
+    t.cancel(d);
+    expect(d.selection?.equals(new Rect(5, 5, 15, 10))).toBe(true);
+  });
+
+  it("a run of nudges is one undo step and trims only once", () => {
+    const d = doc();
+    const h = new History(d);
+    h.push(selection.setSelection(d, new Rect(5, 5, 15, 10), null, "Select"));
+    for (let i = 0; i < 3; i++) selection.nudgeSelection(d, h, -10, 0);
+    for (let i = 0; i < 3; i++) selection.nudgeSelection(d, h, 10, 0);
+    expect(d.selection?.equals(new Rect(5, 5, 15, 10))).toBe(true);
+    selection.nudgeSelection(d, h, 1, 0);
+    expect(d.selection?.equals(new Rect(6, 5, 16, 10))).toBe(true);
+    expect(h.undoLabel).toBe("Move selection");
+    h.undo();
+    expect(d.selection?.equals(new Rect(5, 5, 15, 10))).toBe(true);
+    expect(h.undoLabel).toBe("Select");
+  });
+});

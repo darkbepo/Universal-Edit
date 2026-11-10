@@ -14,9 +14,11 @@ import { clipRect, restrict, Tool, type ToolContext } from "./base";
  *  without moving leaves `moved` false so the tool can do its usual click. Port of
  *  _SelectionMover in select.py. */
 export class SelectionMover {
+  static readonly START = 3; // screen pixels before a press becomes a drag (a wobble is still a click)
   active = false;
   moved = false;
   private start: [number, number] = [0, 0];
+  private zoom = 1;
   private base: [Rect | null, Uint8Array | null] = [null, null];
 
   grab(doc: EditorDoc, x: number, y: number, ctx?: ToolContext): boolean {
@@ -24,17 +26,19 @@ export class SelectionMover {
     this.active = true;
     this.moved = false;
     this.start = [x, y];
+    this.zoom = Math.max(ctx?.zoom ?? 1, 1e-6);
     this.base = [doc.selection, doc.selectionMask ?? null];
     return true;
   }
 
   private offset(x: number, y: number): [number, number] {
+    if (!this.moved) return [0, 0];
     return [Math.round(x - this.start[0]), Math.round(y - this.start[1])];
   }
 
   drag(doc: EditorDoc, x: number, y: number): void {
+    if (!this.moved && Math.hypot(x - this.start[0], y - this.start[1]) * this.zoom >= SelectionMover.START) this.moved = true;
     const [dx, dy] = this.offset(x, y);
-    if (dx || dy) this.moved = true;
     const [rect, mask] = this.base;
     doc.selection = rect ? rect.offset(dx, dy) : null; // preview (not trimmed)
     doc.selectionMask = mask;

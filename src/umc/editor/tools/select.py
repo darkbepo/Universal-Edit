@@ -35,10 +35,13 @@ class _SelectionMover:
     A click without moving reports ``moved = False`` so the tool can do its usual click.
     """
 
+    START = 3  # screen pixels before a press becomes a drag (a wobble is still a click)
+
     def __init__(self) -> None:
         self.active = False
         self.moved = False
         self._start = (0.0, 0.0)
+        self._zoom = 1.0
         self._base: tuple | None = None
 
     def grab(self, doc: Document, x: float, y: float, ctx: ToolContext) -> bool:
@@ -46,16 +49,20 @@ class _SelectionMover:
             return False
         self.active, self.moved = True, False
         self._start = (x, y)
+        self._zoom = max(ctx.zoom, 1e-6)
         self._base = (doc.selection, doc.selection_mask)
         return True
 
     def _offset(self, x: float, y: float) -> tuple[int, int]:
+        if not self.moved:
+            return 0, 0
         return round(x - self._start[0]), round(y - self._start[1])
 
     def drag(self, doc: Document, x: float, y: float) -> None:
-        dx, dy = self._offset(x, y)
-        if (dx, dy) != (0, 0):
+        sx, sy = self._start
+        if not self.moved and math.hypot(x - sx, y - sy) * self._zoom >= self.START:
             self.moved = True
+        dx, dy = self._offset(x, y)
         rect, mask = self._base
         doc.selection, doc.selection_mask = rect.offset(dx, dy), mask  # preview (not trimmed)
 

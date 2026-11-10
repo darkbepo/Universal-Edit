@@ -69,6 +69,7 @@ INFO: tuple[tuple[str, str, str], ...] = (
     ),
     ("Double-click", "Finish a polygon lasso", "Selection"),
     ("Arrow keys", "Move tool: nudge 1 px (Shift: 10 px)", "Tools"),
+    ("Arrow keys ", "Selection tools: move the selection outline (Shift: 10 px)", "Tools"),
     ("Shift + drag", "Move tool: keep to one direction · shapes: keep square", "Tools"),
     ("Esc", "Cancel the current drag / crop", "Tools"),
     ("Space + drag", "Pan (also the middle mouse button)", "View"),

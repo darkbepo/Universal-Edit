@@ -258,3 +258,33 @@ def test_contains_follows_the_shape():
     _drag(EllipseSelectTool(), doc, (0, 0), (20, 20))
     assert selection.contains(doc, 10, 10) and not selection.contains(doc, 0.5, 0.5)
     assert not selection.contains(doc, 30, 10)
+
+
+def test_a_small_wobble_is_still_a_click_and_cancel_restores():
+    doc = _doc()
+    t = SelectTool()
+    _drag(t, doc, (5, 5), (15, 10))
+    c = _ctx(zoom=0.25)  # zoomed out: one screen pixel = 4 picture pixels
+    t.press(doc, 8, 7, c)
+    t.move(doc, 12, 7, c)  # 1 screen pixel
+    assert t.release(doc, 12, 7, c) is not None and doc.selection is None  # a click: deselect
+    _drag(t, doc, (5, 5), (15, 10))
+    t.press(doc, 8, 7, _ctx())
+    t.move(doc, 20, 20, _ctx())
+    t.cancel(doc)  # Esc / undo / tool switch mid-drag
+    assert doc.selection == Rect(5, 5, 15, 10)
+
+
+def test_a_run_of_nudges_is_one_step_and_trims_only_once():
+    doc = _doc()
+    h = History(doc)
+    h.push(selection.set_selection(doc, Rect(5, 5, 15, 10), None, "Select"))
+    for _ in range(3):
+        selection.nudge_selection(doc, h, -10, 0)  # mostly off the left edge
+    for _ in range(3):
+        selection.nudge_selection(doc, h, 10, 0)
+    assert doc.selection == Rect(5, 5, 15, 10)  # back, whole again
+    selection.nudge_selection(doc, h, 1, 0)
+    assert doc.selection == Rect(6, 5, 16, 10) and h.undo_label == "Move selection"
+    h.undo()
+    assert doc.selection == Rect(5, 5, 15, 10) and h.undo_label == "Select"

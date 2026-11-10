@@ -616,7 +616,9 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
          `doc.selection` (mask kept), committed on release by `move_selection` / `moveSelection`
          (trimmed to the canvas by `shifted`, one undo step). A click inside still deselects (rect /
          ellipse / lasso), picks (wand) or starts a polygon. Arrows (Shift = 10 px) nudge it with a
-         selection tool; the cursor turns into a move cursor inside it.
+         selection tool — a run of presses is one undo step (`nudge_selection` / `nudgeSelection`,
+         trimmed once from where the run started); a drag starts after 3 screen px, so a wobble is
+         still a click; the cursor turns into a move cursor inside it.
       3. Tool rail: grouped (Select → Move & crop → Paint → Retouch → Shapes & text → Adjust →
          Filters → Effects → Image), icons + names by default, narrowable; menu items become icons.
       4. Floating windows: every icon opens a movable, minimisable window (several at once,

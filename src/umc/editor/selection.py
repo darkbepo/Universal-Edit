@@ -227,6 +227,25 @@ def move_selection(
     return set_selection(doc, rect, mask, label)
 
 
+def nudge_selection(doc: Document, history, dx: int, dy: int) -> bool:
+    """Arrow keys: move the selection outline by (dx, dy). A run of nudges is one undo step,
+    measured from where the run started, so the canvas edge trims it only once (nudging out and
+    back keeps the whole selection). Returns True when something changed."""
+    last = history.last
+    run = getattr(last, "nudge", None) if isinstance(last, SelectionCommand) else None
+    if run is not None and doc.selection == last.after and doc.selection_mask is last.mask_after:
+        base, (ox, oy) = run
+        history.undo()
+        dx, dy = ox + dx, oy + dy
+    else:
+        base = (doc.selection, doc.selection_mask)
+    cmd = move_selection(doc, dx, dy, base=base)
+    if cmd is not None:
+        cmd.nudge = (base, (dx, dy))
+        history.push(cmd)
+    return cmd is not None or run is not None
+
+
 def outline(doc: Document) -> list[tuple[int, int, int, int]]:
     """The edges of the selected area (≥ half selected), as merged horizontal and vertical line
     segments (x0, y0, x1, y1) in canvas coordinates — what the marching ants follow."""
