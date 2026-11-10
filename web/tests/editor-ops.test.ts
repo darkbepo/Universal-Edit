@@ -109,24 +109,6 @@ describe("canvas operations", () => {
   });
 });
 
-describe("adjustments", () => {
-  it("brightness / contrast values", () => {
-    const img = solid(2, 2, [100, 100, 100, 77]);
-    expect(Math.abs(ops.brightnessContrast(img, 50, 0)[0] - 228)).toBeLessThanOrEqual(1);
-    const out = ops.brightnessContrast(img, 0, -100);
-    expect([out[0], out[3]]).toEqual([128, 77]);
-    expect(ops.brightnessContrast(img, 0, 100)[0]).toBe(72);
-  });
-
-  it("applies brightness inside the selection", () => {
-    const doc: EditorDoc = { width: 4, height: 4, layers: [makeLayer("a", 4, 4, solid(4, 4, [100, 100, 100, 255]))], active: 0, selection: new Rect(0, 0, 2, 4), dirty: false };
-    ops.applyBrightnessContrast(doc, 50, 0);
-    expect(pxOf(doc, 0, 0, 0)[0]).toBeGreaterThan(200);
-    expect(pxOf(doc, 0, 3, 0)[0]).toBe(100);
-    expect(ops.applyBrightnessContrast(doc, 0, 0)).toBeNull();
-  });
-});
-
 describe("layer operations", () => {
   it("merge down respects opacity", () => {
     const doc: EditorDoc = {
@@ -179,7 +161,6 @@ describe("every operation undoes and redoes", () => {
     ["rotate layer", (d) => ops.rotate(d, 180, true)],
     ["flip", (d) => ops.flip(d, true)],
     ["flip layer", (d) => ops.flip(d, false, true)],
-    ["brightness", (d) => ops.applyBrightnessContrast(d, 20, 30)],
     ["add", ops.addLayer],
     ["duplicate", ops.duplicateLayer],
     ["delete", ops.deleteLayer],

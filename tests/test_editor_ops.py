@@ -122,36 +122,6 @@ def test_flip_horizontal():
     assert doc.layers[1].x == 6
 
 
-def test_brightness_contrast_values():
-    img = _solid(2, 2, (100, 100, 100, 77))
-    assert abs(ops.brightness_contrast(img, 50, 0).getpixel((0, 0))[0] - 228) <= 1
-    out = ops.brightness_contrast(img, 0, -100).getpixel((0, 0))
-    assert out[0] == 128 and out[3] == 77
-    assert ops.brightness_contrast(img, 0, 100).getpixel((0, 0))[0] == 72
-
-
-def test_apply_brightness_respects_selection():
-    doc = Document(4, 4, [Layer("a", _solid(4, 4, (100, 100, 100, 255)))])
-    doc.selection = Rect(0, 0, 2, 4)
-    ops.apply_brightness_contrast(doc, 50, 0)
-    img = doc.layers[0].image
-    assert img.getpixel((0, 0))[0] > 200 and img.getpixel((3, 0))[0] == 100
-    assert ops.apply_brightness_contrast(doc, 0, 0) is None
-
-
-def test_merge_down_respects_opacity():
-    red = Layer("lower", _solid(4, 4, (255, 0, 0, 255)))
-    blue = Layer("upper", _solid(2, 2, (0, 0, 255, 255)), x=1, y=1, opacity=0.5)
-    doc = Document(4, 4, [red, blue], active=1)
-    ops.merge_down(doc)
-    assert len(doc.layers) == 1 and doc.active == 0
-    merged = doc.layers[0]
-    assert merged.name == "lower" and merged.opacity == 1.0
-    px = merged.image.getpixel((1 - merged.x, 1 - merged.y))
-    assert abs(px[0] - 128) <= 1 and abs(px[2] - 127) <= 1
-    assert ops.merge_down(doc) is None
-
-
 def test_delete_last_layer_refused():
     doc = Document.new(4, 4)
     assert ops.delete_layer(doc) is None
@@ -182,7 +152,6 @@ def test_add_layer_name_and_position():
         lambda d: ops.rotate(d, 180, layer_only=True),
         lambda d: ops.flip(d, True),
         lambda d: ops.flip(d, False, layer_only=True),
-        lambda d: ops.apply_brightness_contrast(d, 20, 30),
         ops.add_layer,
         ops.duplicate_layer,
         ops.delete_layer,

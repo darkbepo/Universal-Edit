@@ -94,3 +94,32 @@ def test_apply_to_document_inside_selection_with_undo():
     h.undo()
     assert doc.layers[0].image.getpixel((0, 0))[0] == 100
     assert adjust.apply_to_document(doc, Adjustments()) is None
+
+
+def test_big_previews_are_worked_out_on_a_smaller_copy():
+    img = Image.linear_gradient("L").resize((400, 300)).convert("RGBA")
+    doc = Document(400, 300, [Layer("bg", img)])
+    adj = Adjustments(brightness=40, saturation=30)
+    fast = adjust.preview(doc, adj, max_pixels=10_000)
+    exact = adjust.preview(doc, adj)
+    assert fast.size == exact.size == (400, 300)
+    diff = np.abs(np.asarray(fast, dtype=int) - np.asarray(exact, dtype=int))
+    assert diff[..., 3].max() == 0 and diff.mean() < 2  # close, and edges keep their alpha
+    assert not (np.asarray(fast) == np.asarray(img)).all()
+
+
+def test_brightness_contrast_values():
+    """Moved from the old brightness / contrast dialog's tests: same numbers."""
+    img = Image.new("RGBA", (2, 2), (100, 100, 100, 77))
+    assert adjust.apply(img, Adjustments(brightness=50)).getpixel((0, 0))[0] == 228
+    out = adjust.apply(img, Adjustments(contrast=-100)).getpixel((0, 0))
+    assert out[0] == 128 and out[3] == 77
+    assert adjust.apply(img, Adjustments(contrast=100)).getpixel((0, 0))[0] == 72
+
+
+def test_auto_levels_per_channel():
+    img = Image.new("RGBA", (10, 10), (60, 100, 100, 255))
+    img.paste((180, 100, 100, 255), (0, 0, 10, 5))
+    red = adjust.auto_levels(img, "r")
+    assert (red.black, red.white) == (60, 180)
+    assert adjust.auto_levels(img, "g") == Levels()  # one green value: nothing to stretch

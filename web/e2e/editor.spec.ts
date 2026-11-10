@@ -576,3 +576,37 @@ test("Levels and Curves windows change the picture", async ({ page }) => {
   const after = await layerPx(page, 5, 5);
   expect(after.slice(0, 3).reduce((a, b) => a + b, 0)).toBeGreaterThan(before.slice(0, 3).reduce((a, b) => a + b, 0));
 });
+
+test("Curves keeps its end points; Levels treats an empty Output white as 255", async ({ page }) => {
+  await openEditor(page);
+  const before = await layerPx(page, 5, 5);
+  await adjustMenu(page, "Curves");
+  const cv = page.locator("dialog.curves");
+  const box = await cv.locator("canvas.curve-editor").boundingBox();
+  if (!box) throw new Error("no layout");
+  const PAD = 8;
+  const side = box.width - 2 * PAD;
+  const at = (x: number, y: number) => [box.x + PAD + (side * x) / 255, box.y + PAD + side * (1 - y / 255)] as const;
+  await page.mouse.click(...at(128, 128)); // a third point
+  await page.mouse.move(...at(255, 255));
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width + 120, box.y - 120, { steps: 5 }); // drag the white end point off
+  await page.mouse.up();
+  await page.mouse.click(box.x + box.width / 2, box.y + 2, { button: "right" }); // right-click: no point
+  await cv.getByRole("button", { name: "Apply" }).click();
+  // the white end point is still there: bright colours stay bright (without it they'd drop to ~128)
+  expect(Math.max(...before.slice(0, 3))).toBeGreaterThan(140);
+  const curved = await layerPx(page, 5, 5);
+  expect(Math.max(...curved.slice(0, 3).map((v, i) => Math.abs(v - before[i])))).toBeLessThanOrEqual(3);
+  if (await page.evaluate(() => (window.__editor as EditorHook).history.canUndo)) await page.getByRole("button", { name: "Undo" }).click();
+  await expect.poll(() => page.evaluate(() => (window.__editor as EditorHook).history.canUndo)).toBe(false);
+  await adjustMenu(page, "Levels");
+  const lv = page.locator("dialog.levels");
+  await lv.getByLabel("Output white").fill("");
+  await lv.getByLabel("Output black").fill("10");
+  await lv.getByRole("button", { name: "Apply" }).click();
+  await expect.poll(() => page.evaluate(() => (window.__editor as EditorHook).history.canUndo)).toBe(true);
+  const after = await layerPx(page, 5, 5);
+  expect(Math.max(...after.slice(0, 3))).toBeGreaterThan(100); // not turned black (that would be ≤ 10)
+  expect(after.slice(0, 3).some((v, i) => v !== before[i])).toBe(true);
+});

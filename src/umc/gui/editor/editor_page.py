@@ -574,8 +574,14 @@ class EditorPage(QWidget):
         self._push(cmd)
 
     def apply_adjustments(self, adj: adjust.Adjustments, label: str = "Adjust") -> None:
-        if self.doc is not None:
-            self._push(adjust.apply_to_document(self.doc, adj, label))
+        if self.doc is None:
+            return
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)  # a few seconds on 24 MP photos
+        try:
+            cmd = adjust.apply_to_document(self.doc, adj, label)
+        finally:
+            QApplication.restoreOverrideCursor()
+        self._push(cmd)
 
     def _bar_apply(self, mode: str) -> None:
         if mode == "crop":

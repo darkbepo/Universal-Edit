@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-import numpy as np
 from PIL import Image
 
 from umc.editor.document import Document, check_size, with_opacity
@@ -17,10 +16,8 @@ from umc.editor.history import (
     Command,
     DocumentStateCommand,
     LayerListCommand,
-    PatchCommand,
 )
 from umc.editor.layer import Layer
-from umc.editor.tools.base import clip_rect
 
 RESAMPLE = {
     "lanczos": Image.Resampling.LANCZOS,
@@ -161,32 +158,6 @@ def flip(doc: Document, horizontal: bool, layer_only: bool = False) -> Command |
         y = la.y if horizontal else doc.height - (la.y + lh)
         layers.append(_moved(la, la.image.transpose(method), x, y))
     return _set_state(doc, label, doc.width, doc.height, layers)
-
-
-# ------------------------------------------------------------------ adjustments
-
-
-def brightness_contrast(image: Image.Image, brightness: int, contrast: int) -> Image.Image:
-    """Brightness and contrast, each −100…+100; alpha untouched."""
-    arr = np.asarray(image.convert("RGBA"), dtype=np.float32).copy()
-    rgb = arr[..., :3] + brightness * 2.55
-    factor = (100 + contrast) / 100 if contrast >= 0 else 1 + contrast / 100
-    rgb = (rgb - 128.0) * factor + 128.0
-    arr[..., :3] = rgb
-    return Image.fromarray(np.clip(arr + 0.5, 0, 255).astype(np.uint8), "RGBA")
-
-
-def apply_brightness_contrast(doc: Document, brightness: int, contrast: int) -> Command | None:
-    if brightness == 0 and contrast == 0:
-        return None
-    layer = doc.active_layer
-    region = clip_rect(doc, layer)
-    if region.empty:
-        return None
-    before = layer.image.crop(region.box)
-    part = brightness_contrast(layer.image.crop(region.box), brightness, contrast)
-    layer.image.paste(part, (region.x0, region.y0))
-    return PatchCommand.from_region("Brightness / contrast", doc, doc.active, region, before)
 
 
 # ------------------------------------------------------------------ layer list

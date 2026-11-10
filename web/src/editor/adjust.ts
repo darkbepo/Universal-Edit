@@ -124,7 +124,7 @@ export function tables(a: Adjustments): Uint8Array[] {
   const gains = [1 + 0.3 * k, 1 - 0.3 * m, 1 - 0.3 * k]; // warmer: more red, less blue
   const bright = a.brightness ?? 0;
   const con = a.contrast ?? 0;
-  const factor = con >= 0 ? (100 + con) / 100 : 1 + con / 100;
+  const factor = 1 + con / 100;
   const curves = new Map<Channel, Float64Array>();
   for (const [ch, pts] of Object.entries(a.curves ?? {}) as [Channel, [number, number][]][]) if (pts && !curveIdentity(pts)) curves.set(ch, curveTable(pts));
   return (["r", "g", "b"] as const).map((name, c) => {
@@ -193,9 +193,10 @@ export function histogram(data: Uint8ClampedArray): Record<Channel, Uint32Array>
   return h;
 }
 
-/** Black / white points that stretch the tones (ignoring the darkest and brightest 0.5 %). */
-export function autoLevels(data: Uint8ClampedArray, clip = 0.005): Levels {
-  const counts = histogram(data).rgb;
+/** Black / white points that stretch `channel`'s tones (ignoring the darkest and brightest
+ *  0.5 %); "rgb" uses the brightness. */
+export function autoLevels(data: Uint8ClampedArray, channel: Channel = "rgb", clip = 0.005): Levels {
+  const counts = histogram(data)[channel];
   let total = 0;
   for (const c of counts) total += c;
   if (total === 0) return { ...NEUTRAL_LEVELS };

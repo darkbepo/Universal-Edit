@@ -273,10 +273,14 @@ export function levelsDialog(host: AdjustHost): Promise<Adjustments | null> {
       changed();
     };
     const read = () => {
-      const b = Math.min(254, Math.max(0, Math.round(+black.value || 0)));
-      const w = Math.max(b + 1, Math.min(255, Math.round(+white.value || 255)));
-      const gm = Math.min(9.99, Math.max(0.1, +gamma.value || 1));
-      levels.set(channel.value as Channel, { black: b, white: w, gamma: Math.round(gm * 100) / 100, outBlack: Math.min(255, Math.max(0, Math.round(+outBlack.value || 0))), outWhite: Math.min(255, Math.max(0, Math.round(+outWhite.value || 0))) });
+      const num = (input: HTMLInputElement, empty: number) => (input.value.trim() === "" || Number.isNaN(+input.value) ? empty : +input.value);
+      const b = Math.min(254, Math.max(0, Math.round(num(black, 0))));
+      const w = Math.max(b + 1, Math.min(255, Math.round(num(white, 255))));
+      const gm = Math.min(9.99, Math.max(0.1, num(gamma, 1)));
+      const ob = Math.min(255, Math.max(0, Math.round(num(outBlack, 0))));
+      const ow = Math.min(255, Math.max(0, Math.round(num(outWhite, 255))));
+      if (+white.value !== w && document.activeElement !== white) white.value = String(w); // show what is applied
+      levels.set(channel.value as Channel, { black: b, white: w, gamma: Math.round(gm * 100) / 100, outBlack: ob, outWhite: ow });
       draw();
       changed();
     };
@@ -300,7 +304,9 @@ export function levelsDialog(host: AdjustHost): Promise<Adjustments | null> {
     g.c.addEventListener("pointermove", (e) => drag && dragTo(e));
     g.c.addEventListener("pointerup", () => (drag = null));
     autoBtn.addEventListener("click", () => {
-      if (host.region) set({ ...autoLevelsOf(host.region), gamma: current().gamma });
+      if (!host.region) return;
+      const cur = current();
+      set({ ...autoLevelsOf(host.region, channel.value as Channel), gamma: cur.gamma, outBlack: cur.outBlack, outWhite: cur.outWhite });
     });
     show();
     const row = (label: string, ...kids: HTMLElement[]) => h("div", { class: "field levels-row" }, h("span", {}, label), h("span", { class: "with-unit" }, ...kids));
@@ -394,8 +400,10 @@ export function curvesDialog(host: AdjustHost): Promise<Adjustments | null> {
       return [e.clientX - r.left, e.clientY - r.top];
     };
     g.c.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
       const [px, py] = local(e);
       let i = pointAt(px, py);
+      if (i === null && (px < PAD || px > PAD + side || py < PAD || py > PAD + side)) return; // beside the graph
       if (i === null) {
         const [x, y] = toCurve(px, py).map(clamp);
         const pts = points().filter((p) => p[0] !== x);
@@ -412,7 +420,7 @@ export function curvesDialog(host: AdjustHost): Promise<Adjustments | null> {
       const [px, py] = local(e);
       const out = px < PAD - 24 || px > PAD + side + 24 || py < PAD - 24 || py > PAD + side + 24;
       const pts = points();
-      removing = out && pts.length > 2;
+      removing = out && drag > 0 && drag < pts.length - 1; // never the two end points
       if (!removing) {
         const [x, y] = toCurve(px, py);
         const lo = drag > 0 ? pts[drag - 1][0] + 1 : 0;

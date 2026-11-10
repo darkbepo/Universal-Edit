@@ -63,6 +63,22 @@ describe("adjustments", () => {
     expect(adjust.autoLevels(new Uint8ClampedArray(36))).toEqual(adjust.NEUTRAL_LEVELS);
   });
 
+  it("brightness / contrast values (moved from the old dialog's tests)", () => {
+    const img = solid(2, 2, [100, 100, 100, 77]);
+    expect(adjust.applyData(img, { brightness: 50 })[0]).toBe(228);
+    const out = adjust.applyData(img, { contrast: -100 });
+    expect([out[0], out[3]]).toEqual([128, 77]);
+    expect(adjust.applyData(img, { contrast: 100 })[0]).toBe(72);
+  });
+
+  it("auto levels per channel", () => {
+    const d = new Uint8ClampedArray(100 * 4);
+    for (let i = 0; i < 100; i++) d.set(i < 50 ? [180, 100, 100, 255] : [60, 100, 100, 255], i * 4);
+    const red = adjust.autoLevels(d, "r");
+    expect([red.black, red.white]).toEqual([60, 180]);
+    expect(adjust.autoLevels(d, "g")).toEqual(adjust.NEUTRAL_LEVELS);
+  });
+
   it("histogram skips transparent pixels", () => {
     const h = adjust.histogram(new Uint8ClampedArray([255, 0, 0, 255, 9, 9, 9, 0]));
     expect([h.r[255], h.r.reduce((a, b) => a + b, 0), h.rgb[76]]).toEqual([1, 1, 1]);

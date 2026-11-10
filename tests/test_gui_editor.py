@@ -795,3 +795,44 @@ def test_curves_apply_to_selection(page, monkeypatch):
     assert page.history.undo_label == "Curves"
     assert page.doc.active_layer.image.getpixel((20, 20)) == before  # outside the selection
     assert before[0] == 0 and page.doc.active_layer.image.getpixel((5, 5))[0] == 100
+
+
+def test_curve_end_points_stay_and_clicks_beside_the_graph_do_nothing(page, qtbot):
+    from umc.gui.editor.dialogs import CurvesDialog
+
+    dlg = CurvesDialog(page)
+    qtbot.addWidget(dlg)
+    dlg.resize(560, 480)  # wider than the square graph
+    dlg.show()
+    ed = dlg.editor
+    dlg.add_point(128, 160)
+    end = ed.to_widget(255, 255).toPoint()
+    far = QPoint(ed.width() + 200, -200)
+    qtbot.mousePress(ed, Qt.MouseButton.LeftButton, pos=end)
+    qtbot.mouseMove(ed, far)
+    qtbot.mouseRelease(ed, Qt.MouseButton.LeftButton, pos=far)
+    assert len(dlg.points()) == 3 and dlg.points()[-1][0] == 255  # end point kept
+    pts = list(dlg.points())
+    beside = QPoint(ed.to_widget(255, 0).toPoint().x() + 30, ed.to_widget(0, 128).toPoint().y())
+    assert beside.x() < ed.width()
+    qtbot.mouseClick(ed, Qt.MouseButton.LeftButton, pos=beside)
+    qtbot.mouseClick(ed, Qt.MouseButton.RightButton, pos=ed.to_widget(64, 64).toPoint())
+    assert dlg.points() == pts
+
+
+def test_levels_fields_show_what_is_applied_and_auto_uses_the_channel(page, qtbot):
+    from umc.gui.editor.dialogs import LevelsDialog
+
+    dlg = LevelsDialog(page)
+    qtbot.addWidget(dlg)
+    dlg.white.setValue(100)
+    dlg.black.setValue(200)
+    assert dlg.white.value() == 201 and dlg.adjustments().levels["rgb"].white == 201
+    dlg.reset()
+    dlg.channel.setCurrentIndex(3)  # blue
+    dlg.out_black.setValue(20)
+    dlg._image = Image.new("RGBA", (10, 10), (0, 0, 40, 255))
+    dlg._image.paste((0, 0, 200, 255), (0, 0, 10, 5))
+    dlg.auto_button.click()
+    blue = dlg.adjustments().levels["b"]
+    assert (blue.black, blue.white, blue.out_black) == (40, 200, 20)

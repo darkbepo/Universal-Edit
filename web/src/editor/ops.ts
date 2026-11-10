@@ -3,9 +3,9 @@
 // are replaced, never changed in place — see history.ts.
 import { checkSize, docBounds, type EditorDoc } from "./document";
 import { Rect } from "./geometry";
-import { DocStateCommand, LayerListCommand, PatchCommand, type Command } from "./history";
+import { DocStateCommand, LayerListCommand, type Command } from "./history";
 import { copyLayer, cropData, layerBounds, makeLayer, withProps, type Layer } from "./layer";
-import { clipRect, overPixel } from "./tools/base";
+import { overPixel } from "./tools/base";
 
 export type Resample = "lanczos" | "bilinear" | "nearest";
 export type Resizer = (data: Uint8ClampedArray, w: number, h: number, nw: number, nh: number, method: Resample) => Uint8ClampedArray;
@@ -177,42 +177,6 @@ export function flip(doc: EditorDoc, horizontal: boolean, layerOnly = false): Co
     }),
   );
   return setState(doc, label, doc.width, doc.height, layers);
-}
-
-// ------------------------------------------------------------------ adjustments
-
-/** Brightness and contrast, each −100…+100; alpha untouched. */
-export function brightnessContrast(data: Uint8ClampedArray, brightness: number, contrast: number): Uint8ClampedArray {
-  const out = new Uint8ClampedArray(data.length);
-  const factor = contrast >= 0 ? (100 + contrast) / 100 : 1 + contrast / 100;
-  const add = brightness * 2.55;
-  for (let i = 0; i < data.length; i += 4) {
-    for (let c = 0; c < 3; c++) out[i + c] = (data[i + c] + add - 128) * factor + 128 + 0.5;
-    out[i + 3] = data[i + 3];
-  }
-  return out;
-}
-
-export function applyBrightnessContrast(doc: EditorDoc, brightness: number, contrast: number): Command | null {
-  if (brightness === 0 && contrast === 0) return null;
-  const l = doc.layers[doc.active];
-  const region = clipRect(doc, l);
-  if (region.empty) return null;
-  const before = cropData(l.data, l.width, region);
-  const after = brightnessContrast(before, brightness, contrast);
-  for (let y = 0; y < region.height; y++) l.data.set(after.subarray(y * region.width * 4, (y + 1) * region.width * 4), ((region.y0 + y) * l.width + region.x0) * 4);
-  return PatchCommand.fromRegion("Brightness / contrast", doc, doc.active, region, before);
-}
-
-/** Preview helper: the active layer's pixels with brightness / contrast inside the selection. */
-export function previewBrightnessContrast(doc: EditorDoc, brightness: number, contrast: number): Uint8ClampedArray {
-  const l = doc.layers[doc.active];
-  const out = new Uint8ClampedArray(l.data);
-  const region = clipRect(doc, l);
-  if (region.empty) return out;
-  const part = brightnessContrast(cropData(l.data, l.width, region), brightness, contrast);
-  for (let y = 0; y < region.height; y++) out.set(part.subarray(y * region.width * 4, (y + 1) * region.width * 4), ((region.y0 + y) * l.width + region.x0) * 4);
-  return out;
 }
 
 // ------------------------------------------------------------------ layer list

@@ -407,6 +407,10 @@ class LevelsDialog(_AdjustDialog):
             return
         black = min(self.black.value(), 254)
         white = max(self.white.value(), black + 1)
+        if white != self.white.value():  # show what is applied: white stays above black
+            self._loading = True
+            self.white.setValue(white)
+            self._loading = False
         self.levels[self.channel_id()] = adjust.Levels(
             black,
             white,
@@ -430,8 +434,11 @@ class LevelsDialog(_AdjustDialog):
 
     def _auto(self) -> None:
         if self._image is not None:
-            lv = adjust.auto_levels(self._image)
-            self.levels[self.channel_id()] = replace(lv, gamma=self.current().gamma)
+            lv = adjust.auto_levels(self._image, self.channel_id())
+            cur = self.current()
+            self.levels[self.channel_id()] = replace(
+                lv, gamma=cur.gamma, out_black=cur.out_black, out_white=cur.out_white
+            )
             self._show_channel()
             self.changed()
 
@@ -521,8 +528,13 @@ class CurveEditor(QWidget):
         return None if best is None else best[1]
 
     def mousePressEvent(self, e) -> None:  # noqa: N802
+        if e.button() != Qt.MouseButton.LeftButton:
+            return
         pos = e.position()
         i = self.point_at(pos)
+        ox, oy, side = self._box()
+        if i is None and not (ox <= pos.x() <= ox + side and oy <= pos.y() <= oy + side):
+            return  # beside the graph: don't move an end point there
         if i is None:
             x, y = self.to_curve(pos)
             i = self.dialog.add_point(x, y)
@@ -612,11 +624,12 @@ class CurvesDialog(_AdjustDialog):
         return i
 
     def can_remove(self, i: int) -> bool:
-        return len(self.points()) > 2
+        """Any point but the two end points."""
+        return 0 < i < len(self.points()) - 1
 
     def remove_point(self, i: int) -> None:
-        pts = list(self.points())
-        if len(pts) > 2:
+        if self.can_remove(i):
+            pts = list(self.points())
             del pts[i]
             self._set(pts)
 

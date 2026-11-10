@@ -147,7 +147,7 @@ def tables(adj: Adjustments) -> np.ndarray:
         v = _to_srgb(_to_linear(v) * 2.0**adj.exposure)
     k, m = adj.temperature / 100, adj.tint / 100
     gains = (1 + 0.3 * k, 1 - 0.3 * m, 1 - 0.3 * k)  # warmer: more red, less blue
-    contrast = (100 + adj.contrast) / 100 if adj.contrast >= 0 else 1 + adj.contrast / 100
+    contrast = 1 + adj.contrast / 100
     out = np.empty((3, 256), dtype=np.uint8)
     for c, name in enumerate("rgb"):
         x = np.clip(v * gains[c], 0, 255)
@@ -176,17 +176,33 @@ def apply_array(arr: np.ndarray, adj: Adjustments) -> np.ndarray:
     for c in range(3):
         out[..., c] = t[c][arr[..., c]]
     if adj.saturation or adj.vibrance:
-        rgb = out[..., :3].astype(np.float64)
-        luma = rgb @ np.array([0.299, 0.587, 0.114])
-        factor = np.full(luma.shape, 1 + adj.saturation / 100)
-        if adj.vibrance:
-            r, g, b = rgb[..., 0], rgb[..., 1], rgb[..., 2]
-            sat = (rgb.max(axis=-1) - rgb.min(axis=-1)) / 255.0
-            skin = (r > g) & (g > b)  # orange-ish hues: protect skin tones
-            factor *= 1 + (adj.vibrance / 100) * (1 - sat) * np.where(skin, 0.5, 1.0)
-        rgb = luma[..., None] + (rgb - luma[..., None]) * factor[..., None]
-        out[..., :3] = np.clip(np.floor(rgb + 0.5), 0, 255).astype(np.uint8)
+        # Strips of rows keep the temporary float arrays small (a 24 MP photo needed ~3 GB).
+        for y in range(0, out.shape[0], BAND):
+            _mix(out[y : y + BAND], adj)
     return out
+
+
+BAND = 256  # rows per strip in the saturation / vibrance step
+
+_LUMA = np.array([0.299, 0.587, 0.114])
+
+
+def _mix(part: np.ndarray, adj: Adjustments) -> None:
+    """Saturation / vibrance on ``part`` (rows of RGBA uint8), in place."""
+    rgb = part[..., :3].astype(np.float64)
+    luma = rgb @ _LUMA
+    factor = np.full(luma.shape, 1 + adj.saturation / 100)
+    if adj.vibrance:
+        hi, lo = rgb.max(axis=-1), rgb.min(axis=-1)
+        r, g, b = rgb[..., 0], rgb[..., 1], rgb[..., 2]
+        weight = np.where((r > g) & (g > b), 0.5, 1.0)  # orange-ish hues: protect skin tones
+        factor *= 1 + (adj.vibrance / 100) * (1 - (hi - lo) / 255.0) * weight
+    rgb -= luma[..., None]
+    rgb *= factor[..., None]
+    rgb += luma[..., None] + 0.5
+    np.floor(rgb, out=rgb)
+    np.clip(rgb, 0, 255, out=rgb)
+    part[..., :3] = rgb
 
 
 def apply(image: Image.Image, adj: Adjustments) -> Image.Image:
@@ -205,9 +221,10 @@ def histogram(image: Image.Image) -> dict[str, np.ndarray]:
     return hist
 
 
-def auto_levels(image: Image.Image, clip: float = 0.005) -> Levels:
-    """Black / white points that stretch the tones (ignoring the darkest and brightest 0.5 %)."""
-    counts = histogram(image)["rgb"]
+def auto_levels(image: Image.Image, channel: str = "rgb", clip: float = 0.005) -> Levels:
+    """Black / white points that stretch ``channel``'s tones (ignoring the darkest and
+    brightest 0.5 %); "rgb" uses the brightness."""
+    counts = histogram(image)[channel]
     total = int(counts.sum())
     if total == 0:
         return Levels()
@@ -230,13 +247,30 @@ def region_image(doc: Document) -> Image.Image | None:
     return None if region.empty else layer.image.crop(region.box)
 
 
-def preview(doc: Document, adj: Adjustments) -> Image.Image:
-    """The active layer as it would look with ``adj`` (for the live preview)."""
+PREVIEW_PIXELS = 2_000_000  # live previews of bigger areas are worked out on a smaller copy
+
+
+def preview(doc: Document, adj: Adjustments, max_pixels: int = PREVIEW_PIXELS) -> Image.Image:
+    """The active layer as it would look with ``adj`` (for the live preview).
+
+    An area over ``max_pixels`` is adjusted on a reduced copy and scaled back up, so dragging a
+    slider stays smooth on a 24 MP photo (exact at the usual fit-to-window zoom; OK applies the
+    full-resolution result).
+    """
     layer = doc.active_layer
     img = layer.image.copy()
     region = clip_rect(doc, layer)
-    if not region.empty and not adj.identity:
-        img.paste(apply(img.crop(region.box), adj), (region.x0, region.y0))
+    if region.empty or adj.identity:
+        return img
+    part = img.crop(region.box)
+    if region.width * region.height > max_pixels:
+        factor = math.ceil(math.sqrt(region.width * region.height / max_pixels))
+        small = part.reduce(factor)  # box average by a whole number: fast and clean
+        done = apply(small, adj).resize(part.size, Image.Resampling.BILINEAR)
+        done.putalpha(part.getchannel("A"))  # never soften the layer's edges
+    else:
+        done = apply(part, adj)
+    img.paste(done, (region.x0, region.y0))
     return img
 
 
