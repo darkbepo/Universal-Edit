@@ -1,20 +1,25 @@
-"""Small dialogs: resize image, canvas size, brightness / contrast, save options."""
+"""Small dialogs: resize, canvas size, quick fix / levels / curves, save options, shortcuts."""
 
 from __future__ import annotations
 
+import math
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
-from PySide6.QtCore import Qt, QTimer
+import numpy as np
+from PySide6.QtCore import QPointF, Qt, QTimer
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QDoubleSpinBox,
     QFormLayout,
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QPushButton,
     QRadioButton,
     QSlider,
     QSpinBox,
@@ -22,7 +27,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from umc.editor import ops
+from umc.editor import adjust, ops
 from umc.editor.document import MAX_SIDE, Document
 from umc.gui.widgets.settings_panel import SettingsPanel
 
@@ -125,66 +130,507 @@ class CanvasSizeDialog(_SizeDialog):
         return self.width.value(), self.height.value(), ops.ANCHORS[self.anchor.checkedId()]
 
 
-class BrightnessContrastDialog(QDialog):
-    """Live preview on the active layer; nothing changes until OK."""
+class _AdjustDialog(QDialog):
+    """Live preview on the active layer (inside the selection); nothing changes until OK.
+
+    Subclasses build their controls and return the settings from ``adjustments()``.
+    """
+
+    title = "Adjust"
 
     def __init__(self, page: EditorPage) -> None:
         super().__init__(page)
-        self.setWindowTitle("Brightness / contrast")
+        self.setWindowTitle(self.title)
         self.page = page
         self._timer = QTimer(self, singleShot=True, interval=60)
         self._timer.timeout.connect(self.update_preview)
-        form = QFormLayout()
-        self.brightness = self._slider()
-        self.contrast = self._slider()
-        form.addRow("Brightness", self._row(self.brightness))
-        form.addRow("Contrast", self._row(self.contrast))
-        lay = QVBoxLayout(self)
-        lay.addLayout(form)
-        lay.addWidget(_buttons(self))
+        self.lay = QVBoxLayout(self)
+        self.body = QVBoxLayout()
+        self.lay.addLayout(self.body)
+        row = QHBoxLayout()
+        self.original_button = QPushButton("Hold to see the original", objectName="Small")
+        self.original_button.pressed.connect(lambda: self.page.canvas.set_preview_layer(None, None))
+        self.original_button.released.connect(self.update_preview)
+        self.reset_button = QPushButton("Reset", objectName="Small")
+        self.reset_button.clicked.connect(self.reset)
+        row.addWidget(self.original_button)
+        row.addStretch(1)
+        row.addWidget(self.reset_button)
+        self.extra_row = row
+        self.lay.addLayout(row)
+        self.lay.addWidget(_buttons(self))
 
-    def _slider(self) -> QSlider:
-        s = QSlider(Qt.Orientation.Horizontal)
-        s.setRange(-100, 100)
-        s.setValue(0)
-        s.setMinimumWidth(240)
-        s.valueChanged.connect(lambda _v: self._timer.start())
-        return s
+    def changed(self) -> None:
+        self._timer.start()
 
-    @staticmethod
-    def _row(slider: QSlider) -> QWidget:
-        w = QWidget()
-        h = QHBoxLayout(w)
-        h.setContentsMargins(0, 0, 0, 0)
-        label = QLabel("0")
-        label.setMinimumWidth(32)
-        slider.valueChanged.connect(lambda v: label.setText(str(v)))
-        h.addWidget(slider, 1)
-        h.addWidget(label)
-        return w
+    def adjustments(self) -> adjust.Adjustments:
+        raise NotImplementedError
+
+    def reset(self) -> None:
+        raise NotImplementedError
 
     def update_preview(self) -> None:
         doc = self.page.doc
-        b, c = self.brightness.value(), self.contrast.value()
-        if b == 0 and c == 0:
+        adj = self.adjustments()
+        if doc is None or adj.identity:
             self.page.canvas.set_preview_layer(None, None)
             return
-        layer = doc.active_layer
-        from umc.editor.tools.base import clip_rect
-
-        region = clip_rect(doc, layer)
-        img = layer.image.copy()
-        if not region.empty:
-            img.paste(ops.brightness_contrast(img.crop(region.box), b, c), (region.x0, region.y0))
-        self.page.canvas.set_preview_layer(doc.active, img)
+        self.page.canvas.set_preview_layer(doc.active, adjust.preview(doc, adj))
 
     def done(self, result: int) -> None:
         self._timer.stop()
         self.page.canvas.set_preview_layer(None, None)
         super().done(result)
 
-    def result_values(self) -> tuple[int, int]:
-        return self.brightness.value(), self.contrast.value()
+
+class _ValueSlider(QWidget):
+    """A slider with its value shown next to it; ``scale`` turns slider steps into the value."""
+
+    def __init__(self, lo: int, hi: int, on_change, scale: float = 1.0, fmt: str = "{:+g}") -> None:
+        super().__init__()
+        self.scale, self.fmt = scale, fmt
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        self.slider = QSlider(Qt.Orientation.Horizontal)
+        self.slider.setRange(lo, hi)
+        self.slider.setMinimumWidth(240)
+        self.label = QLabel()
+        self.label.setMinimumWidth(48)
+        self.slider.valueChanged.connect(self._show)
+        self.slider.valueChanged.connect(lambda _v: on_change())
+        lay.addWidget(self.slider, 1)
+        lay.addWidget(self.label)
+        self._show(0)
+
+    def _show(self, v: int) -> None:
+        value = v * self.scale
+        self.label.setText("0" if value == 0 else self.fmt.format(value))
+
+    def value(self) -> float:
+        return self.slider.value() * self.scale
+
+    def set_value(self, value: float) -> None:
+        self.slider.setValue(round(value / self.scale))
+
+
+class QuickFixDialog(_AdjustDialog):
+    """Exposure, brightness / contrast, temperature / tint, saturation, vibrance, Auto tone."""
+
+    title = "Quick fix"
+    FIELDS = (
+        ("exposure", "Exposure", -300, 300, 0.01, "{:+.2f}"),
+        ("brightness", "Brightness", -100, 100, 1, "{:+g}"),
+        ("contrast", "Contrast", -100, 100, 1, "{:+g}"),
+        ("temperature", "Temperature", -100, 100, 1, "{:+g}"),
+        ("tint", "Tint", -100, 100, 1, "{:+g}"),
+        ("saturation", "Saturation", -100, 100, 1, "{:+g}"),
+        ("vibrance", "Vibrance", -100, 100, 1, "{:+g}"),
+    )
+    TIPS = {
+        "exposure": "Brighter or darker, as if the photo had been taken that way (stops)",
+        "temperature": "Cooler (blue) ↔ warmer (orange)",
+        "tint": "Greener ↔ more magenta",
+        "vibrance": "Boosts dull colours more than strong ones, and skin tones less",
+    }
+
+    def __init__(self, page: EditorPage) -> None:
+        super().__init__(page)
+        form = QFormLayout()
+        self.sliders: dict[str, _ValueSlider] = {}
+        for name, label, lo, hi, scale, fmt in self.FIELDS:
+            w = _ValueSlider(lo, hi, self.changed, scale, fmt)
+            w.setToolTip(self.TIPS.get(name, ""))
+            self.sliders[name] = w
+            form.addRow(label, w)
+        self.body.addLayout(form)
+        self.auto = QCheckBox("Auto tone (stretch a dark or flat photo)")
+        self.auto.toggled.connect(self._on_auto)
+        self.body.addWidget(self.auto)
+        self._auto_levels: adjust.Levels | None = None
+
+    def _on_auto(self, on: bool) -> None:
+        img = adjust.region_image(self.page.doc) if on and self.page.doc else None
+        self._auto_levels = adjust.auto_levels(img) if img is not None else None
+        self.changed()
+
+    def adjustments(self) -> adjust.Adjustments:
+        v = {name: w.value() for name, w in self.sliders.items()}
+        levels = {"rgb": self._auto_levels} if self._auto_levels is not None else {}
+        return adjust.Adjustments(
+            exposure=round(v["exposure"], 2),
+            **{k: round(v[k]) for k in v if k != "exposure"},
+            levels=levels,
+        )
+
+    def reset(self) -> None:
+        for w in self.sliders.values():
+            w.set_value(0)
+        self.auto.setChecked(False)
+
+
+class Histogram(QWidget):
+    """Histogram with draggable black / mid / white markers (levels)."""
+
+    def __init__(self, dialog: LevelsDialog) -> None:
+        super().__init__()
+        self.dialog = dialog
+        self.counts = None
+        self.setMinimumSize(280, 130)
+        self._drag: str | None = None
+
+    def _x(self, value: float) -> float:
+        return 6 + (self.width() - 12) * value / 255
+
+    def _value(self, x: float) -> float:
+        return max(0.0, min(255.0, (x - 6) * 255 / max(1, self.width() - 12)))
+
+    def markers(self) -> dict[str, float]:
+        lv = self.dialog.current()
+        mid = lv.black + (lv.white - lv.black) * 0.5**lv.gamma
+        return {"black": lv.black, "mid": mid, "white": lv.white}
+
+    def paintEvent(self, _e) -> None:  # noqa: N802
+        from PySide6.QtGui import QColor, QPainter, QPolygonF
+
+        from umc.gui import theme
+
+        pal = theme.palette()
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        h = self.height() - 14
+        p.fillRect(0, 0, self.width(), h, QColor(pal["surface_alt"]))
+        if self.counts is not None and self.counts.max() > 0:
+            top = float(np.sqrt(self.counts).max())
+            p.setPen(QColor(pal["muted"]))
+            for v, c in enumerate(self.counts):
+                if c:
+                    x = self._x(v)
+                    p.drawLine(QPointF(x, h), QPointF(x, h - (h - 4) * np.sqrt(c) / top))
+        for name, value in self.markers().items():
+            x = self._x(value)
+            fill = {"black": "#000000", "mid": "#808080", "white": "#ffffff"}[name]
+            p.setPen(QColor(pal["text"]))
+            p.setBrush(QColor(fill))
+            p.drawPolygon(
+                QPolygonF([QPointF(x, h + 1), QPointF(x - 6, h + 12), QPointF(x + 6, h + 12)])
+            )
+        p.end()
+
+    def mousePressEvent(self, e) -> None:  # noqa: N802
+        x = e.position().x()
+        self._drag = min(self.markers().items(), key=lambda kv: abs(self._x(kv[1]) - x))[0]
+        self.mouseMoveEvent(e)
+
+    def mouseMoveEvent(self, e) -> None:  # noqa: N802
+        if self._drag is not None:
+            self.dialog.drag_marker(self._drag, self._value(e.position().x()))
+
+    def mouseReleaseEvent(self, _e) -> None:  # noqa: N802
+        self._drag = None
+
+
+class LevelsDialog(_AdjustDialog):
+    title = "Levels"
+
+    def __init__(self, page: EditorPage) -> None:
+        super().__init__(page)
+        self.levels: dict[str, adjust.Levels] = {}
+        img = adjust.region_image(page.doc) if page.doc else None
+        self.hist = (
+            adjust.histogram(img)
+            if img is not None
+            else {c: np.zeros(256) for c in adjust.CHANNELS}
+        )
+        self._image = img
+        top = QHBoxLayout()
+        top.addWidget(QLabel("Channel"))
+        self.channel = QComboBox()
+        for ch, label in zip(adjust.CHANNELS, ("All colours", "Red", "Green", "Blue"), strict=True):
+            self.channel.addItem(label, ch)
+        self.channel.currentIndexChanged.connect(self._show_channel)
+        top.addWidget(self.channel, 1)
+        self.auto_button = QPushButton("Auto", objectName="Small")
+        self.auto_button.setToolTip("Stretch the tones (ignores the darkest and brightest 0.5 %)")
+        self.auto_button.clicked.connect(self._auto)
+        top.addWidget(self.auto_button)
+        self.body.addLayout(top)
+        self.histogram = Histogram(self)
+        self.body.addWidget(self.histogram)
+        form = QFormLayout()
+        self.black, self.white = QSpinBox(), QSpinBox()
+        self.black.setRange(0, 254)
+        self.white.setRange(1, 255)
+        self.gamma = QDoubleSpinBox()
+        self.gamma.setRange(0.1, 9.99)
+        self.gamma.setSingleStep(0.05)
+        self.gamma.setDecimals(2)
+        self.out_black, self.out_white = QSpinBox(), QSpinBox()
+        self.out_black.setRange(0, 255)
+        self.out_white.setRange(0, 255)
+        inputs = QHBoxLayout()
+        for label, w in (("Black", self.black), ("Mid-tones", self.gamma), ("White", self.white)):
+            inputs.addWidget(QLabel(label))
+            inputs.addWidget(w)
+        outputs = QHBoxLayout()
+        for label, w in (("Black", self.out_black), ("White", self.out_white)):
+            outputs.addWidget(QLabel(label))
+            outputs.addWidget(w)
+        outputs.addStretch(1)
+        form.addRow("Input", inputs)
+        form.addRow("Output", outputs)
+        self.body.addLayout(form)
+        for w in (self.black, self.white, self.gamma, self.out_black, self.out_white):
+            w.valueChanged.connect(self._read)
+        self._loading = False
+        self._show_channel()
+
+    def channel_id(self) -> str:
+        return self.channel.currentData()
+
+    def current(self) -> adjust.Levels:
+        return self.levels.get(self.channel_id(), adjust.Levels())
+
+    def _show_channel(self) -> None:
+        lv = self.current()
+        self._loading = True
+        self.black.setValue(lv.black)
+        self.white.setValue(lv.white)
+        self.gamma.setValue(lv.gamma)
+        self.out_black.setValue(lv.out_black)
+        self.out_white.setValue(lv.out_white)
+        self._loading = False
+        self.histogram.counts = self.hist[self.channel_id()]
+        self.histogram.update()
+
+    def _read(self) -> None:
+        if self._loading:
+            return
+        black = min(self.black.value(), 254)
+        white = max(self.white.value(), black + 1)
+        self.levels[self.channel_id()] = adjust.Levels(
+            black,
+            white,
+            round(self.gamma.value(), 2),
+            self.out_black.value(),
+            self.out_white.value(),
+        )
+        self.histogram.update()
+        self.changed()
+
+    def drag_marker(self, name: str, value: float) -> None:
+        lv = self.current()
+        if name == "black":
+            self.black.setValue(round(min(value, lv.white - 1)))
+        elif name == "white":
+            self.white.setValue(round(max(value, lv.black + 1)))
+        else:
+            t = (value - lv.black) / max(1, lv.white - lv.black)
+            t = min(0.99, max(0.01, t))
+            self.gamma.setValue(round(math.log(t) / math.log(0.5), 2))
+
+    def _auto(self) -> None:
+        if self._image is not None:
+            lv = adjust.auto_levels(self._image)
+            self.levels[self.channel_id()] = replace(lv, gamma=self.current().gamma)
+            self._show_channel()
+            self.changed()
+
+    def adjustments(self) -> adjust.Adjustments:
+        return adjust.Adjustments(levels={k: v for k, v in self.levels.items() if not v.identity})
+
+    def reset(self) -> None:
+        self.levels.clear()
+        self._show_channel()
+        self.changed()
+
+
+class CurveEditor(QWidget):
+    """Click to add a point, drag to move it, drag it out of the box to remove it."""
+
+    PAD = 8
+    GRAB = 9  # px: how close a click must be to grab a point
+    REMOVE = 24  # px outside the box: drop the point
+
+    def __init__(self, dialog: CurvesDialog) -> None:
+        super().__init__()
+        self.dialog = dialog
+        self.setMinimumSize(280, 280)
+        self.counts = None
+        self._drag: int | None = None
+        self._removing = False
+
+    def _box(self):
+        side = min(self.width(), self.height()) - 2 * self.PAD
+        return self.PAD, self.PAD, max(1, side)
+
+    def to_widget(self, x: float, y: float) -> QPointF:
+        ox, oy, side = self._box()
+        return QPointF(ox + side * x / 255, oy + side * (1 - y / 255))
+
+    def to_curve(self, pos: QPointF) -> tuple[float, float]:
+        ox, oy, side = self._box()
+        return (pos.x() - ox) * 255 / side, (1 - (pos.y() - oy) / side) * 255
+
+    def paintEvent(self, _e) -> None:  # noqa: N802
+        from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
+
+        from umc.gui import theme
+
+        pal = theme.palette()
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        ox, oy, side = self._box()
+        p.fillRect(ox, oy, side, side, QColor(pal["surface_alt"]))
+        if self.counts is not None and self.counts.max() > 0:
+            top = float(np.sqrt(self.counts).max())
+            p.setPen(QColor(pal["border"]))
+            for v, c in enumerate(self.counts):
+                if c:
+                    x = ox + side * v / 255
+                    p.drawLine(
+                        QPointF(x, oy + side), QPointF(x, oy + side - side * 0.9 * np.sqrt(c) / top)
+                    )
+        p.setPen(QPen(QColor(pal["border"]), 1))
+        for i in range(1, 4):
+            p.drawLine(QPointF(ox + side * i / 4, oy), QPointF(ox + side * i / 4, oy + side))
+            p.drawLine(QPointF(ox, oy + side * i / 4), QPointF(ox + side, oy + side * i / 4))
+        p.drawLine(self.to_widget(0, 0), self.to_widget(255, 255))
+        table = adjust.curve_table(self.dialog.points())
+        path = QPainterPath(self.to_widget(0, table[0]))
+        for x in range(1, 256):
+            path.lineTo(self.to_widget(x, table[x]))
+        p.setPen(QPen(QColor(pal["accent"]), 2))
+        p.drawPath(path)
+        p.setBrush(QColor(pal["surface"]))
+        for i, (x, y) in enumerate(self.dialog.points()):
+            p.setPen(
+                QPen(
+                    QColor(pal["danger"] if self._removing and i == self._drag else pal["accent"]),
+                    2,
+                )
+            )
+            p.drawEllipse(self.to_widget(x, y), 5, 5)
+        p.end()
+
+    def point_at(self, pos: QPointF) -> int | None:
+        best = None
+        for i, (x, y) in enumerate(self.dialog.points()):
+            d = (self.to_widget(x, y) - pos).manhattanLength()
+            if d <= self.GRAB * 1.5 and (best is None or d < best[0]):
+                best = (d, i)
+        return None if best is None else best[1]
+
+    def mousePressEvent(self, e) -> None:  # noqa: N802
+        pos = e.position()
+        i = self.point_at(pos)
+        if i is None:
+            x, y = self.to_curve(pos)
+            i = self.dialog.add_point(x, y)
+        self._drag = i
+        self.update()
+
+    def mouseMoveEvent(self, e) -> None:  # noqa: N802
+        if self._drag is None:
+            return
+        pos = e.position()
+        ox, oy, side = self._box()
+        outside = (
+            pos.x() < ox - self.REMOVE
+            or pos.x() > ox + side + self.REMOVE
+            or pos.y() < oy - self.REMOVE
+            or pos.y() > oy + side + self.REMOVE
+        )
+        self._removing = outside and self.dialog.can_remove(self._drag)
+        if not self._removing:
+            self._drag = self.dialog.move_point(self._drag, *self.to_curve(pos))
+        self.update()
+
+    def mouseReleaseEvent(self, _e) -> None:  # noqa: N802
+        if self._drag is not None and self._removing:
+            self.dialog.remove_point(self._drag)
+        self._drag, self._removing = None, False
+        self.update()
+
+
+class CurvesDialog(_AdjustDialog):
+    title = "Curves"
+
+    def __init__(self, page: EditorPage) -> None:
+        super().__init__(page)
+        self.curves: dict[str, list[tuple[int, int]]] = {}
+        img = adjust.region_image(page.doc) if page.doc else None
+        self.hist = adjust.histogram(img) if img is not None else None
+        top = QHBoxLayout()
+        top.addWidget(QLabel("Channel"))
+        self.channel = QComboBox()
+        for ch, label in zip(adjust.CHANNELS, ("All colours", "Red", "Green", "Blue"), strict=True):
+            self.channel.addItem(label, ch)
+        self.channel.currentIndexChanged.connect(self._show_channel)
+        top.addWidget(self.channel, 1)
+        self.body.addLayout(top)
+        self.editor = CurveEditor(self)
+        self.body.addWidget(self.editor, 1)
+        hint = QLabel("Click to add a point · drag to move · drag off the graph to remove")
+        hint.setObjectName("Muted")
+        self.body.addWidget(hint)
+        self._show_channel()
+
+    def channel_id(self) -> str:
+        return self.channel.currentData()
+
+    def points(self) -> list[tuple[int, int]]:
+        return self.curves.get(self.channel_id(), list(adjust.IDENTITY_CURVE))
+
+    def _set(self, pts: list[tuple[int, int]]) -> None:
+        self.curves[self.channel_id()] = pts
+        self.editor.update()
+        self.changed()
+
+    def _show_channel(self) -> None:
+        self.editor.counts = None if self.hist is None else self.hist[self.channel_id()]
+        self.editor.update()
+
+    @staticmethod
+    def _clamp(v: float) -> int:
+        return int(max(0, min(255, round(v))))
+
+    def add_point(self, x: float, y: float) -> int:
+        pts = list(self.points())
+        x, y = self._clamp(x), self._clamp(y)
+        pts = [p for p in pts if p[0] != x] + [(x, y)]
+        pts.sort()
+        self._set(pts)
+        return pts.index((x, y))
+
+    def move_point(self, i: int, x: float, y: float) -> int:
+        """Move point ``i``; it can't pass its neighbours (end points keep to their side)."""
+        pts = list(self.points())
+        lo = pts[i - 1][0] + 1 if i > 0 else 0
+        hi = pts[i + 1][0] - 1 if i < len(pts) - 1 else 255
+        pts[i] = (int(max(lo, min(hi, round(x)))), self._clamp(y))
+        self._set(pts)
+        return i
+
+    def can_remove(self, i: int) -> bool:
+        return len(self.points()) > 2
+
+    def remove_point(self, i: int) -> None:
+        pts = list(self.points())
+        if len(pts) > 2:
+            del pts[i]
+            self._set(pts)
+
+    def adjustments(self) -> adjust.Adjustments:
+        return adjust.Adjustments(
+            curves={
+                k: tuple(v) for k, v in self.curves.items() if tuple(v) != adjust.IDENTITY_CURVE
+            }
+        )
+
+    def reset(self) -> None:
+        self.curves.clear()
+        self.editor.update()
+        self.changed()
 
 
 class SaveOptionsDialog(QDialog):

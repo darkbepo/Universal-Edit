@@ -508,8 +508,12 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
          images, so "is this our copy?" compares pixels (`samePicture`). Chrome reserves
          Ctrl+Shift+N, so a new layer is Ctrl+Alt+N on the web.
    5. Next, in this order (owner, Nov 2026; one step at a time, both apps, ship gate each):
-      1. Quick photo fixes: an Adjust menu with live preview — exposure, saturation, vibrance,
-         colour temperature, levels, curves (+ the existing brightness / contrast).
+      1. ✅ Adjust menu (both apps): Quick fix / Levels / Curves windows with live preview and
+         "hold to see the original"; brightness / contrast moved into Quick fix. Model
+         `editor/adjust.py` / `adjust.ts` (line-by-line ports: per-channel steps folded into 256
+         tables, then saturation / vibrance per pixel; curves = Fritsch–Carlson monotone cubic).
+         `tests/fixtures/adjust_cases.json` holds expected pixels both test suites check (web
+         within 1) — regenerate it from adjust.py only on purpose.
       2. Filters and looks: blur, sharpen, 8–12 one-click looks (saved step-1 settings).
       3. More selection tools: ellipse, lasso, polygon lasso, magic wand; add / subtract, invert,
          feather. The selection becomes a mask (today `doc.selection` is one Rect everywhere).

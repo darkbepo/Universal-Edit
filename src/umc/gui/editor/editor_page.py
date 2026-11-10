@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
 )
 
 from umc.core.errors import ConversionError
-from umc.editor import clipboard, ops
+from umc.editor import adjust, clipboard, ops
 from umc.editor.document import Document, check_size
 from umc.editor.history import History
 from umc.editor.io import load_layers, open_files
@@ -38,8 +38,10 @@ from umc.gui import theme
 from umc.gui.editor.canvas import EditorCanvas, pil_to_qimage, qimage_to_pil
 from umc.gui.editor.crop_bar import CropBar
 from umc.gui.editor.dialogs import (
-    BrightnessContrastDialog,
     CanvasSizeDialog,
+    CurvesDialog,
+    LevelsDialog,
+    QuickFixDialog,
     ResizeDialog,
     SaveOptionsDialog,
     ShortcutsDialog,
@@ -51,6 +53,12 @@ from umc.gui.editor.side_panel import ColorSwatches, ToolBar, ToolSettings
 log = logging.getLogger(__name__)
 
 CROP_HINT = "Drag a rectangle on the picture, then apply it with the button next to it (or Enter)."
+# Adjust menu: run_op name → (dialog, undo label).
+ADJUST_DIALOGS = {
+    "quick_fix": (QuickFixDialog, "Quick fix"),
+    "levels": (LevelsDialog, "Levels"),
+    "curves": (CurvesDialog, "Curves"),
+}
 # Marks a clipboard image as ours and remembers where on the canvas it was copied from.
 CLIP_MIME = "application/x-umc-editor-clip"
 EXT_ALIASES = {"jpeg": "jpg", "tif": "tiff", "heif": "heic"}
@@ -214,8 +222,6 @@ class EditorPage(QWidget):
             ("Rotate 180°", "rotate_180"),
             ("Flip horizontal", "flip_h"),
             ("Flip vertical", "flip_v"),
-            (None, None),
-            ("Brightness / contrast…", "brightness"),
         ):
             if label is None:
                 menu.addSeparator()
@@ -232,6 +238,18 @@ class EditorPage(QWidget):
             layer_menu.addAction(label, lambda o=op: self.run_op(o))
         image.setMenu(menu)
         lay.addWidget(image)
+        adjust_button = QToolButton(text="Adjust ▾", objectName="SmallMenu")
+        adjust_button.setToolTip("Fix the tones and colours of the selected layer")
+        adjust_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        adjust_menu = QMenu(adjust_button)
+        for label, op in (
+            ("Quick fix… (exposure, contrast, colours)", "quick_fix"),
+            ("Levels…", "levels"),
+            ("Curves…", "curves"),
+        ):
+            adjust_menu.addAction(label, lambda o=op: self.run_op(o))
+        adjust_button.setMenu(adjust_menu)
+        lay.addWidget(adjust_button)
         lay.addStretch(1)
         tb("?", "Keyboard shortcuts (?)", lambda: self.show_shortcuts())
         lay.addSpacing(6)
@@ -537,10 +555,10 @@ class EditorPage(QWidget):
                     self.show_message("Select an area first (rectangle select, M).")
                     return
                 cmd = ops.crop(doc, doc.selection)
-            elif name == "brightness":
-                dlg = BrightnessContrastDialog(self)
+            elif name in ADJUST_DIALOGS:
+                dlg = ADJUST_DIALOGS[name][0](self)
                 if dlg.exec():
-                    self.apply_brightness_contrast(*dlg.result_values())
+                    self.apply_adjustments(dlg.adjustments(), ADJUST_DIALOGS[name][1])
                 return
             else:
                 layer_only = name.startswith("layer_")
@@ -555,9 +573,9 @@ class EditorPage(QWidget):
             return
         self._push(cmd)
 
-    def apply_brightness_contrast(self, brightness: int, contrast: int) -> None:
+    def apply_adjustments(self, adj: adjust.Adjustments, label: str = "Adjust") -> None:
         if self.doc is not None:
-            self._push(ops.apply_brightness_contrast(self.doc, brightness, contrast))
+            self._push(adjust.apply_to_document(self.doc, adj, label))
 
     def _bar_apply(self, mode: str) -> None:
         if mode == "crop":

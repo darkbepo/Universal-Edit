@@ -196,22 +196,39 @@ def test_leave_without_changes_does_not_ask(page, monkeypatch):
     assert page.maybe_leave()
 
 
-def test_brightness_dialog_preview_cancel_restores(page, qtbot):
-    from umc.gui.editor.dialogs import BrightnessContrastDialog
+def test_quick_fix_preview_cancel_restores(page, qtbot):
+    from umc.gui.editor.dialogs import QuickFixDialog
 
     before = page.doc.active_layer.image.tobytes()
-    dlg = BrightnessContrastDialog(page)
-    dlg.brightness.setValue(60)
+    dlg = QuickFixDialog(page)
+    dlg.sliders["brightness"].set_value(60)
     dlg.update_preview()
+    assert page.canvas._preview_layer is not None
+    dlg.original_button.pressed.emit()  # "hold to see the original"
+    assert page.canvas._preview_layer is None
+    dlg.original_button.released.emit()
     assert page.canvas._preview_layer is not None
     dlg.reject()
     assert page.canvas._preview_layer is None
     assert page.doc.active_layer.image.tobytes() == before and not page.history.can_undo
 
 
-def test_brightness_apply(page):
-    page.apply_brightness_contrast(50, 0)
-    assert page.history.can_undo and page.history.undo_label == "Brightness / contrast"
+def test_quick_fix_apply_is_one_undo_step(page, qtbot, monkeypatch):
+    from umc.gui.editor.dialogs import QuickFixDialog
+
+    def ok(self):
+        self.sliders["exposure"].set_value(1.0)
+        self.sliders["saturation"].set_value(-100)
+        self.auto.setChecked(True)
+        return 1
+
+    monkeypatch.setattr(QuickFixDialog, "exec", ok)
+    page.run_op("quick_fix")
+    assert page.history.undo_label == "Quick fix"
+    r, g, b, _ = page.doc.active_layer.image.getpixel((5, 5))
+    assert r == g == b  # saturation −100 → grey
+    page.canvas.undo()
+    assert not page.history.can_undo
 
 
 def test_text_box_commits_new_layer(page, qtbot):
@@ -686,3 +703,95 @@ def test_ctrl_alt_shortcuts_leave_text_fields_alone(page, qtbot):
     page.layers.list.setFocus()
     qtbot.keyClick(page.layers.list, Qt.Key.Key_A, CTRL | Qt.KeyboardModifier.AltModifier)
     assert page.doc.selected_indices == [0, 1]
+
+
+# ------------------------------------------------------------------ levels / curves windows
+
+
+def test_levels_dialog_fields_markers_and_channels(page, qtbot):
+    from umc.gui.editor.dialogs import LevelsDialog
+
+    dlg = LevelsDialog(page)
+    qtbot.addWidget(dlg)
+    dlg.show()
+    assert dlg.hist["rgb"].sum() > 0
+    dlg.black.setValue(40)
+    assert dlg.adjustments().levels["rgb"].black == 40
+    # drag the white marker on the histogram
+    hist = dlg.histogram
+    white_x = int(hist._x(255))
+    y = hist.height() - 6
+    qtbot.mousePress(hist, Qt.MouseButton.LeftButton, pos=QPoint(white_x, y))
+    qtbot.mouseMove(hist, QPoint(int(hist._x(200)), y))
+    qtbot.mouseRelease(hist, Qt.MouseButton.LeftButton, pos=QPoint(int(hist._x(200)), y))
+    assert abs(dlg.white.value() - 200) <= 2
+    # red channel is separate
+    dlg.channel.setCurrentIndex(1)
+    assert dlg.black.value() == 0
+    dlg.gamma.setValue(2.0)
+    adj = dlg.adjustments()
+    assert set(adj.levels) == {"rgb", "r"} and adj.levels["r"].gamma == 2.0
+    dlg.reset()
+    assert dlg.adjustments().identity
+
+
+def test_levels_auto_and_apply(page, monkeypatch):
+    from umc.gui.editor.dialogs import LevelsDialog
+
+    def ok(self):
+        self.auto_button.click()
+        return 1
+
+    monkeypatch.setattr(LevelsDialog, "exec", ok)
+    page.run_op("levels")
+    # one flat colour: nothing to stretch → no change, no undo step
+    assert not page.history.can_undo
+
+
+def test_curves_editor_add_move_remove(page, qtbot):
+    from umc.gui.editor.dialogs import CurvesDialog
+
+    dlg = CurvesDialog(page)
+    qtbot.addWidget(dlg)
+    dlg.resize(400, 480)
+    dlg.show()
+    ed = dlg.editor
+    at = ed.to_widget(128, 128).toPoint()
+    qtbot.mousePress(ed, Qt.MouseButton.LeftButton, pos=at)
+    up = ed.to_widget(128, 180).toPoint()
+    qtbot.mouseMove(ed, up)
+    qtbot.mouseRelease(ed, Qt.MouseButton.LeftButton, pos=up)
+    pts = dlg.points()
+    assert len(pts) == 3 and pts[0] == (0, 0) and pts[-1] == (255, 255)
+    assert abs(pts[1][0] - 128) <= 2 and abs(pts[1][1] - 180) <= 2
+    assert not dlg.adjustments().identity
+    # drag it far outside the box → removed
+    qtbot.mousePress(ed, Qt.MouseButton.LeftButton, pos=up)
+    qtbot.mouseMove(ed, QPoint(up.x(), ed.height() + 80))
+    qtbot.mouseRelease(ed, Qt.MouseButton.LeftButton, pos=QPoint(up.x(), ed.height() + 80))
+    assert dlg.points() == [(0, 0), (255, 255)]
+    # the two end points can't be removed
+    end = ed.to_widget(255, 255).toPoint()
+    qtbot.mousePress(ed, Qt.MouseButton.LeftButton, pos=end)
+    qtbot.mouseMove(ed, QPoint(-200, -200))
+    qtbot.mouseRelease(ed, Qt.MouseButton.LeftButton, pos=QPoint(-200, -200))
+    assert len(dlg.points()) == 2
+
+
+def test_curves_apply_to_selection(page, monkeypatch):
+    from umc.editor.geometry import Rect
+    from umc.gui.editor.dialogs import CurvesDialog
+
+    page.doc.selection = Rect(0, 0, 10, 10)
+
+    def ok(self):
+        self.channel.setCurrentIndex(1)  # red: lift the darks (0 → 100)
+        self.add_point(0, 100)
+        return 1
+
+    monkeypatch.setattr(CurvesDialog, "exec", ok)
+    before = page.doc.active_layer.image.getpixel((20, 20))
+    page.run_op("curves")
+    assert page.history.undo_label == "Curves"
+    assert page.doc.active_layer.image.getpixel((20, 20)) == before  # outside the selection
+    assert before[0] == 0 and page.doc.active_layer.image.getpixel((5, 5))[0] == 100

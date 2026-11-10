@@ -228,6 +228,12 @@ h1 { font-size: 22px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.01em
 .editor-status { display: flex; justify-content: space-between; gap: 12px; padding: 6px 14px; background: var(--surface); border-top: 1px solid var(--border); color: var(--muted); font-size: 13px; }
 .editor-status .msg.error { color: var(--danger); }
 .editor-dialog { border: 1px solid var(--border); border-radius: 14px; background: var(--surface); color: var(--text); padding: 18px 20px; min-width: min(420px, 92vw); }
+.editor-dialog.adjust .histogram, .editor-dialog.adjust .curve-editor { display: block; margin: 8px auto; border-radius: 8px; touch-action: none; cursor: crosshair; }
+.editor-dialog.adjust .adjust-top { margin-top: 0; }
+.editor-dialog.adjust .adjust-top select { flex: 1; background: var(--surface-alt); border: 1px solid transparent; border-radius: 8px; padding: 6px 8px; }
+.editor-dialog .field.levels-row input[type="number"] { width: 64px; }
+.editor-dialog .levels-row .with-unit { flex-wrap: wrap; gap: 6px 8px; }
+.editor-dialog .levels-row small { color: var(--muted); }
 .shortcuts-dialog { max-width: min(900px, 94vw); }
 .shortcut-cols { columns: 2 320px; column-gap: 28px; }
 .shortcuts { break-inside: avoid; border-collapse: collapse; margin-bottom: 14px; width: 100%; }

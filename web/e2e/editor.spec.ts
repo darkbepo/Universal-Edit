@@ -512,3 +512,67 @@ test("Ctrl+Plus / Ctrl+Minus zoom the picture, not the page", async ({ page }) =
   await page.keyboard.press("Control+-");
   await expect.poll(zoom).toBeLessThan(z0);
 });
+
+// ------------------------------------------------------------------ Adjust menu
+
+const adjustMenu = async (page: Page, item: string) => {
+  await page.getByText("Adjust ▾").click();
+  await page.getByRole("button", { name: item }).click();
+};
+const layerPx = (page: Page, x: number, y: number) => page.evaluate(([a, b]) => (window.__editor as EditorHook).pixel(a, b), [x, y]);
+
+test("Quick fix: live preview, hold to see the original, cancel and apply", async ({ page }) => {
+  await openEditor(page);
+  const before = await layerPx(page, 5, 5);
+  await adjustMenu(page, "Quick fix");
+  const dlg = page.locator("dialog.quick-fix");
+  await dlg.getByLabel("Saturation").fill("-100");
+  const previewing = () => page.evaluate(() => (window.__editor as unknown as { previewing(): boolean }).previewing());
+  await expect.poll(previewing).toBe(true);
+  await dlg.getByRole("button", { name: "Hold to see the original" }).hover();
+  await page.mouse.down();
+  await expect.poll(previewing).toBe(false);
+  await page.mouse.up();
+  await expect.poll(previewing).toBe(true);
+  await dlg.getByRole("button", { name: "Cancel" }).click();
+  await expect.poll(previewing).toBe(false);
+  expect(await layerPx(page, 5, 5)).toEqual(before);
+  await adjustMenu(page, "Quick fix");
+  await dlg.getByLabel("Saturation").fill("-100");
+  await dlg.getByRole("button", { name: "Apply" }).click();
+  await expect.poll(async () => {
+    const [r, g, b] = await layerPx(page, 5, 5);
+    return r === g && g === b;
+  }).toBe(true);
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect.poll(() => layerPx(page, 5, 5)).toEqual(before);
+});
+
+test("Levels and Curves windows change the picture", async ({ page }) => {
+  await openEditor(page);
+  const before = await layerPx(page, 5, 5);
+  await adjustMenu(page, "Levels");
+  const lv = page.locator("dialog.levels");
+  await expect(lv.locator("canvas.histogram")).toBeVisible();
+  await lv.getByLabel("Output black").fill("120");
+  await lv.getByRole("button", { name: "Apply" }).click();
+  await expect.poll(async () => (await layerPx(page, 5, 5)).slice(0, 3).every((v) => v >= 120)).toBe(true);
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect.poll(() => layerPx(page, 5, 5)).toEqual(before);
+  // curves: drag the middle of the line up → brighter
+  await adjustMenu(page, "Curves");
+  const cv = page.locator("dialog.curves");
+  const box = await cv.locator("canvas.curve-editor").boundingBox();
+  if (!box) throw new Error("no layout");
+  const PAD = 8;
+  const side = box.width - 2 * PAD;
+  const at = (x: number, y: number) => [box.x + PAD + (side * x) / 255, box.y + PAD + side * (1 - y / 255)] as const;
+  await page.mouse.move(...at(128, 128));
+  await page.mouse.down();
+  await page.mouse.move(...at(128, 220), { steps: 5 });
+  await page.mouse.up();
+  await cv.getByRole("button", { name: "Apply" }).click();
+  await expect.poll(() => page.evaluate(() => (window.__editor as EditorHook).history.canUndo)).toBe(true);
+  const after = await layerPx(page, 5, 5);
+  expect(after.slice(0, 3).reduce((a, b) => a + b, 0)).toBeGreaterThan(before.slice(0, 3).reduce((a, b) => a + b, 0));
+});

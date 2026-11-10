@@ -124,6 +124,11 @@ export class EditorCanvas {
     this.draw();
   }
 
+  /** A live preview (adjustment windows) is showing instead of the real layer. */
+  get previewing(): boolean {
+    return this.previewLayer !== null;
+  }
+
   setPreviewLayer(index: number | null, data: Uint8ClampedArray | null): void {
     this.previewLayer = index === null || !data ? null : [index, data];
     this.refresh();

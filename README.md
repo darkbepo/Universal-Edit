@@ -68,11 +68,12 @@ The browser version's source is in [`web/`](web/README.md).
 | eBooks: save as MOBI / AZW3 (Kindle), read Kindle books (one-click Calibre install) | ✅ | — |
 | CAD drawings: DXF → SVG, PNG, JPG (layer colours or print black-on-white) | ✅ | ✅ |
 | CAD drawings: DWG in (one-click LibreDWG install), → PDF on paper sizes, save as another DXF version | ✅ | ❌ |
-| **Image editor**: Convert \| Edit switch, layers (opacity, hide, reorder, merge), brush, eraser, fill, colour picker, shapes, text, rectangle selection, crop, resize, rotate / flip, brightness / contrast, undo | ✅ | ✅ |
+| **Image editor**: Convert \| Edit switch, layers (opacity, hide, reorder, merge), brush, eraser, fill, colour picker, shapes, text, rectangle selection, crop, resize, rotate / flip, undo | ✅ | ✅ |
 | Image editor layers: select several (Ctrl / Shift+click), drag to reorder, ▲▼ arrows on each layer, right-click menu (duplicate, delete, merge, move to top / bottom, show / hide) | ✅ | ✅ |
 | Image editor crop: after you draw a crop rectangle (or a rectangle selection), a small bar next to it shows the size with Apply crop / Cancel (Crop to selection / Deselect) | ✅ | ✅ |
 | Image editor clipboard: copy (Ctrl+C), copy what you see (Ctrl+Shift+C), cut, paste as a new layer — back in place, or centred for pictures from other programs | ✅ | ✅ (copying into other programs needs a browser that allows it) |
 | Image editor Move tool (V): drag the selected layers, arrow keys nudge · layer shortcuts (duplicate, merge, new, up / down / top / bottom) · a "?" list of every shortcut | ✅ | ✅ |
+| Image editor Adjust menu: Quick fix (exposure, brightness, contrast, temperature, tint, saturation, vibrance, auto tone), Levels (histogram, per channel, auto), Curves (per channel) — live preview, "hold to see the original" | ✅ | ✅ |
 | Layered projects: save and open OpenRaster `.ora` (GIMP and Krita open it too); `.ora` → any image format | ✅ | ✅ |
 | Files never leave your computer | ✅ | ✅ |
 | No install needed | ❌ | ✅ |

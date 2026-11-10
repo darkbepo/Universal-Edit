@@ -16,9 +16,10 @@ import { makeTools } from "../../editor/tools/index";
 import { clearSelection, deselect, selectAll } from "../../editor/tools/select";
 import { addTextLayer } from "../../editor/tools/text";
 import type { ConversionClient } from "../../worker/client";
+import * as adjust from "../../editor/adjust";
 import * as clipboard from "../../editor/clipboard";
 import { EditorCanvas } from "./canvas";
-import { brightnessDialog, canvasSizeDialog, resizeDialog, saveDialog, shortcutsDialog } from "./dialogs";
+import { canvasSizeDialog, curvesDialog, levelsDialog, quickFixDialog, resizeDialog, saveDialog, shortcutsDialog, type AdjustHost } from "./dialogs";
 import { CropBar, type BarMode } from "./cropbar";
 import { h, LayersPanel, Swatches, ToolBar, ToolSettings } from "./panels";
 import { SHORTCUTS, shortcutFor } from "./shortcuts";
@@ -33,6 +34,13 @@ function samePicture(a: { data: Uint8ClampedArray; width: number; height: number
   }
   return true;
 }
+
+// Adjust menu: runOp name → (dialog, undo label). Same names as the desktop app.
+const ADJUST_DIALOGS: Record<string, [(host: AdjustHost) => Promise<adjust.Adjustments | null>, string]> = {
+  quick_fix: [quickFixDialog, "Quick fix"],
+  levels: [levelsDialog, "Levels"],
+  curves: [curvesDialog, "Curves"],
+};
 
 const CROP_HINT = "Drag a rectangle on the picture, then apply it with the button next to it (or Enter).";
 const NATIVE = new Set(["png", "jpg", "jpeg", "webp", "gif", "avif", "bmp", "ico"]);
@@ -123,9 +131,12 @@ export class EditorPage {
         ["Resize image…", "resize"], ["Canvas size…", "canvas_size"], ["Crop to selection", "crop_selection"], null,
         ["Rotate 90° right", "rotate_right"], ["Rotate 90° left", "rotate_left"], ["Rotate 180°", "rotate_180"],
         ["Flip horizontal", "flip_h"], ["Flip vertical", "flip_v"], null,
-        ["Brightness / contrast…", "brightness"], null,
         ["Layer: rotate 90° right", "layer_rotate_right"], ["Layer: rotate 90° left", "layer_rotate_left"],
         ["Layer: rotate 180°", "layer_rotate_180"], ["Layer: flip horizontal", "layer_flip_h"], ["Layer: flip vertical", "layer_flip_v"],
+      ])));
+    const adjustMenu = h("details", { class: "menu" }, h("summary", { class: "btn small", title: "Fix the tones and colours of the selected layer" }, "Adjust ▾"),
+      h("div", { class: "menu-items" }, ...this.menuItems([
+        ["Quick fix… (exposure, contrast, colours)", "quick_fix"], ["Levels…", "levels"], ["Curves…", "curves"],
       ])));
     const top = h("div", { class: "editor-top" },
       btn("← Back to Convert", "Leave the editor", () => this.back(), "link"),
@@ -133,7 +144,7 @@ export class EditorPage {
       h("span", { class: "gap" }),
       btn("−", "Zoom out", () => this.canvas.zoomOut()), btn("+", "Zoom in", () => this.canvas.zoomIn()),
       btn("Fit", "Fit to window (Ctrl+0)", () => this.canvas.fit()), btn("100 %", "Actual pixels (Ctrl+1)", () => this.canvas.setZoom(1)),
-      h("span", { class: "gap" }), imageMenu,
+      h("span", { class: "gap" }), imageMenu, adjustMenu,
       h("div", { class: "spacer" }), btn("?", "Keyboard shortcuts (?)", () => void this.showShortcuts()), this.saveAsBtn, this.saveBtn);
     // Crop needs buttons too (Enter isn't available on touch screens): they float next to the
     // rectangle once one is drawn, and also offer "Crop to selection" for a selection.
@@ -544,10 +555,15 @@ export class EditorPage {
       } else if (name === "crop_selection") {
         if (!doc.selection) return this.showMessage("Select an area first (rectangle select, M).");
         cmd = ops.crop(doc, doc.selection);
-      } else if (name === "brightness") {
-        const r = await brightnessDialog((b, c) => this.canvas.setPreviewLayer(doc.active, b || c ? ops.previewBrightnessContrast(doc, b, c) : null));
+      } else if (name in ADJUST_DIALOGS) {
+        const [dialog, label] = ADJUST_DIALOGS[name];
+        const host: AdjustHost = {
+          region: adjust.regionData(doc),
+          preview: (a) => this.canvas.setPreviewLayer(doc.active, a ? adjust.preview(doc, a) : null),
+        };
+        const a = await dialog(host);
         this.canvas.setPreviewLayer(null, null);
-        if (r) cmd = ops.applyBrightnessContrast(doc, r[0], r[1]);
+        if (a && this.doc === doc) cmd = adjust.applyToDocument(doc, a, label);
       } else {
         const layerOnly = name.startsWith("layer_");
         const key = name.replace(/^layer_/, "");
@@ -729,6 +745,9 @@ export class EditorPage {
       },
       viewCenter() {
         return page.viewCenter();
+      },
+      previewing() {
+        return page.canvas.previewing;
       },
       imageToPage(x: number, y: number) {
         const r = page.canvas.view.getBoundingClientRect();
