@@ -7,9 +7,16 @@ import { cropData, layerBounds, pasteData, type RGBA } from "../layer";
 import { blendPixel, clipRect, colorOf, Tool, type ToolContext } from "./base";
 
 /** Pixels 4-connected to (sx, sy) where `candidates` is 1. */
-export function floodMask(candidates: Uint8Array, w: number, h: number, sx: number, sy: number): Uint8Array {
+export interface Flood {
+  mask: Uint8Array;
+  /** Bounding box of the filled pixels (x1 / y1 exclusive); empty when nothing was filled. */
+  box: Rect;
+}
+
+export function floodMask(candidates: Uint8Array, w: number, h: number, sx: number, sy: number): Flood {
   const filled = new Uint8Array(w * h);
-  if (!candidates[sy * w + sx]) return filled;
+  let [bx0, by0, bx1, by1] = [w, h, 0, 0];
+  if (!candidates[sy * w + sx]) return { mask: filled, box: new Rect(0, 0, 0, 0) };
   const stack: number[] = [sx, sy];
   while (stack.length) {
     const y = stack.pop() as number;
@@ -21,6 +28,10 @@ export function floodMask(candidates: Uint8Array, w: number, h: number, sx: numb
     let x1 = x + 1;
     while (x1 < w && candidates[row + x1] && !filled[row + x1]) x1++;
     filled.fill(1, row + x0, row + x1);
+    if (x0 < bx0) bx0 = x0;
+    if (x1 > bx1) bx1 = x1;
+    if (y < by0) by0 = y;
+    if (y + 1 > by1) by1 = y + 1;
     for (const ny of [y - 1, y + 1]) {
       if (ny < 0 || ny >= h) continue;
       const nrow = ny * w;
@@ -32,7 +43,31 @@ export function floodMask(candidates: Uint8Array, w: number, h: number, sx: numb
       }
     }
   }
-  return filled;
+  return { mask: filled, box: new Rect(bx0, by0, bx1, by1) };
+}
+
+/** 1 where the pixel matches `seed` within `tol` per channel (a fast 32-bit compare for tol 0). */
+function candidates(src: Uint8ClampedArray, sw: number, ox: number, oy: number, w: number, h: number, seedIndex: number, tol: number): Uint8Array {
+  const cand = new Uint8Array(w * h);
+  if (tol <= 0 && src.byteOffset % 4 === 0) {
+    const s32 = new Uint32Array(src.buffer, src.byteOffset, src.length >> 2);
+    const seed = s32[seedIndex >> 2];
+    for (let yy = 0; yy < h; yy++) {
+      const base = (yy + oy) * sw + ox;
+      const row = yy * w;
+      for (let xx = 0; xx < w; xx++) cand[row + xx] = s32[base + xx] === seed ? 1 : 0;
+    }
+    return cand;
+  }
+  const [r, g, b, a] = [src[seedIndex], src[seedIndex + 1], src[seedIndex + 2], src[seedIndex + 3]];
+  for (let yy = 0; yy < h; yy++) {
+    let i = ((yy + oy) * sw + ox) * 4;
+    const row = yy * w;
+    for (let xx = 0; xx < w; xx++, i += 4) {
+      cand[row + xx] = Math.abs(src[i] - r) <= tol && Math.abs(src[i + 1] - g) <= tol && Math.abs(src[i + 2] - b) <= tol && Math.abs(src[i + 3] - a) <= tol ? 1 : 0;
+    }
+  }
+  return cand;
 }
 
 export class FillTool extends Tool {
@@ -68,37 +103,24 @@ export class FillTool extends Tool {
     const sx = lx - clip.x0;
     const sy = ly - clip.y0;
     const si = ((sy + oy) * sw + sx + ox) * 4;
-    const seed = [src[si], src[si + 1], src[si + 2], src[si + 3]];
-    const tol = Number(ctx.options.tolerance);
-    const cand = new Uint8Array(w * h);
-    for (let yy = 0; yy < h; yy++) {
-      let i = ((yy + oy) * sw + ox) * 4;
-      for (let xx = 0; xx < w; xx++, i += 4) {
-        cand[yy * w + xx] =
-          Math.abs(src[i] - seed[0]) <= tol && Math.abs(src[i + 1] - seed[1]) <= tol && Math.abs(src[i + 2] - seed[2]) <= tol && Math.abs(src[i + 3] - seed[3]) <= tol ? 1 : 0;
-      }
-    }
-    const mask = floodMask(cand, w, h, sx, sy);
-    let [bx0, by0, bx1, by1] = [w, h, -1, -1];
-    for (let yy = 0; yy < h; yy++)
-      for (let xx = 0; xx < w; xx++)
-        if (mask[yy * w + xx]) {
-          if (xx < bx0) bx0 = xx;
-          if (xx > bx1) bx1 = xx;
-          if (yy < by0) by0 = yy;
-          if (yy > by1) by1 = yy;
-        }
-    if (bx1 < 0) return null;
-    const region = new Rect(bx0 + clip.x0, by0 + clip.y0, bx1 + 1 + clip.x0, by1 + 1 + clip.y0);
+    const cand = candidates(src, sw, ox, oy, w, h, si, Number(ctx.options.tolerance));
+    const { mask, box } = floodMask(cand, w, h, sx, sy);
+    if (box.empty) return null;
+    const region = box.offset(clip.x0, clip.y0);
     const before = cropData(layer.data, layer.width, region);
     const color = colorOf(ctx);
-    for (let yy = by0; yy <= by1; yy++)
-      for (let xx = bx0; xx <= bx1; xx++) {
-        if (!mask[yy * w + xx]) continue;
-        const di = ((yy + clip.y0) * layer.width + xx + clip.x0) * 4;
-        if (color[3] === 255) layer.data.set(color, di);
-        else blendPixel(layer.data, di, layer.data, di, color, 1);
+    const opaque = color[3] === 255 && layer.data.byteOffset % 4 === 0;
+    const d32 = opaque ? new Uint32Array(layer.data.buffer, layer.data.byteOffset, layer.data.length >> 2) : null;
+    const c32 = new Uint32Array(new Uint8Array(color).buffer)[0];
+    for (let yy = box.y0; yy < box.y1; yy++) {
+      const mrow = yy * w;
+      const drow = (yy + clip.y0) * layer.width + clip.x0;
+      for (let xx = box.x0; xx < box.x1; xx++) {
+        if (!mask[mrow + xx]) continue;
+        if (d32) d32[drow + xx] = c32;
+        else blendPixel(layer.data, (drow + xx) * 4, layer.data, (drow + xx) * 4, color, 1);
       }
+    }
     this.pending = { index: doc.active, region, before };
     return region.offset(layer.x, layer.y);
   }
