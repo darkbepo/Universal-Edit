@@ -8,7 +8,7 @@ import type { EditorDoc } from "./document";
 import { Rect } from "./geometry";
 import { PatchCommand, type Command } from "./history";
 import { cropData, type Layer } from "./layer";
-import { clipRect } from "./tools/base";
+import { clipRect, restrict } from "./tools/base";
 
 export interface Effect {
   identity: boolean;
@@ -98,6 +98,13 @@ export function preview(doc: EditorDoc, effect: Effect, maxPixels = PREVIEW_PIXE
   const region = clipRect(doc, l);
   if (region.empty || effect.identity) return out;
   const done = run(l, region, effect, maxPixels);
+  if (doc.selectionMask) {
+    // mix with the original by the selection (on a throw-away copy of the layer)
+    const tmp = { ...l, data: new Uint8ClampedArray(l.data) };
+    paste(tmp.data, l.width, done, region);
+    restrict(doc, tmp, region, cropData(l.data, l.width, region));
+    return tmp.data;
+  }
   paste(out, l.width, done, region);
   return out;
 }
@@ -110,5 +117,6 @@ export function applyToDocument(doc: EditorDoc, effect: Effect, label: string): 
   if (region.empty) return null;
   const before = cropData(l.data, l.width, region);
   paste(l.data, l.width, run(l, region, effect), region);
+  restrict(doc, l, region, before); // shaped / soft selections
   return PatchCommand.fromRegion(label, doc, doc.active, region, before);
 }

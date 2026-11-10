@@ -645,3 +645,68 @@ test("Looks: tiles preview each look; choosing one and applying it", async ({ pa
     return r === g && g === b;
   }).toBe(true);
 });
+
+// ------------------------------------------------------------------ selection tools
+
+const selState = (page: Page) =>
+  page.evaluate(() => {
+    const d = (window.__editor as EditorHook).doc as EditorHook["doc"] & { selection: { x0: number; y0: number; x1: number; y1: number } | null; selectionMask?: Uint8Array | null };
+    return d.selection ? { box: [d.selection.x0, d.selection.y0, d.selection.x1, d.selection.y1], masked: !!d.selectionMask } : null;
+  });
+
+test("selection: letters cycle tools; Shift adds, Alt subtracts", async ({ page }) => {
+  await openEditor(page);
+  const tool = () => page.evaluate(() => (window.__editor as EditorHook).toolId);
+  for (const [key, ids] of [["m", ["select", "ellipse_select", "select"]], ["q", ["lasso", "polygon_lasso"]], ["w", ["wand"]]] as const) {
+    for (const want of ids) {
+      await page.keyboard.press(key);
+      await expect.poll(tool).toBe(want);
+    }
+  }
+  await page.keyboard.press("m");
+  await drag(page, [10, 10], [60, 60]);
+  await page.keyboard.down("Shift");
+  await drag(page, [100, 10], [150, 60]);
+  await page.keyboard.up("Shift");
+  await expect.poll(() => selState(page)).toEqual({ box: [10, 10, 150, 60], masked: true });
+  await page.keyboard.down("Alt");
+  await drag(page, [100, 10], [150, 60]);
+  await page.keyboard.up("Alt");
+  await expect.poll(() => selState(page)).toEqual({ box: [10, 10, 60, 60], masked: false });
+  await expect(page.getByRole("toolbar", { name: "Crop" })).toContainText("Crop to selection");
+});
+
+test("selection: polygon lasso finishes on double-click and Enter; Select menu inverts and feathers", async ({ page }) => {
+  await openEditor(page);
+  await page.keyboard.press("q");
+  await page.keyboard.press("q");
+  for (const [x, y] of [[20, 20], [120, 20], [70, 100]] as const) {
+    const p = await at(page, x, y);
+    await page.mouse.click(p.x, p.y);
+  }
+  expect(await selState(page)).toBeNull();
+  const last = await at(page, 70, 100);
+  await page.mouse.dblclick(last.x, last.y);
+  await expect.poll(async () => (await selState(page))?.masked).toBe(true);
+  await page.getByRole("button", { name: "Undo" }).click();
+  for (const [x, y] of [[20, 20], [120, 20], [70, 100]] as const) {
+    const p = await at(page, x, y);
+    await page.mouse.click(p.x, p.y);
+  }
+  await page.keyboard.press("Enter");
+  await expect.poll(async () => (await selState(page))?.masked).toBe(true);
+  await page.getByText("Select ▾").click();
+  await page.getByRole("button", { name: "Invert" }).click();
+  await expect.poll(async () => (await selState(page))?.box[0]).toBe(0);
+  await page.keyboard.press("Control+Alt+d");
+  await page.locator("dialog.feather").getByRole("button", { name: "Apply" }).click();
+  await expect.poll(() => page.evaluate(() => (window.__editor as EditorHook & { history: { undoLabel: string } }).history.undoLabel)).toBe("Feather selection");
+});
+
+test("selection: magic wand picks a colour", async ({ page }) => {
+  await openEditor(page);
+  await page.keyboard.press("w");
+  const p = await at(page, 5, 5);
+  await page.mouse.click(p.x, p.y);
+  await expect.poll(() => selState(page)).not.toBeNull();
+});

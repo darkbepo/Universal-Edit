@@ -128,6 +128,7 @@ export class DocStateCommand implements Command {
     doc.layers = [...layers];
     doc.active = Math.min(doc.active, doc.layers.length - 1);
     doc.selection = null;
+    doc.selectionMask = null;
   }
 
   undo(doc: EditorDoc): void {
@@ -147,23 +148,28 @@ export class DocStateCommand implements Command {
   }
 }
 
+/** The selection before and after: its rectangle and (for other shapes) its mask. */
 export class SelectionCommand implements Command {
   constructor(
     private before: Rect | null,
     private after: Rect | null,
     public label = "Select",
+    private maskBefore: Uint8Array | null = null,
+    private maskAfter: Uint8Array | null = null,
   ) {}
 
   undo(doc: EditorDoc): void {
     doc.selection = this.before;
+    doc.selectionMask = this.maskBefore;
   }
 
   redo(doc: EditorDoc): void {
     doc.selection = this.after;
+    doc.selectionMask = this.maskAfter;
   }
 
   get bytes(): number {
-    return 0;
+    return (this.maskBefore?.length ?? 0) + (this.maskAfter?.length ?? 0);
   }
 
   repaint(): null {

@@ -36,8 +36,8 @@ SHORTCUTS: tuple[Shortcut, ...] = (
     # Selection
     Shortcut("select_all", ("Ctrl+A",), "Select all", "Selection"),
     Shortcut("deselect", ("Ctrl+D",), "Deselect", "Selection"),
-    Shortcut("invert_selection", ("Ctrl+Shift+I",), "Invert the selection", "Selection"),
-    Shortcut("feather", ("Shift+F6",), "Feather (soften) the selection…", "Selection"),
+    Shortcut("invert_selection", ("Ctrl+Shift+I", "Shift+F7"), "Invert the selection", "Selection"),
+    Shortcut("feather", ("Shift+F6", "Ctrl+Alt+D"), "Feather (soften) the selection…", "Selection"),
     Shortcut("apply", ("Enter", "Return"), "Apply the crop · finish a polygon", "Selection"),
     # Layers
     Shortcut("new_layer", ("Ctrl+Shift+N",), "New layer", "Layers"),

@@ -22,7 +22,11 @@ export const SHORTCUTS: Shortcut[] = [
   { id: "save_as", keys: ["Ctrl+Shift+S"], label: "Save as…", group: "Edit" },
   { id: "select_all", keys: ["Ctrl+A"], label: "Select all", group: "Selection" },
   { id: "deselect", keys: ["Ctrl+D"], label: "Deselect", group: "Selection" },
-  { id: "apply", keys: ["Enter"], label: "Apply the crop", group: "Selection" },
+  // Ctrl+Shift+I opens the browser's developer tools and Shift+F6 moves focus between its panes,
+  // so these use Photoshop's other keys here
+  { id: "invert_selection", keys: ["Shift+F7", "Ctrl+Alt+I"], label: "Invert the selection", group: "Selection" },
+  { id: "feather", keys: ["Ctrl+Alt+D"], label: "Feather (soften) the selection…", group: "Selection" },
+  { id: "apply", keys: ["Enter"], label: "Apply the crop · finish a polygon", group: "Selection" },
   { id: "new_layer", keys: ["Ctrl+Alt+N"], label: "New layer", group: "Layers" },
   { id: "duplicate", keys: ["Ctrl+J"], label: "Duplicate layers", group: "Layers" },
   { id: "merge", keys: ["Ctrl+E"], label: "Merge down / merge the selected layers", group: "Layers" },
@@ -36,7 +40,6 @@ export const SHORTCUTS: Shortcut[] = [
   { id: "fit", keys: ["Ctrl+0"], label: "Fit to window", group: "View" },
   { id: "actual", keys: ["Ctrl+1"], label: "Actual pixels (100 %)", group: "View" },
   { id: "help", keys: ["?", "F1"], label: "Show this list", group: "View" },
-  { id: "toggle_shape", keys: ["U"], label: "Rectangle / ellipse (press again to switch)", group: "Tools" },
   { id: "swap_colours", keys: ["X"], label: "Swap colours", group: "Tools" },
   { id: "smaller", keys: ["["], label: "Smaller brush", group: "Tools" },
   { id: "bigger", keys: ["]"], label: "Bigger brush", group: "Tools" },
@@ -44,6 +47,8 @@ export const SHORTCUTS: Shortcut[] = [
 
 /** Shown in the list but handled elsewhere (arrow keys, mouse). */
 export const INFO: [string, string, string][] = [
+  ["Shift / Alt + select", "Add to / take from the selection (both: overlap)", "Selection"],
+  ["Double-click", "Finish a polygon lasso", "Selection"],
   ["Arrow keys", "Move tool: nudge 1 px (Shift: 10 px)", "Tools"],
   ["Shift + drag", "Move tool: keep to one direction · shapes: keep square", "Tools"],
   ["Esc", "Cancel the current drag / crop", "Tools"],
@@ -101,7 +106,17 @@ export function shortcutFor(e: Pick<KeyboardEvent, "key" | "code" | "ctrlKey" | 
 export function shortcutRows(tools: { shortcut: string; label: string }[]): Map<string, [string, string][]> {
   const rows = new Map<string, [string, string][]>(GROUPS.map((g) => [g, []]));
   for (const sc of SHORTCUTS) rows.get(sc.group)?.push([sc.keys[0], sc.label]);
-  for (const t of tools) if (t.shortcut && t.shortcut !== "U") rows.get("Tools")?.push([t.shortcut, t.label]);
+  for (const [letter, group] of toolGroups(tools)) {
+    const label = group.map((t) => t.label).join(" / ");
+    rows.get("Tools")?.push([letter, group.length > 1 ? `${label} (press again to switch)` : label]);
+  }
   for (const [keys, label, group] of INFO) rows.get(group)?.push([keys, label]);
   return rows;
+}
+
+/** Tools by shortcut letter, in tool-bar order (a letter shared by several cycles them). */
+export function toolGroups<T extends { shortcut: string }>(tools: T[]): Map<string, T[]> {
+  const groups = new Map<string, T[]>();
+  for (const t of tools) if (t.shortcut) groups.set(t.shortcut, [...(groups.get(t.shortcut) ?? []), t]);
+  return groups;
 }

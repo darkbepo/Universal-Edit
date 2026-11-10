@@ -521,8 +521,18 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
          premultiplied colour (desktop Pillow GaussianBlur/UnsharpMask on "RGBa"; web a 3-pass box
          blur — close, not identical). Looks = lists of Adjust-menu settings in
          `web/src/editor/looks.json`; `filters.LOOKS` must match it (tested).
-      3. More selection tools: ellipse, lasso, polygon lasso, magic wand; add / subtract, invert,
-         feather. The selection becomes a mask (today `doc.selection` is one Rect everywhere).
+      3. ✅ Selections of any shape (both apps): `editor/selection.py` / `selection.ts`.
+         `doc.selection` stays the bounding Rect (so rect-only code keeps working) and
+         `doc.selection_mask` / `selectionMask` (0…255 over that rect, None = plain rectangle) holds
+         the shape; always set both through `set_selection` / `combine` (normalises, one undo step;
+         `SelectionCommand` stores masks). Every pixel change goes through `tools.base.restrict`
+         (premultiplied mix with the original by the mask) or, for the brush, multiplies its
+         coverage by `selection_weight`. Tools: rectangle / ellipse (M), lasso / polygon (Q, Enter
+         or double-click closes), wand (W); Shift add, Alt subtract, both intersect; a letter
+         shared by tools cycles them (`tool_groups` / `toolGroups`). Web: Ctrl+Shift+I is the
+         browser's devtools, so invert is Shift+F7 / Ctrl+Alt+I and feather Ctrl+Alt+D (both apps
+         accept those). `web/src/editor/flood.ts` exists to break an import cycle
+         (tools/base → selection → fill → base).
       4. Masks and gradients: layer masks, gradient tool, adjustments inside a selection / mask,
          background blur for portraits.
       5. Text v2: re-editable text layers, outline, shadow, background box, alignment, watermark.

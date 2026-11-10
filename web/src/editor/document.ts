@@ -19,7 +19,11 @@ export interface EditorDoc {
   height: number;
   layers: Layer[];
   active: number;
+  /** The rectangle around what is selected (canvas coordinates); see selection.ts. */
   selection: Rect | null;
+  /** How much of each pixel in that rectangle is selected (0…255, row by row); null / absent =
+   *  all of it, a plain rectangle selection. */
+  selectionMask?: Uint8Array | null;
   dirty: boolean;
   /** Layers selected in the layers list (Ctrl / Shift+click). The active layer always counts as
    *  selected — it's the one tools paint on. Not an undo step by itself. */

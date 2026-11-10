@@ -4,7 +4,11 @@ import type { Rect } from "../../editor/geometry";
 import type { Command, History } from "../../editor/history";
 import type { RGBA } from "../../editor/layer";
 import type { Tool, ToolContext } from "../../editor/tools/base";
+import { outline as selectionOutline } from "../../editor/selection";
+import type { Outline } from "../../editor/tools/select";
 import { nearestCorner, placeBar, type BarMode, type CropBar } from "./cropbar";
+
+const SELECT_TOOLS = ["select", "ellipse_select", "lasso", "polygon_lasso", "wand"];
 
 const cursorFor = (tool: Tool) => ({ text: "text", move: "move" })[tool.cursor as string] ?? "crosshair";
 
@@ -53,6 +57,8 @@ export class EditorCanvas {
   bar: CropBar | null = null;
   /** Where the last drag ended, in image coordinates (the bar goes next to that corner). */
   private releaseAt: [number, number] | null = null;
+  private outlineFor: Uint8Array | null = null;
+  private outlinePath: Path2D | null = null;
   onColorPicked: (c: RGBA, button: "left" | "right") => void = () => {};
   onCursor: (x: number, y: number) => void = () => {};
   onTextRequested: (x: number, y: number) => void = () => {};
@@ -76,13 +82,14 @@ export class EditorCanvas {
       this.draw();
     });
     this.view.addEventListener("contextmenu", (e) => e.preventDefault());
+    this.view.addEventListener("dblclick", () => this.finishTool()); // finishes a polygon lasso
     this.view.addEventListener("wheel", (e) => {
       e.preventDefault();
       const r = this.view.getBoundingClientRect();
       this.setZoom(this.zoom * 1.25 ** (-e.deltaY / 100), { x: e.clientX - r.left, y: e.clientY - r.top });
     }, { passive: false });
     setInterval(() => {
-      if (this.doc && (this.doc.selection || this.cropRect())) {
+      if (this.doc && (this.doc.selection || this.cropRect() || (this.tool as unknown as { outline?: unknown } | null)?.outline)) {
         this.ants = (this.ants + 1) % 8;
         this.draw();
       }
@@ -292,7 +299,11 @@ export class EditorCanvas {
       ctx.fillRect(cx + cw, cy, x + w - (cx + cw), ch);
       this.antsRect(cx, cy, cw, ch);
     }
-    if (doc.selection) this.antsRect(...this.screenRect(doc.selection));
+    if (doc.selection) {
+      if (doc.selectionMask) this.antsPath(this.selectionPath());
+      else this.antsRect(...this.screenRect(doc.selection));
+    }
+    this.paintToolOutline();
     if (this.mouse && this.tool?.cursor === "brush") {
       const size = Number(this.contextProvider().options.size) || 0;
       const r = (size * this.zoom) / 2;
@@ -319,7 +330,10 @@ export class EditorCanvas {
     if (!this.doc || !this.tool || this.gesture === "left" || this.gesture === "right") return null;
     const crop = this.cropRect();
     if (this.tool.id === "crop" && crop) return ["crop", crop];
-    if (this.tool.id === "select" && this.doc.selection) return ["select", this.doc.selection];
+    if (SELECT_TOOLS.includes(this.tool.id) && this.doc.selection) {
+      if ((this.tool as unknown as { outline?: unknown }).outline) return null; // a polygon still being drawn
+      return ["select", this.doc.selection];
+    }
     return null;
   }
 
@@ -347,6 +361,67 @@ export class EditorCanvas {
     bar.el.style.top = `${top}px`;
   }
 
+  /** The selection's outline in canvas pixels (cached until the selection changes). */
+  private selectionPath(): Path2D {
+    const doc = this.doc as EditorDoc;
+    if (this.outlineFor !== doc.selectionMask || !this.outlinePath) {
+      const path = new Path2D();
+      for (const [x0, y0, x1, y1] of selectionOutline(doc)) {
+        path.moveTo(x0, y0);
+        path.lineTo(x1, y1);
+      }
+      this.outlineFor = doc.selectionMask ?? null;
+      this.outlinePath = path;
+    }
+    return this.outlinePath;
+  }
+
+  /** Marching ants along `path` (canvas pixels), 1 screen pixel wide at any zoom. */
+  private antsPath(path: Path2D): void {
+    const ctx = this.ctx;
+    ctx.save();
+    const m = new DOMMatrix([this.zoom, 0, 0, this.zoom, this.origin.x + 0.5, this.origin.y + 0.5]);
+    const screen = new Path2D();
+    screen.addPath(path, m);
+    ctx.lineWidth = 1;
+    ctx.setLineDash([]);
+    ctx.strokeStyle = "#fff";
+    ctx.stroke(screen);
+    ctx.setLineDash([4, 4]);
+    ctx.lineDashOffset = -this.ants;
+    ctx.strokeStyle = "#000";
+    ctx.stroke(screen);
+    ctx.restore();
+  }
+
+  /** The shape a selection tool is drawing (before the pointer is let go). */
+  private paintToolOutline(): void {
+    const outline = (this.tool as unknown as { outline?: Outline | null } | null)?.outline;
+    if (!outline) return;
+    const path = new Path2D();
+    if (outline[0] === "poly") {
+      const pts = outline[1];
+      if (!pts.length) return;
+      path.moveTo(...pts[0]);
+      for (const pt of pts.slice(1)) path.lineTo(...pt);
+      if (this.tool?.id === "polygon_lasso" && this.mouse) path.lineTo(...this.widgetToImage(this.mouse.x, this.mouse.y)); // the next corner
+    } else {
+      const r = outline[1];
+      if (outline[0] === "rect") path.rect(r.x0, r.y0, r.width, r.height);
+      else path.ellipse(r.x0 + r.width / 2, r.y0 + r.height / 2, r.width / 2, r.height / 2, 0, 0, Math.PI * 2);
+    }
+    this.antsPath(path);
+  }
+
+  /** Finish a tool that collects clicks (polygon lasso); true if it had something. */
+  finishTool(): boolean {
+    const t = this.tool as unknown as { finish?: (d: EditorDoc) => Command | null; points?: unknown[] } | null;
+    if (!t?.finish || !this.doc || !t.points?.length) return false;
+    this.push(t.finish(this.doc));
+    this.draw();
+    return true;
+  }
+
   private antsRect(x: number, y: number, w: number, h: number): void {
     const ctx = this.ctx;
     ctx.lineWidth = 1;
@@ -367,7 +442,7 @@ export class EditorCanvas {
   }
 
   private ctxFor(button: "left" | "right", e: PointerEvent): ToolContext {
-    return { ...this.contextProvider(), button, shift: e.shiftKey };
+    return { ...this.contextProvider(), button, shift: e.shiftKey, alt: e.altKey, zoom: this.zoom };
   }
 
   private down(e: PointerEvent): void {

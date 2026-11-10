@@ -20,10 +20,11 @@ import * as effects from "../../editor/effects";
 import type { Effect } from "../../editor/effects";
 import * as clipboard from "../../editor/clipboard";
 import { EditorCanvas } from "./canvas";
-import { blurDialog, canvasSizeDialog, curvesDialog, levelsDialog, looksDialog, quickFixDialog, resizeDialog, saveDialog, sharpenDialog, shortcutsDialog, type AdjustHost } from "./dialogs";
+import { blurDialog, canvasSizeDialog, featherDialog, curvesDialog, levelsDialog, looksDialog, quickFixDialog, resizeDialog, saveDialog, sharpenDialog, shortcutsDialog, type AdjustHost } from "./dialogs";
 import { CropBar, type BarMode } from "./cropbar";
 import { h, LayersPanel, Swatches, ToolBar, ToolSettings } from "./panels";
-import { SHORTCUTS, shortcutFor } from "./shortcuts";
+import { SHORTCUTS, shortcutFor, toolGroups } from "./shortcuts";
+import * as selection from "../../editor/selection";
 
 /** Same size and (nearly) the same pixels — the clipboard may round semi-transparent colours. */
 function samePicture(a: { data: Uint8ClampedArray; width: number; height: number }, b: { data: Uint8ClampedArray; width: number; height: number }): boolean {
@@ -138,6 +139,8 @@ export class EditorPage {
         ["Layer: rotate 90° right", "layer_rotate_right"], ["Layer: rotate 90° left", "layer_rotate_left"],
         ["Layer: rotate 180°", "layer_rotate_180"], ["Layer: flip horizontal", "layer_flip_h"], ["Layer: flip vertical", "layer_flip_v"],
       ])));
+    const selectMenu = h("details", { class: "menu" }, h("summary", { class: "btn small", title: "Select all, deselect, invert, feather" }, "Select ▾"),
+      h("div", { class: "menu-items" }, ...this.menuItems([["Select all", "select_all"], ["Deselect", "deselect"], ["Invert", "invert_selection"], ["Feather…", "feather"]])));
     const adjustMenu = h("details", { class: "menu" }, h("summary", { class: "btn small", title: "Fix the tones and colours of the selected layer" }, "Adjust ▾"),
       h("div", { class: "menu-items" }, ...this.menuItems([
         ["Quick fix… (exposure, contrast, colours)", "quick_fix"], ["Levels…", "levels"], ["Curves…", "curves"],
@@ -150,7 +153,7 @@ export class EditorPage {
       h("span", { class: "gap" }),
       btn("−", "Zoom out", () => this.canvas.zoomOut()), btn("+", "Zoom in", () => this.canvas.zoomIn()),
       btn("Fit", "Fit to window (Ctrl+0)", () => this.canvas.fit()), btn("100 %", "Actual pixels (Ctrl+1)", () => this.canvas.setZoom(1)),
-      h("span", { class: "gap" }), imageMenu, adjustMenu, filterMenu,
+      h("span", { class: "gap" }), imageMenu, selectMenu, adjustMenu, filterMenu,
       h("div", { class: "spacer" }), btn("?", "Keyboard shortcuts (?)", () => void this.showShortcuts()), this.saveAsBtn, this.saveBtn);
     // Crop needs buttons too (Enter isn't available on touch screens): they float next to the
     // rectangle once one is drawn, and also offer "Crop to selection" for a selection.
@@ -387,8 +390,8 @@ export class EditorPage {
       return;
     }
     if (mod || e.altKey) return;
-    const tool = this.tools.find((tt) => tt.shortcut.toLowerCase() === k && tt.shortcut !== "U");
-    if (tool) run(() => this.selectTool(tool.id));
+    const group = toolGroups(this.tools).get(e.key.toUpperCase());
+    if (group) run(() => this.cycleTool(group.map((t) => t.id)));
   }
 
   /** What each shortcut in shortcuts.ts does (the e2e test checks every id has one). */
@@ -407,7 +410,11 @@ export class EditorPage {
       save_as: () => void this.saveAs(),
       select_all: () => this.push(selectAll(doc())),
       deselect: () => this.push(deselect(doc())),
-      apply: () => this.applyCrop(),
+      apply: () => {
+        if (!this.canvas.finishTool()) this.applyCrop(); // Enter finishes a polygon lasso first
+      },
+      invert_selection: () => this.push(selection.invert(doc())),
+      feather: () => void this.feather(),
       new_layer: () => lp.add(),
       duplicate: () => lp.duplicate(),
       merge: () => lp.merge(),
@@ -421,11 +428,23 @@ export class EditorPage {
       fit: () => this.canvas.fit(),
       actual: () => this.canvas.setZoom(1),
       help: () => void this.showShortcuts(),
-      toggle_shape: () => this.selectTool(this.tool.id === "rect" ? "ellipse" : "rect"),
       swap_colours: () => this.swatches.swap(),
       smaller: () => this.settings.changeSize(this.tool, 1 / 1.2),
       bigger: () => this.settings.changeSize(this.tool, 1.2),
     };
+  }
+
+  /** The first tool of a letter's group, or the next one if a tool of it is already chosen. */
+  private cycleTool(ids: string[]): void {
+    const i = ids.indexOf(this.tool.id);
+    this.selectTool(i >= 0 ? ids[(i + 1) % ids.length] : ids[0]);
+  }
+
+  async feather(): Promise<void> {
+    if (!this.doc?.selection) return this.showMessage("Select an area first.");
+    const doc = this.doc;
+    const r = await featherDialog();
+    if (r !== null && this.doc === doc) this.push(selection.feather(doc, r));
   }
 
   showShortcuts(): Promise<void> {
@@ -549,6 +568,7 @@ export class EditorPage {
   async runOp(name: string): Promise<void> {
     const doc = this.doc;
     if (!doc) return;
+    if (["select_all", "deselect", "invert_selection", "feather"].includes(name)) return this.actions()[name](); // Select menu
     this.commitText();
     try {
       let cmd: Command | null = null;

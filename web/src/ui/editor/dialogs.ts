@@ -561,6 +561,13 @@ export function looksDialog(host: AdjustHost): Promise<Effect | null> {
   });
 }
 
+/** Feather: soften the selection's edge by a radius (px); null = cancelled. */
+export async function featherDialog(): Promise<number | null> {
+  const r = num("Radius", 5, 1, 250, "px");
+  const res = await modal("feather", "Feather selection", [r.row], "Apply", () => Math.max(0.5, +r.input.value || 0));
+  return res?.value ?? null;
+}
+
 export interface SaveChoice {
   name: string;
   format: string;

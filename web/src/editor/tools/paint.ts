@@ -5,7 +5,7 @@ import type { EditorDoc } from "../document";
 import { Rect } from "../geometry";
 import { PatchCommand, type Command } from "../history";
 import { cropData, type Layer, type RGBA } from "../layer";
-import { blendPixel, clipRect, colorOf, Tool, type ToolContext } from "./base";
+import { blendPixel, clipRect, colorOf, selectionWeight, Tool, type ToolContext } from "./base";
 
 const TILE = 128;
 
@@ -120,9 +120,10 @@ abstract class StrokeTool extends Tool {
       for (let tx = Math.floor(region.x0 / TILE); tx <= Math.floor((region.x1 - 1) / TILE); tx++) {
         const t = this.tile(layer, tx, ty);
         const part = t.rect.intersect(region);
+        const sel = selectionWeight(doc, layer, part); // soft / shaped selections paint partly
         for (let py = part.y0; py < part.y1; py++) {
           for (let px = part.x0; px < part.x1; px++) {
-            const m = Math.min(1, Math.max(0, (radius - Math.hypot(px + 0.5 - cx, py + 0.5 - cy)) / soft)) * strength;
+            const m = Math.min(1, Math.max(0, (radius - Math.hypot(px + 0.5 - cx, py + 0.5 - cy)) / soft)) * strength * (sel ? sel[(py - part.y0) * part.width + (px - part.x0)] : 1);
             const ti = (py - t.rect.y0) * t.rect.width + (px - t.rect.x0);
             if (m <= t.cov[ti]) continue;
             t.cov[ti] = m;

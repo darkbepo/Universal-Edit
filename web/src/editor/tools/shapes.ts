@@ -6,7 +6,7 @@ import { Rect } from "../geometry";
 import { PatchCommand, type Command } from "../history";
 import { cropData } from "../layer";
 import type { Rasterizer } from "../raster";
-import { clipRect, colorOf, overPixel, Tool, type Preview, type ToolContext } from "./base";
+import { clipRect, colorOf, overPixel, restrict, Tool, type Preview, type ToolContext } from "./base";
 
 const lineOptions = [
   opt.slider("width", "Width", 4, 1, 200, { unit: "px" }),
@@ -98,6 +98,7 @@ abstract class ShapeTool extends Tool {
       for (let xx = region.x0; xx < region.x1; xx++) {
         overPixel(layer.data, (y * layer.width + xx) * 4, o.data, ((y - target.y0) * o.width + (xx - target.x0)) * 4);
       }
+    restrict(doc, layer, region, before); // shaped / soft selections
     return PatchCommand.fromRegion(this.label, doc, doc.active, region, before);
   }
 

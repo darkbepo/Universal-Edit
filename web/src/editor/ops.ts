@@ -70,6 +70,7 @@ function setState(doc: EditorDoc, label: string, width: number, height: number, 
   doc.layers = layers;
   doc.active = Math.min(doc.active, layers.length - 1);
   doc.selection = null;
+  doc.selectionMask = null;
   return new DocStateCommand(label, before, [width, height, [...layers]]);
 }
 

@@ -4,6 +4,7 @@ import { docBounds, type EditorDoc } from "../document";
 import { EMPTY, Rect } from "../geometry";
 import type { Command } from "../history";
 import { layerBounds, type Layer, type RGBA } from "../layer";
+import { weight } from "../selection";
 
 export interface ToolContext {
   primary: RGBA;
@@ -12,6 +13,9 @@ export interface ToolContext {
   shift: boolean;
   button: "left" | "right";
   font: string;
+  alt?: boolean;
+  /** Screen pixels per canvas pixel (for "click near a point" tolerances). */
+  zoom?: number;
 }
 
 export const colorOf = (ctx: ToolContext): RGBA => (ctx.button === "right" ? ctx.secondary : ctx.primary);
@@ -62,6 +66,36 @@ export function clipRect(doc: EditorDoc, layer: Layer): Rect {
 }
 
 /** Source-over `color` with coverage `cov` (0..1) onto pixel `i` of `dst`, reading the original from `src[j]`. */
+/** How much each pixel of `region` (layer coordinates, inside clipRect) is selected, 0…1;
+ *  null = all of it. */
+export function selectionWeight(doc: EditorDoc, layer: Layer, region: Rect): Float32Array | null {
+  return weight(doc, region.offset(layer.x, layer.y));
+}
+
+/** Keep a change to `region` of `layer` only where (and as much as) it is selected. `before` is
+ *  that region's original pixels; the new ones are mixed with them by the selection's strength,
+ *  on premultiplied colour so soft edges keep their colour. */
+export function restrict(doc: EditorDoc, layer: Layer, region: Rect, before: Uint8ClampedArray): void {
+  const w = selectionWeight(doc, layer, region);
+  if (!w || region.empty) return;
+  for (let y = 0; y < region.height; y++) {
+    for (let x = 0; x < region.width; x++) {
+      const t = w[y * region.width + x];
+      if (t >= 1) continue;
+      const bi = (y * region.width + x) * 4;
+      const di = ((region.y0 + y) * layer.width + region.x0 + x) * 4;
+      const a0 = before[bi + 3] / 255;
+      const a1 = layer.data[di + 3] / 255;
+      const a = a0 + (a1 - a0) * t;
+      for (let c = 0; c < 3; c++) {
+        const p = before[bi + c] * a0 + (layer.data[di + c] * a1 - before[bi + c] * a0) * t;
+        layer.data[di + c] = a > 0 ? p / a : 0;
+      }
+      layer.data[di + 3] = a * 255;
+    }
+  }
+}
+
 export function blendPixel(dst: Uint8ClampedArray, i: number, src: Uint8ClampedArray, j: number, color: RGBA, cov: number): void {
   const ca = (color[3] / 255) * cov;
   const ba = src[j + 3] / 255;
