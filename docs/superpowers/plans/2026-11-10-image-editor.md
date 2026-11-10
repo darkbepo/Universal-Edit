@@ -87,9 +87,10 @@ def test_composite_opacity_and_hidden():
     red = Layer("r", Image.new("RGBA", (4, 4), (255, 0, 0, 255)))
     blue = Layer("b", Image.new("RGBA", (4, 4), (0, 0, 255, 255)), opacity=0.5)
     hidden = Layer("h", Image.new("RGBA", (4, 4), (0, 255, 0, 255)), visible=False)
-    doc = Document(4, 4, [red, blue, hidden])          # index 0 = bottom
+    doc = Document(4, 4, [red, blue, hidden])  # index 0 = bottom
     px = doc.composite().getpixel((0, 0))
     assert px[3] == 255 and abs(px[0] - 128) <= 1 and abs(px[2] - 127) <= 1 and px[1] == 0
+
 
 def test_composite_offset_layer_and_rect():
     small = Layer("s", Image.new("RGBA", (2, 2), (0, 0, 0, 255)), x=2, y=2)
@@ -98,14 +99,17 @@ def test_composite_offset_layer_and_rect():
     assert img.getpixel((1, 1))[3] == 0 and img.getpixel((3, 3)) == (0, 0, 0, 255)
     assert doc.composite(Rect(2, 2, 4, 4)).size == (2, 2)
 
+
 def test_layer_converts_to_rgba():
     assert Layer("p", Image.new("P", (2, 2))).image.mode == "RGBA"
+
 
 def test_size_limit():
     with pytest.raises(ConversionError, match="too large"):
         check_size(16_001, 10)
     with pytest.raises(ConversionError):
-        check_size(16_000, 16_000)   # 256 MP > 250 MP
+        check_size(16_000, 16_000)  # 256 MP > 250 MP
+
 
 def test_rect_ops():
     assert Rect.from_points(5, 5, 1, 2) == Rect(1, 2, 5, 5)
@@ -328,7 +332,7 @@ def test_fill_transparent_layer_fast():
 
 ```python
 def test_save_jpg_has_white_background(tmp_path):
-    doc = Document.new(10, 10)          # fully transparent
+    doc = Document.new(10, 10)  # fully transparent
     out = save_document(doc, tmp_path / "x.jpg", "jpg")
     assert Image.open(out).convert("RGB").getpixel((5, 5)) == (255, 255, 255)
 ```
@@ -361,13 +365,20 @@ def test_save_jpg_has_white_background(tmp_path):
 
 ```python
 def test_canvas_stroke_pushes_history(qtbot):
-    doc = Document.new(100, 100); h = History(doc)
-    c = EditorCanvas(); qtbot.addWidget(c); c.resize(200, 200)
-    c.set_document(doc, h); c.set_tool(BrushTool())
-    c.context_provider = lambda: ToolContext((255,0,0,255), (255,255,255,255), BrushOptions(size=8))
+    doc = Document.new(100, 100)
+    h = History(doc)
+    c = EditorCanvas()
+    qtbot.addWidget(c)
+    c.resize(200, 200)
+    c.set_document(doc, h)
+    c.set_tool(BrushTool())
+    c.context_provider = lambda: ToolContext(
+        (255, 0, 0, 255), (255, 255, 255, 255), BrushOptions(size=8)
+    )
     c.set_zoom(1.0)
     p = c.image_to_widget(50, 50)
-    qtbot.mousePress(c, Qt.LeftButton, pos=p); qtbot.mouseMove(c, p + QPoint(10, 0))
+    qtbot.mousePress(c, Qt.LeftButton, pos=p)
+    qtbot.mouseMove(c, p + QPoint(10, 0))
     qtbot.mouseRelease(c, Qt.LeftButton, pos=p + QPoint(10, 0))
     assert h.can_undo and doc.active_layer.image.getpixel((55, 50))[3] > 0
 ```

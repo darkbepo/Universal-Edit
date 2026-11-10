@@ -85,7 +85,8 @@ def page(qtbot, tmp_path):
     pg.resize(1100, 720)
     pg.show()
     assert pg.open_paths([a, b])
-    return pg
+    yield pg
+    pg._ask_save_changes = lambda: "discard"
 
 
 def _stroke(qtbot, pg, x=10, y=10):
@@ -239,3 +240,67 @@ def test_crop_with_enter(page, qtbot):
 def test_image_menu_rotate(page):
     page.run_op("rotate_right")
     assert (page.doc.width, page.doc.height) == (40, 60)
+
+
+# ------------------------------------------------------------------ Convert | Edit switch
+
+
+@pytest.fixture
+def window(qtbot, tmp_path, monkeypatch):
+    from PySide6.QtCore import QCoreApplication
+
+    from umc.gui.editor.editor_page import EditorPage
+
+    # pytest-qt closes windows before fixture teardown: never block on "Save changes?"
+    monkeypatch.setattr(EditorPage, "_ask_save_changes", lambda self: "discard")
+
+    QCoreApplication.setOrganizationName("UMC-tests")
+    from umc.gui.main_window import MainWindow
+
+    w = MainWindow()
+    w._set_output_dir(tmp_path)
+    qtbot.addWidget(w)
+    w.show()
+    return w
+
+
+def test_switch_hidden_for_non_images(window, media):
+    window.add_files([str(media / "doc.md")])
+    assert not window.mode_bar.isVisible()
+    window.clear_files()
+    assert not window.mode_bar.isVisible()
+
+
+def test_switch_shown_for_images(window, media):
+    window.add_files([str(media / "img0.png"), str(media / "img1.png")])
+    assert window.mode_bar.isVisible() and window.convert_mode.isChecked()
+    window.add_files([str(media / "doc.md")])  # mixed → no editing
+    assert not window.mode_bar.isVisible()
+
+
+def test_edit_and_back(window, media, monkeypatch):
+    window.resize(620, 780)
+    window.add_files([str(media / "img0.png"), str(media / "img1.png")])
+    window.edit_mode.click()
+    assert window.stack.currentIndex() == 1
+    assert window.width() >= 1100 and window.height() >= 720
+    assert len(window.editor.doc.layers) == 2
+    window.editor.back_requested.emit()
+    assert window.stack.currentIndex() == 0 and window.convert_mode.isChecked()
+    assert (window.width(), window.height()) == (620, 780)
+
+
+def test_back_cancelled_stays_in_editor(window, media, monkeypatch, qtbot):
+    window.add_files([str(media / "img0.png")])
+    window.edit_mode.click()
+    monkeypatch.setattr(window.editor, "maybe_leave", lambda: False)
+    window.convert_mode.click()
+    assert window.stack.currentIndex() == 1 and window.edit_mode.isChecked()
+
+
+def test_drop_in_edit_mode_adds_layer(window, media):
+    window.add_files([str(media / "img0.png")])
+    window.edit_mode.click()
+    window.handle_drop([str(media / "img1.png")])
+    assert len(window.editor.doc.layers) == 2 and window.editor.history.can_undo
+    assert len(window.files) == 1  # the converter's list is untouched

@@ -8,6 +8,7 @@ from PySide6.QtCore import QSettings, Qt, QUrl
 from PySide6.QtGui import QAction, QDesktopServices, QKeySequence
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QButtonGroup,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -19,6 +20,7 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QScrollArea,
+    QStackedWidget,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -107,6 +109,30 @@ class MainWindow(QMainWindow):
         self.drop = DropZone()
         self.drop.files_dropped.connect(self.add_files)
         body.addWidget(self.drop)
+
+        # Convert | Edit — only shown when every added file is an image
+        self.mode_bar = QWidget(objectName="ModeBar")
+        mb = QHBoxLayout(self.mode_bar)
+        mb.setContentsMargins(0, 0, 0, 0)
+        mb.setSpacing(0)
+        self.convert_mode = QPushButton("Convert", objectName="SegmentLeft")
+        self.edit_mode = QPushButton("Edit", objectName="SegmentRight")
+        self._mode_group = QButtonGroup(self)
+        for b in (self.convert_mode, self.edit_mode):
+            b.setCheckable(True)
+            b.setCursor(Qt.CursorShape.PointingHandCursor)
+            self._mode_group.addButton(b)
+            mb.addWidget(b)
+        self.convert_mode.setChecked(True)
+        self.edit_mode.setToolTip(
+            "Open the images in the image editor (each image becomes a layer)"
+        )
+        self.convert_mode.clicked.connect(self.leave_edit)
+        self.edit_mode.clicked.connect(self.enter_edit)
+        mb.addStretch(1)
+        body.addWidget(self.mode_bar)
+        self.editor = None  # EditorPage, created on first use
+        self._convert_size = None
 
         # files card
         self.files_card = QFrame(objectName="Card")
@@ -203,7 +229,9 @@ class MainWindow(QMainWindow):
         bl.addLayout(row)
         outer.addWidget(bar)
 
-        self.setCentralWidget(root)
+        self.stack = QStackedWidget()
+        self.stack.addWidget(root)
+        self.setCentralWidget(self.stack)
         self.setAcceptDrops(True)
         saved = self.settings.value("output_dir", "", str)
         self._set_output_dir(Path(saved) if saved and Path(saved).is_dir() else None)
@@ -296,11 +324,52 @@ class MainWindow(QMainWindow):
                 error = str(exc)
         self.input_error.setText(error)
         self.input_error.setVisible(bool(error))
+        self.mode_bar.setVisible(self.edit_available())
         self.format_section.setVisible(bool(targets))
         self.picker.setVisible(bool(targets))
         keep = self.target.id if self.target else self.settings.value("last_target", "", str)
         self.picker.set_targets(targets, keep_id=keep)
         self._update_buttons()
+
+    # ------------------------------------------------------------------ Convert | Edit
+    def edit_available(self) -> bool:
+        return bool(self.files) and all(f.family == MediaFamily.IMAGE for f in self.files)
+
+    def enter_edit(self) -> None:
+        if self.stack.currentIndex() == 1:
+            return
+        if not self.edit_available() or self.busy:
+            self.convert_mode.setChecked(True)
+            return
+        if self.editor is None:
+            from umc.gui.editor.editor_page import EditorPage
+
+            self.editor = EditorPage()
+            self.editor.back_requested.connect(self.leave_edit)
+            self.stack.addWidget(self.editor)
+        if not self.editor.open_paths([f.path for f in self.files]):
+            self.convert_mode.setChecked(True)
+            self.input_error.setText(self.editor.message.text())
+            self.input_error.setVisible(True)
+            return
+        self._convert_size = self.size()
+        self.stack.setCurrentWidget(self.editor)
+        self.edit_mode.setChecked(True)
+        self.resize(max(self.width(), 1100), max(self.height(), 720))
+        self.editor.canvas.fit()
+        self.editor.canvas.setFocus()
+
+    def leave_edit(self) -> None:
+        if self.stack.currentIndex() != 1:
+            self.convert_mode.setChecked(True)
+            return
+        if not self.editor.maybe_leave():
+            self.edit_mode.setChecked(True)
+            return
+        self.stack.setCurrentIndex(0)
+        self.convert_mode.setChecked(True)
+        if self._convert_size is not None:
+            self.resize(self._convert_size)
 
     def on_target_changed(self, target: Target | None) -> None:
         self.target = target
@@ -462,9 +531,18 @@ class MainWindow(QMainWindow):
     def dropEvent(self, event) -> None:  # noqa: N802
         paths = [u.toLocalFile() for u in event.mimeData().urls() if u.isLocalFile()]
         if paths:
+            self.handle_drop(paths)
+
+    def handle_drop(self, paths: list[str]) -> None:
+        if self.stack.currentIndex() == 1 and self.editor is not None:
+            self.editor.add_paths([Path(p) for p in self._expand(paths)])
+        else:
             self.add_files(paths)
 
     def closeEvent(self, event) -> None:  # noqa: N802
+        if self.stack.currentIndex() == 1 and not self.editor.maybe_leave():
+            event.ignore()
+            return
         if self._worker is not None:
             self._worker.cancel()
             if self._thread is not None:
