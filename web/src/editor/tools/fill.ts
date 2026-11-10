@@ -103,7 +103,7 @@ export class FillTool extends Tool {
     return region.offset(layer.x, layer.y);
   }
 
-  override release(doc: EditorDoc): Command | null {
+  override release(doc: EditorDoc, _x?: number, _y?: number, _ctx?: ToolContext): Command | null {
     if (!this.pending) return null;
     const { index, region, before } = this.pending;
     this.pending = null;
