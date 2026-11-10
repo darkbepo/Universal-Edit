@@ -808,3 +808,25 @@ test("annotation: L cycles line / arrow, highlighter (H), stickers window adds a
   });
   expect(mid).toEqual([255, 200, 61, 255]);
 });
+
+test("pasteboard: a layer dragged past the edge stays visible around the picture, isn't saved", async ({ page }) => {
+  await openEditor(page);
+  const size = await page.evaluate(() => [(window.__editor as EditorHook).doc.width, (window.__editor as EditorHook).doc.height]);
+  const viewPx = async (ix: number, iy: number) => {
+    const p = await at(page, ix, iy);
+    return page.evaluate(([x, y]) => {
+      const c = document.querySelector(".canvas-host canvas.view") as HTMLCanvasElement;
+      const r = c.getBoundingClientRect();
+      const k = c.width / r.width;
+      return Array.from((c.getContext("2d") as CanvasRenderingContext2D).getImageData(Math.round((x - r.left) * k), Math.round((y - r.top) * k), 1, 1).data);
+    }, [p.x, p.y]);
+  };
+  await page.locator(".canvas-host canvas").focus();
+  await page.keyboard.press("v");
+  const outside = [size[0] + 10, 10] as [number, number];
+  const before = await viewPx(...outside);
+  await drag(page, [5, 5], [Math.round(size[0] * 0.4) + 5, 5]);
+  await expect.poll(() => viewPx(...outside)).not.toEqual(before);
+  const png = await saveAs(page, "pasteboard", "png");
+  expect(png.readUInt32BE(16)).toBe(size[0]); // the saved picture is the canvas only
+});

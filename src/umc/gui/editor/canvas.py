@@ -67,6 +67,7 @@ class EditorCanvas(QWidget):
         self.zoom = 1.0
         self._origin = QPointF(0, 0)  # widget position of image pixel (0, 0)
         self._cache: QImage | None = None
+        self._view = Rect(0, 0, 0, 0)  # the area the cache covers: canvas + pasteboard
         self._preview_layer: tuple[int, Image.Image] | None = None
         self._pressed: str | None = None  # "left" | "right" | "pan"
         self._pan_from = QPointF()
@@ -110,20 +111,21 @@ class EditorCanvas(QWidget):
         if self.doc is None:
             return
         override = {self._preview_layer[0]: self._preview_layer[1]} if self._preview_layer else None
-        size = (self.doc.width, self.doc.height)
-        if (
-            rect is None
-            or self._cache is None
-            or (self._cache.width(), self._cache.height()) != size
-        ):
-            self._cache = pil_to_qimage(self.doc.composite(override=override))
+        step = max(16, max(self.doc.width, self.doc.height) // 8)
+        view = self.doc.pasteboard(step)
+        grown = view.union(self._view) != self._view
+        if rect is None or self._cache is None or grown:
+            self._view = view
+            self._cache = pil_to_qimage(self.doc.composite(view, override=override, clip=False))
+            if rect is None:  # not while dragging: the view would jump under the mouse
+                self._clamp()
         else:
-            rect = rect.intersect(self.doc.bounds)
+            rect = rect.intersect(self._view)
             if not rect.empty:
-                part = pil_to_qimage(self.doc.composite(rect, override=override))
+                part = pil_to_qimage(self.doc.composite(rect, override=override, clip=False))
                 p = QPainter(self._cache)
                 p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
-                p.drawImage(rect.x0, rect.y0, part)
+                p.drawImage(rect.x0 - self._view.x0, rect.y0 - self._view.y0, part)
                 p.end()
         self.update()
 
@@ -133,7 +135,7 @@ class EditorCanvas(QWidget):
         self.refresh()
 
     def cached_pixel(self, x: int, y: int) -> tuple[int, int, int, int]:
-        c = self._cache.pixelColor(x, y)
+        c = self._cache.pixelColor(x - self._view.x0, y - self._view.y0)
         return (c.red(), c.green(), c.blue(), c.alpha())
 
     # ------------------------------------------------------------ history
@@ -210,20 +212,25 @@ class EditorCanvas(QWidget):
         self._origin = QPointF((self.width() - w) / 2, (self.height() - h) / 2)
 
     def _clamp(self) -> None:
-        """Keep at least part of the image on screen; centre it when it fits."""
+        """Keep at least part of the image on screen; centre it when it (and the layers lying on
+        the pasteboard around it) fit."""
         if self.doc is None:
             return
-        w, h = self.doc.width * self.zoom, self.doc.height * self.zoom
+        z = self.zoom
+        v = self._view if not self._view.empty else self.doc.bounds
         ox, oy = self._origin.x(), self._origin.y()
         keep = 40
-        if w <= self.width():
-            ox = (self.width() - w) / 2
+        if v.width * z <= self.width():
+            ox = (self.width() - self.doc.width * z) / 2
+            # …unless that pushes pasteboard layers off screen
+            ox = max(-v.x0 * z, min(self.width() - v.x1 * z, ox))
         else:
-            ox = min(keep, max(self.width() - w - keep, ox))
-        if h <= self.height():
-            oy = (self.height() - h) / 2
+            ox = min(keep - v.x0 * z, max(self.width() - v.x1 * z - keep, ox))
+        if v.height * z <= self.height():
+            oy = (self.height() - self.doc.height * z) / 2
+            oy = max(-v.y0 * z, min(self.height() - v.y1 * z, oy))
         else:
-            oy = min(keep, max(self.height() - h - keep, oy))
+            oy = min(keep - v.y0 * z, max(self.height() - v.y1 * z - keep, oy))
         self._origin = QPointF(ox, oy)
 
     def widget_to_image(self, pos: QPointF) -> tuple[float, float]:
@@ -264,7 +271,13 @@ class EditorCanvas(QWidget):
         target = self._image_rect(self.doc.bounds)
         p.fillRect(target, self._checker)
         p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, self.zoom < 1)
-        p.drawImage(target, self._cache)
+        view = self._image_rect(self._view)
+        p.drawImage(view, self._cache)
+        if self._view != self.doc.bounds:  # the pasteboard: shown faded, not part of the picture
+            self._shade_outside(p, view, target, QColor(theme.palette()["bg"]), 150)
+            p.setPen(QPen(QColor(128, 128, 128, 200), 1))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawRect(target.adjusted(-0.5, -0.5, 0.5, 0.5))
         if self.tool is not None:
             prev = self.tool.preview(self.doc)
             if prev is not None:
@@ -314,6 +327,18 @@ class EditorCanvas(QWidget):
                 p.drawEllipse(self._mouse, r + 1, r + 1)
         p.end()
         self._place_bar()
+
+    @staticmethod
+    def _shade_outside(p: QPainter, outer: QRectF, inner: QRectF, color: QColor, alpha: int):
+        """Cover ``outer`` minus ``inner`` with ``color`` at ``alpha``."""
+        c = QColor(color)
+        c.setAlpha(alpha)
+        top = max(outer.top(), min(inner.top(), outer.bottom()))
+        bottom = min(outer.bottom(), max(inner.bottom(), outer.top()))
+        p.fillRect(QRectF(outer.left(), outer.top(), outer.width(), top - outer.top()), c)
+        p.fillRect(QRectF(outer.left(), bottom, outer.width(), outer.bottom() - bottom), c)
+        p.fillRect(QRectF(outer.left(), top, inner.left() - outer.left(), bottom - top), c)
+        p.fillRect(QRectF(inner.right(), top, outer.right() - inner.right(), bottom - top), c)
 
     def bar_target(self) -> tuple[str, Rect] | None:
         """("crop" | "select", rectangle) the floating bar belongs to, or None to hide it."""

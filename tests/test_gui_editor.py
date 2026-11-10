@@ -1079,3 +1079,18 @@ def test_stickers_dialog_adds_a_layer(page, qtbot, monkeypatch):
     page.run_op("stickers")
     assert len(page.doc.layers) == n + 1
     assert page.doc.active_layer.image.size == (30, 30)
+
+
+def test_canvas_shows_layers_on_the_pasteboard(canvas):
+    from PIL import Image
+
+    from umc.editor.layer import Layer
+
+    c, doc, _ = canvas
+    doc.layers.append(Layer("off", Image.new("RGBA", (30, 30), (0, 0, 255, 255)), x=90, y=-20))
+    c.refresh()
+    assert c.cached_pixel(110, -10) == (0, 0, 255, 255)
+    assert c.cached_pixel(50, 50)[3] == 0
+    top_left = c.image_to_widget(0, -20)
+    assert top_left.x() >= 0 and top_left.y() >= 0  # moved into view
+    c.grab()  # paints without errors

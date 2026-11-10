@@ -51,8 +51,25 @@ export function newDoc(width: number, height: number): EditorDoc {
 export const docBounds = (doc: EditorDoc) => new Rect(0, 0, doc.width, doc.height);
 
 /** Flatten the visible layers into RGBA for `rect` (default: the whole canvas). */
-export function composite(doc: EditorDoc, rect?: Rect, override?: Map<number, Uint8ClampedArray>): Uint8ClampedArray {
-  const r = (rect ?? docBounds(doc)).intersect(docBounds(doc));
+/** The area the editor shows: the canvas plus the parts of visible layers lying around it (the
+ *  "pasteboard" — shown, never saved). At most half the longer side past each edge; `step` > 1
+ *  rounds the overhang up to whole steps. Same as Document.pasteboard in document.py. */
+export function pasteboard(doc: EditorDoc, step = 1): Rect {
+  const bounds = docBounds(doc);
+  let out = bounds;
+  const m = Math.floor(Math.max(doc.width, doc.height) / 2);
+  const limit = new Rect(-m, -m, doc.width + m, doc.height + m);
+  for (const l of doc.layers) if (l.visible && l.opacity > 0) out = out.union(layerBounds(l).intersect(limit));
+  if (step > 1 && !out.equals(bounds)) {
+    const up = (v: number) => (v > 0 ? Math.ceil(v / step) * step : 0);
+    out = new Rect(-up(-out.x0), -up(-out.y0), doc.width + up(out.x1 - doc.width), doc.height + up(out.y1 - doc.height)).intersect(limit);
+  }
+  return out;
+}
+
+/** Flatten the visible layers. `clip = false` lets `rect` reach past the canvas (the pasteboard). */
+export function composite(doc: EditorDoc, rect?: Rect, override?: Map<number, Uint8ClampedArray>, clip = true): Uint8ClampedArray {
+  const r = rect && !clip ? rect : (rect ?? docBounds(doc)).intersect(docBounds(doc));
   const out = new Uint8ClampedArray(r.width * r.height * 4);
   if (r.empty) return out;
   doc.layers.forEach((layer, i) => {

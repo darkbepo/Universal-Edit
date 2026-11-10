@@ -556,8 +556,12 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
          umc.editor.stickers`, test checks they match). Web draws them through the new
          `Rasterizer.draw(box, items)` (outlines clipped inside, like Pillow). Insert:
          `ops.add_sticker` / `addSticker`, centred in view, "Stickers" button in the top bar.
-      7. Pasteboard (owner chose this kind of "artboard"): the area around the canvas holds
-         layers that aren't saved into the image (layers already have x/y outside the canvas).
+      7. ✅ Pasteboard (both apps; the owner's choice of "artboard"): `Document.pasteboard(step)` /
+         `pasteboard(doc, step)` = canvas ∪ visible layer bounds, at most half the longer side past
+         each edge, overhang rounded up to `step` (= longer side / 8) so a drag doesn't rebuild the
+         cache on every move. The canvas cache covers that area (`composite(…, clip=False)`),
+         drawn faded outside the picture with a thin border; pan limits use it, but the view is
+         only re-clamped on full refreshes (never mid-drag). Saving composites the canvas only.
       8. Clone stamp, then content-aware fill (opencv-python-headless, Apache-2.0, approved).
       9. Background removal (desktop onnxruntime + a one-click model download; web
          @imgly/background-removal, AGPL — both approved by the owner).

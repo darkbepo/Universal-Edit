@@ -1,6 +1,6 @@
 // The editor canvas: zoom / pan, pointer → tool, a cached composite repainted by dirty rect.
-import { composite, docBounds, type EditorDoc } from "../../editor/document";
-import type { Rect } from "../../editor/geometry";
+import { composite, docBounds, pasteboard, type EditorDoc } from "../../editor/document";
+import { Rect } from "../../editor/geometry";
 import type { Command, History } from "../../editor/history";
 import type { RGBA } from "../../editor/layer";
 import type { Tool, ToolContext } from "../../editor/tools/base";
@@ -37,6 +37,8 @@ export class EditorCanvas {
   private origin = { x: 0, y: 0 }; // css px position of image pixel (0, 0)
   private cache: OffscreenCanvas | null = null;
   private cacheCtx: OffscreenCanvasRenderingContext2D | null = null;
+  /** The area the cache covers: the canvas plus the pasteboard around it. */
+  private area = new Rect(0, 0, 0, 0);
   private previewLayer: [number, Uint8ClampedArray] | null = null;
   private pointers = new Map<number, { x: number; y: number }>();
   private gesture: "left" | "right" | "pan" | "pinch" | null = null;
@@ -49,6 +51,7 @@ export class EditorCanvas {
   spaceDown = false;
   /** Keep fitting the picture to the window until the user zooms or pans. */
   private autoFit = true;
+  private docSize: [number, number] = [0, 0];
   contextProvider: () => ToolContext = () => {
     throw new Error("no context provider");
   };
@@ -117,15 +120,20 @@ export class EditorCanvas {
     const doc = this.doc;
     if (!doc) return;
     const override = this.previewLayer ? new Map([this.previewLayer]) : undefined;
-    if (!rect || !this.cache || this.cache.width !== doc.width || this.cache.height !== doc.height) {
-      const resized = !!this.cache && (this.cache.width !== doc.width || this.cache.height !== doc.height);
+    const area = pasteboard(doc, Math.max(16, Math.floor(Math.max(doc.width, doc.height) / 8)));
+    const grown = !area.union(this.area).equals(this.area);
+    if (!rect || !this.cache || grown) {
+      const resized = !!this.cache && (this.docSize[0] !== doc.width || this.docSize[1] !== doc.height);
       if (resized) this.autoFit = true; // crop / resize / rotate: show the whole new picture
-      this.cache = new OffscreenCanvas(doc.width, doc.height);
+      this.docSize = [doc.width, doc.height];
+      this.area = area;
+      this.cache = new OffscreenCanvas(area.width, area.height);
       this.cacheCtx = this.cache.getContext("2d") as OffscreenCanvasRenderingContext2D;
-      this.cacheCtx.putImageData(new ImageData(composite(doc, undefined, override) as Uint8ClampedArray<ArrayBuffer>, doc.width, doc.height), 0, 0);
+      this.cacheCtx.putImageData(new ImageData(composite(doc, area, override, false) as Uint8ClampedArray<ArrayBuffer>, area.width, area.height), 0, 0);
+      if (!rect && !this.autoFit) this.clamp(); // not while dragging: the view would jump
     } else {
-      const r = rect.intersect(docBounds(doc));
-      if (!r.empty) (this.cacheCtx as OffscreenCanvasRenderingContext2D).putImageData(new ImageData(composite(doc, r, override) as Uint8ClampedArray<ArrayBuffer>, r.width, r.height), r.x0, r.y0);
+      const r = rect.intersect(this.area);
+      if (!r.empty) (this.cacheCtx as OffscreenCanvasRenderingContext2D).putImageData(new ImageData(composite(doc, r, override, false) as Uint8ClampedArray<ArrayBuffer>, r.width, r.height), r.x0 - this.area.x0, r.y0 - this.area.y0);
     }
     if (this.autoFit) this.fit();
     this.draw();
@@ -214,12 +222,14 @@ export class EditorCanvas {
     if (!this.doc) return;
     const vw = this.el.clientWidth;
     const vh = this.el.clientHeight;
-    const w = this.doc.width * this.zoom;
-    const h = this.doc.height * this.zoom;
+    // keep part of the picture (and the layers on the pasteboard around it) on screen; centre the
+    // picture when everything fits
+    const z = this.zoom;
+    const a = this.area.empty ? docBounds(this.doc) : this.area;
     const keep = 40;
-    const x = w <= vw ? (vw - w) / 2 : Math.min(keep, Math.max(vw - w - keep, this.origin.x));
-    const y = h <= vh ? (vh - h) / 2 : Math.min(keep, Math.max(vh - h - keep, this.origin.y));
-    this.origin = { x, y };
+    const axis = (view: number, size: number, lo: number, hi: number, o: number) =>
+      (hi - lo) * z <= view ? Math.max(-lo * z, Math.min(view - hi * z, (view - size * z) / 2)) : Math.min(keep - lo * z, Math.max(view - hi * z - keep, o));
+    this.origin = { x: axis(vw, this.doc.width, a.x0, a.x1, this.origin.x), y: axis(vh, this.doc.height, a.y0, a.y1, this.origin.y) };
   }
 
   private viewChanged(): void {
@@ -282,7 +292,21 @@ export class EditorCanvas {
     }
     ctx.imageSmoothingEnabled = this.zoom < 1;
     ctx.imageSmoothingQuality = "high";
-    ctx.drawImage(this.cache, x, y, w, h);
+    const [ax, ay, aw, ah] = this.screenRect(this.area);
+    ctx.drawImage(this.cache, ax, ay, aw, ah);
+    if (!this.area.equals(docBounds(doc))) {
+      // the pasteboard: layers around the picture are shown faded — they aren't saved
+      ctx.fillStyle = getComputedStyle(this.el).getPropertyValue("--pasteboard").trim() || "rgba(128,128,128,0.6)";
+      const top = Math.max(ay, Math.min(y, ay + ah));
+      const bottom = Math.min(ay + ah, Math.max(y + h, ay));
+      ctx.fillRect(ax, ay, aw, top - ay);
+      ctx.fillRect(ax, bottom, aw, ay + ah - bottom);
+      ctx.fillRect(ax, top, x - ax, bottom - top);
+      ctx.fillRect(x + w, top, ax + aw - (x + w), bottom - top);
+      ctx.strokeStyle = "rgba(128,128,128,0.8)";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x - 0.5, y - 0.5, w + 1, h + 1);
+    }
     const prev = this.tool?.preview(doc);
     if (prev) {
       const c = new OffscreenCanvas(prev.width, prev.height);

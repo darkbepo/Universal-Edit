@@ -64,12 +64,42 @@ class Document:
     def bounds(self) -> Rect:
         return Rect(0, 0, self.width, self.height)
 
-    def composite(self, rect: Rect | None = None, *, override: dict | None = None) -> Image.Image:
+    def pasteboard(self, step: int = 1) -> Rect:
+        """The area the editor shows: the canvas plus the parts of visible layers lying around it
+        (the "pasteboard" — shown, but never saved into the picture). Reaches at most half the
+        canvas's longer side past each edge; with ``step`` > 1 it is rounded outwards to steps, so
+        dragging a layer around doesn't change it on every move."""
+        out = self.bounds
+        m = max(self.width, self.height) // 2
+        limit = Rect(-m, -m, self.width + m, self.height + m)
+        for la in self.layers:
+            if la.visible and la.opacity > 0:
+                out = out.union(la.bounds.intersect(limit))
+        if step > 1 and out != self.bounds:
+
+            def up(v: int) -> int:  # an overhang rounded up to whole steps
+                return -(-v // step) * step if v > 0 else 0
+
+            out = Rect(
+                -up(-out.x0),
+                -up(-out.y0),
+                self.width + up(out.x1 - self.width),
+                self.height + up(out.y1 - self.height),
+            ).intersect(limit)
+        return out
+
+    def composite(
+        self, rect: Rect | None = None, *, override: dict | None = None, clip: bool = True
+    ) -> Image.Image:
         """Flatten the visible layers (normal blending, layer opacity).
 
         ``override`` maps a layer index to a replacement image (used for live previews).
+        ``clip=False`` lets ``rect`` reach past the canvas (the pasteboard).
         """
-        rect = self.bounds if rect is None else rect.intersect(self.bounds)
+        if rect is None:
+            rect = self.bounds
+        elif clip:
+            rect = rect.intersect(self.bounds)
         out = Image.new("RGBA", (max(rect.width, 0), max(rect.height, 0)))
         if rect.empty:
             return out

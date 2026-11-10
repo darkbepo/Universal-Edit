@@ -186,7 +186,7 @@ h1 { font-size: 22px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.01em
 .tool { width: 40px; height: 40px; display: grid; place-items: center; background: none; border: 1px solid transparent; border-radius: 10px; cursor: pointer; color: var(--text); }
 .tool:hover { background: var(--surface-alt); }
 .tool[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
-.canvas-host { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+.canvas-host { position: relative; min-width: 0; min-height: 0; overflow: hidden; --pasteboard: color-mix(in srgb, var(--bg) 60%, transparent); }
 .canvas-host canvas.view { position: absolute; inset: 0; touch-action: none; outline: none; display: block; }
 .crop-bar { position: absolute; z-index: 5; display: flex; align-items: center; gap: 6px; padding: 6px 6px 6px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 6px 18px rgba(0,0,0,.18); }
 .crop-bar .size { color: var(--muted); font-size: 13px; white-space: nowrap; }
