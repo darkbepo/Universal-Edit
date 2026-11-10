@@ -13,6 +13,7 @@ from umc.editor.document import Document
 from umc.editor.geometry import Rect
 from umc.editor.history import History
 from umc.editor.tools.base import Tool, ToolContext
+from umc.gui import theme
 
 MIN_ZOOM, MAX_ZOOM = 0.05, 32.0
 
@@ -216,7 +217,7 @@ class EditorCanvas(QWidget):
 
     def paintEvent(self, _event) -> None:  # noqa: N802
         p = QPainter(self)
-        p.fillRect(self.rect(), self.palette().window())
+        p.fillRect(self.rect(), QColor(theme.palette()["bg"]))
         if self.doc is None or self._cache is None:
             p.end()
             return

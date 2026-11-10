@@ -195,8 +195,13 @@ class History:
     def _sync_dirty(self) -> None:
         self.doc.dirty = self._saved != len(self._undo)
 
-    def mark_saved(self) -> None:
-        self._saved = len(self._undo)
+    @property
+    def position(self) -> int:
+        """Token for the current state; pass it to ``mark_saved`` when a save started earlier."""
+        return len(self._undo)
+
+    def mark_saved(self, position: int | None = None) -> None:
+        self._saved = len(self._undo) if position is None else position
         self._sync_dirty()
 
     def push(self, cmd: Command | None) -> None:

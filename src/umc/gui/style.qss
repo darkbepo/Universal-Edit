@@ -265,3 +265,75 @@ QMenu::item:selected {
 QDialog {
     background: @bg;
 }
+
+/* ---------- image editor */
+QWidget#EditorPage {
+    background: @bg;
+}
+QFrame#EditorTopBar {
+    background: @surface;
+    border-bottom: 1px solid @border;
+}
+QFrame#EditorStatus {
+    background: @surface;
+    border-top: 1px solid @border;
+}
+QPushButton#Small, QToolButton#SmallMenu {
+    padding: 5px 12px;
+    border-radius: 8px;
+}
+QPushButton#Small:disabled {
+    color: @muted;
+    background: @bg;
+}
+QFrame#EditorTopBar QPushButton#Primary {
+    padding: 6px 22px;
+    border-radius: 8px;
+    font-size: 13px;
+}
+QWidget#EditorToolBar {
+    background: @surface;
+    border-right: 1px solid @border;
+}
+QToolButton#ToolButton {
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    padding: 0;
+}
+QToolButton#ToolButton:hover {
+    background: @surface_alt;
+}
+QToolButton#ToolButton:checked {
+    background: @accent_soft;
+    border-color: @accent;
+}
+QToolButton#Swatch {
+    background: transparent;
+    border: none;
+    padding: 0;
+}
+QScrollArea#EditorSide, QWidget#EditorSideContent {
+    background: @surface;
+}
+QScrollArea#EditorSide {
+    border-left: 1px solid @border;
+}
+QListWidget#LayerList {
+    background: @bg;
+    border: 1px solid @border;
+    border-radius: 10px;
+    outline: none;
+    padding: 4px;
+}
+QListWidget#LayerList::item {
+    padding: 4px;
+    border-radius: 8px;
+}
+QListWidget#LayerList::item:selected {
+    background: @accent_soft;
+    color: @text;
+}
+QWidget#EditorCanvas {
+    background: @bg;
+}

@@ -20,7 +20,8 @@ class _DragRectTool(Tool):
         sx, sy = self._start
         if math.hypot(x - sx, y - sy) < 1:
             return None
-        r = Rect.from_points(sx, sy, x, y).intersect(doc.bounds)
+        # snap to the nearest pixel edge (the mouse is usually between two pixels)
+        r = Rect.from_points(round(sx), round(sy), round(x), round(y)).intersect(doc.bounds)
         return None if r.empty else r
 
 
