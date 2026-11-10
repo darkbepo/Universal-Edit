@@ -472,7 +472,11 @@ def _visible(borders: Any) -> bool:
 
 
 def _has_borders(ctx: _Ctx, tbl: etree._Element) -> bool:
-    """The table's own borders, else its table style's (no style and no borders: none)."""
+    """Bordered when any cell has a visible border (LibreOffice writes only those), else by
+    the table's own borders, else by its table style's (no style and no borders: none)."""
+    for tc_borders in tbl.iter(qn("w:tcBorders")):
+        if _visible(tc_borders):
+            return True
     tbl_pr = tbl.find(qn("w:tblPr"))
     borders = tbl_pr.find(qn("w:tblBorders")) if tbl_pr is not None else None
     if borders is not None:

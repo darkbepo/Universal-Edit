@@ -39,6 +39,9 @@ _ALIGN_BITS = (
     Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignJustify
 )
 _P = QTextFormat.Property
+NBSP = "\xa0"
+LINE_SEPARATOR = "\u2028"  # Shift+Enter inside a block
+OBJECT = "\ufffc"  # a picture
 
 
 def _rgb(brush) -> str | None:
@@ -105,16 +108,33 @@ def _block_style(block: QTextBlock) -> str:
     return f' style="{";".join(parts)}"' if parts else ""
 
 
+def _keep_spaces(text: str, before: str) -> tuple[str, str]:
+    """The TXT reader's rule for typed text: a space at the start of a line or after another
+    space becomes a no-break space, so HTML doesn't collapse it. Returns (text, last char)."""
+    out = []
+    for c in text:
+        if c == " " and before in ("", " ", NBSP, LINE_SEPARATOR):
+            c = NBSP
+        out.append(c)
+        before = c
+    return "".join(out), before
+
+
 def _block_text(block: QTextBlock, *, heading: bool = False, code: bool = False) -> str:
     out = []
+    before = ""  # the start of the block
     it = block.begin()
     while not it.atEnd():
         frag = it.fragment()
         fmt = frag.charFormat()
         if fmt.isImageFormat():
             out.append(_image(fmt) * len(frag.text()))
+            before = OBJECT
         else:
-            out.append(_inline(fmt, frag.text(), heading=heading, code=code))
+            text = frag.text()
+            if not code:  # <pre> keeps every space anyway
+                text, before = _keep_spaces(text, before)
+            out.append(_inline(fmt, text, heading=heading, code=code))
         it += 1
     return "".join(out)
 

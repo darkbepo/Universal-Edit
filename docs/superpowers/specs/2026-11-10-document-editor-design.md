@@ -80,7 +80,10 @@ The Qt-free code and the editor talk through one HTML subset, documented in
   spaces (U+00A0) are kept as they are, so indentation and aligned columns survive. Readers
   write a space that follows a space (or starts a line) as U+00A0; writers turn it back into
   an ordinary space (DOCX: `xml:space="preserve"`; TXT through `toPlainText()`). `pre` keeps
-  everything.
+  everything. The editor's export applies the same rule to typed and pasted text (a space at
+  the start of a block or after another space is written as U+00A0), so spaces typed in the
+  editor survive every format. An empty first paragraph of a table cell loads as the cell's one
+  empty block (Qt would otherwise add a block per save).
 - Inline: `b` / `strong`, `i` / `em`, `u`, `s`, `a href`, `img src width height`, `br`, and
   `span style` with `font-family`, `font-size` (pt), `color`, `background-color`. CSS
   emphasis on spans (`font-weight` bold / ≥ 600, `font-style` italic / oblique,
@@ -99,8 +102,8 @@ blocks, lists, fragments) and writes the subset directly, so the writers only ev
 
 | Source | How |
 |---|---|
-| DOCX | `docx_reader.read(path)` — python-docx: paragraphs (style → heading / quote / code, alignment, indent, page break before), runs (bold, italic, underline, strike, font, size, colour, highlight — direct formatting, else the run's character style and its `basedOn` chain; never paragraph styles or document defaults, which a saved-over file keeps itself), tabs (`\t`), tables without visible borders → `border:none`, hyperlinks, numbering (`numPr` → `ul` / `ol` by the numbering format, level), tables (merged cells), inline pictures. |
-| MD | Python-Markdown → HTML (already a dependency), normalised to the subset. A front-matter block (a first line `---` up to a later `---` / `...` line) is kept verbatim in `OpenedDocument.front_matter`, not rendered. |
+| DOCX | `docx_reader.read(path)` — python-docx: paragraphs (style → heading / quote / code, alignment, indent, page break before), runs (bold, italic, underline, strike, font, size, colour, highlight — direct formatting, else the run's character style and its `basedOn` chain; never paragraph styles or document defaults, which a saved-over file keeps itself), tabs (`\t`), tables without visible borders → `border:none` (a table counts as bordered when any cell has a visible `w:tcBorders` edge, as LibreOffice writes them, else by its own `tblBorders`, else by its table style), hyperlinks, numbering (`numPr` → `ul` / `ol` by the numbering format, level), tables (merged cells), inline pictures. |
+| MD | Python-Markdown → HTML (already a dependency), normalised to the subset. A front-matter block (a first line `---`, a second line `key:`, up to a later `---` / `...` line; otherwise a leading `---` is a horizontal rule) is kept verbatim in `OpenedDocument.front_matter`, not rendered. |
 | TXT | Read with the existing `htmlpdf.read_text` (UTF-8, Windows-1252 fallback); one `p` per line, leading / repeated spaces as U+00A0, tabs kept. |
 | HTML | Parsed with lxml and normalised to the subset; `data:` and local relative images are loaded, remote ones are left out (no network access when opening a file; network-share, drive and absolute paths are refused before the disk is touched). The `<title>` is kept in `OpenedDocument.title`. |
 | ODT, RTF, DOC | Converted to DOCX first with `convert_document` (the existing route planner: Pandoc or LibreOffice). A missing tool raises `ToolMissingError`, so the usual "Install it for me" dialog appears and the open is retried after install. Runs on a worker thread with a busy indicator. |
@@ -115,8 +118,10 @@ to keep a copy." The banner can be closed.
 Further warnings: Word lists numbered with letters or Roman numerals ("numbering with letters
 or Roman numerals" — they open as ordinary numbered lists); HTML and Markdown that lose page
 styles, classes or scripts, pictures from the web, or embedded HTML (iframes, forms, video …);
-Markdown footnotes and block-level raw HTML ("footnotes and other Markdown extras"). They use
-the same banner and the same "Save anyway?" question.
+Markdown footnotes and block-level raw HTML ("footnotes and other Markdown extras"); Markdown
+inline code spans, level 4–6 headings and picture alt texts outside fenced code ("inline code,
+small headings and picture descriptions" — they open as plain text, level-3 headings and
+pictures without a description). They use the same banner and the same "Save anyway?" question.
 
 Limits: files over 50 MB or documents over 2 000 000 characters are refused with
 "This document is too large to edit here."
@@ -137,7 +142,7 @@ Limits: files over 50 MB or documents over 2 000 000 characters are refused with
 |---|---|
 | DOCX | `docx_writer.write(html, images, dest, template)` — python-docx, the exact mirror of the reader (headings → built-in Heading styles, lists → a numbering definition per list type, tables with explicit borders or none, pictures, links, run formatting). When the document came from a DOCX, `SaveContent.template` is that file: its body is replaced and its styles, document defaults, page size / orientation / margins, headers / footers, theme and numbering definitions are kept (styles the writer needs and the template lacks are copied in). Without a template (new, ODT / RTF / DOC sources) python-docx's default template is used. |
 | HTML | The subset HTML in a small standalone page (`htmlpdf._page`, titled with the original `<title>` or else the file name), pictures embedded as `data:` URIs so the file is self-contained. |
-| MD | Our own Qt-free writer, `md_writer.to_markdown(html)`, which writes exactly what `open_document` reads back to the same subset (headings, `**` / `*`, raw `<u>` / `<s>` / `<span style>` / `<br>`, lists indented 4 spaces per level, `>` quotes, fenced code, `---`, pipe tables, escaped text, leading no-break spaces / tabs as `&nbsp;` / `&#9;`). Front matter is written back first, unchanged. Pictures are written next to the `.md` file in a `name_files/` folder and linked. Alignment, indents and page breaks have no Markdown form. |
+| MD | Our own Qt-free writer, `md_writer.to_markdown(html)`, which writes exactly what `open_document` reads back to the same subset (headings, `**` / `*`, raw `<u>` / `<s>` / `<span style>` / `<br>`, lists indented 4 spaces per level, `>` quotes, fenced code, `---`, pipe tables, escaped text, leading no-break spaces as `&nbsp;`, every tab as `&#9;`; pictures with a width or height as raw `<img src width height>`, their `src` pointing into the `name_files/` folder like `![](…)` links). Front matter is written back first, unchanged. Pictures are written next to the `.md` file in a `name_files/` folder and linked. Alignment, indents and page breaks have no Markdown form. |
 | TXT | `QTextDocument.toPlainText()` (GUI side), UTF-8. |
 | PDF | HTML → PDF through the existing built-in `pdf.layout_html` route (PyMuPDF Story), so PDF works with nothing installed; LibreOffice from DOCX is used instead when it is installed (better layout), exactly as the converter's route planner already decides. |
 | ODT, RTF, DOC, EPUB, … | DOCX to a temporary folder, then `convert_document` to the target. |

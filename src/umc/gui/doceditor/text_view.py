@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import html as _html
+import logging
 import re
 from pathlib import Path
 
@@ -33,6 +34,8 @@ from umc.doceditor.types import (
 )
 from umc.gui import theme
 from umc.gui.doceditor.html_export import QUOTE_PROPERTY, document_to_html
+
+log = logging.getLogger(__name__)
 
 __all__ = [
     "CODE_FONT",
@@ -66,6 +69,7 @@ _QUOTE_TOKENS = re.compile(r'<blockquote>|</blockquote>|<p(?: style="([^"]*)")?>
 _MARGIN_PT = re.compile(r"(<(?:p|h[1-3]|li) [^>]*?)margin-left:(\d+(?:\.\d+)?)pt")
 _IMG_SRC = re.compile(r'<img src="([^"]+)"')
 _FILE_IMG = re.compile(r"""(<img\b[^>]*?\bsrc\s*=\s*(["']))(file:[^"']*)\2""", re.I)
+CELL_PLACEHOLDER = "\u200b"  # stands in for an empty first paragraph of a table cell
 _TAB = re.compile(r"\t(?![^<>]*>)")  # a tab in text, not inside a tag
 _NOT_A_PICTURE = "This file isn't a picture the editor can add (PNG, JPG, GIF, BMP or WebP)."
 
@@ -121,6 +125,13 @@ def _qt_html(html: str) -> str:
         "<table>",
         '<table border="1" cellspacing="0" cellpadding="4" style="border-collapse:collapse">',
     ).replace('<table style="border:none">', '<table border="0" cellspacing="0" cellpadding="4">')
+    # A cell already starts with an empty block: an empty first paragraph would add a
+    # second one (one more per save). It gets a placeholder that load() removes again.
+    html = re.sub(
+        r'(<td[^>]*>)<(p|h[1-3])((?: style="[^"]*")?)></\2>',
+        lambda m: f"{m.group(1)}<{m.group(2)}{m.group(3)}>{CELL_PLACEHOLDER}</{m.group(2)}>",
+        html,
+    )
     # Qt drops empty paragraphs unless they are marked the way its own HTML marks them.
     html = re.sub(
         r'<(p|h[1-3]|li)(?: style="([^"]*)")?>(?=</\1>|<[uo]l>)',
@@ -207,6 +218,12 @@ class DocTextView(QTextEdit):
         doc.setDocumentMargin(PAGE_MARGIN)
         block = doc.begin()
         while block.isValid():
+            if block.text() == CELL_PLACEHOLDER and QTextCursor(block).currentTable() is not None:
+                cursor = QTextCursor(block)
+                cursor.movePosition(
+                    QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor
+                )
+                cursor.removeSelectedText()
             self._fix_block(block)
             block = block.next()
         doc.setUndoRedoEnabled(True)
@@ -281,7 +298,12 @@ class DocTextView(QTextEdit):
     def insertFromMimeData(self, source) -> None:  # noqa: N802 (Qt override)
         """Pasted HTML is normalised and its pictures kept; a picture or plain text as such."""
         if source.hasHtml():
-            self._paste_html(source.html())
+            try:
+                self._paste_html(source.html())
+            except ConversionError:  # HTML lxml can't read: paste the text instead
+                log.warning("Pasted HTML couldn't be read; pasting its text", exc_info=True)
+                if source.hasText():
+                    self.textCursor().insertText(source.text())
         elif source.hasImage():
             image = source.imageData()
             if isinstance(image, QImage) and not image.isNull():

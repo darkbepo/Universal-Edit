@@ -260,3 +260,68 @@ def test_nested_maybe_leave_returns_false_at_once(qtbot, page, tmp_path):
     page._ask_save_changes = ask
     assert page.maybe_leave() is True
     assert inner == [False]
+
+
+# ===== Fix round 2 ========================================================================
+
+
+def _type_at_end(page, text):
+    c = page.view.textCursor()
+    c.movePosition(QTextCursor.MoveOperation.End)
+    c.insertText(text)
+    page.view.setTextCursor(c)
+
+
+@pytest.mark.parametrize("fmt", ["docx", "md"])
+def test_typed_spaces_survive_saving(qtbot, page, tmp_path, fmt):
+    p = tmp_path / f"a.{fmt}"
+    if fmt == "docx":
+        d = docx.Document()
+        d.add_paragraph("x")
+        d.save(p)
+    else:
+        p.write_text("x\n", encoding="utf-8")
+    with qtbot.waitSignal(page.opened, timeout=20000):
+        page.open_path(p)
+    _type_at_end(page, "    typed    gap")
+    with qtbot.waitSignal(page.save_done, timeout=30000):
+        assert page.save()
+    assert open_document(p).html == f"<p>x {NBSP * 3}typed {NBSP * 3}gap</p>"
+    gui_cycle(qtbot, page, p)
+    assert open_document(p).html == f"<p>x {NBSP * 3}typed {NBSP * 3}gap</p>"
+    if fmt == "docx":
+        assert docx.Document(p).paragraphs[0].text == "x    typed    gap"
+
+
+def test_plain_text_paste_keeps_spaces(qtbot):
+    v = _view_with_picture(qtbot)
+    _paste(v, text="  a   b")
+    assert f"> {NBSP}a {NBSP * 2}b</p>" in v.content().html  # after the picture
+
+
+def test_unreadable_pasted_html_falls_back_to_text(qtbot, monkeypatch):
+    from umc.core.errors import ConversionError
+    from umc.gui.doceditor import text_view
+
+    def boom(*a, **k):
+        raise ConversionError("This file couldn't be read as HTML.")
+
+    v = _view_with_picture(qtbot)
+    monkeypatch.setattr(text_view, "normalise_html", boom)
+    _paste(v, html="<p>bad</p>", text="plain")
+    monkeypatch.undo()
+    assert "plain" in v.content().html
+
+
+def test_empty_table_cells_stay_one_paragraph(qtbot, page, tmp_path):
+    p = tmp_path / "t.docx"
+    d = docx.Document()
+    t = d.add_table(2, 2)
+    t.style = d.styles["Table Grid"]
+    t.cell(0, 0).text = "a"
+    d.save(p)
+    original = open_document(p).html
+    gui_cycle(qtbot, page, p)
+    cells = docx.Document(p).tables[0]._cells
+    assert [len(c.paragraphs) for c in cells] == [1, 1, 1, 1]
+    assert open_document(p).html == original

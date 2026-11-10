@@ -399,3 +399,82 @@ def test_empty_list_items_survive(tmp_path, fmt):
     save_document(SaveContent(html, {}), p, fmt)
     for doc in cycle(p, fmt):
         assert doc.html == html
+
+
+# ===== Fix round 2 ========================================================================
+from docx.oxml import OxmlElement  # noqa: E402
+
+from umc.doceditor.types import W_MDFORMAT  # noqa: E402
+
+
+def test_cell_borders_count_as_a_bordered_table(tmp_path):
+    p = tmp_path / "lo.docx"
+    d = docx.Document()
+    t = d.add_table(1, 2)  # no table style, no tblBorders: like LibreOffice
+    for cell in t._cells:
+        cell.text = "c"
+        tc_pr = cell._tc.get_or_add_tcPr()
+        borders = OxmlElement("w:tcBorders")
+        for edge in ("top", "left", "bottom", "right"):
+            el = OxmlElement(f"w:{edge}")
+            el.set(qn("w:val"), "single")
+            el.set(qn("w:sz"), "4")
+            borders.append(el)
+        tc_pr.append(borders)
+    d.save(p)
+    opened = cycle(p, "docx")
+    assert all("border:none" not in o.html and "<table>" in o.html for o in opened)
+    assert set(_borders(docx.Document(p).tables[0]).values()) == {"single"}
+
+
+def test_markdown_starting_with_a_rule_is_not_front_matter(tmp_path):
+    p = tmp_path / "a.md"
+    p.write_text("---\n\n# Title\n\nBody text\n\n---\n\nMore\n", encoding="utf-8")
+    doc = open_document(p)
+    assert doc.front_matter == ""
+    assert doc.html == "<hr><h1>Title</h1><p>Body text</p><hr><p>More</p>"
+    p.write_text("---\ntitle: x\n---\n\nText\n", encoding="utf-8")
+    assert open_document(p).front_matter == "---\ntitle: x\n---\n"
+    p.write_text("---\nnot yaml\n---\n\nText\n", encoding="utf-8")
+    assert open_document(p).front_matter == ""
+
+
+def test_markdown_tab_inside_a_line_stays_a_tab(tmp_path):
+    p = tmp_path / "a.md"
+    save_document(SaveContent("<p>Name:\tJohn</p>", {}), p, "md")
+    assert "&#9;" in p.read_text(encoding="utf-8")
+    for doc in cycle(p, "md"):
+        assert doc.html == "<p>Name:\tJohn</p>"
+
+
+def test_escaped_footnote_bracket_is_not_an_extra(tmp_path):
+    p = tmp_path / "a.md"
+    p.write_text("Plain \\[^1] text\n", encoding="utf-8")
+    assert open_document(p).warnings == []
+
+
+def test_markdown_picture_size_survives(tmp_path):
+    p = tmp_path / "a.md"
+    html = '<p>x<img src="img/1.png" width="20" height="10"></p>'
+    save_document(SaveContent(html, {"img/1.png": PNG_1PX}), p, "md")
+    text = p.read_text(encoding="utf-8")
+    assert '<img src="a_files/1.png" width="20" height="10">' in text
+    for doc in cycle(p, "md"):
+        assert doc.html == html and doc.images == {"img/1.png": PNG_1PX}
+
+
+@pytest.mark.parametrize(
+    "source",
+    ["Some `code` here\n", "#### Small\n", "![a picture](pic.png)\n"],
+)
+def test_markdown_formats_the_editor_drops_warn(tmp_path, source):
+    (tmp_path / "pic.png").write_bytes(PNG_1PX)
+    p = tmp_path / "a.md"
+    p.write_text(source, encoding="utf-8")
+    assert W_MDFORMAT in open_document(p).warnings
+
+
+def test_markdown_without_dropped_formats_does_not_warn(tmp_path):
+    p = tmp_path / "a.md"
+    p.write_text("```\n`not a span`\n#### in code\n```\n\n### Ok \\`tick\\` ![](x.png)\n")
+    assert open_document(p).warnings == []

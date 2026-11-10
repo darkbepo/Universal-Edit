@@ -340,7 +340,8 @@ def test_page_break_and_rule(view):
     c = view.textCursor()
     c.setPosition(5)
     insert_page_break(c)
-    assert view.content().html == '<p>hello</p><p style="page-break-before:always">world</p>'
+    # the space after the break starts the new paragraph and is kept (typed-space rule)
+    assert view.content().html == '<p>hello</p><p style="page-break-before:always">\xa0world</p>'
     c = view.textCursor()
     c.movePosition(QTextCursor.MoveOperation.End)
     insert_hr(c)
