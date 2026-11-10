@@ -10,14 +10,13 @@ from PySide6.QtCore import QPoint, Qt  # noqa: E402
 
 from umc.videoedit.project import (  # noqa: E402
     AudioClip,
-    PictureClip,
     Project,
     ProjectSettings,
     Source,
     TextItem,
+    Transition,
     VideoClip,
     clip_duration,
-    layout,
 )
 
 
@@ -186,8 +185,88 @@ def test_source_drop_signal(make, qtbot):
     assert sig.args[2] == "main"
 
 
-def test_layout_unchanged_by_widget(make):
-    p = _project()
-    t = make(p)
-    assert layout(t.project) == layout(p)
-    assert PictureClip  # imported for completeness
+def _three():
+    return [VideoClip(f"c{i}", "v", 0.0, 2.0) for i in (1, 2, 3)]
+
+
+def test_set_project_keeps_or_drops_selection(make, qtbot):
+    t = make(_project(_three()))
+    t.set_selected("c2")
+    t.set_project(_project(_three()))
+    assert t.selected_id == "c2"
+    with qtbot.waitSignal(t.selection_changed) as sig:
+        t.set_project(_project([VideoClip("c1", "v", 0.0, 2.0)]))
+    assert t.selected_id is None and sig.args[0] is None
+
+
+def test_drag_main_left_to_front(make, qtbot):
+    t = make(_project(_three()))
+    y = _y(t, "main")
+    with qtbot.waitSignal(t.edit) as sig:
+        _drag(qtbot, t, QPoint(t.x_for(5), y), QPoint(t.x_for(0.4), y))
+    assert [m.id for m in sig.args[0].main] == ["c3", "c1", "c2"]
+
+
+def test_drag_music_to_other_row(make, qtbot):
+    music = ((AudioClip("m1", "a", 0.0, 0.0, 2.0),), ())
+    t = make(_project(music=music))
+    with qtbot.waitSignal(t.edit) as sig:
+        _drag(
+            qtbot,
+            t,
+            QPoint(t.x_for(1), _y(t, "music", 0)),
+            QPoint(t.x_for(1), _y(t, "music", 1)),
+        )
+    project, label = sig.args
+    assert (
+        label == "Move music" and not project.music_rows[0] and project.music_rows[1][0].id == "m1"
+    )
+
+
+def test_text_drag_onto_other_kind_stays_on_row(make, qtbot):
+    t = make(_text_project())
+    with qtbot.waitSignal(t.edit) as sig:
+        _drag(
+            qtbot,
+            t,
+            QPoint(t.x_for(4), _y(t, "text")),
+            QPoint(t.x_for(6), _y(t, "music")),
+        )
+    row = sig.args[0].text_rows[0]
+    assert row[0].id == "t1" and row[0].start == pytest.approx(5.0)
+
+
+def test_boundary_end_edge_reachable(make):
+    plain = [VideoClip("c1", "v", 0.0, 2.0), VideoClip("c2", "v", 0.0, 2.0)]
+    t = make(_project(plain))
+    y = t.row_y("main") + 40
+    r = t.hit_test(QPoint(t.x_for(2) - 3, y))
+    assert (r.item_id, r.part) == ("c1", "right")
+    r = t.hit_test(QPoint(t.x_for(2) + 3, y))
+    assert (r.item_id, r.part) == ("c2", "left")
+    fade = [
+        VideoClip("c1", "v", 0.0, 2.0),
+        VideoClip("c2", "v", 0.0, 2.0, transition_in=Transition("fade", 0.5)),
+    ]
+    t = make(_project(fade))
+    r = t.hit_test(QPoint(t.x_for(2) - 2, y))  # c2 starts at 1.5, c1 ends at 2.0
+    assert (r.item_id, r.part) == ("c1", "right")
+    r = t.hit_test(QPoint(t.x_for(1.5) + 2, y))
+    assert (r.item_id, r.part) == ("c2", "left")
+
+
+def test_snapping_to_end_edge(make, qtbot):
+    t = make(_text_project())
+    t.set_playhead(8.0)
+    y = _y(t, "text")
+    # end of the item (5 s) dragged to ~7.95 s: its end snaps to the playhead
+    with qtbot.waitSignal(t.edit) as sig:
+        _drag(qtbot, t, QPoint(t.x_for(4), y), QPoint(t.x_for(4) + round(2.95 * 80), y))
+    assert sig.args[0].text_rows[0][0].end == pytest.approx(8.0)
+
+
+def test_noop_drag_not_emitted(make, qtbot):
+    t = make(_project(_three()))
+    y = _y(t, "main")
+    with qtbot.assertNotEmitted(t.edit):
+        _drag(qtbot, t, QPoint(t.x_for(1), y), QPoint(t.x_for(1.5), y))  # same index

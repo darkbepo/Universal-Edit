@@ -19,6 +19,7 @@ from umc.videoedit.project import (
     AudioClip,
     PictureClip,
     Project,
+    Source,
     Span,
     TextItem,
     VideoClip,
@@ -67,6 +68,9 @@ class TimelineView(QWidget):
         self._waves: dict[str, list[float]] = {}
         self._drag: dict | None = None
         self._seeking = False
+        self._row_table: list[tuple[str, int, int, int]] = []
+        self._sources: dict[str, Source] = {}
+        self._items: dict[str, object] = {}
         self.setMouseTracking(True)
         self.setAcceptDrops(True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -76,13 +80,19 @@ class TimelineView(QWidget):
     def set_project(self, project: Project) -> None:
         self.project = project
         self._spans = layout(project)
-        sel = self.selected_id
-        if sel is not None:
-            key = sel[3:] if sel.startswith("tr:") else sel
-            if key not in self._spans:
-                self.selected_id = None
+        self._sources = {s.id: s for s in project.sources}
+        items: dict[str, object] = {m.id: m for m in project.main}
+        for row in project.text_rows:
+            items.update({t.id: t for t in row})
+        for mrow in project.music_rows:
+            items.update({a.id: a for a in mrow})
+        self._items = items
         self._drag = None
+        self._seeking = False
         self._update_size()
+        sel = self.selected_id
+        if sel is not None and (sel[3:] if sel.startswith("tr:") else sel) not in self._spans:
+            self.set_selected(None)
         self.update()
 
     def set_playhead(self, t: float) -> None:
@@ -128,6 +138,9 @@ class TimelineView(QWidget):
 
     def _rows(self) -> list[tuple[str, int, int, int]]:
         """(kind, row, y, height) for every row, top to bottom (the ruler is not a row)."""
+        return self._row_table
+
+    def _build_rows(self) -> list[tuple[str, int, int, int]]:
         p = self.project
         n_text = len(p.text_rows) if p else 1
         n_music = len(p.music_rows) if p else 1
@@ -148,6 +161,7 @@ class TimelineView(QWidget):
         return r[2] + r[3]
 
     def _update_size(self) -> None:
+        self._row_table = self._build_rows()
         self.setMinimumHeight(self._total_height())
 
     def sizeHint(self) -> QSize:  # noqa: N802
@@ -195,22 +209,29 @@ class TimelineView(QWidget):
                 bx = self._boundary_x(i)
                 if bx is not None and abs(pos.x() - bx) <= HANDLE // 2:
                     return HitResult(item.id, "transition")
-        hit: HitResult | None = None
+        # Edges first, over every item in the row, nearest to the cursor wins: with a
+        # transition the next clip starts before the previous one ends, so the previous
+        # clip's end edge lies inside the next clip's body. A tie (clips that touch, no
+        # overlap) goes to the earlier clip's right edge. Only then do bodies count.
+        best: tuple[float, HitResult] | None = None
+        bodies: list[str] = []
         for item_id, span in self._spans.items():
             if span.row_kind != kind or span.row != r:
                 continue
             x0, x1 = self.x_for(span.start), self.x_for(span.end)
-            if not x0 <= pos.x() <= x1:
-                continue
             edge = min(EDGE, (x1 - x0) // 3)
-            if pos.x() - x0 < edge:
-                part: Part = "left"
-            elif x1 - pos.x() <= edge:
-                part = "right"
-            else:
-                part = "body"
-            hit = HitResult(item_id, part)  # later items are painted on top
-        return hit
+            # an edge on the far side of the cursor (outside the item) loses a tie
+            for dist, part in (
+                (abs(pos.x() - x1) + (0.5 if pos.x() > x1 else 0), "right"),
+                (abs(pos.x() - x0) + (0.5 if pos.x() < x0 else 0), "left"),
+            ):
+                if dist <= edge and (best is None or dist < best[0]):
+                    best = (dist, HitResult(item_id, part))  # type: ignore[arg-type]
+            if x0 <= pos.x() <= x1:
+                bodies.append(item_id)
+        if best is not None:
+            return best[1]
+        return HitResult(bodies[-1], "body") if bodies else None  # later is painted on top
 
     def select_at(self, pos: QPoint) -> HitResult | None:
         hit = self.hit_test(pos)
@@ -237,11 +258,14 @@ class TimelineView(QWidget):
         return best
 
     def _snap_move(self, start: float, dur: float, exclude: str, alt: bool) -> float:
-        a = self._snap(start, exclude, alt)
-        if a != start:
-            return a
-        b = self._snap(start + dur, exclude, alt)
-        return b - dur if b != start + dur else start
+        """Snap the start or the end of the moved item, whichever is nearer to a snap point."""
+        a = self._snap(start, exclude, alt) - start
+        b = self._snap(start + dur, exclude, alt) - (start + dur)
+        if a == 0 and b == 0:
+            return start
+        if a == 0 or (b != 0 and abs(b) < abs(a)):
+            return start + b
+        return start + a
 
     # ---- mouse ----------------------------------------------------------------------------
     def mousePressEvent(self, e: QMouseEvent) -> None:  # noqa: N802
@@ -270,7 +294,7 @@ class TimelineView(QWidget):
             "origin": pos,
             "pos": pos,
             "moved": False,
-            "alt": bool(e.modifiers() & Qt.KeyboardModifier.AltModifier),
+            "alt": False,
         }
 
     def mouseMoveEvent(self, e: QMouseEvent) -> None:  # noqa: N802
@@ -289,7 +313,7 @@ class TimelineView(QWidget):
                 self.unsetCursor()
             return
         d["pos"] = pos
-        d["alt"] = d["alt"] or bool(e.modifiers() & Qt.KeyboardModifier.AltModifier)
+        d["alt"] = bool(e.modifiers() & Qt.KeyboardModifier.AltModifier)
         if not d["moved"] and (pos - d["origin"]).manhattanLength() >= DRAG_PX:
             d["moved"] = True
         self.update()
@@ -303,12 +327,13 @@ class TimelineView(QWidget):
         if d is None or not d["moved"] or self.project is None:
             return
         d["pos"] = e.position().toPoint()
-        d["alt"] = d["alt"] or bool(e.modifiers() & Qt.KeyboardModifier.AltModifier)
+        d["alt"] = bool(e.modifiers() & Qt.KeyboardModifier.AltModifier)
         try:
             result = self._compute(d)
         except edits.EditError:
             return  # refused: cancel the drag silently
-        self.edit.emit(*result)
+        if result[0] != self.project:  # a drag that changes nothing makes no history entry
+            self.edit.emit(*result)
 
     def _seek_to(self, x: float) -> None:
         self.seek.emit(max(0.0, self.t_for(x)))
@@ -454,15 +479,11 @@ class TimelineView(QWidget):
     def _paint_items(self, p: QPainter, pal: dict[str, str]) -> None:
         proj = self.project
         assert proj is not None
-        items: dict[str, object] = {m.id: m for m in proj.main}
-        for row in proj.text_rows:
-            items.update({t.id: t for t in row})
-        for mrow in proj.music_rows:
-            items.update({a.id: a for a in mrow})
         for item_id, span in self._spans.items():
-            self._paint_clip(
-                p, pal, items[item_id], self._span_rect(span), item_id == self.selected_id
-            )
+            rect = self._span_rect(span)
+            if rect.right() < HEADER_WIDTH or rect.left() > self.width():
+                continue  # off screen
+            self._paint_clip(p, pal, self._items[item_id], rect, item_id == self.selected_id)
         for i, m in enumerate(proj.main):
             bx = self._boundary_x(i)
             if bx is None:
@@ -492,7 +513,8 @@ class TimelineView(QWidget):
         f = QFont(p.font())
         f.setPixelSize(11)
         p.setFont(f)
-        p.setPen(QColor("#ffffff"))
+        fill = self._colour(item, pal)
+        p.setPen(QColor("#101114" if fill.lightness() > 150 else "#ffffff"))
         p.drawText(rect.adjusted(6, 3, -4, 0), Qt.AlignmentFlag.AlignTop, self._label(item))
         p.restore()
         if selected:
@@ -504,7 +526,7 @@ class TimelineView(QWidget):
         if isinstance(item, TextItem):
             return item.text.replace("\n", " ")
         assert self.project is not None
-        return self.project.source(item.source).path.name  # type: ignore[attr-defined]
+        return self._sources[item.source].path.name  # type: ignore[attr-defined]
 
     @staticmethod
     def _paint_thumbs(p: QPainter, images: list[QImage], rect: QRect) -> None:
@@ -513,18 +535,22 @@ class TimelineView(QWidget):
         h = rect.height() - WAVE_H
         w = max(1, round(h * images[0].width() / max(1, images[0].height())))
         n = max(1, -(-rect.width() // w))
-        for i in range(n):
+        first = max(0, (HEADER_WIDTH - rect.left()) // w)
+        last = min(n, (int(p.clipBoundingRect().right()) - rect.left()) // w + 1)
+        for i in range(first, last):
             img = images[min(len(images) - 1, i * len(images) // n)]
             p.drawImage(QRect(rect.left() + i * w, rect.top(), w, h), img)
 
     def _paint_wave(self, p: QPainter, peaks: list[float], rect: QRect, item: object) -> None:
         if not peaks or self.project is None:
             return
-        dur = max(self.project.source(item.source).duration, 1e-6)  # type: ignore[attr-defined]
+        dur = max(self._sources[item.source].duration, 1e-6)  # type: ignore[attr-defined]
         lo, hi = item.in_, item.out  # type: ignore[attr-defined]
         p.setPen(QColor(255, 255, 255, 170))
         mid = rect.center().y()
-        for x in range(rect.left(), rect.right() + 1, 2):
+        x_lo = max(rect.left(), HEADER_WIDTH)
+        x_lo -= (x_lo - rect.left()) % 2
+        for x in range(x_lo, min(rect.right(), self.width()) + 1, 2):
             frac = (x - rect.left()) / max(1, rect.width())
             idx = int((lo + frac * (hi - lo)) / dur * len(peaks))
             v = peaks[max(0, min(len(peaks) - 1, idx))]
@@ -540,7 +566,11 @@ class TimelineView(QWidget):
         dt = self._dt(d)
         part = d["part"]
         if part == "left":
-            rect.setLeft(self.x_for(self._snap(span.start + dt, d["id"], d["alt"])))
+            new_left = self.x_for(self._snap(span.start + dt, d["id"], d["alt"]))
+            if span.row_kind == "main":  # trimming the start keeps the clip's place
+                rect.setRight(rect.right() - (new_left - rect.left()))
+            else:
+                rect.setLeft(new_left)
         elif part == "right":
             rect.setRight(self.x_for(self._snap(span.end + dt, d["id"], d["alt"])))
         elif span.row_kind == "main":
