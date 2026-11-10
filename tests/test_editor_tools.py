@@ -176,3 +176,146 @@ def test_fill_semi_transparent_color_blends():
     tool.release(doc, 1, 1, c)
     r, g, b, a = doc.active_layer.image.getpixel((1, 1))
     assert a == 255 and 120 <= r <= 135 and 120 <= b <= 135
+
+
+# ------------------------------------------------------------------ shapes, select, text
+
+from umc.editor.history import History as _History  # noqa: E402
+from umc.editor.tools.select import (  # noqa: E402
+    CropTool,
+    SelectTool,
+    clear_selection,
+    deselect,
+    select_all,
+)
+from umc.editor.tools.shapes import (  # noqa: E402
+    EllipseTool,
+    LineOptions,
+    LineTool,
+    RectTool,
+    ShapeOptions,
+)
+from umc.editor.tools.text import add_text_layer, render_text  # noqa: E402
+
+
+def test_rect_outline_vs_filled():
+    doc = Document.new(40, 40)
+    run_stroke(RectTool(), doc, [(5, 5), (35, 35)], ctx(ShapeOptions(width=2, mode="outline")))
+    img = doc.active_layer.image
+    assert img.getpixel((20, 20))[3] == 0 and img.getpixel((5, 20))[3] > 200
+    doc2 = Document.new(40, 40)
+    run_stroke(RectTool(), doc2, [(5, 5), (35, 35)], ctx(ShapeOptions(mode="filled")))
+    assert doc2.active_layer.image.getpixel((20, 20)) == (255, 255, 255, 255)
+
+
+def test_ellipse_filled_centre_not_corner():
+    doc = Document.new(40, 40)
+    run_stroke(EllipseTool(), doc, [(0, 0), (40, 40)], ctx(ShapeOptions(mode="both")))
+    img = doc.active_layer.image
+    assert img.getpixel((20, 20)) == (255, 255, 255, 255) and img.getpixel((1, 1))[3] == 0
+
+
+def test_line_shift_snaps():
+    doc = Document.new(50, 50)
+    run_stroke(LineTool(), doc, [(10, 10), (40, 12)], ctx(LineOptions(width=3), shift=True))
+    img = doc.active_layer.image
+    assert img.getpixel((39, 10))[3] > 200 and img.getpixel((39, 13))[3] == 0
+
+
+def test_shape_preview_then_commit_undo():
+    doc = Document.new(40, 40)
+    tool, c = RectTool(), ctx(ShapeOptions(mode="filled"))
+    tool.press(doc, 5, 5, c)
+    tool.move(doc, 30, 30, c)
+    prev = tool.preview(doc)
+    assert prev is not None and doc.active_layer.image.getpixel((15, 15))[3] == 0
+    h = _History(doc)
+    h.push(tool.release(doc, 30, 30, c))
+    assert tool.preview(doc) is None and doc.active_layer.image.getpixel((15, 15))[3] == 255
+    h.undo()
+    assert doc.active_layer.image.getpixel((15, 15))[3] == 0
+
+
+def test_select_and_clear():
+    doc = Document(20, 20, [Layer("bg", Image.new("RGBA", (20, 20), (0, 0, 0, 255)))])
+    h = _History(doc)
+    h.push(run_stroke(SelectTool(), doc, [(0, 0), (10, 10)], ctx(None)))
+    assert doc.selection == Rect(0, 0, 10, 10)
+    h.push(clear_selection(doc))
+    img = doc.active_layer.image
+    assert img.getpixel((5, 5))[3] == 0 and img.getpixel((15, 15))[3] == 255
+    h.undo()
+    assert doc.active_layer.image.getpixel((5, 5))[3] == 255
+    h.undo()
+    assert doc.selection is None
+
+
+def test_selection_clipped_to_canvas_and_click_clears():
+    doc = Document.new(20, 20)
+    run_stroke(SelectTool(), doc, [(10, 10), (50, -5)], ctx(None))
+    assert doc.selection == Rect(10, 0, 20, 10)
+    run_stroke(SelectTool(), doc, [(3, 3), (3, 3)], ctx(None))
+    assert doc.selection is None
+
+
+def test_select_all_and_deselect():
+    doc = Document.new(8, 6)
+    h = _History(doc)
+    h.push(select_all(doc))
+    assert doc.selection == Rect(0, 0, 8, 6)
+    h.push(deselect(doc))
+    assert doc.selection is None and deselect(doc) is None
+    assert clear_selection(doc) is None
+
+
+def test_crop_tool_pending_rect():
+    doc = Document.new(30, 30)
+    tool = CropTool()
+    run_stroke(tool, doc, [(2, 3), (12, 20)], ctx(None))
+    assert tool.pending == Rect(2, 3, 12, 20) and doc.selection is None
+
+
+def test_text_layer_added():
+    doc = Document.new(200, 100)
+    h = _History(doc)
+    cmd = add_text_layer(doc, "Hello", 10, 10, "DejaVu Sans", 40, False, False, (255, 0, 0, 255))
+    h.push(cmd)
+    assert len(doc.layers) == 2 and doc.active == 1 and doc.active_layer.name == "Hello"
+    assert (doc.active_layer.x, doc.active_layer.y) == (10, 10)
+    assert (255, 0, 0, 255) in [c for _, c in doc.active_layer.image.getcolors(100000)]
+    h.undo()
+    assert len(doc.layers) == 1
+    assert add_text_layer(doc, "   ", 0, 0, "DejaVu Sans", 40, False, False, (0, 0, 0, 255)) is None
+
+
+def test_find_font_dejavu():
+    import pytest
+
+    from umc.converters.subtitles import fonts_dir
+    from umc.editor.fonts import find_font
+
+    if fonts_dir() is None:
+        pytest.skip("bundled font not fetched")
+    assert find_font("DejaVu Sans", False, False).name == "DejaVuSans.ttf"
+
+
+def test_render_text_unknown_font_falls_back():
+    img = render_text("Hi\nthere", "No Such Font 123", 30, True, True, (0, 0, 0, 255))
+    assert img.width > 10 and img.height > 30 and img.getbbox() is not None
+
+
+def test_registry_has_all_tools():
+    from umc.editor.tools import TOOLS
+
+    assert [t.id for t in TOOLS] == [
+        "brush",
+        "eraser",
+        "fill",
+        "picker",
+        "line",
+        "rect",
+        "ellipse",
+        "text",
+        "select",
+        "crop",
+    ]
