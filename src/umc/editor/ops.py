@@ -58,10 +58,11 @@ def _moved(
 ):
     """``layer`` moved and/or with its pixels changed by ``op`` (applied to the mask too, so a
     layer mask follows crops, resizes, rotations and flips)."""
-    mask = layer.mask
+    mask, text = layer.mask, layer.text
     if op is not None:
         image = op(layer.image)
         mask = None if mask is None else op(mask)
+        text = None  # rotated / resized text is just pixels now
     elif image is not None and mask is not None and mask.size != image.size:
         mask = None  # a replaced image that the old mask doesn't fit
     return replace(
@@ -70,6 +71,7 @@ def _moved(
         x=layer.x if x is None else x,
         y=layer.y if y is None else y,
         mask=mask,
+        text=text,
     )
 
 

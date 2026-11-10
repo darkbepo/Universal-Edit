@@ -294,6 +294,13 @@ class ToolSettings(QWidget):
         values = {**opts.defaults(tool.options_cls), **self._values.get(tool.id, {})}
         return opts.build(tool.options_cls, values)
 
+    def set_values(self, tool: Tool, values: dict) -> None:
+        """Set some of ``tool``'s settings (e.g. from a text layer being edited)."""
+        self._values.setdefault(tool.id, {}).update(values)
+        if tool is self._tool:
+            self.show_tool(tool)
+        self.changed.emit()
+
     def font_family(self) -> str:
         return self.font_box.currentFont().family()
 

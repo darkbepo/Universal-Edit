@@ -226,6 +226,7 @@ class LayerList(QListWidget):
 class LayersPanel(QWidget):
     command = Signal(object)  # a Command produced by ops.* (already applied)
     active_changed = Signal(int)
+    edit_text_requested = Signal(int)  # layer index
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -476,6 +477,9 @@ class LayersPanel(QWidget):
         menu.addSeparator()
         if not many:
             menu.addAction("Rename…", self.rename)
+            if doc.layers[doc.active].text is not None:
+                i = doc.active
+                menu.addAction("Edit text…", lambda: self.edit_text_requested.emit(i))
         if any(doc.layers[i].visible for i in chosen):
             menu.addAction(f"Hide {word}", lambda: self.set_visible(False))
         if any(not doc.layers[i].visible for i in chosen):

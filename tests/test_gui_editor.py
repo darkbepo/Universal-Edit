@@ -1021,3 +1021,39 @@ def test_background_blur_needs_a_selection_then_applies(page, monkeypatch):
     page.run_op("background_blur")
     assert page.history.undo_label == "Background blur"
     assert page.doc.selection == Rect(0, 0, 10, 10)
+
+
+# ------------------------------------------------------------------ text v2
+
+
+def test_text_with_styles_then_click_it_to_edit(page, qtbot):
+    page.select_tool("text")
+    page.tool_settings.set_values(page.tools["text"], {"box": True, "outline": 2, "size": 20})
+    c = page.canvas
+    qtbot.mouseClick(c, Qt.MouseButton.LeftButton, pos=c.image_to_widget(5, 5))
+    page.text_box.setPlainText("Hi")
+    page.commit_text()
+    layer = page.doc.active_layer
+    assert layer.text is not None and layer.text.box and layer.text.outline == 2
+    n = len(page.doc.layers)
+    # clicking inside the text layer opens it again, prefilled
+    bx, by = layer.x + layer.image.width // 2, layer.y + layer.image.height // 2
+    qtbot.mouseClick(c, Qt.MouseButton.LeftButton, pos=c.image_to_widget(bx, by))
+    assert page.text_box is not None and page.text_box.toPlainText() == "Hi"
+    page.text_box.setPlainText("Hi there")
+    page.commit_text()
+    assert len(page.doc.layers) == n and page.doc.active_layer.text.text == "Hi there"
+    assert page.history.undo_label == "Edit text"
+
+
+def test_layer_menu_edit_text(page, qtbot):
+    page.select_tool("text")
+    c = page.canvas
+    qtbot.mouseClick(c, Qt.MouseButton.LeftButton, pos=c.image_to_widget(5, 5))
+    page.text_box.setPlainText("Menu")
+    page.commit_text()
+    page.select_tool("brush")
+    actions = {a.text(): a for a in page.layers.build_menu(0).actions() if a.text()}
+    actions["Edit text…"].trigger()
+    assert page.tool.id == "text" and page.text_box.toPlainText() == "Menu"
+    page.commit_text()

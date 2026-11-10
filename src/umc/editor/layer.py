@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from PIL import Image
 
@@ -19,6 +20,8 @@ class Layer:
     visible: bool = True
     # Layer mask ("L", the image's size): black hides, white shows; None = no mask.
     mask: Image.Image | None = None
+    # How a text layer was made (tools.text.TextSpec), so it can be edited again; None otherwise.
+    text: Any = None
 
     def __post_init__(self) -> None:
         if self.image.mode != "RGBA":
@@ -32,7 +35,16 @@ class Layer:
 
     def copy(self) -> Layer:
         mask = None if self.mask is None else self.mask.copy()
-        return Layer(self.name, self.image.copy(), self.x, self.y, self.opacity, self.visible, mask)
+        return Layer(
+            self.name,
+            self.image.copy(),
+            self.x,
+            self.y,
+            self.opacity,
+            self.visible,
+            mask,
+            self.text,
+        )
 
     def pixels(self, box: tuple[int, int, int, int] | None = None) -> Image.Image:
         """The image (or its ``box``) with the mask applied to alpha — what the layer shows."""

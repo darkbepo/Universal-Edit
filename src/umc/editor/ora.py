@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import json
 import os
 import tempfile
 import xml.etree.ElementTree as ET
@@ -16,6 +17,20 @@ from umc.editor.document import Document, check_size
 from umc.editor.layer import Layer
 
 MIMETYPE = b"image/openraster"
+
+
+TEXT_ATTR = "umc-text"  # JSON of tools.text.TextSpec
+
+
+def _text_spec(raw: str | None):
+    if not raw:
+        return None
+    from umc.editor.tools.text import TextSpec
+
+    try:
+        return TextSpec.from_dict(json.loads(raw))
+    except (ValueError, TypeError):
+        return None  # a damaged or newer attribute: keep the pixels, lose the editing
 
 
 def _png(img: Image.Image) -> bytes:
@@ -41,6 +56,8 @@ def write_ora(doc: Document, path: Path) -> None:
             opacity=f"{layer.opacity:.4f}",
             visibility="visible" if layer.visible else "hidden",
             **({"selected": "true"} if doc.layers.index(layer) == doc.active else {}),
+            # our own extra: how a text layer was made, so it stays editable (others ignore it)
+            **({TEXT_ATTR: json.dumps(layer.text.to_dict())} if layer.text is not None else {}),
         )
         files.append((src, _png(layer.pixels())))  # ORA has no masks: bake them in
     merged = doc.composite()
@@ -97,6 +114,7 @@ def read_ora(path: Path) -> Document:
                     y=int(float(el.get("y", "0"))),
                     opacity=max(0.0, min(1.0, float(el.get("opacity", "1")))),
                     visible=el.get("visibility", "visible") != "hidden",
+                    text=_text_spec(el.get(TEXT_ATTR)),
                 )
                 if el.get("selected") == "true":
                     active = layer

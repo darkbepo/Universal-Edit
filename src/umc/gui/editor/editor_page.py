@@ -33,7 +33,13 @@ from umc.editor.save import SAVE_FORMATS, save_document
 from umc.editor.tools import TOOLS
 from umc.editor.tools.base import ToolContext
 from umc.editor.tools.select import clear_selection, deselect, select_all
-from umc.editor.tools.text import add_text_layer
+from umc.editor.tools.text import (
+    TextSpec,
+    add_text_layer,
+    anchor_of,
+    edit_text_layer,
+    text_layer_at,
+)
 from umc.gui import theme
 from umc.gui.editor.canvas import EditorCanvas, pil_to_qimage, qimage_to_pil
 from umc.gui.editor.crop_bar import CropBar
@@ -314,6 +320,7 @@ class EditorPage(QWidget):
         lay.addWidget(self.swatches)
         self.layers = LayersPanel()
         self.layers.command.connect(self._push)
+        self.layers.edit_text_requested.connect(self.edit_text)
         self.layers.active_changed.connect(lambda _i: self._update_info())
         lay.addWidget(self.layers, 1)
         scroll.setWidget(host)
@@ -670,9 +677,22 @@ class EditorPage(QWidget):
         self.canvas.update()
 
     # ------------------------------------------------------------ text
-    def _open_text_box(self, x: float, y: float) -> None:
+    def edit_text(self, index: int) -> None:
+        """Open text layer ``index`` again (layer menu → Edit text…)."""
+        if self.doc is not None and self.doc.layers[index].text is not None:
+            self.select_tool("text")
+            self._open_text_box(*anchor_of(self.doc.layers[index]), editing=index)
+
+    def _open_text_box(self, x: float, y: float, editing: int | None = None) -> None:
         if self.text_box is not None:
             self.commit_text()
+        if editing is None and self.doc is not None:  # a click on a text layer edits it
+            editing = text_layer_at(self.doc, x, y)
+            if editing is not None:
+                x, y = anchor_of(self.doc.layers[editing])
+        self._editing = editing
+        if editing is not None:
+            self._load_text_style(self.doc.layers[editing].text)
         self._text_anchor = (x, y)
         opts = self.tool_settings.options_for(self.tools["text"])
         box = TextBox(self.canvas)
@@ -688,10 +708,58 @@ class EditorPage(QWidget):
         )
         box.move(self.canvas.image_to_widget(x, y))
         box.committed.connect(self.commit_text)
+        if editing is not None:
+            box.setPlainText(self.doc.layers[editing].text.text)
         box._fit()
         box.show()
         box.setFocus()
         self.text_box = box
+
+    def _load_text_style(self, spec) -> None:
+        """Put a text layer's style into the Text tool's settings and the colours."""
+        values = {k: getattr(spec, k) for k in ("size", "bold", "italic", "align", "outline")}
+        values.update(shadow=spec.shadow, box=spec.box, watermark=spec.watermark)
+        self.tool_settings.set_values(self.tools["text"], values)
+        self.tool_settings.font_box.setCurrentFont(QFont(spec.font))
+        self.swatches.set_color(spec.color, "primary")
+        self.swatches.set_color(spec.box_color if spec.box else spec.outline_color, "secondary")
+
+    def _text_command(self, text: str, x: float, y: float, opts):
+        """A new text layer, or the edited one (style from the Text tool's settings)."""
+        style = {
+            "align": opts.align,
+            "outline": opts.outline,
+            "outline_color": tuple(self.swatches.secondary),
+            "shadow": opts.shadow,
+            "box": opts.box,
+            "box_color": tuple(self.swatches.secondary),
+            "watermark": opts.watermark,
+        }
+        family = self.tool_settings.font_family()
+        editing, self._editing = getattr(self, "_editing", None), None
+        if editing is not None and editing < len(self.doc.layers):
+            spec = TextSpec(
+                text,
+                family,
+                opts.size,
+                opts.bold,
+                opts.italic,
+                tuple(self.swatches.primary),
+                **style,
+            )
+            return edit_text_layer(self.doc, editing, spec)
+        return add_text_layer(
+            self.doc,
+            text,
+            x,
+            y,
+            family,
+            opts.size,
+            opts.bold,
+            opts.italic,
+            self.swatches.primary,
+            **style,
+        )
 
     def commit_text(self) -> None:
         box = self.text_box
@@ -707,19 +775,7 @@ class EditorPage(QWidget):
                 return
             opts = self.tool_settings.options_for(self.tools["text"])
             x, y = self._text_anchor
-            self._push(
-                add_text_layer(
-                    self.doc,
-                    text,
-                    x,
-                    y,
-                    self.tool_settings.font_family(),
-                    opts.size,
-                    opts.bold,
-                    opts.italic,
-                    self.swatches.primary,
-                )
-            )
+            self._push(self._text_command(text, x, y, opts))
             self.canvas.setFocus()
         finally:
             self._committing = False
