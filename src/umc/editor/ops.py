@@ -50,13 +50,26 @@ def _set_state(doc: Document, label: str, width: int, height: int, layers: list[
 
 
 def _moved(
-    layer: Layer, image: Image.Image | None = None, x: int | None = None, y: int | None = None
+    layer: Layer,
+    image: Image.Image | None = None,
+    x: int | None = None,
+    y: int | None = None,
+    op=None,
 ):
+    """``layer`` moved and/or with its pixels changed by ``op`` (applied to the mask too, so a
+    layer mask follows crops, resizes, rotations and flips)."""
+    mask = layer.mask
+    if op is not None:
+        image = op(layer.image)
+        mask = None if mask is None else op(mask)
+    elif image is not None and mask is not None and mask.size != image.size:
+        mask = None  # a replaced image that the old mask doesn't fit
     return replace(
         layer,
         image=layer.image if image is None else image,
         x=layer.x if x is None else x,
         y=layer.y if y is None else y,
+        mask=mask,
     )
 
 
@@ -73,10 +86,10 @@ def crop(doc: Document, rect: Rect) -> Command | None:
         shifted = layer.bounds.offset(-rect.x0, -rect.y0)
         keep = shifted.intersect(canvas)
         if keep.empty:
-            layers.append(_moved(layer, Image.new("RGBA", (1, 1)), 0, 0))
+            layers.append(replace(layer, image=Image.new("RGBA", (1, 1)), x=0, y=0, mask=None))
             continue
-        img = layer.image.crop(keep.offset(-shifted.x0, -shifted.y0).box)
-        layers.append(_moved(layer, img, keep.x0, keep.y0))
+        box = keep.offset(-shifted.x0, -shifted.y0).box
+        layers.append(_moved(layer, x=keep.x0, y=keep.y0, op=lambda im, b=box: im.crop(b)))
     return _set_state(doc, "Crop", rect.width, rect.height, layers)
 
 
@@ -93,7 +106,10 @@ def resize_image(
         size = (max(1, round(layer.image.width * sx)), max(1, round(layer.image.height * sy)))
         layers.append(
             _moved(
-                layer, layer.image.resize(size, method), round(layer.x * sx), round(layer.y * sy)
+                layer,
+                x=round(layer.x * sx),
+                y=round(layer.y * sy),
+                op=lambda im, sz=size: im.resize(sz, method),
             )
         )
     return _set_state(doc, "Resize image", width, height, layers)
@@ -124,10 +140,12 @@ def rotate(doc: Document, degrees: int, layer_only: bool = False) -> Command | N
         return None
     if layer_only:
         layer = doc.active_layer
-        img = layer.image.transpose(_ROT[degrees])
-        x = layer.x + (layer.image.width - img.width) // 2
-        y = layer.y + (layer.image.height - img.height) // 2
-        return _replace_active(doc, f"Rotate layer {degrees}°", _moved(layer, img, x, y))
+        t = _ROT[degrees]
+        w, h = (layer.image.height, layer.image.width) if degrees in (90, 270) else layer.image.size
+        x = layer.x + (layer.image.width - w) // 2
+        y = layer.y + (layer.image.height - h) // 2
+        moved = _moved(layer, x=x, y=y, op=lambda im: im.transpose(t))
+        return _replace_active(doc, f"Rotate layer {degrees}°", moved)
     w, h = doc.width, doc.height
     layers = []
     for la in doc.layers:
@@ -138,7 +156,7 @@ def rotate(doc: Document, degrees: int, layer_only: bool = False) -> Command | N
             x, y = w - (la.x + lw), h - (la.y + lh)
         else:
             x, y = la.y, w - (la.x + lw)
-        layers.append(_moved(la, la.image.transpose(_ROT[degrees]), x, y))
+        layers.append(_moved(la, x=x, y=y, op=lambda im: im.transpose(_ROT[degrees])))
     nw, nh = (h, w) if degrees in (90, 270) else (w, h)
     return _set_state(doc, f"Rotate {degrees}°", nw, nh, layers)
 
@@ -149,14 +167,14 @@ def flip(doc: Document, horizontal: bool, layer_only: bool = False) -> Command |
     if layer_only:
         layer = doc.active_layer
         return _replace_active(
-            doc, label + " (layer)", _moved(layer, layer.image.transpose(method))
+            doc, label + " (layer)", _moved(layer, op=lambda im: im.transpose(method))
         )
     layers = []
     for la in doc.layers:
         lw, lh = la.image.size
         x = doc.width - (la.x + lw) if horizontal else la.x
         y = la.y if horizontal else doc.height - (la.y + lh)
-        layers.append(_moved(la, la.image.transpose(method), x, y))
+        layers.append(_moved(la, x=x, y=y, op=lambda im: im.transpose(method)))
     return _set_state(doc, label, doc.width, doc.height, layers)
 
 
@@ -280,7 +298,9 @@ def merge_down(doc: Document) -> Command | None:
     img = Image.new("RGBA", (box.width, box.height))
     for la in (lower, upper):
         if la is lower or la.visible:
-            img.alpha_composite(with_opacity(la.image, la.opacity), (la.x - box.x0, la.y - box.y0))
+            img.alpha_composite(
+                with_opacity(la.pixels(), la.opacity), (la.x - box.x0, la.y - box.y0)
+            )
     merged = Layer(lower.name, img, box.x0, box.y0, 1.0, lower.visible)
     layers = list(doc.layers)
     layers[i - 1 : i + 1] = [merged]
@@ -302,7 +322,7 @@ def merge_layers(doc: Document, indices) -> Command | None:
         box = box.union(la.bounds)
     img = Image.new("RGBA", (box.width, box.height))
     for la in shown:
-        img.alpha_composite(with_opacity(la.image, la.opacity), (la.x - box.x0, la.y - box.y0))
+        img.alpha_composite(with_opacity(la.pixels(), la.opacity), (la.x - box.x0, la.y - box.y0))
     top = group[-1]
     merged = Layer(top.name, img, box.x0, box.y0, 1.0, any(la.visible for la in group))
     gone = set(chosen)

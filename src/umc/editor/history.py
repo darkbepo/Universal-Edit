@@ -98,19 +98,57 @@ class PatchCommand(Command):
         return self.rect.offset(*self._origin)
 
 
+def _planes(layers: list[Layer]):
+    """(object, bytes) for every image and layer mask in ``layers``."""
+    for layer in layers:
+        yield layer.image, _image_bytes(layer.image)
+        if layer.mask is not None:
+            yield layer.mask, layer.mask.width * layer.mask.height
+
+
 def _unique_bytes(a: list[Layer], b: list[Layer]) -> int:
-    """Bytes of the images that only one side holds (shared images cost nothing extra)."""
-    ids_a = {id(layer.image) for layer in a}
-    ids_b = {id(layer.image) for layer in b}
+    """Bytes of the images / masks that only one side holds (shared ones cost nothing extra)."""
+    ids_a = {id(obj) for obj, _ in _planes(a)}
+    ids_b = {id(obj) for obj, _ in _planes(b)}
     seen: set[int] = set()
     total = 0
-    for layer in [*a, *b]:
-        key = id(layer.image)
+    for obj, size in [*_planes(a), *_planes(b)]:
+        key = id(obj)
         if key in seen or (key in ids_a and key in ids_b):
             continue
         seen.add(key)
-        total += _image_bytes(layer.image)
+        total += size
     return total
+
+
+class MaskPatchCommand(Command):
+    """A changed rectangle of a layer's mask (the mask brush, gradients on the mask)."""
+
+    def __init__(
+        self, label: str, layer_index: int, rect: Rect, before: Image.Image, after: Image.Image
+    ) -> None:
+        self.label, self.layer_index, self.rect = label, layer_index, rect
+        self.before, self.after = before, after
+        self._origin = (0, 0)
+
+    def _apply(self, doc: Document, img: Image.Image) -> None:
+        layer = doc.layers[self.layer_index]
+        if layer.mask is not None:
+            layer.mask.paste(img, (self.rect.x0, self.rect.y0))
+        self._origin = (layer.x, layer.y)
+
+    def undo(self, doc: Document) -> None:
+        self._apply(doc, self.before)
+
+    def redo(self, doc: Document) -> None:
+        self._apply(doc, self.after)
+
+    @property
+    def nbytes(self) -> int:
+        return 2 * self.rect.width * self.rect.height
+
+    def repaint(self) -> Rect | None:
+        return self.rect.offset(*self._origin)
 
 
 class LayerListCommand(Command):

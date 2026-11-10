@@ -42,7 +42,7 @@ def write_ora(doc: Document, path: Path) -> None:
             visibility="visible" if layer.visible else "hidden",
             **({"selected": "true"} if doc.layers.index(layer) == doc.active else {}),
         )
-        files.append((src, _png(layer.image)))
+        files.append((src, _png(layer.pixels())))  # ORA has no masks: bake them in
     merged = doc.composite()
     thumb = merged.copy()
     thumb.thumbnail((256, 256))

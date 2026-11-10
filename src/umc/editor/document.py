@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from PIL import Image
+from PIL import Image, ImageChops
 
 from umc.core.errors import ConversionError
 from umc.editor.geometry import Rect
@@ -81,7 +81,10 @@ class Document:
             part = lb.intersect(rect)
             if part.empty:
                 continue
-            src = image.crop(part.offset(-layer.x, -layer.y).box)
+            box = part.offset(-layer.x, -layer.y).box
+            src = image.crop(box)
+            if layer.mask is not None and layer.mask.size == image.size:
+                src.putalpha(ImageChops.multiply(src.getchannel("A"), layer.mask.crop(box)))
             src = with_opacity(src, layer.opacity)
             out.alpha_composite(src, (part.x0 - rect.x0, part.y0 - rect.y0))
         return out

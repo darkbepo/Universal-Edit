@@ -50,8 +50,8 @@ class _StrokeTool(Tool):
 
     # ------------------------------------------------------------ gesture
     def press(self, doc: Document, x: float, y: float, ctx: ToolContext) -> Rect | None:
-        layer = doc.active_layer
         self._layer_index = doc.active
+        layer = self._target(doc)
         self._tiles: dict[tuple[int, int], tuple[Rect, np.ndarray, np.ndarray]] = {}
         self._clip = clip_rect(doc, layer)
         self._dirty: Rect | None = None
@@ -99,7 +99,7 @@ class _StrokeTool(Tool):
         if dirty is None:
             self._tiles = {}
             return None
-        before = self._original(doc.layers[idx], dirty)
+        before = self._original(self._target(doc, idx), dirty)
         self._tiles = {}
         return PatchCommand.from_region(self.label, doc, idx, dirty, before)
 
@@ -107,7 +107,7 @@ class _StrokeTool(Tool):
         if self._layer_index is None or self._dirty is None:
             self._layer_index = None
             return None
-        layer = doc.layers[self._layer_index]
+        layer = self._target(doc)
         layer.image.paste(self._original(layer, self._dirty), (self._dirty.x0, self._dirty.y0))
         self._layer_index = None
         self._tiles = {}
@@ -123,8 +123,12 @@ class _StrokeTool(Tool):
             self._tiles[key] = (trect, base, np.zeros(base.shape[:2], dtype=np.float32))
         return self._tiles[key]
 
+    def _target(self, doc: Document, index: int | None = None):
+        """The layer the stroke paints on (the mask brush paints a stand-in for the mask)."""
+        return doc.layers[self._layer_index if index is None else index]
+
     def _dab(self, doc: Document, x: float, y: float, ctx: ToolContext) -> Rect | None:
-        layer = doc.layers[self._layer_index]
+        layer = self._target(doc)
         cx, cy = x - layer.x, y - layer.y
         radius = max(0.5, ctx.options.size / 2)
         region = Rect.around(cx, cy, radius).intersect(self._clip)

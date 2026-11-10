@@ -41,7 +41,7 @@ def copy(doc: Document, merged: bool = False) -> Clip | None:
     region = layer.bounds if doc.selection is None else layer.bounds.intersect(doc.selection)
     if region.empty:
         return None
-    image = layer.image.crop(region.offset(-layer.x, -layer.y).box)
+    image = layer.pixels(region.offset(-layer.x, -layer.y).box)  # with its layer mask applied
     return Clip(_shaped(doc, image, region), region.x0, region.y0)
 
 
