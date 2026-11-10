@@ -228,3 +228,76 @@ def test_export_failure_keeps_existing_dest(src, tmp_path, monkeypatch):
         run_export(p, _options(), dest, on_progress=lambda *_: None, cancel_event=threading.Event())
     assert dest.read_bytes() == b"keep me"
     assert not (tmp_path / "out.part.mp4").exists()
+
+
+def test_export_cancel_survives_a_locked_part_file(tmp_path, monkeypatch):
+    """FFmpeg may still hold the part file just after a cancel: still ConversionCancelled."""
+    p = _pictures(tmp_path)
+    cancel = threading.Event()
+    real_unlink = Path.unlink
+
+    def unlink(self, *args, **kw):
+        if self.name == "out.part.mp4":
+            raise PermissionError("in use")
+        return real_unlink(self, *args, **kw)
+
+    monkeypatch.setattr(Path, "unlink", unlink)
+    with pytest.raises(ConversionCancelled):
+        run_export(
+            p,
+            _options(),
+            tmp_path / "out.mp4",
+            on_progress=lambda pct, _m: cancel.set() if pct > 10 else None,
+            cancel_event=cancel,
+        )
+    assert not (tmp_path / "out.mp4").exists()
+
+
+def test_export_replace_failure_is_a_plain_message(src, tmp_path, monkeypatch):
+    dest = tmp_path / "out.mp4"
+    dest.write_bytes(b"keep me")
+
+    def locked(_a, _b):
+        raise PermissionError("in use")
+
+    monkeypatch.setattr(export.os, "replace", locked)
+    p = _proj(src, [VideoClip("a", "red", 0.0, 0.5)])
+    with pytest.raises(ConversionError, match="Couldn't save over “out.mp4”"):
+        run_export(
+            p, _options(preset="ultrafast"), dest, on_progress=lambda *_: None,
+            cancel_event=threading.Event(),
+        )  # fmt: skip
+    assert dest.read_bytes() == b"keep me"
+    assert not (tmp_path / "out.part.mp4").exists()
+
+
+def test_export_refuses_a_wrong_extension(src, tmp_path):
+    p = _proj(src, [VideoClip("a", "red", 0.0, 0.5)])
+    with pytest.raises(ConversionError, match=r"must end in \.webm"):
+        run_export(
+            p, _options(container="webm"), tmp_path / "out.mp4", on_progress=lambda *_: None,
+            cancel_event=threading.Event(),
+        )  # fmt: skip
+    assert not list(tmp_path.iterdir())
+
+
+def test_render_groups_second_level_frees_the_first(tmp_path, monkeypatch):
+    monkeypatch.setattr(export, "GROUP_SIZE", 3)
+    p = _pictures(tmp_path, 10)  # 10 → 4 groups → 2 groups → done
+    work = tmp_path / "work"
+    work.mkdir()
+    grouped = render_groups(p, work, lambda _f: None, threading.Event())
+    assert len(grouped.main) == 2
+    assert length(grouped) == pytest.approx(length(p), abs=0.001)
+    assert not list(work.glob("group_0_*.mkv"))
+    assert sorted(f.name for f in work.glob("group_*.mkv")) == ["group_1_0.mkv", "group_1_1.mkv"]
+    out = _export(grouped, tmp_path, preset="ultrafast")
+    v, _a = durations(out)
+    assert v == pytest.approx(length(p), abs=FRAME + 1e-3)
+
+
+def test_intermediates_use_the_h264_fallbacks(monkeypatch):
+    monkeypatch.setattr(export.codecs, "video_encoder", lambda codec: "h264_mf")
+    args = export._intermediate_args()
+    assert args[:2] == ["-c:v", "h264_mf"]
+    assert "libx264" not in args

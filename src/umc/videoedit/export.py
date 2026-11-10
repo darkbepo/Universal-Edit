@@ -42,7 +42,21 @@ EXPORT_CONTAINERS = ("mp4", "mkv", "webm", "mov", "avi", "gif")
 ERROR = "Couldn't export the video."
 
 _HEIGHTS = {"480p": 480, "720p": 720, "1080p": 1080, "4k": 2160}
-_INTERMEDIATE = ["-c:v", "libx264", "-crf", "12", "-preset", "veryfast", "-pix_fmt", "yuv420p"]
+
+
+def _intermediate_args() -> list[str]:
+    """Near-lossless H.264 for group / GIF intermediates (with the encoder fallbacks)."""
+    enc = codecs.video_encoder("h264")
+    quality = codecs.video_quality_args(enc, 12, "veryfast", None)
+    return ["-c:v", enc, *quality, *codecs.pixel_format_args(enc)]
+
+
+def _discard(path: Path) -> None:
+    """Delete ``path`` if possible; FFmpeg may still hold it open just after a cancel."""
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        log.warning("Couldn't delete %s", path, exc_info=True)
 
 
 def _not_gif(v: dict) -> bool:
@@ -183,6 +197,7 @@ def render_groups(
     project = _pinned(project, output_size(project))
     total_levels = _levels(len(project.main))
     level = 0
+    previous: list[Path] = []
     while len(project.main) > GROUP_SIZE:
         main = project.main
         runs = [main[i : i + GROUP_SIZE] for i in range(0, len(main), GROUP_SIZE)]
@@ -201,7 +216,7 @@ def render_groups(
             sub = replace(project, main=run, text_rows=((),), music_rows=((),))
             plan = build_render(sub, tmp)
             path = tmp / f"group_{level}_{k}.mkv"
-            args = [*plan.args, "-map", plan.video_label, *_INTERMEDIATE]
+            args = [*plan.args, "-map", plan.video_label, *_intermediate_args()]
             args += ["-map", plan.audio_label, "-c:a", "pcm_s16le", "-t", f"{plan.total:.3f}"]
             base = (level + done / level_total) / total_levels
             width = dur / level_total / total_levels
@@ -223,6 +238,9 @@ def render_groups(
             clips.append(
                 VideoClip(sid, sid, 0.0, dur, fit="stretch", volume=100, transition_in=firsts[k])
             )
+        for old in previous:  # the new level was rendered from these; free the disk
+            _discard(old)
+        previous = [s.path for s in sources]
         project = replace(project, sources=(*project.sources, *sources), main=tuple(clips))
         level += 1
     return project
@@ -293,6 +311,8 @@ def run_export(
     dest = Path(dest).absolute()
     part = dest.with_name(f"{dest.stem}.part{dest.suffix}")
     gif = options.container == "gif"
+    if dest.suffix.lower() != f".{options.container}":
+        raise ConversionError(f"The file name must end in .{options.container}.")
     if not gif:  # check the codec choice before rendering anything
         codecs.resolve_video_codec(options.container, options.video_codec)
         if not options.remove_audio:
@@ -305,7 +325,7 @@ def run_export(
         return cb
 
     try:
-        with tempfile.TemporaryDirectory(prefix="umc-vedit-") as d:
+        with tempfile.TemporaryDirectory(prefix="umc-vedit-", ignore_cleanup_errors=True) as d:
             tmp = Path(d)
             project = _pinned(project, export_size(project, options.resolution))
             begin = 0.0
@@ -319,7 +339,7 @@ def run_export(
             if gif:
                 plan = build_render(project, tmp, audio=False)
                 source = tmp / "gif_source.mkv"
-                args = [*plan.args, "-map", plan.video_label, *_INTERMEDIATE]
+                args = [*plan.args, "-map", plan.video_label, *_intermediate_args()]
                 args += ["-t", f"{plan.total:.3f}", str(source)]
                 middle = begin + (1 - begin) / 2
                 ffmpeg.run_ffmpeg(
@@ -350,16 +370,22 @@ def run_export(
                     error_message=ERROR,
                     cwd=plan.cwd,
                 )
+        try:
             os.replace(part, dest)
+        except OSError as exc:
+            raise ConversionError(
+                f"Couldn't save over “{dest.name}”. Is it open in another program?",
+                details=str(exc),
+            ) from exc
     except ConversionError as exc:
-        part.unlink(missing_ok=True)
+        _discard(part)
         log.warning("Export failed: %s %s", exc, exc.details)
         raise
     except (ConversionCancelled, KeyboardInterrupt):
-        part.unlink(missing_ok=True)
+        _discard(part)
         raise
     except Exception as exc:
-        part.unlink(missing_ok=True)
+        _discard(part)
         log.exception("Export failed")
         raise ConversionError(ERROR) from exc
     on_progress(100.0, "Done")
