@@ -7,6 +7,7 @@ import { ocrImageConverter, ocrPdfConverter } from "../converters/ocr";
 import { archiveConverter, packConverter } from "../converters/archive";
 import { fontConverter } from "../converters/fonts";
 import { cadConverter } from "../converters/cad";
+import { bgremoveConverter } from "../converters/bgremove";
 import { pdfToSvgConverter, traceConverter, vectorConverter } from "../converters/vector";
 import { subtitleConverter, subtitleExtractConverter, subtitleVideoConverter } from "../converters/subtitles";
 import { documentConverter, pagesConverter, splitConverter } from "../converters/pdf";
@@ -43,6 +44,7 @@ export const CONVERTERS: Converter[] = [
   subtitleExtractConverter,
   subtitleVideoConverter,
   packConverter,
+  bgremoveConverter, // image editor only (no targets)
 ];
 
 export const converterById = (id: string) => CONVERTERS.find((c) => c.id === id)!;

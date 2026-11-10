@@ -852,3 +852,14 @@ test("clone stamp asks for a source, then copies; content-aware fill from the Se
   await page.getByRole("button", { name: /^Content-aware fill/ }).click();
   await expect.poll(undoLabel).toBe("Content-aware fill");
 });
+
+test("Remove background hides the background with a layer mask (model faked)", async ({ page }) => {
+  await openEditor(page);
+  await page.evaluate(() => (window.__editor as EditorHook & { fakeSegmenter(): void }).fakeSegmenter());
+  await page.locator("summary", { hasText: "Image ▾" }).click();
+  await page.getByRole("button", { name: /^Remove background/ }).click();
+  await expect.poll(() => page.evaluate(() => (window.__editor as EditorHook & { history: { undoLabel: string } }).history.undoLabel)).toBe("Remove background");
+  await expect(page.locator(".layers li.active canvas.mask-thumb, .layers li canvas.mask-thumb").first()).toBeVisible();
+  const corner = await pixel(page, 0, 0);
+  expect(corner[3]).toBeGreaterThan(0); // the pixels themselves are kept
+});

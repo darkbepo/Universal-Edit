@@ -12,6 +12,7 @@ import * as ops from "../../editor/ops";
 import { writeOra } from "../../editor/ora";
 import { addSticker } from "../../editor/stickers";
 import { contentAwareFill } from "../../editor/inpaint";
+import { MASK_TARGET } from "../../converters/bgremove";
 import { canvasPng, canvasRasterizer, decodeBlob, type Decoded } from "../../editor/raster";
 import type { Tool, ToolContext } from "../../editor/tools/base";
 import { makeTools } from "../../editor/tools/index";
@@ -144,6 +145,7 @@ export class EditorPage {
         ["Flip horizontal", "flip_h"], ["Flip vertical", "flip_v"], null,
         ["Layer: rotate 90° right", "layer_rotate_right"], ["Layer: rotate 90° left", "layer_rotate_left"],
         ["Layer: rotate 180°", "layer_rotate_180"], ["Layer: flip horizontal", "layer_flip_h"], ["Layer: flip vertical", "layer_flip_v"],
+        null, ["Remove background (keeps the subject)", "remove_background"],
       ])));
     const selectMenu = h("details", { class: "menu" }, h("summary", { class: "btn small", title: "Select all, deselect, invert, feather" }, "Select ▾"),
       h("div", { class: "menu-items" }, ...this.menuItems([["Select all", "select_all"], ["Deselect", "deselect"], ["Invert", "invert_selection"], ["Feather…", "feather"], null, ["Content-aware fill (remove what's selected)", "content_fill"]])));
@@ -501,6 +503,36 @@ export class EditorPage {
   }
 
   /** The canvas point in the middle of what the user is looking at. */
+  /** Finds the subject (in the conversion worker); swapped for a fake by the e2e tests. */
+  segment = async (png: Uint8Array, onProgress: (f: number, m: string) => void): Promise<Uint8Array> => {
+    const input: InputFile = { file: new File([png as BlobPart], "layer.png", { type: "image/png" }), name: "layer.png", ext: "png", family: "image" };
+    const [out] = await this.opts.client.run(MASK_TARGET, [input], {}, onProgress);
+    return out.data;
+  };
+
+  private bgBusy = false;
+
+  /** Hide the background of the selected layer with a layer mask (the pixels are kept). */
+  async removeBackground(): Promise<void> {
+    const doc = this.doc;
+    if (!doc || this.bgBusy) return;
+    const layer = doc.layers[doc.active];
+    this.bgBusy = true;
+    try {
+      this.showMessage("Removing the background… (the first time downloads a model, about 80 MB)");
+      const png = await canvasPng.encode(new Uint8ClampedArray(layer.data), layer.width, layer.height);
+      const alpha = await this.segment(png, (f, m) => m && this.showMessage(f > 0 && f < 0.99 ? `${m} ${Math.round(f * 100)} %` : m));
+      if (this.doc !== doc || doc.layers[doc.active] !== layer) return this.showMessage("The layer changed meanwhile — try again.");
+      this.push(ops.maskFrom(doc, alpha));
+      this.showMessage("Background hidden with a layer mask. Paint the mask (K) to fix the edges.");
+    } catch (e) {
+      this.showMessage(e instanceof Error && e.message ? e.message : "Couldn't remove the background.", true);
+      console.error(e);
+    } finally {
+      this.bgBusy = false;
+    }
+  }
+
   viewCenter(): [number, number] {
     return this.canvas.widgetToImage(this.canvas.view.clientWidth / 2, this.canvas.view.clientHeight / 2);
   }
@@ -588,6 +620,8 @@ export class EditorPage {
       } else if (name === "crop_selection") {
         if (!doc.selection) return this.showMessage("Select an area first (rectangle select, M).");
         cmd = ops.crop(doc, doc.selection);
+      } else if (name === "remove_background") {
+        return await this.removeBackground();
       } else if (name === "content_fill") {
         cmd = contentAwareFill(doc);
       } else if (name === "stickers") {
@@ -815,6 +849,16 @@ export class EditorPage {
       },
       viewCenter() {
         return page.viewCenter();
+      },
+      /** Replace the background-removal model with a fake: a centred ellipse. */
+      fakeSegmenter() {
+        page.segment = async (png) => {
+          const img = await canvasPng.decode(png);
+          const out = new Uint8Array(img.width * img.height);
+          for (let y = 0; y < img.height; y++)
+            for (let x = 0; x < img.width; x++) out[y * img.width + x] = ((x - img.width / 2) / (img.width / 3)) ** 2 + ((y - img.height / 2) / (img.height / 3)) ** 2 <= 1 ? 255 : 0;
+          return out;
+        };
       },
       previewing() {
         return page.canvas.previewing;

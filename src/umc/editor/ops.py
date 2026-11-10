@@ -521,3 +521,18 @@ def add_sticker(
     x, y = round(center[0] - img.width / 2), round(center[1] - img.height / 2)
     layer = Layer(unique_name(doc, STICKERS[name]["label"]), img, x=x, y=y)
     return add_layers(doc, [layer], "Sticker")
+
+
+# ------------------------------------------------------------------ background removal
+
+
+def mask_from(doc: Document, mask: Image.Image, label: str = "Remove background") -> Command | None:
+    """Give the active layer the "L" ``mask`` (layer-sized) as its layer mask; an existing mask
+    is combined with it, so what was already hidden stays hidden. The pixels stay untouched."""
+    from PIL import ImageChops
+
+    layer = doc.active_layer
+    if mask.size != layer.image.size:
+        raise ValueError("mask size doesn't match the layer")
+    new = mask if layer.mask is None else ImageChops.multiply(layer.mask, mask)
+    return _replace(doc, doc.active, label, replace(layer, mask=new))

@@ -188,6 +188,11 @@ def _editor_check(d: Path) -> list[Path]:
     if content_aware_fill(doc) is None:
         raise RuntimeError("content-aware fill changed nothing")
     doc.selection, doc.active = None, 1
+    # background removal: ONNX Runtime must load inside the build (the model is downloaded later)
+    import onnxruntime
+
+    if "CPUExecutionProvider" not in onnxruntime.get_available_providers():
+        raise RuntimeError("ONNX Runtime has no CPU provider")
     d.mkdir(parents=True, exist_ok=True)
     ora = save_document(doc, d / "edited.ora", "ora")
     if len(read_ora(ora).layers) != 2:

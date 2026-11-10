@@ -570,8 +570,17 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
          Apache-2.0, already pulled in by pdf2docx; checked by `--self-test`); web
          `editor/inpaint.ts` = own Telea port (fast marching, premultiplied average). Both work on
          the selection's box + a margin and blend soft selection edges.
-      9. Background removal (desktop onnxruntime + a one-click model download; web
-         @imgly/background-removal, AGPL — both approved by the owner).
+      9. ✅ Background removal (both apps) = a layer mask (`ops.mask_from` / `maskFrom`, combined
+         with an existing mask; pixels untouched). Desktop `tools/bgremove.py`: IS-Net
+         general-use ONNX (Apache-2.0) from rembg's fixed `v0.0.0` release, SHA-256 + size
+         pinned, into `tools/models/`, run with onnxruntime (MIT; CPU) at 1024², min-max
+         normalised; asked once ("Download … ?"), then `_BackgroundWorker` on a QThread with a
+         QProgressDialog. Web: @imgly/background-removal 1.7.0 (AGPL-3.0, peer onnxruntime-web
+         1.21.0) `segmentForeground` → "image/x-alpha8", run in the conversion worker through
+         the hidden `bgremove` converter (no targets, so never on the convert page); model + ORT
+         files come from IMG.LY's CDN (staticimgly.com) as blob URLs. Vite still emits ORT's own
+         24 MB wasm (unused). e2e fakes the model (`__editor.fakeSegmenter()`); the sandbox
+         can't reach the CDN, so the real web download is only checked on the live site.
 11. Ideas: installer for the app itself (Inno Setup), presets, batch queue.
 
 ## Handoff — read this first (for the next Claude account)

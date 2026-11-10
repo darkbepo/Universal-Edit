@@ -1109,3 +1109,19 @@ def test_clone_stamp_and_content_fill_in_the_page(page, qtbot):
     page.doc.selection = Rect(4, 4, 8, 8)
     page.run_op("content_fill")
     assert page.history.undo_label == "Content-aware fill"
+
+
+def test_remove_background_sets_a_layer_mask(page, qtbot, monkeypatch):
+    from PIL import Image
+
+    from umc.tools import bgremove
+
+    monkeypatch.setattr(bgremove, "model_ready", lambda: True)
+    monkeypatch.setattr(
+        bgremove, "subject_mask", lambda img, model=None: Image.new("L", img.size, 128)
+    )
+    with qtbot.waitSignal(page.bg_done, timeout=5000):
+        page.run_op("remove_background")
+    qtbot.waitUntil(lambda: page.doc.active_layer.mask is not None)
+    assert page.doc.active_layer.mask.getpixel((0, 0)) == 128
+    assert page.history.undo_label == "Remove background"

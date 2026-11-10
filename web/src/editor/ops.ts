@@ -1,7 +1,7 @@
 // Whole-image operations, layer-list operations and adjustments (port of src/umc/editor/ops.py).
 // Each applies its change and returns the Command to push (null when nothing changed). Layers
 // are replaced, never changed in place — see history.ts.
-import { checkSize, docBounds, type EditorDoc } from "./document";
+import { checkSize, docBounds, EditorError, type EditorDoc } from "./document";
 import { fullMask } from "./selection";
 import { Rect } from "./geometry";
 import { DocStateCommand, LayerListCommand, type Command } from "./history";
@@ -460,4 +460,20 @@ export function invertMask(doc: EditorDoc, index = doc.active): Command | null {
   const m = new Uint8ClampedArray(l.mask);
   for (let i = 0; i < m.length; i += 4) m[i] = m[i + 1] = m[i + 2] = 255 - m[i];
   return replace(doc, index, "Invert layer mask", withProps(l, { mask: m }));
+}
+
+// ------------------------------------------------------------------ background removal
+
+/** Give the active layer `alpha` (one byte per layer pixel, 255 = shown) as its layer mask; an
+ *  existing mask is combined with it, so what was hidden stays hidden. Pixels stay untouched.
+ *  Same as ops.mask_from in ops.py. */
+export function maskFrom(doc: EditorDoc, alpha: Uint8Array, label = "Remove background"): Command | null {
+  const l = doc.layers[doc.active];
+  if (alpha.length !== l.width * l.height) throw new EditorError("The mask doesn't match the layer.");
+  const mask = solidMask(l.width, l.height, 255);
+  for (let k = 0; k < alpha.length; k++) {
+    const v = l.mask ? Math.round((alpha[k] * l.mask[k * 4]) / 255) : alpha[k];
+    mask[k * 4] = mask[k * 4 + 1] = mask[k * 4 + 2] = v;
+  }
+  return replace(doc, doc.active, label, withProps(l, { mask }));
 }

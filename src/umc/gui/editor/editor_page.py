@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,7 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPlainTextEdit,
+    QProgressDialog,
     QPushButton,
     QScrollArea,
     QToolButton,
@@ -102,6 +104,34 @@ class _SaveWorker(QObject):
             self.failed.emit(f"Couldn't save “{self.path.name}”. See the log for details.")
 
 
+class _BackgroundWorker(QObject):
+    """Downloads the model once (if needed), then finds the subject — off the UI thread."""
+
+    progress = Signal(float, str)
+    succeeded = Signal(object)  # the "L" mask
+    failed = Signal(str)
+
+    def __init__(self, image, cancel_event: threading.Event) -> None:
+        super().__init__()
+        self.image, self.cancel_event = image, cancel_event
+
+    @Slot()
+    def run(self) -> None:
+        from umc.tools import bgremove
+
+        try:
+            if not bgremove.model_ready():
+                bgremove.ensure_model(lambda f, m: self.progress.emit(f, m), self.cancel_event)
+            self.progress.emit(-1, "Finding the subject…")
+            self.succeeded.emit(bgremove.subject_mask(self.image))
+        except ConversionError as exc:
+            log.error("background removal failed: %s\n%s", exc, getattr(exc, "details", ""))
+            self.failed.emit(str(exc))
+        except Exception:
+            log.exception("background removal failed")
+            self.failed.emit("Couldn't remove the background. See the log for details.")
+
+
 class TextBox(QPlainTextEdit):
     """On-canvas text entry. Ctrl+Enter, Esc or clicking elsewhere commits."""
 
@@ -139,6 +169,7 @@ class TextBox(QPlainTextEdit):
 class EditorPage(QWidget):
     back_requested = Signal()
     save_done = Signal()
+    bg_done = Signal()  # background removal finished (or failed)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -153,6 +184,8 @@ class EditorPage(QWidget):
         self._committing = False
         self.saving = False
         self._save_thread: QThread | None = None
+        self._bg_thread: QThread | None = None
+        self._bg_worker: _BackgroundWorker | None = None
         self._save_worker: _SaveWorker | None = None
         self._last_save: tuple[Path, str, dict] | None = None
         self._last_save_ok = False
@@ -240,6 +273,8 @@ class EditorPage(QWidget):
             ("Rotate 180°", "rotate_180"),
             ("Flip horizontal", "flip_h"),
             ("Flip vertical", "flip_v"),
+            (None, None),
+            ("Remove background (keeps the subject)", "remove_background"),
         ):
             if label is None:
                 menu.addSeparator()
@@ -632,6 +667,9 @@ class EditorPage(QWidget):
                     "Select the subject first (lasso, magic wand…): what is around it gets blurred."
                 )
                 return
+            elif name == "remove_background":
+                self.remove_background()
+                return
             elif name == "content_fill":
                 QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
                 try:
@@ -863,6 +901,71 @@ class EditorPage(QWidget):
             return None
         self._save_values[target_id] = dlg.values()
         return dlg.values()
+
+    # ------------------------------------------------------------ background removal
+    def remove_background(self) -> None:
+        """Hide the background of the selected layer with a layer mask (the pixels are kept)."""
+        from umc.tools import bgremove
+
+        doc = self.doc
+        if doc is None or self._bg_thread is not None:
+            return
+        if not bgremove.model_ready():
+            answer = QMessageBox.question(
+                self,
+                "Download the background-removal model?",
+                f"Removing backgrounds needs a model file (about {bgremove.MODEL_MB} MB). "
+                "It is downloaded once and then works offline.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+        layer = doc.active_layer
+        cancel = threading.Event()
+        dlg = QProgressDialog("Removing the background…", "Cancel", 0, 100, self)
+        dlg.setWindowTitle("Remove background")
+        dlg.setMinimumDuration(300)
+        dlg.setWindowModality(Qt.WindowModality.WindowModal)
+        dlg.canceled.connect(cancel.set)
+        thread = QThread(self)
+        worker = _BackgroundWorker(layer.image.copy(), cancel)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+
+        def progress(f: float, text: str) -> None:
+            dlg.setLabelText(text)
+            if f < 0:
+                dlg.setRange(0, 0)  # busy
+            else:
+                dlg.setValue(round(f * 100))
+
+        def ok(mask) -> None:
+            dlg.reset()
+            if cancel.is_set() or self.doc is not doc or doc.active_layer is not layer:
+                return
+            self._push(ops.mask_from(doc, mask))
+            self.show_message(
+                "Background hidden with a layer mask. Paint the mask (K) to fix the edges."
+            )
+
+        def failed(msg: str) -> None:
+            dlg.reset()
+            if not cancel.is_set():
+                self.show_message(msg, error=True)
+
+        worker.progress.connect(progress)
+        worker.succeeded.connect(ok)
+        worker.failed.connect(failed)
+        worker.succeeded.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        thread.finished.connect(self._bg_finished)
+        self._bg_thread, self._bg_worker = thread, worker
+        thread.start()
+
+    def _bg_finished(self) -> None:
+        # References are kept until QThread.finished (see CLAUDE.md).
+        self._bg_thread, self._bg_worker = None, None
+        self.bg_done.emit()
 
     def _start_save(self, path: Path, target: str, values: dict) -> None:
         doc = self.doc
