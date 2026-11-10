@@ -24,6 +24,11 @@ LIGHT = {
     "danger_soft": "#fdeced",
     "success": "#16955b",
     "success_soft": "#e6f6ee",
+    "clip_video": "#5b5ef0",
+    "clip_picture": "#1f9d9d",
+    "clip_audio": "#1f9d61",
+    "clip_text": "#d98a1f",
+    "playhead": "#d43c45",
 }
 
 DARK = {
@@ -43,6 +48,11 @@ DARK = {
     "danger_soft": "#3a1d21",
     "success": "#3ccf8e",
     "success_soft": "#16301f",
+    "clip_video": "#8385ff",
+    "clip_picture": "#2bb0b0",
+    "clip_audio": "#3ccf8e",
+    "clip_text": "#e8a040",
+    "playhead": "#ff6b70",
 }
 
 
