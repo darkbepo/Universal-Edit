@@ -318,3 +318,58 @@ def test_history_cap():
         h.undo()
         n += 1
     assert n == 300
+
+
+@pytest.mark.parametrize("speed", [1.0, 2.0])
+def test_trim_start_past_end_keeps_out(speed):
+    p = proj([VideoClip("a", "v", 0, 4, speed=speed)])
+    for delta in (5, 10):
+        c = edits.trim(p, "a", "start", delta).main[0]
+        assert c.out == 4
+        assert c.in_ == pytest.approx(4 - 0.1 * speed)
+
+
+@pytest.mark.parametrize("speed", [1.0, 2.0])
+def test_trim_end_past_start_keeps_in(speed):
+    p = proj([VideoClip("a", "v", 2, 6, speed=speed)])
+    c = edits.trim(p, "a", "end", -50).main[0]
+    assert c.in_ == 2
+    assert c.out == pytest.approx(2 + 0.1 * speed)
+
+
+def test_trim_music_start_keeps_out():
+    m = AudioClip("m", "v", 1.0, 0.0, 4.0)
+    p = Project(ProjectSettings(), (src("v"),), (), ((),), ((m,),))
+    c = edits.trim(p, "m", "start", 50).music_rows[0][0]
+    assert c.out == 4.0
+    assert c.in_ == pytest.approx(3.9)
+
+
+def test_transition_dropped_when_neighbour_too_short():
+    p = proj(
+        [
+            VideoClip("a", "v", 0, 0.1),
+            VideoClip("b", "v", 0, 4, transition_in=Transition("fade", 0.5)),
+        ]
+    )
+    assert edits.normalize(p).main[1].transition_in == Transition()
+
+
+def test_update_checks_overlap_for_text_and_music():
+    p = proj([], text=((TextItem("t1", start=0, end=2), TextItem("t2", start=3, end=5)),))
+    with pytest.raises(edits.EditError, match="That spot is taken."):
+        edits.update(p, "t2", start=1.0)
+    with pytest.raises(edits.EditError, match="That spot is taken."):
+        edits.update(p, "t1", end=4.0)
+    assert edits.update(p, "t1", end=3.0).text_rows[0][0].end == 3.0
+    a, b = AudioClip("a", "v", 0.0, 0.0, 2.0), AudioClip("b", "v", 2.0, 0.0, 2.0)
+    mp = Project(ProjectSettings(), (src("v"),), (), ((),), ((a, b),))
+    with pytest.raises(edits.EditError, match="That spot is taken."):
+        edits.update(mp, "a", out=3.0)
+
+
+def test_touching_items_are_not_overlapping():
+    t1 = TextItem("t1", start=0, end=0.1 + 0.2)
+    p = proj([], text=((t1, TextItem("t2", start=5, end=6)),))
+    assert edits.move_item(p, "t2", 0.1 + 0.2 - 1e-9, 0).text_rows[0][1].start > 0
+    assert edits.update(p, "t2", start=0.30000000000000004, end=1.0)

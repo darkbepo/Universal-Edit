@@ -128,8 +128,11 @@ def _normalize_transitions(main: tuple[MainItem, ...]) -> tuple[MainItem, ...]:
             tr = Transition()
         elif tr.kind != "none":
             shorter = min(clip_duration(main[i - 1]), clip_duration(item))
-            tr = dataclasses.replace(tr, duration=_clamp(tr.duration, 0.1, min(3.0, shorter / 2)))
-            tr = dataclasses.replace(tr, duration=round(tr.duration, 6))
+            cap = min(3.0, shorter / 2)
+            if cap < 0.1:  # too short for any transition
+                tr = Transition()
+            else:
+                tr = dataclasses.replace(tr, duration=round(_clamp(tr.duration, 0.1, cap), 6))
         if tr != item.transition_in:
             item = dataclasses.replace(item, transition_in=tr)
         out.append(item)
@@ -271,6 +274,22 @@ def move_main(project: Project, item_id: str, new_index: int) -> Project:
     )
 
 
+_EPS = 1e-6
+
+
+def _item_end(kind: str, item: Any) -> float:
+    return item.start + clip_duration(item) if kind == "music" else item.end
+
+
+def _ensure_free(row: tuple[Any, ...], item_id: str, kind: str, start: float, end: float) -> None:
+    """Raise unless [start, end) is free in ``row`` (touching items are fine)."""
+    for other in row:
+        if other.id == item_id:
+            continue
+        if start < _item_end(kind, other) - _EPS and end > other.start + _EPS:
+            raise EditError("That spot is taken.")
+
+
 def move_item(project: Project, item_id: str, start: float, row: int) -> Project:
     kind, old_row, idx, item = _find(project, item_id)
     if kind == "main":
@@ -279,14 +298,8 @@ def move_item(project: Project, item_id: str, start: float, row: int) -> Project
     if not 0 <= row < len(rows):
         raise EditError("That row doesn't exist.")
     start = max(0.0, start)
-    dur = clip_duration(item) if kind == "music" else item.end - item.start
-    for other in rows[row]:
-        if other.id == item_id:
-            continue
-        o_start = other.start
-        o_end = o_start + clip_duration(other) if kind == "music" else other.end
-        if start < o_end and start + dur > o_start:
-            raise EditError("That spot is taken.")
+    dur = _item_end(kind, item) - item.start
+    _ensure_free(rows[row], item_id, kind, start, start + dur)
     if kind == "text":
         moved = dataclasses.replace(item, start=start, end=start + dur)
     else:
@@ -305,15 +318,25 @@ def trim(project: Project, item_id: str, edge: Literal["start", "end"], delta: f
     start_edge = edge == "start"
     if isinstance(item, VideoClip):
         d = delta * item.speed
-        new = dataclasses.replace(
-            item, **({"in_": item.in_ + d} if start_edge else {"out": item.out + d})
-        )
+        min_len = MIN_DURATION * item.speed
+        duration = _source_duration(project, item.source)
+        if start_edge:
+            new = dataclasses.replace(
+                item, in_=_clamp(item.in_ + d, 0.0, max(0.0, item.out - min_len))
+            )
+        else:
+            high = duration if duration > 0 else float("inf")
+            new = dataclasses.replace(
+                item, out=_clamp(item.out + d, item.in_ + min_len, max(high, item.in_ + min_len))
+            )
     elif isinstance(item, PictureClip):
         new = dataclasses.replace(item, duration=item.duration + (-delta if start_edge else delta))
     elif isinstance(item, AudioClip):
         if start_edge:
             delta = max(delta, -item.start, -item.in_)
-            delta = min(delta, clip_duration(item) - MIN_DURATION)
+            delta = min(
+                delta, clip_duration(item) - MIN_DURATION, item.out - item.in_ - MIN_DURATION
+            )
             new = dataclasses.replace(item, start=item.start + delta, in_=item.in_ + delta)
         elif item.loop_until > 0:
             new = dataclasses.replace(item, loop_until=item.loop_until + delta)
@@ -367,7 +390,12 @@ def update(project: Project, item_id: str, **changes: Any) -> Project:
     unknown = set(changes) - valid
     if unknown:
         raise EditError(f"Unknown setting: {', '.join(sorted(unknown))}.")
-    return normalize(_replace_item(project, item_id, dataclasses.replace(item, **changes)))
+    result = normalize(_replace_item(project, item_id, dataclasses.replace(item, **changes)))
+    kind, row, _, new = find(result, item_id)
+    if kind in ("text", "music") and changes.keys() & {"start", "end", "in_", "out", "loop_until"}:
+        rows = result.text_rows if kind == "text" else result.music_rows
+        _ensure_free(rows[row], item_id, kind, new.start, _item_end(kind, new))
+    return result
 
 
 def set_settings(project: Project, settings: ProjectSettings) -> Project:
