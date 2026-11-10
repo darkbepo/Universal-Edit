@@ -6,6 +6,9 @@ Export runs the plan at full size; the preview runs it small on a ``Window`` sli
 
 from __future__ import annotations
 
+import hashlib
+import os
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -13,6 +16,7 @@ from PIL import ImageOps
 
 from umc.converters.imaging import flatten, open_image
 from umc.converters.video import atempo_chain
+from umc.core.errors import ConversionError
 from umc.videoedit.project import (
     AudioClip,
     MainItem,
@@ -34,11 +38,12 @@ _SILENCE = f"anullsrc=r={SAMPLE_RATE}:cl=stereo"
 
 @dataclass
 class RenderPlan:
-    args: list[str]  # inputs + -filter_complex <graph>; the caller adds -map, codecs, output
+    args: list[str]  # inputs + -/filter_complex <graph file>; the caller adds -map, codecs, output
     video_label: str | None
     audio_label: str | None
     total: float
-    cwd: Path
+    cwd: Path  # run FFmpeg here: picture inputs and the graph file are relative to it
+    graph: str  # the filter graph text (also written to the graph file)
 
 
 def _f(x: float) -> str:
@@ -61,14 +66,39 @@ class _Inputs:
         return self.count - 1
 
 
-def _picture_png(source: Source, tmp: Path, bg: str) -> Path:
-    """The picture upright and flattened on the background, written once per source."""
-    path = tmp / "pics" / f"{source.id}.png"
+def _picture_png(source: Source, tmp: Path, bg: str) -> str:
+    """The picture upright and flattened on ``bg``, as a path relative to ``tmp``.
+
+    The name follows the source, the background and the file's size and time, so a new
+    background or a replaced file gets a new PNG. Written under a temporary name and moved
+    into place, so a build running at the same time never reads half a file.
+    """
+    stat = source.path.stat()
+    key = f"{source.id}|{source.path}|{bg}|{stat.st_mtime_ns}|{stat.st_size}"
+    name = f"pics/{hashlib.sha1(key.encode()).hexdigest()[:12]}.png"
+    path = tmp / name
     if not path.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
         img = ImageOps.exif_transpose(open_image(source.path))
-        flatten(img, bg).save(path)
-    return path
+        part = path.with_name(f"{path.stem}.{uuid.uuid4().hex[:8]}.part")
+        try:
+            flatten(img, bg).save(part, format="PNG")
+            os.replace(part, path)
+        finally:
+            part.unlink(missing_ok=True)
+    return name
+
+
+def _write_graph(tmp: Path, graph: str) -> str:
+    """Write the graph next to the pictures; returns its name relative to ``tmp``."""
+    tmp.mkdir(parents=True, exist_ok=True)
+    name = f"graph_{uuid.uuid4().hex[:8]}.txt"
+    (tmp / name).write_text(graph, encoding="utf-8")
+    return name
+
+
+def _even_size(size: tuple[int, int]) -> tuple[int, int]:
+    return tuple(max(2, n - (n % 2)) for n in size)  # type: ignore[return-value]
 
 
 def _geometry(item: MainItem) -> list[str]:
@@ -176,12 +206,14 @@ def build_render(
     lead: float = 0.0,
     duration: float | None = None,
 ) -> RenderPlan:
-    w, h = size or output_size(project)
+    w, h = _even_size(size) if size else output_size(project)  # yuv420p needs even sizes
     fps = output_fps(project)
     bg = _colour(project.settings.background)
     spans = layout(project)
     end = lead + duration if duration is not None else length(project)
     total = duration if duration is not None else length(project) - lead
+    if total <= 0:
+        raise ConversionError("The project is empty — add a clip, picture, text or music first.")
     main_end = spans[project.main[-1].id].end if project.main else 0.0
 
     inputs = _Inputs()
@@ -197,7 +229,7 @@ def build_render(
                 continue
             png = _picture_png(source, tmp, project.settings.background)
             dur = _f(item.duration)
-            vin.append(inputs.add("-loop", "1", "-framerate", _f(fps), "-t", dur, "-i", str(png)))
+            vin.append(inputs.add("-loop", "1", "-framerate", _f(fps), "-t", dur, "-i", png))
         elif video or (audio and _has_sound(project, item)):
             vin.append(
                 inputs.add(
@@ -265,19 +297,20 @@ def build_render(
             )
             graph.append(_music_chain(clip, k, f"[m{j}]"))
             labels.append(f"[m{j}]")
+        mix = []
         if labels:
-            # level=0: alimiter's auto level would raise everything by 1/limit (~5 %).
-            graph.append(
-                f"[amain]{''.join(labels)}amix=inputs={len(labels) + 1}:normalize=0"
-                f":duration=longest,alimiter=limit=0.95:level=0,atrim=duration={_f(end)}[amix]"
-            )
-        else:
-            graph.append(f"[amain]atrim=duration={_f(end)}[amix]")
+            mix.append(f"amix=inputs={len(labels) + 1}:normalize=0:duration=longest")
+        # Always limited, so a preview window sounds like the full render. level=0: the
+        # limiter's auto level would raise everything by 1/limit (~5 %).
+        mix += ["alimiter=limit=0.95:level=0", f"atrim=duration={_f(end)}"]
+        graph.append(f"[amain]{''.join(labels)}{','.join(mix)}[amix]")
         final = []
         if lead > 0 or duration is not None:
             final.append(f"atrim=start={_f(lead)}:duration={_f(total)},asetpts=PTS-STARTPTS")
         graph.append("[amix]" + ",".join(final or ["anull"]) + "[aout]")
         audio_label = "[aout]"
 
-    args = [*inputs.args, "-filter_complex", ";".join(graph)]
-    return RenderPlan(args, video_label, audio_label, total, tmp)
+    # A file, not an argument: Windows limits a command line to 32,767 characters.
+    text = ";\n".join(graph)
+    args = [*inputs.args, "-/filter_complex", _write_graph(tmp, text)]
+    return RenderPlan(args, video_label, audio_label, total, tmp, text)

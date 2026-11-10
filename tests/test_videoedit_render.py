@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import shutil
+import subprocess
 from dataclasses import replace
 
 import numpy as np
 import pytest
+from PIL import Image
 
 from tests.conftest import needs_ffmpeg
 from tests.videoedit_helpers import durations, frame_at, render_to, rms
+from umc.core.errors import ConversionError
 from umc.videoedit.media import probe_source
 from umc.videoedit.project import (
     AudioClip,
@@ -68,11 +72,14 @@ def test_build_render_plan_shape(src, tmp_path):
     assert plan.video_label == "[vout]"
     assert plan.audio_label == "[aout]"
     assert plan.total == pytest.approx(2.0)
-    assert "-filter_complex" in plan.args
     assert plan.cwd == tmp_path
+    # The graph goes into a file (Windows' command line is limited to 32,767 characters).
+    script = plan.args[plan.args.index("-/filter_complex") + 1]
+    assert (tmp_path / script).read_text(encoding="utf-8") == plan.graph
     silent = build_render(_proj(src, [_clip("a")]), tmp_path, audio=False)
     assert silent.audio_label is None
-    assert "[aout]" not in silent.args[silent.args.index("-filter_complex") + 1]
+    assert "[aout]" not in silent.graph
+    assert silent.args[silent.args.index("-/filter_complex") + 1] != script  # one file per build
 
 
 def test_render_join_two_clips(src, tmp_path):
@@ -108,7 +115,8 @@ def test_render_letterbox_tall_clip(src, tmp_path):
     out = render_to(p, tmp_path / "out.mp4", tmp_path)
     img = frame_at(out, 0.5)
     assert all(v < 20 for v in img.getpixel((5, 120)))
-    assert _mostly(_rgb(img), 1) or img.getpixel((160, 120))[1] > 100
+    r, g, b = img.getpixel((160, 120))
+    assert r < 30 and 100 < g < 160 and b < 30  # FFmpeg "green" is #008000
 
 
 def test_render_mixed_audio_stays_in_sync(src, tmp_path):
@@ -206,8 +214,7 @@ def test_render_tail_past_main_row(src, tmp_path):
 def test_render_grading_and_flip_build(src, tmp_path):
     c = replace(_clip("a"), brightness=20, contrast=10, saturation=-50, rotate=90, flip_h=True)
     c = replace(c, crop_left=10, crop_right=10)
-    graph = build_render(_proj(src, [c]), tmp_path).args
-    g = graph[graph.index("-filter_complex") + 1]
+    g = build_render(_proj(src, [c]), tmp_path).graph
     assert "crop=" in g and "transpose=1" in g and "hflip" in g
     assert "eq=brightness=0.100:contrast=1.100:saturation=0.500" in g
     out = render_to(_proj(src, [c]), tmp_path / "out.mp4", tmp_path)
@@ -235,3 +242,121 @@ def test_render_sound_only_and_picture_only(src, tmp_path):
     assert durations(sound) == (0.0, pytest.approx(3.0, abs=0.05))
     still = render_to(p, tmp_path / "still.mp4", tmp_path, audio=False)
     assert durations(still) == (pytest.approx(3.0, abs=FRAME + 1e-3), 0.0)
+
+
+def _pic_proj(pic, **settings):
+    s = probe_source(pic, "x")
+    return Project(ProjectSettings(**settings), (s,), (PictureClip("c", "x", duration=0.5),))
+
+
+def test_picture_cache_follows_background_and_file(tmp_path):
+    pic = tmp_path / "alpha.png"
+    img = Image.new("RGBA", (200, 100), (0, 0, 0, 0))
+    img.paste((0, 200, 0, 255), (100, 0, 200, 100))  # right half opaque green
+    img.save(pic)
+    work = tmp_path / "work"
+    work.mkdir()
+    size = {"resolution": "custom", "width": 200, "height": 100}
+    red = render_to(_pic_proj(pic, background="#ff0000", **size), tmp_path / "r.mp4", work)
+    r, g, b = frame_at(red, 0.2).getpixel((40, 50))
+    assert r > 200 and g < 40 and b < 40  # transparency flattened on the background
+    r, g, b = frame_at(red, 0.2).getpixel((160, 50))
+    assert g > 160 and r < 40
+    blue = render_to(_pic_proj(pic, background="#0000ff", **size), tmp_path / "b.mp4", work)
+    r, g, b = frame_at(blue, 0.2).getpixel((40, 50))
+    assert b > 200 and r < 40 and g < 40  # the new background, not the cached red one
+    Image.new("RGB", (200, 100), (255, 255, 0)).save(pic)  # the file is replaced on disk
+    yellow = render_to(_pic_proj(pic, background="#0000ff", **size), tmp_path / "y.mp4", work)
+    r, g, b = frame_at(yellow, 0.2).getpixel((40, 50))
+    assert r > 200 and g > 200 and b < 40
+    assert all(p.suffix == ".png" for p in (work / "pics").iterdir())  # no temp leftovers
+
+
+def test_render_exif_rotated_picture(tmp_path):
+    img = Image.new("RGB", (200, 100), (255, 0, 0))
+    img.paste((0, 0, 255), (100, 0, 200, 100))  # stored: left red, right blue
+    exif = Image.Exif()
+    exif[0x0112] = 6  # shown turned 90° clockwise: tall, top red, bottom blue
+    pic = tmp_path / "rot.jpg"
+    img.save(pic, exif=exif, quality=95)
+    p = _pic_proj(pic, resolution="custom", width=320, height=240)
+    out = render_to(p, tmp_path / "out.mp4", tmp_path)
+    frame = frame_at(out, 0.2)
+    assert all(v < 20 for v in frame.getpixel((20, 120)))  # letterbox bars at the sides
+    r, _g, b = frame.getpixel((160, 60))
+    assert r > 200 and b < 60
+    r, _g, b = frame.getpixel((160, 180))
+    assert b > 200 and r < 60
+
+
+def test_render_odd_sizes_become_even(tmp_path):
+    odd = tmp_path / "odd.mkv"
+    lavfi = ["-f", "lavfi", "-i", "color=red:s=321x241:r=30:d=1"]
+    cmd = ["ffmpeg", "-v", "error", "-y", *lavfi, "-c:v", "ffv1", str(odd)]
+    subprocess.run(cmd, check=True)
+    pic = tmp_path / "odd.png"
+    Image.new("RGB", (201, 101), (255, 128, 0)).save(pic)
+    sources = (probe_source(odd, "o"), probe_source(pic, "q"))
+    main = (VideoClip("a", "o", 0.0, 1.0), PictureClip("b", "q", duration=0.5))
+    p = Project(ProjectSettings(), sources, main)
+    out = render_to(p, tmp_path / "out.mp4", tmp_path)
+    assert frame_at(out, 0.2).size == (320, 240)
+    assert frame_at(out, 1.2).size == (320, 240)
+    plan = build_render(p, tmp_path, size=(321, 181))
+    assert "scale=320:180" in plan.graph and "321" not in plan.graph
+    small = render_to(p, tmp_path / "small.mp4", tmp_path, size=(161, 91))
+    assert frame_at(small, 0.2).size == (160, 90)
+    assert "scale=2:2" in build_render(p, tmp_path, size=(1, 1)).graph
+
+
+def test_render_paths_with_spaces_and_quotes(tmp_path, vmedia):
+    folder = tmp_path / "my 'clips' (1)"
+    folder.mkdir()
+    clip = folder / "a b 'q' (1).mp4"
+    pic = folder / "pic 'x' [2];.png"
+    shutil.copy(vmedia / "red.mp4", clip)
+    shutil.copy(vmedia / "pic.png", pic)
+    work = tmp_path / "work 'dir' [x]"
+    work.mkdir()
+    sources = (probe_source(clip, "a"), probe_source(pic, "b"))
+    main = (VideoClip("c1", "a", 0.0, 1.0), PictureClip("c2", "b", duration=0.5))
+    p = Project(ProjectSettings(), sources, main)
+    out = render_to(p, tmp_path / "out file.mp4", work)
+    v, a = durations(out)
+    assert v == pytest.approx(1.5, abs=FRAME + 1e-3)
+    assert a == pytest.approx(1.5, abs=0.05)
+
+
+def test_render_single_item(src, tmp_path):
+    out = render_to(_proj(src, [_clip("a")]), tmp_path / "out.mp4", tmp_path)
+    v, a = durations(out)
+    assert v == pytest.approx(2.0, abs=FRAME + 1e-3)
+    assert a == pytest.approx(2.0, abs=0.05)
+    assert _mostly(_rgb(frame_at(out, 1.0)), 0)
+    assert rms(out, 0.2, 1.8) > 0.05
+
+
+def test_render_empty_project_is_refused(src, tmp_path):
+    with pytest.raises(ConversionError, match="empty"):
+        build_render(_proj(src), tmp_path)
+
+
+def test_sound_is_always_limited(src, tmp_path):
+    """The limiter runs with or without music, so a window sounds like the full project."""
+    plain = build_render(_proj(src, [_clip("a")]), tmp_path).graph
+    assert "alimiter=limit=0.95:level=0" in plain
+    m = AudioClip("m", "music", 0.0, 0.0, 1.0)
+    mixed = build_render(_proj(src, [_clip("a")], music=[m]), tmp_path).graph
+    assert mixed.count("alimiter=limit=0.95:level=0") == 1
+
+
+def test_many_pictures_keep_the_command_line_short(tmp_path):
+    pic = tmp_path / "p.png"
+    Image.new("RGB", (32, 18), (255, 128, 0)).save(pic)
+    main = tuple(PictureClip(f"c{i}", "p", duration=0.1) for i in range(120))
+    settings = ProjectSettings(resolution="custom", width=64, height=36)
+    p = Project(settings, (probe_source(pic, "p"),), main)
+    plan = build_render(p, tmp_path)
+    assert len(subprocess.list2cmdline(plan.args)) < 8000
+    out = render_to(p, tmp_path / "out.mp4", tmp_path, audio=False)
+    assert durations(out)[0] == pytest.approx(12.0, abs=0.1)
