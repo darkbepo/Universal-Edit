@@ -343,6 +343,7 @@ h1 { font-size: 15px; font-weight: 650; margin: 0; letter-spacing: -0.005em; whi
 .editor-side .section { margin: 6px 0 4px; }
 .tool-settings .form { grid-template-columns: 80px 1fr; gap: 8px 10px; }
 .tool-settings .slider-row output { min-width: 52px; }
+.tool-settings .form > *, .tool-settings .slider-row input { min-width: 0; } /* else the grid column keeps the range's default width and pushes the value out */
 .font-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .font-row select { flex: 1; background: var(--surface-alt); border: 1px solid transparent; border-radius: 8px; padding: 6px 8px; }
 .swatches { display: flex; align-items: center; gap: 10px; }

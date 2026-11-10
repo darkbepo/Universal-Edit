@@ -92,14 +92,14 @@ export class ToolRail {
 
   private openMenu(anchor: HTMLElement, id: string, onAction: (id: string) => void): void {
     if (this.popup) return this.closeMenu();
-    const menu = h("div", { class: "context-menu rail-menu", role: "menu", ariaLabel: anchor.getAttribute("aria-label") ?? "" });
+    const menu = h("div", { class: "menu-items context-menu rail-menu", role: "menu", ariaLabel: anchor.getAttribute("aria-label") ?? "" });
     for (const entry of (RAIL.menus as Record<string, ([string, string] | null)[]>)[id]) {
       if (!entry) {
         menu.append(h("hr"));
         continue;
       }
       const [op, text] = entry;
-      const item = h("button", { type: "button", role: "menuitem" }, text);
+      const item = h("button", { type: "button", class: "menu-item", role: "menuitem" }, text);
       item.addEventListener("click", () => {
         this.closeMenu();
         onAction(op);

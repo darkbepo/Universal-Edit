@@ -315,6 +315,9 @@ QComboBox QAbstractItemView {
     outline: none;
 }
 
+QSlider:horizontal {
+    min-height: 22px; /* the 18 px handle sticks out above and below the 4 px groove */
+}
 QSlider::groove:horizontal {
     height: 4px;
     background: @surface_alt;
