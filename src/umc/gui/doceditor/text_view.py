@@ -83,6 +83,11 @@ def _qt_html(html: str) -> str:
     depth = [0]
     # Qt's HTML reader turns a tab into a space unless white-space is preserved around it.
     html = _TAB.sub('<span style="white-space:pre-wrap">\t</span>', html)
+    # Tables: bordered like inserted ones, unless the subset says border:none.
+    html = html.replace(
+        "<table>",
+        '<table border="1" cellspacing="0" cellpadding="4" style="border-collapse:collapse">',
+    ).replace('<table style="border:none">', '<table border="0" cellspacing="0" cellpadding="4">')
     # Qt drops empty paragraphs unless they are marked the way its own HTML marks them.
     html = re.sub(
         r'<(p|h[1-3]|li)(?: style="([^"]*)")?>(?=</\1>|<[uo]l>)',

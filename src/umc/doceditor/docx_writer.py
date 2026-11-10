@@ -2,7 +2,11 @@
 
 The mapping is mirrored exactly by ``docx_reader``: h1-h3 -> Heading 1-3, blockquote > p ->
 Quote, pre -> Code, lists -> List Bullet / List Number paragraphs with their own ``w:num``,
-tables -> Table Grid, links -> ``w:hyperlink``, spans -> run formatting.
+tables -> Table Grid with explicit borders (``style="border:none"`` -> no borders), links ->
+``w:hyperlink``, spans -> run formatting.
+
+With a ``template`` (the DOCX being saved over) the body is written into a copy of that file,
+so its styles, document defaults, page setup, headers / footers and theme are kept.
 """
 
 from __future__ import annotations
@@ -10,6 +14,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import re
+from copy import deepcopy
 from dataclasses import dataclass, replace
 from io import BytesIO
 from pathlib import Path
@@ -80,9 +85,43 @@ def _pt(value: str | None) -> float | None:
     return float(m.group(1)) if m else None
 
 
+_USED_STYLES = (
+    "Normal",
+    "Heading 1",
+    "Heading 2",
+    "Heading 3",
+    "Quote",
+    "List Bullet",
+    "List Number",
+    "Table Grid",
+)
+
+
+def _style_name(el: Any) -> str:
+    name = el.find(qn("w:name"))
+    return (name.get(qn("w:val")) or "").lower() if name is not None else ""
+
+
 def _ensure_styles(doc: Any) -> None:
+    """Every style the writer uses exists: missing ones are copied from python-docx's default
+    template (a template made by Word only defines the styles it uses)."""
     styles = doc.styles
     names = {s.name for s in styles}
+    have = {_style_name(el) for el in styles.element.findall(qn("w:style"))}
+    missing = [n for n in _USED_STYLES if n.lower() not in have]
+    if missing:
+        default = docx.Document().styles.element
+        ids = {el.get(qn("w:styleId")) for el in styles.element.findall(qn("w:style"))}
+        for el in default.findall(qn("w:style")):
+            if (
+                _style_name(el) in {m.lower() for m in missing}
+                and el.get(qn("w:styleId")) not in ids
+            ):
+                copy = deepcopy(el)
+                for num_pr in copy.iter(qn("w:numPr")):  # the writer numbers lists itself
+                    num_pr.getparent().remove(num_pr)
+                styles.element.append(copy)
+        names = {s.name for s in styles}
     if "Hyperlink" not in names:
         link = styles.add_style("Hyperlink", WD_STYLE_TYPE.CHARACTER)
         link.font.color.rgb = RGBColor(0x05, 0x63, 0xC1)
@@ -310,7 +349,8 @@ def _write_list(
     for li in node:
         if _tag(li) != "li":
             continue
-        for kind, item in _li_parts(li):
+        parts = _li_parts(li) or [("text", etree.Element("span"))]  # an empty item stays one
+        for kind, item in parts:
             if kind == "list":
                 _write_list(ctx, container, reuse, item, min(level + 1, 9), num_id, ordered)
                 continue
@@ -354,7 +394,10 @@ def _write_table(ctx: _Ctx, container: Any, node: etree._Element) -> None:
     if not placed:
         return
     table = container.add_table(len(rows), ncols)
-    table.style = "Table Grid"
+    plain = "border:none" in (node.get("style") or "")
+    if not plain:
+        table.style = "Table Grid"
+    _set_borders(table._tbl, "none" if plain else "single")
     for r, c, rs, cs, _td in placed:  # merge first: merging moves a cell's content
         if rs > 1 or cs > 1:
             table.cell(r, c).merge(table.cell(r + rs - 1, c + cs - 1))
@@ -363,6 +406,39 @@ def _write_table(ctx: _Ctx, container: Any, node: etree._Element) -> None:
         _write_blocks(ctx, cell, [cell.paragraphs[0]], td)
         if cell._tc[-1].tag == qn("w:tbl"):  # a cell must end with a paragraph
             cell.add_paragraph()
+
+
+_TBL_PR_AFTER_BORDERS = (
+    "shd",
+    "tblLayout",
+    "tblCellMar",
+    "tblLook",
+    "tblCaption",
+    "tblDescription",
+)
+
+
+def _set_borders(tbl: Any, val: str) -> None:
+    """Explicit table borders: all "single" or all "none" (the reader decides by these)."""
+    tbl_pr = tbl.tblPr
+    old = tbl_pr.find(qn("w:tblBorders"))
+    if old is not None:
+        tbl_pr.remove(old)
+    borders = OxmlElement("w:tblBorders")
+    for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
+        el = OxmlElement(f"w:{edge}")
+        el.set(qn("w:val"), val)
+        if val != "none":
+            for key, v in (("sz", "4"), ("space", "0"), ("color", "auto")):
+                el.set(qn(f"w:{key}"), v)
+        borders.append(el)
+    after = next(
+        (c for c in tbl_pr if c.tag in {qn(f"w:{t}") for t in _TBL_PR_AFTER_BORDERS}), None
+    )
+    if after is not None:
+        after.addprevious(borders)
+    else:
+        tbl_pr.append(borders)
 
 
 def _write_hr(container: Any, reuse: list[Any]) -> None:
@@ -426,10 +502,38 @@ def _write_blocks(ctx: _Ctx, container: Any, reuse: list[Any], root: etree._Elem
     flush()
 
 
-def write(html: str, images: DocImages, dest: Path) -> Path:
-    """Write ``html`` (the editor's subset) and its ``images`` as a DOCX at ``dest``."""
+def _from_template(template: Path) -> Any:
+    """A copy of ``template`` (read into memory first: it may be ``dest`` itself) with an
+    empty body; only the final section properties are kept."""
+    document = docx.Document(BytesIO(Path(template).read_bytes()))
+    body = document.element.body
+    for child in list(body):
+        if child.tag != qn("w:sectPr"):
+            body.remove(child)
+    part = document.part
+    for rid, rel in list(part.rels.items()):  # what the old body pointed at
+        kind = rel.reltype.rsplit("/", 1)[-1]
+        if kind in ("image", "hyperlink") or kind.startswith("comments"):
+            del part.rels[rid]
+    return document
+
+
+def write(html: str, images: DocImages, dest: Path, template: Path | None = None) -> Path:
+    """Write ``html`` (the editor's subset) and its ``images`` as a DOCX at ``dest``.
+
+    ``template``: a DOCX whose styles, page setup, headers and footers the result keeps.
+    """
     html, _ = normalise_html(html)
-    document = docx.Document()
+    document = None
+    if template is not None:
+        try:
+            document = _from_template(template)
+        except Exception:  # changed or removed since it was opened: start from scratch
+            log.warning(
+                "Can't use %s as the template; writing a new document", template, exc_info=True
+            )
+    if document is None:
+        document = docx.Document()
     _ensure_styles(document)
     ctx = _Ctx(
         images,

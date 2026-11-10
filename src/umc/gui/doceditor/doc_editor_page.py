@@ -479,6 +479,8 @@ class DocEditorPage(QWidget):
 
     def _start_save(self, path: Path, fmt: str) -> None:
         content = self.view.content()
+        if self.source_format == "docx":  # keep the original's styles, page setup, headers
+            content.template = self.source
         self._save_revision = self.view.document().revision()
         self._saving_target = (path, fmt)
         self.saving = True

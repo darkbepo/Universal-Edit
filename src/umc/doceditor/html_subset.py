@@ -511,32 +511,54 @@ class _Normaliser:
             ):  # a list nested directly in a list belongs to the item above
                 items[-1] = items[-1][: -len("</li>")] + self._list(child, ctag) + "</li>"
             else:
-                items.append(self._li(child))
+                items.extend(self._li(child))
         return f"<{tag}>{''.join(items)}</{tag}>"
 
-    def _li(self, node: etree._Element) -> str:
-        toks: list[_Token] = []
-        nested: list[str] = []
-        self._li_walk(node, toks, nested)
-        text = _finalise(toks, drop_trailing_br=True)
-        return f"<li{self._block_style(node)}>{text}{''.join(nested)}</li>"
+    def _li(self, node: etree._Element) -> list[str]:
+        """One item, or more when text follows a nested list: that text becomes the next item
+        at the same level, so nothing moves before the sublist."""
+        groups: list[tuple[list[_Token], list[str]]] = [([], [])]
+        self._li_walk(node, groups)
+        style = self._block_style(node)
+        out = []
+        for n, (toks, nested) in enumerate(groups):
+            text = _finalise(toks, drop_trailing_br=True)
+            if n == 0 or text or nested:
+                out.append(f"<li{style}>{text}{''.join(nested)}</li>")
+        return out
 
-    def _li_walk(self, node: etree._Element, toks: list[_Token], nested: list[str]) -> None:
+    @staticmethod
+    def _add(groups: list[tuple[list[_Token], list[str]]], new: list[_Token]) -> None:
+        """Add inline tokens to the item being built (a new item after a nested list)."""
+        if groups[-1][1]:
+            if all(k == "T" and not t.strip(" \t\r\n\f") for k, t in new):
+                return  # white space between a sublist and what follows
+            groups.append(([], []))
+        groups[-1][0].extend(new)
+
+    def _li_walk(self, node: etree._Element, groups: list[tuple[list[_Token], list[str]]]) -> None:
         """Flatten a list item: its paragraphs become lines, nested lists stay lists."""
-        self._text(node.text, toks)
+        if node.text:
+            self._add(groups, [("T", node.text)])
         for child in node:
             tag = _tag(child)
             if tag in _LISTS:
-                nested.append(self._list(child, tag))
+                groups[-1][1].append(self._list(child, tag))
             elif tag in _BLOCK:
-                if toks and toks[-1] != _BR:
+                toks = groups[-1][0]
+                if toks and toks[-1] != _BR and not groups[-1][1]:
                     toks.append(_BR)
-                self._li_walk(child, toks, nested)
-                if toks and toks[-1] != _BR:
+                self._li_walk(child, groups)
+                toks = groups[-1][0]
+                if toks and toks[-1] != _BR and not groups[-1][1]:
                     toks.append(_BR)
             elif tag is not None:
-                self._inline(child, toks)
-            self._text(child.tail, toks)
+                new: list[_Token] = []
+                self._inline(child, new)
+                if new:
+                    self._add(groups, new)
+            if child.tail:
+                self._add(groups, [("T", child.tail)])
 
     def _table(self, node: etree._Element, out: list[str]) -> None:
         rows: list[etree._Element] = []
@@ -572,7 +594,11 @@ class _Normaliser:
             if cells:
                 html_rows.append(f"<tr>{''.join(cells)}</tr>")
         if html_rows:
-            out.append(f"<table>{''.join(html_rows)}</table>")
+            css = _parse_style(node.get("style"))
+            border = (css.get("border") or css.get("border-style") or "").lower()
+            plain = border in ("none", "0", "0px", "hidden") or (node.get("border") or "") == "0"
+            tag = '<table style="border:none">' if plain else "<table>"
+            out.append(f"{tag}{''.join(html_rows)}</table>")
 
 
 _UNREADABLE = "This file couldn't be read as HTML."

@@ -376,7 +376,8 @@ def test_vertical_merge_by_hand(tmp_path):
     assert (
         read(path).html
         == normalise_html(
-            '<table><tr><td rowspan="3"><p>a</p></td><td><p>b</p></td></tr>'
+            # no borders and no table style: a borderless table
+            '<table style="border:none"><tr><td rowspan="3"><p>a</p></td><td><p>b</p></td></tr>'
             "<tr><td><p>c</p></td></tr><tr><td><p>d</p></td></tr></table><p>after</p>"
         )[0]
     )

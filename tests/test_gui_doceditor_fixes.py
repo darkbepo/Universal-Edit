@@ -90,3 +90,21 @@ def test_html_title_and_warnings_through_the_editor(qtbot, page, tmp_path, monke
     assert asked == [[W_PAGESTYLE, W_WEBPICS, W_RAWHTML]]  # only the original had them
     assert "<title>T</title>" in p.read_text(encoding="utf-8")
     assert page.banner.isHidden()
+
+
+def test_word_look_kept_through_the_editor(qtbot, page, tmp_path):
+    from tests.test_doceditor_fixes import _borders, make_styled_docx
+
+    p = make_styled_docx(tmp_path / "styled.docx")
+    before = docx.Document(p).sections[0]
+    size = (before.page_width, before.page_height)
+    original = open_document(p)
+    gui_cycle(qtbot, page, p, n=2)
+    d = docx.Document(p)
+    assert (d.sections[0].page_width, d.sections[0].page_height) == size
+    assert d.styles["Normal"].font.name == "Arial"
+    plain, grid = d.tables
+    assert set(_borders(plain).values()) == {"none"}
+    assert set(_borders(grid).values()) == {"single"}
+    assert open_document(p).html == original.html
+    assert page.view.document().rootFrame().childFrames()[0].format().toTableFormat().border() == 0

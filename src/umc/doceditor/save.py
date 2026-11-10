@@ -109,7 +109,7 @@ def _build(
     """Write the document into ``tmp``; returns the file (md also makes ``tmp/{stem}_files``)."""
     out = tmp / f"{stem}.{fmt}"
     if fmt == "docx":
-        return write(content.html, content.images, out)
+        return write(content.html, content.images, out, content.template)
     if fmt == "html":
         body = _data_uris(content.html, content.images)
         out.write_text(htmlpdf._page(content.title or stem, body), encoding="utf-8", newline="\n")
@@ -142,7 +142,7 @@ def _build(
         page = htmlpdf._page(stem, content.html)
         pdf.layout_html(page, htmlpdf.PAGE_CSS, [tmp], out, htmlpdf.A4, htmlpdf.MARGIN, stem)
         return out
-    docx_path = write(content.html, content.images, tmp / f"{stem}-src.docx")
+    docx_path = write(content.html, content.images, tmp / f"{stem}-src.docx", content.template)
     return convert_file(docx_path, fmt, out, cancel_event)
 
 

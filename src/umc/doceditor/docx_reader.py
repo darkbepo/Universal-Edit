@@ -29,6 +29,7 @@ from umc.doceditor.types import (
     W_COMMENTS,
     W_FIELDS,
     W_HEADERS,
+    W_LISTSTYLE,
     W_NOTES,
     W_OBJECTS,
     W_PICTURES,
@@ -192,29 +193,73 @@ def _num_kind(ctx: _Ctx, num_id: str, ilvl: str) -> str:
     levels = abstract.findall(qn("w:lvl"))
     lvl = next((x for x in levels if x.get(qn("w:ilvl")) == ilvl), levels[0] if levels else None)
     fmt = _val(lvl, "w:numFmt")
+    if fmt not in (None, "none", "bullet", "decimal"):
+        ctx.warn(W_LISTSTYLE)  # still opened as a numbered list
     return "none" if fmt == "none" else "ul" if fmt == "bullet" else "ol"
 
 
 # ----- inline content --------------------------------------------------------------------
 
 
-def _run_fmt(r: etree._Element, in_heading: bool) -> _Fmt:
+def _flag(rpr: Any, name: str) -> bool | None:
+    """An on/off run property (None when it isn't set)."""
+    el = rpr.find(qn(name)) if rpr is not None else None
+    if el is None:
+        return None
+    val = (el.get(qn("w:val")) or "").lower()
+    if name == "w:u":
+        return val != "none"
+    return val not in ("0", "false", "off")
+
+
+def _rgb(rpr: Any) -> str | None:
+    val = _val(rpr, "w:color")
+    return f"#{val.lower()}" if val and len(val) == 6 and val.lower() != "auto" else None
+
+
+def _char_style_rprs(ctx: _Ctx, rpr: Any) -> list[Any]:
+    """The rPr of the run's character style and the styles it is based on, nearest first."""
+    out: list[Any] = []
+    style_id = _val(rpr, "w:rStyle")
+    styles = ctx.doc.styles.element
+    while style_id and len(out) < 20:
+        style = styles.get_by_id(style_id)
+        if style is None or style.get(qn("w:type")) != "character":
+            break
+        out.append(style.find(qn("w:rPr")))
+        style_id = _val(style, "w:basedOn")
+    return out
+
+
+def _run_fmt(ctx: _Ctx, r: etree._Element, in_heading: bool, in_link: bool) -> _Fmt:
+    """Direct run formatting, falling back to the run's character style chain (never the
+    paragraph style or document defaults: a saved-over file keeps those itself)."""
     run = Run(r, None)  # type: ignore[arg-type]
     font = run.font
-    color = None
-    if font.color is not None and font.color.rgb is not None:
-        color = f"#{font.color.rgb}".lower()
     rpr = r.find(qn("w:rPr"))
+    chain = _char_style_rprs(ctx, rpr)
+
+    def resolved(name: str, from_styles: bool = True) -> bool:
+        value = _flag(rpr, name)
+        for style_rpr in chain if from_styles else ():
+            if value is not None:
+                break
+            value = _flag(style_rpr, name)
+        return bool(value)
+
+    color = _rgb(rpr)
+    if color is None and not in_link:  # a link's style colour is how links look anyway
+        color = next((c for c in map(_rgb, chain) if c), None)
     shd = rpr.find(qn("w:shd")) if rpr is not None else None
     fill = shd.get(qn("w:fill")) if shd is not None else None
     background = _HIGHLIGHT.get(_val(rpr, "w:highlight") or "")
     if fill and fill.lower() not in ("auto", "ffffff"):
         background = f"#{fill.lower()}"
     return _Fmt(
-        bold=bool(run.bold) and not in_heading,
-        italic=bool(run.italic),
-        underline=bool(run.underline),
-        strike=bool(font.strike),
+        bold=resolved("w:b") and not in_heading,
+        italic=resolved("w:i"),
+        underline=resolved("w:u", from_styles=not in_link),
+        strike=resolved("w:strike"),
         family=font.name,
         size=None if in_heading or font.size is None else round(font.size.pt, 2),
         color=color,
@@ -313,7 +358,7 @@ def _inline_nodes(
     for node in parent:
         tag = node.tag
         if tag == _W + "r":
-            _run_items(ctx, node, _run_fmt(node, heading), link, segs)
+            _run_items(ctx, node, _run_fmt(ctx, node, heading, link is not None), link, segs)
         elif tag == _W + "hyperlink":
             href = None
             rid = node.get(_R_ID)
@@ -420,6 +465,32 @@ def _para_style(p: etree._Element, with_indent: bool, page_break: bool) -> str:
     return f' style="{";".join(parts)}"' if parts else ""
 
 
+def _visible(borders: Any) -> bool:
+    return any(
+        (edge.get(qn("w:val")) or "none") not in ("none", "nil") for edge in borders.iterchildren()
+    )
+
+
+def _has_borders(ctx: _Ctx, tbl: etree._Element) -> bool:
+    """The table's own borders, else its table style's (no style and no borders: none)."""
+    tbl_pr = tbl.find(qn("w:tblPr"))
+    borders = tbl_pr.find(qn("w:tblBorders")) if tbl_pr is not None else None
+    if borders is not None:
+        return _visible(borders)
+    style_id = _val(tbl_pr, "w:tblStyle")
+    styles = ctx.doc.styles.element
+    for _ in range(20):
+        style = styles.get_by_id(style_id) if style_id else None
+        if style is None:
+            return False
+        style_pr = style.find(qn("w:tblPr"))
+        borders = style_pr.find(qn("w:tblBorders")) if style_pr is not None else None
+        if borders is not None:
+            return _visible(borders)
+        style_id = _val(style, "w:basedOn")
+    return False
+
+
 class _Blocks:
     """Turns the paragraphs and tables of one container (body or table cell) into HTML."""
 
@@ -524,7 +595,7 @@ class _Blocks:
                     started[col] = cell
                 col += span
             rows.append(cells)
-        out = ["<table>"]
+        out = ["<table>" if _has_borders(self.ctx, tbl) else '<table style="border:none">']
         for cells in rows:
             out.append("<tr>")
             for cell in cells:

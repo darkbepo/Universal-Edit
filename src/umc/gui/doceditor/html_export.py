@@ -229,7 +229,8 @@ def _table(table: QTextTable) -> str:
                 span += f' rowspan="{cell.rowSpan()}"'
             cells.append(f"<td{span}>{_container(cell.begin())}</td>")
         rows.append(f"<tr>{''.join(cells)}</tr>")
-    return f"<table>{''.join(rows)}</table>"
+    tag = "<table>" if table.format().border() > 0 else '<table style="border:none">'
+    return f"{tag}{''.join(rows)}</table>"
 
 
 def document_to_html(doc: QTextDocument) -> str:

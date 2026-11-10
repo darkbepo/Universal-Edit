@@ -32,4 +32,6 @@ CASES = [
     '<p><a href="https://x.org/">x</a></p>',
     '<table><tr><td colspan="2"><p>a</p></td></tr>'
     "<tr><td><p>b</p></td><td><p>c</p></td></tr></table>",
+    '<table style="border:none"><tr><td><p>x</p></td><td><p>y</p></td></tr></table>',
+    "<ol><li>a</li><li></li><li>c</li></ol>",
 ]

@@ -254,3 +254,148 @@ def test_markdown_extras_warn(tmp_path):
 )
 def test_css_emphasis_becomes_tags(css, out):
     assert normalise_html(f'<p><span style="{css}">x</span></p>')[0] == f"<p>{out}</p>"
+
+
+# ----- Important 3: a Word file saved over keeps its look ----------------------------------
+from docx.enum.section import WD_ORIENT  # noqa: E402
+from docx.oxml.ns import qn  # noqa: E402
+from docx.shared import Mm, Pt  # noqa: E402
+
+from umc.doceditor.docx_writer import write  # noqa: E402
+from umc.doceditor.types import W_LISTSTYLE  # noqa: E402
+
+
+def _borders(table) -> dict[str, str]:
+    tbl_pr = table._tbl.tblPr
+    borders = tbl_pr.find(qn("w:tblBorders"))
+    if borders is None:
+        return {}
+    return {el.tag.split("}")[1]: el.get(qn("w:val")) for el in borders}
+
+
+def make_styled_docx(path: Path) -> Path:
+    d = docx.Document()
+    sec = d.sections[0]
+    sec.orientation = WD_ORIENT.LANDSCAPE
+    sec.page_width, sec.page_height = Mm(297), Mm(210)
+    sec.left_margin = Mm(15)
+    normal = d.styles["Normal"]
+    normal.font.name, normal.font.size = "Arial", Pt(12)
+    normal.paragraph_format.first_line_indent = Pt(18)
+    normal.paragraph_format.space_after = Pt(9)
+    par = d.add_paragraph("Plain then ")
+    par.add_run("strong words").style = d.styles["Strong"]
+    plain = d.add_table(1, 2)  # no style, no borders
+    plain.cell(0, 0).text, plain.cell(0, 1).text = "x", "y"
+    grid = d.add_table(2, 2)
+    grid.style = d.styles["Table Grid"]
+    for r in range(2):
+        for c in range(2):
+            grid.cell(r, c).text = f"{r}{c}"
+    d.add_paragraph("End")
+    d.save(path)
+    return path
+
+
+def test_word_look_is_kept_when_saving_over(tmp_path):
+    p = make_styled_docx(tmp_path / "styled.docx")
+    before = docx.Document(p).sections[0]
+    size = (before.page_width, before.page_height, before.left_margin)
+    first = open_document(p)
+    assert "<b>strong words</b>" in first.html
+    assert '<table style="border:none"><tr><td><p>x</p></td>' in first.html
+    assert "<table><tr><td><p>00</p></td>" in first.html
+    opened = cycle(p, "docx")
+    assert {o.html for o in opened} == {first.html}
+    d = docx.Document(p)
+    sec = d.sections[0]
+    assert sec.orientation == WD_ORIENT.LANDSCAPE
+    assert (sec.page_width, sec.page_height, sec.left_margin) == size
+    assert sec.page_width > sec.page_height
+    normal = d.styles["Normal"]
+    assert (normal.font.name, normal.font.size) == ("Arial", Pt(12))
+    assert normal.paragraph_format.first_line_indent == Pt(18)
+    assert normal.paragraph_format.space_after == Pt(9)
+    plain, grid = d.tables
+    assert set(_borders(plain).values()) == {"none"}
+    assert plain.style is None or plain.style.name != "Table Grid"
+    assert set(_borders(grid).values()) == {"single"}
+    # the run is bold again in Word, and the body holds only what the editor wrote
+    strong = [r for r in d.paragraphs[0].runs if "strong" in r.text]
+    assert strong and all(r.bold for r in strong)
+    assert d.paragraphs[-1].text == "End"
+
+
+def test_word_template_without_the_editors_styles(tmp_path):
+    p = tmp_path / "bare.docx"
+    d = docx.Document()
+    styles = d.styles.element
+    for name in ("Heading 1", "Quote", "List Bullet", "Table Grid", "Hyperlink"):
+        for s in list(styles):
+            el = s.find(qn("w:name"))
+            if el is not None and el.get(qn("w:val")).lower() == name.lower():
+                styles.remove(s)
+    d.add_paragraph("seed")
+    d.save(p)
+    html = (
+        "<h1>T</h1><blockquote><p>q</p></blockquote><ul><li>a</li></ul>"
+        '<table><tr><td><p>c</p></td></tr></table><p><a href="https://x.org/">x</a></p>'
+    )
+    save_document(SaveContent(html, {}, template=p), p, "docx")
+    assert open_document(p).html == html
+    for _ in cycle(p, "docx"):
+        pass
+    assert open_document(p).html == html
+
+
+def test_lettered_and_roman_lists_warn(tmp_path):
+    p = write("<ol><li>a</li><li>b</li></ol>", {}, tmp_path / "l.docx")
+    d = docx.Document(p)
+    numbering = d.part.numbering_part.element
+    for fmt in numbering.iter(qn("w:numFmt")):
+        fmt.set(qn("w:val"), "lowerLetter")
+    d.save(p)
+    doc = open_document(p)
+    assert W_LISTSTYLE in doc.warnings and "<ol><li>a</li><li>b</li></ol>" in doc.html
+    assert W_LISTSTYLE not in open_document(write("<ol><li>a</li></ol>", {}, p)).warnings
+
+
+def test_character_style_chain_and_direct_formatting(tmp_path):
+    p = tmp_path / "c.docx"
+    d = docx.Document()
+    base = d.styles.add_style("Loud", 2)
+    base.font.italic = True
+    loud = d.styles.add_style("Louder", 2)
+    loud.base_style = base
+    loud.font.bold = True
+    loud.font.color.rgb = docx.shared.RGBColor(0xFF, 0, 0)
+    par = d.add_paragraph()
+    par.add_run("a").style = loud
+    run = par.add_run("b")
+    run.style = loud
+    run.bold = False  # direct formatting wins over the style
+    d.save(p)
+    assert open_document(p).html == (
+        '<p><b><i><span style="color:#ff0000">a</span></i></b>'
+        '<i><span style="color:#ff0000">b</span></i></p>'
+    )
+
+
+# ----- smaller fixes: list item order, empty list items -----------------------------------
+
+
+def test_text_after_a_nested_list_stays_after_it():
+    html, _ = normalise_html("<ul><li>a<ul><li>b</li></ul>c</li><li>d</li></ul>")
+    assert html == "<ul><li>a<ul><li>b</li></ul></li><li>c</li><li>d</li></ul>"
+    assert normalise_html(html)[0] == html
+    html, _ = normalise_html("<ul><li>a<ul><li>b</li></ul>\n<ul><li>e</li></ul></li></ul>")
+    assert html == "<ul><li>a<ul><li>b</li></ul><ul><li>e</li></ul></li></ul>"
+
+
+@pytest.mark.parametrize("fmt", ["docx", "md", "html"])
+def test_empty_list_items_survive(tmp_path, fmt):
+    html = "<ul><li>a</li><li></li><li>c</li></ul>"
+    p = tmp_path / f"a.{fmt}"
+    save_document(SaveContent(html, {}), p, fmt)
+    for doc in cycle(p, fmt):
+        assert doc.html == html
