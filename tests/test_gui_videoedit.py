@@ -7,6 +7,7 @@ import pytest
 pytest.importorskip("pytestqt")
 
 from PySide6.QtCore import QPoint, Qt  # noqa: E402
+from PySide6.QtWidgets import QSlider  # noqa: E402
 
 from umc.videoedit.project import (  # noqa: E402
     AudioClip,
@@ -370,9 +371,9 @@ def test_scrub_newest_request_wins(qtbot, vmedia, tmp_path):
 
 
 def _patch_save_dialog(monkeypatch, path):
-    from PySide6.QtWidgets import QFileDialog
+    from umc.gui.videoedit.editor_page import VideoEditorPage
 
-    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(path), ""))
+    monkeypatch.setattr(VideoEditorPage, "_ask_save_path", lambda self, default: path)
 
 
 @needs_ffmpeg
@@ -442,3 +443,105 @@ def test_textarea_kind_edits_multiline_text(qtbot):
         w.setPlainText("three")
         w.editingFinished.emit()
     assert panel.values()["text"] == "three"
+
+
+# ------------------------------------------------------------------ fix round 1
+
+
+def _focus(qtbot, pg, w):
+    pg.activateWindow()
+    w.setFocus()
+    qtbot.waitUntil(w.hasFocus, timeout=2000)
+
+
+@needs_ffmpeg
+def test_focused_slider_gets_arrow_keys(vpage, qtbot):
+    vpage.timeline.set_selected(_main_ids(vpage)[0])
+    slider = vpage.inspector.panel.field_widget("volume").findChild(QSlider)
+    _focus(qtbot, vpage, slider)
+    vpage.seek(1.0)
+    before = slider.value()
+    qtbot.keyClick(slider, Qt.Key.Key_Left)
+    assert slider.value() == before - 1
+    assert vpage.playhead == pytest.approx(1.0)
+    qtbot.keyClick(slider, Qt.Key.Key_Home)
+    assert vpage.playhead == pytest.approx(1.0)
+
+
+@needs_ffmpeg
+def test_focused_checkbox_gets_space(vpage, qtbot):
+    vpage.timeline.set_selected(_main_ids(vpage)[0])
+    box = vpage.inspector.panel.field_widget("mute")
+    _focus(qtbot, vpage, box)
+    qtbot.keyClick(box, Qt.Key.Key_Space)
+    assert not vpage.preview.playing
+    assert vpage.history.project.main[0].mute
+
+
+@needs_ffmpeg
+def test_focused_combo_keeps_delete_and_s(vpage, qtbot):
+    vpage.seek(1.0)
+    vpage.timeline.set_selected(_main_ids(vpage)[0])
+    combo = vpage.inspector.panel.field_widget("fit")
+    _focus(qtbot, vpage, combo)
+    qtbot.keyClick(combo, Qt.Key.Key_Delete)
+    qtbot.keyClick(combo, Qt.Key.Key_S)
+    assert len(vpage.history.project.main) == 2
+
+
+@needs_ffmpeg
+def test_commit_renders_one_still(vpage, qtbot, monkeypatch):
+    from umc.videoedit import preview
+
+    calls = []
+    real = preview.still
+    monkeypatch.setattr(preview, "still", lambda *a, **k: calls.append(a[1]) or real(*a, **k))
+    vpage.timeline.set_selected(_main_ids(vpage)[0])
+    qtbot.wait(200)
+    calls.clear()
+    spin = vpage.inspector.panel.field_widget("speed")
+    spin.setValue(2.0)  # still moving: the preview renders the unpushed result
+    qtbot.waitUntil(lambda: len(calls) == 1, timeout=10_000)
+    spin.editingFinished.emit()  # pushes exactly that project: no second render
+    qtbot.wait(400)
+    assert vpage.history.project.main[0].speed == 2.0
+    assert len(calls) == 1
+
+
+@needs_ffmpeg
+def test_save_dialog_default_suffix(vpage, qtbot, tmp_path, monkeypatch):
+    seen = {}
+
+    def fake(default):
+        seen["default"] = default
+        return tmp_path / "named.umcvideo"
+
+    monkeypatch.setattr(vpage, "_ask_save_path", fake)
+    assert vpage.save_as()
+    qtbot.waitUntil(lambda: not vpage.saving, timeout=10_000)
+    assert (tmp_path / "named.umcvideo").exists()
+    assert seen["default"].name == "red.umcvideo"
+
+
+@needs_ffmpeg
+def test_save_error_shows_conversion_message(vpage, qtbot, tmp_path, monkeypatch):
+    from umc.core.errors import ConversionError
+    from umc.gui.videoedit import editor_page
+
+    def boom(project, path):
+        raise ConversionError("Disk says no.")
+
+    monkeypatch.setattr(editor_page, "save_project", boom)
+    monkeypatch.setattr(vpage, "_ask_save_path", lambda default: tmp_path / "x.umcvideo")
+    vpage.save_as()
+    qtbot.waitUntil(lambda: not vpage.saving, timeout=10_000)
+    assert vpage.message.text() == "Disk says no."
+
+
+@needs_ffmpeg
+def test_shutdown_removes_temp_and_stops_thread(vpage):
+    tmp = vpage.tmp
+    assert tmp.exists()
+    vpage.shutdown()
+    assert not tmp.exists()
+    assert vpage.frames._thread.isFinished()

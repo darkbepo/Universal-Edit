@@ -243,4 +243,20 @@ class FrameService(QObject):
         if self._cancel is not None:
             self._cancel.set()
         self._thread.quit()
-        self._thread.wait(10_000)
+        if not self._thread.wait(10_000):
+            # Still inside FFmpeg: never destroy a running QThread. Detach it from this object and
+            # keep it alive until it finishes.
+            log.warning("Preview thread didn't stop within 10 s; letting it finish")
+            thread, worker = self._thread, self._worker
+            thread.setParent(None)
+            _STRAGGLERS.append((thread, worker))
+            thread.finished.connect(lambda: _forget(thread))
+            if thread.isFinished():  # finished before the connection was made
+                _forget(thread)
+
+
+_STRAGGLERS: list[tuple[QThread, QObject]] = []  # still-running preview threads
+
+
+def _forget(thread: QThread) -> None:
+    _STRAGGLERS[:] = [s for s in _STRAGGLERS if s[0] is not thread]

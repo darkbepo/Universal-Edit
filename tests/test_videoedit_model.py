@@ -373,3 +373,23 @@ def test_touching_items_are_not_overlapping():
     p = proj([], text=((t1, TextItem("t2", start=5, end=6)),))
     assert edits.move_item(p, "t2", 0.1 + 0.2 - 1e-9, 0).text_rows[0][1].start > 0
     assert edits.update(p, "t2", start=0.30000000000000004, end=1.0)
+
+
+def test_apply_changes_settings_item_and_transition():
+    p = proj([VideoClip("a", "v", 0, 4), VideoClip("b", "v", 0, 4)])
+    assert edits.apply_changes(p, None, {"fps": "25"}).settings.fps == "25"
+    assert edits.apply_changes(p, "a", {"speed": 2.0}).main[0].speed == 2.0
+    tr = edits.apply_changes(p, "tr:b", {"kind": "fade"}).main[1].transition_in
+    assert tr == Transition("fade", 0.5)
+    tr = edits.apply_changes(p, "tr:b", {"kind": "wipeleft", "duration": 1.0}).main[1]
+    assert tr.transition_in == Transition("wipeleft", 1.0)
+
+
+def test_apply_changes_errors():
+    p = proj([VideoClip("a", "v", 0, 4)])
+    with pytest.raises(edits.EditError):
+        edits.apply_changes(p, "gone", {"speed": 2.0})
+    with pytest.raises(edits.EditError):
+        edits.apply_changes(p, "tr:gone", {"kind": "fade"})
+    with pytest.raises(edits.EditError):
+        edits.apply_changes(p, None, {"nope": 1})

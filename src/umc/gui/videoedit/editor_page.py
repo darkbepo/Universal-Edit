@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 import contextlib
-import dataclasses
 import logging
 import tempfile
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QEventLoop, QObject, Qt, QThread, Signal, Slot
+from PySide6.QtCore import QEvent, QEventLoop, QObject, Qt, QThread, Signal, Slot
 from PySide6.QtGui import QImage, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
+    QApplication,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -71,9 +71,33 @@ class _SaveWorker(QObject):
         try:
             save_project(self.project, self.path)
             self.succeeded.emit(str(self.path))
+        except ConversionError as exc:
+            log.error("video project save failed: %s\n%s", exc, getattr(exc, "details", ""))
+            self.failed.emit(str(exc))
         except Exception:
             log.exception("video project save failed")
             self.failed.emit(f"Couldn't save “{self.path.name}”. See the log for details.")
+
+
+class _KeepKeysInside(QObject):
+    """Lets keys without Ctrl / Alt reach the focused inspector widget instead of the page's
+    single-key shortcuts (←/→ move a slider, Space ticks a box, Delete / S stay in a combo)."""
+
+    def __init__(self, area: QWidget) -> None:
+        super().__init__(area)
+        self.area = area
+
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:  # noqa: N802
+        if event.type() == QEvent.Type.ShortcutOverride:
+            mods = event.modifiers() & ~(
+                Qt.KeyboardModifier.ShiftModifier | Qt.KeyboardModifier.KeypadModifier
+            )
+            if mods == Qt.KeyboardModifier.NoModifier:
+                focus = QApplication.focusWidget()
+                if obj is focus and self.area.isAncestorOf(focus):
+                    event.accept()
+                    return True
+        return False
 
 
 class VideoEditorPage(QWidget):
@@ -193,6 +217,8 @@ class VideoEditorPage(QWidget):
         lay = QVBoxLayout(host)
         lay.setContentsMargins(14, 12, 14, 12)
         self.inspector = Inspector()
+        self._keys = _KeepKeysInside(self.inspector)
+        QApplication.instance().installEventFilter(self._keys)
         self.inspector.changed.connect(self._inspector_changed)
         self.inspector.committed.connect(self._flush_pending)
         lay.addWidget(self.inspector)
@@ -312,11 +338,11 @@ class VideoEditorPage(QWidget):
             self.add_paths([Path(p) for p in paths])
 
     # ------------------------------------------------------------ history
-    def _push(self, project: Project, label: str) -> None:
+    def _push(self, project: Project, label: str, same_view: bool = False) -> None:
         if self.history is None:
             return
         self.history.push(project, label)
-        self._after_change()
+        self._after_change(new_view=not same_view)
 
     def _apply(self, fn, label: str) -> Any:
         """Run an edit on the current project and push it; EditError → inline message."""
@@ -345,11 +371,12 @@ class VideoEditorPage(QWidget):
             self.history.redo()
             self._after_change()
 
-    def _after_change(self) -> None:
+    def _after_change(self, new_view: bool = True) -> None:
         h = self.history
         if h is None:
             return
-        self._view_version += 1
+        if new_view:
+            self._view_version += 1
         self.timeline.set_project(h.project)
         self.media_list.set_sources(h.project.sources)
         self.inspector.show_item(h.project, self.timeline.selected_id)
@@ -381,15 +408,8 @@ class VideoEditorPage(QWidget):
             self._request_still()
             return
         try:
+            project = edits.apply_changes(base, item_id, changes)
             target = target_of(base, item_id)
-            if item_id is None:
-                project = edits.set_settings(base, dataclasses.replace(base.settings, **changes))
-            elif item_id.startswith("tr:"):
-                clip_id = item_id[3:]
-                tr = Transition(**{**dataclasses.asdict(target), **changes})
-                project = edits.update(base, clip_id, transition_in=tr)
-            else:
-                project = edits.update(base, item_id, **changes)
         except (ConversionError, KeyError) as exc:
             self._pending = None
             msg = str(exc) if isinstance(exc, ConversionError) else "That item no longer exists."
@@ -404,7 +424,8 @@ class VideoEditorPage(QWidget):
         pending, self._pending = self._pending, None
         if pending is not None and self.history is not None:
             self.show_message("")
-            self._push(*pending)
+            # The preview already shows this exact project: keep its version (no new still).
+            self._push(*pending, same_view=True)
 
     def _selection_changed(self, item_id: object) -> None:
         self._flush_pending()
@@ -545,19 +566,25 @@ class VideoEditorPage(QWidget):
         stem = sources[0].path.stem if sources else "video"
         return self._first_source_folder() / f"{stem}{PROJECT_SUFFIX}"
 
+    def _ask_save_path(self, default: Path) -> Path | None:
+        """The "Save project as" dialog (asks before replacing a file); None = cancelled."""
+        dlg = QFileDialog(self, "Save project as", str(default.parent), PROJECT_FILTER)
+        dlg.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
+        dlg.setFileMode(QFileDialog.FileMode.AnyFile)
+        dlg.setDefaultSuffix(PROJECT_SUFFIX.lstrip("."))
+        dlg.selectFile(default.name)
+        if not dlg.exec() or not dlg.selectedFiles():
+            return None
+        return Path(dlg.selectedFiles()[0])
+
     def save_as(self) -> bool:
         """Ask for a file name and start saving. False if the user cancelled."""
         if self.history is None or self.saving:
             return False
         self._flush_pending()
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Save project as", str(self._default_project_path()), PROJECT_FILTER
-        )
-        if not path:
+        path = self._ask_save_path(self._default_project_path())
+        if path is None:
             return False
-        path = Path(path)
-        if path.suffix.lower() != PROJECT_SUFFIX:
-            path = path.with_name(path.name + PROJECT_SUFFIX)
         self._start_save(path)
         return True
 
@@ -594,7 +621,9 @@ class VideoEditorPage(QWidget):
         worker.failed.connect(lambda msg: self.show_message(msg, error=True))
         worker.succeeded.connect(thread.quit)
         worker.failed.connect(thread.quit)
-        thread.finished.connect(self._save_finished)
+        thread.finished.connect(self._save_finished)  # drops the references first…
+        thread.finished.connect(worker.deleteLater)  # …then Qt deletes both
+        thread.finished.connect(thread.deleteLater)
         self._save_thread, self._save_worker = thread, worker
         thread.start()
 
@@ -652,6 +681,7 @@ class VideoEditorPage(QWidget):
         """Stop the preview thread and delete the temporary folder (safe to call twice)."""
         if self.saving:
             self._wait_for_save()
+        QApplication.instance().removeEventFilter(self._keys)
         self.frames.close()
         tmp, self._tmp = self._tmp, None
         if tmp is not None:

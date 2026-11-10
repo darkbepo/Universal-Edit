@@ -426,3 +426,27 @@ def remove_source(project: Project, source_id: str) -> Project:
             ),
         )
     )
+
+
+def apply_changes(project: Project, selection_id: str | None, changes: dict[str, Any]) -> Project:
+    """Settings changed in the inspector, for the project (None), a transition ("tr:<clip id>")
+    or an item."""
+    if selection_id is None:
+        valid = {f.name for f in dataclasses.fields(ProjectSettings)}
+        unknown = set(changes) - valid
+        if unknown:
+            raise EditError(f"Unknown setting: {', '.join(sorted(unknown))}.")
+        return set_settings(project, dataclasses.replace(project.settings, **changes))
+    if selection_id.startswith("tr:"):
+        clip_id = selection_id[3:]
+        _, _, _, clip = _find(project, clip_id)
+        if not isinstance(clip, VideoClip | PictureClip):
+            raise EditError("Only clips on the main track have transitions.")
+        valid = {f.name for f in dataclasses.fields(Transition)}
+        unknown = set(changes) - valid
+        if unknown:
+            raise EditError(f"Unknown setting: {', '.join(sorted(unknown))}.")
+        return update(
+            project, clip_id, transition_in=dataclasses.replace(clip.transition_in, **changes)
+        )
+    return update(project, selection_id, **changes)
