@@ -257,6 +257,7 @@ export class LayersPanel {
     if (!this.doc) return;
     ops.selectLayers(this.doc, this.doc.layers.map((_, i) => i), this.doc.active);
     this.showSelection();
+    this.onActive();
   }
 
   // ---------------------------------------------------------------- list
@@ -411,6 +412,11 @@ export class LayersPanel {
   private pointerMove(e: PointerEvent): void {
     const doc = this.doc;
     if (!doc || !this.press || e.pointerId !== this.press.pointerId) return;
+    if (!(e.buttons & 1)) {
+      // The button was let go outside the list (its pointerup never reached us): no drag.
+      this.endDrag();
+      return;
+    }
     if (!this.dragging) {
       if (Math.abs(e.clientY - this.press.y) < 5) return;
       this.dragging = true;

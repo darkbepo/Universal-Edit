@@ -355,6 +355,22 @@ test("layers: drag rows to reorder", async ({ page }) => {
   await expect.poll(() => rowNames(page)).toEqual(["Layer 4", "Layer 3", "img1", "img0"]);
 });
 
+test("layers: a press released outside the list doesn't turn into a drag later", async ({ page }) => {
+  await fourLayers(page);
+  const from = await row(page, 3).locator(".lname").boundingBox();
+  const list = await page.locator(".layers").boundingBox();
+  if (!from || !list) throw new Error("no layout");
+  await page.mouse.move(from.x + 10, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(list.x - 40, from.y + from.height / 2, { steps: 4 }); // sideways, out of the list
+  await page.mouse.up();
+  await page.mouse.move(from.x + 10, from.y + from.height / 2, { steps: 2 }); // hover back…
+  await page.mouse.move(from.x + 10, list.y + 6, { steps: 6 }); // …and up the list, no button held
+  await expect(page.locator(".layers.dragging")).toHaveCount(0);
+  await page.mouse.click(from.x + 10, list.y + 6);
+  await expect.poll(() => rowNames(page)).toEqual(["Layer 4", "Layer 3", "img1", "img0"]);
+});
+
 test("layers: right-click menu", async ({ page }) => {
   await fourLayers(page);
   await row(page, 0).locator(".lname").click();
