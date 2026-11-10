@@ -421,3 +421,79 @@ def test_table_menu_only_in_table(qtbot, view):
     assert bar.table_menu.isEnabled()
     bar.table_menu.actions()[1].trigger()  # row below
     assert view.content().html.count("<tr>") == 3
+
+
+# ----- find & replace -----------------------------------------------------------
+from PySide6.QtCore import Qt  # noqa: E402
+from PySide6.QtTest import QTest  # noqa: E402
+
+from umc.gui.doceditor.find_bar import FindBar  # noqa: E402
+
+
+@pytest.fixture
+def view_text(qtbot):
+    return _view(qtbot, "<p>a cat. A cat.</p>")
+
+
+def test_find_wraps(qtbot, view_text):
+    bar = FindBar(view_text)
+    qtbot.addWidget(bar)
+    assert bar.find("cat") and bar.find("cat") and bar.find("cat")  # third wraps to the first
+    assert not bar.find("dog") and bar.status.text() == "No matches."
+
+
+def test_find_backward_and_case(qtbot, view_text):
+    bar = FindBar(view_text)
+    qtbot.addWidget(bar)
+    assert bar.find("cat", backward=True)
+    assert view_text.textCursor().selectionStart() == 9
+    assert not bar.find("CAT", case=True)
+
+
+def test_replace_all_case_and_whole_word(qtbot, view_text):
+    bar = FindBar(view_text)
+    qtbot.addWidget(bar)
+    assert bar.replace_all("a", "the", case=True, whole=True) == 1
+    assert view_text.toPlainText() == "the cat. A cat."
+    assert bar.status.text() == "Replaced 1."
+    view_text.undo()
+    assert view_text.toPlainText() == "a cat. A cat."
+
+
+def test_replace_all_is_one_undo_step_and_zero(qtbot, view_text):
+    bar = FindBar(view_text)
+    qtbot.addWidget(bar)
+    assert bar.replace_all("cat", "dog") == 2
+    assert view_text.toPlainText() == "a dog. A dog."
+    view_text.undo()
+    assert view_text.toPlainText() == "a cat. A cat."
+    assert bar.replace_all("zzz", "y") == 0
+    assert bar.status.text() == "No matches."
+
+
+def test_replace_current_then_next(qtbot, view_text):
+    bar = FindBar(view_text)
+    qtbot.addWidget(bar)
+    assert not bar.replace("cat", "dog")  # nothing selected: only finds the first
+    assert view_text.toPlainText() == "a cat. A cat."
+    assert bar.replace("cat", "dog")  # replaces it, selects the next
+    assert view_text.toPlainText() == "a dog. A cat."
+    assert view_text.textCursor().selectedText() == "cat"
+
+
+def test_bar_open_and_escape(qtbot, view_text):
+    bar = FindBar(view_text)
+    qtbot.addWidget(bar)
+    assert bar.isHidden()
+    c = view_text.textCursor()
+    c.setPosition(2)
+    c.setPosition(5, c.MoveMode.KeepAnchor)
+    view_text.setTextCursor(c)
+    bar.show()
+    bar.open(True)
+    assert bar.find_edit.text() == "cat"
+    assert not bar.replace_edit.isHidden()
+    bar.open(False)
+    assert bar.replace_edit.isHidden()
+    QTest.keyClick(bar.find_edit, Qt.Key.Key_Escape)
+    assert bar.isHidden()
