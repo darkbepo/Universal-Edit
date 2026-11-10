@@ -123,7 +123,10 @@ See `web/README.md` for commands and deployment.
   ≤ 4). `core-mt` has a fixed pool of 32 workers and FFmpeg's automatic counts scale with the CPU,
   so on a 12-core PC an H.264 re-encode hung at 0 % (CI runners have few cores and never showed
   it). Encoder 6 crashed a 1080×1920 encode (wasm memory). Crossfade slideshows (one input per
-  picture) hung after frame 1 until decoders and filters were single-threaded. Video-type
+  picture) hung after frame 1 until decoders and filters were single-threaded, and still hung
+  above ~25 pictures (one reader thread per input). `slideshow.ts` now renders them in groups of
+  `XFADE_GROUP` (12) into near-lossless clips (x264 CRF 12) and crossfades the clips together,
+  level by level; `xfadeGraph` keeps the timing identical to a single pass. Video-type
   targets show a "desktop app is much faster" note (`SLOW_IN_BROWSER` in `ui/app.ts`).
 - **Codecs:** ffmpeg.wasm encodes H.264, VP8 and MPEG-4 only (in @ffmpeg/core 0.12.10
   libvpx-vp9 crashes the tab, libx265 hangs, no AV1 encoder). VP9 / AV1 / H.265 go through the

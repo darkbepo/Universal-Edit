@@ -7,6 +7,51 @@ import { baseName, MIME } from "./util";
 
 const CONTAINER_TARGETS = ["mp4", "webm", "mkv", "mov"];
 const VIDEO_ONLY = CONTAINER_TARGETS.map((c) => `slideshow:${c}`);
+
+/** Most inputs one crossfade pass gets (each FFmpeg input is a thread; 25 worked, 40 hung). */
+export const XFADE_GROUP = 12;
+
+export interface XfadeItem {
+  path: string;
+  /** Seconds it is shown, including the overlap into the next item. */
+  dur: number;
+  /** A still picture (looped) rather than an already rendered clip. */
+  image: boolean;
+}
+
+/** How many FFmpeg runs a crossfade slideshow of ``n`` pictures takes (groups, then joins). */
+export function xfadePasses(n: number): number {
+  let passes = 1;
+  for (let items = n; items > XFADE_GROUP; ) {
+    const groups = Math.ceil(items / XFADE_GROUP);
+    const last = items - (groups - 1) * XFADE_GROUP;
+    passes += groups - (last === 1 ? 1 : 0); // a lone leftover is carried over, not rendered
+    items = groups;
+  }
+  return passes;
+}
+
+/**
+ * One xfade chain over ``items``. Item i starts at (sum of the earlier durations) − i × td, so
+ * chaining clips gives exactly the same timing as one pass over all the pictures.
+ */
+export function xfadeGraph(items: XfadeItem[], fps: number, transition: string, td: number) {
+  const inputs: string[] = [];
+  for (const it of items) {
+    if (it.image) inputs.push("-loop", "1", "-framerate", String(fps), "-t", it.dur.toFixed(3));
+    inputs.push("-i", it.path);
+  }
+  const parts = items.map((_, i) => `[${i}:v]fps=${fps},settb=AVTB,format=yuv420p[s${i}]`);
+  let prev = "s0";
+  let start = 0;
+  for (let i = 1; i < items.length; i++) {
+    start += items[i - 1].dur - td;
+    parts.push(`[${prev}][s${i}]xfade=transition=${transition}:duration=${td.toFixed(3)}:offset=${start.toFixed(3)}[x${i}]`);
+    prev = `x${i}`;
+  }
+  const total = items.reduce((s, it) => s + it.dur, 0) - (items.length - 1) * td;
+  return { inputs, graph: parts.join(";"), out: `[${prev}]`, total };
+}
 const PRESET_HEIGHTS: Record<string, number> = { "480p": 480, "720p": 720, "1080p": 1080, "1440p": 1440, "4k": 2160 };
 const TRANSITIONS: [string, string][] = [
   ["none", "None (hard cut)"], ["fade", "Crossfade"], ["fadeblack", "Fade through black"],
@@ -152,16 +197,37 @@ export const slideshowConverter: Converter = {
     let total: number;
     let vmap: string;
     if (useTransition) {
-      for (let i = 0; i < n; i++) args.push("-loop", "1", "-framerate", String(fps), "-t", (d + td).toFixed(3), "-i", `/slides/img${String(i).padStart(5, "0")}.png`);
-      const parts = [...Array(n).keys()].map((i) => `[${i}:v]fps=${fps},settb=AVTB,format=yuv420p[s${i}]`);
-      let prev = "s0";
-      for (let i = 1; i < n; i++) {
-        parts.push(`[${prev}][s${i}]xfade=transition=${o.transition}:duration=${td.toFixed(3)}:offset=${(i * d).toFixed(3)}[x${i}]`);
-        prev = `x${i}`;
+      // Every FFmpeg input needs its own thread and ffmpeg.wasm only has 32, so a long crossfade
+      // (one looped input per picture) hung. Render groups of XFADE_GROUP into near-lossless
+      // clips first, then crossfade those clips together the same way (repeat as needed).
+      let items: XfadeItem[] = [...Array(n).keys()].map((i) => ({ path: `/slides/img${String(i).padStart(5, "0")}.png`, dur: d + td, image: true }));
+      const x264 = pick(ff.encoders, VIDEO_ENCODERS.h264, "H.264");
+      let level = 0;
+      const passes = xfadePasses(n);
+      let pass = 0;
+      while (items.length > XFADE_GROUP) {
+        const next: XfadeItem[] = [];
+        for (let g = 0; g < items.length; g += XFADE_GROUP) {
+          const group = items.slice(g, g + XFADE_GROUP);
+          if (group.length === 1) { next.push(group[0]); continue; }
+          const clip = `/slides/clip${level}_${g}.mkv`;
+          const x = xfadeGraph(group, fps, String(o.transition), td);
+          const p0 = pass++ / passes;
+          await ff.run([...x.inputs, "-filter_complex", x.graph, "-map", x.out, "-c:v", x264, "-crf", "12", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-r", String(fps), "-t", x.total.toFixed(3), clip],
+            x.total, (p) => ctx.progress(0.3 + 0.7 * (p0 + p / passes), "Rendering video"), "Couldn't create the slideshow video.");
+          const { duration } = await ff.probe(clip);
+          next.push({ path: clip, dur: duration || x.total, image: false });
+          // Clips merged into this one aren't needed any more (FFmpeg's file system is in memory).
+          for (const it of group) if (!it.image) await ff.ff.deleteFile(it.path).catch(() => {});
+        }
+        items = next;
+        level++;
       }
-      graph = parts.join(";");
-      total = n * d + td;
-      vmap = `[${prev}]`;
+      const x = xfadeGraph(items, fps, String(o.transition), td);
+      args.push(...x.inputs);
+      graph = x.graph;
+      total = x.total;
+      vmap = x.out;
     } else {
       const lines: string[] = [];
       for (let i = 0; i < n; i++) lines.push(`file 'img${String(i).padStart(5, "0")}.png'`, `duration ${d.toFixed(3)}`);
@@ -176,7 +242,7 @@ export const slideshowConverter: Converter = {
     if (o.audio_file instanceof File) {
       const mounted = await ff.mount(o.audio_file);
       release = mounted.release;
-      const ai = useTransition ? n : 1;
+      const ai = args.filter((a) => a === "-i").length; // the audio is the input after the video ones
       args.push("-i", mounted.path);
       let af = `[${ai}:a]atrim=0:${total.toFixed(3)}`;
       if (o.audio_fade_out && total > 2) {
@@ -193,8 +259,9 @@ export const slideshowConverter: Converter = {
     args.push("-c:v", enc, ...qualityArgs(enc, Number(o.crf), "veryfast", null), "-pix_fmt", "yuv420p", "-r", String(fps), "-t", total.toFixed(3));
     if (container === "mp4" || container === "mov") args.push("-movflags", "+faststart");
     const dest = `/slideshow.${container}`;
+    const passes = useTransition ? xfadePasses(n) : 1;
     try {
-      await ff.run([...args, dest], total, (p) => ctx.progress(0.3 + 0.7 * p, "Rendering video"), "Couldn't create the slideshow video.");
+      await ff.run([...args, dest], total, (p) => ctx.progress(0.3 + 0.7 * ((passes - 1 + p) / passes), "Rendering video"), "Couldn't create the slideshow video.");
     } finally {
       await release?.();
       for (const f of await ff.listFiles("/slides")) await ff.ff.deleteFile(`/slides/${f}`).catch(() => {});
