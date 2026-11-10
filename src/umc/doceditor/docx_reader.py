@@ -87,8 +87,20 @@ _A_BLIP = "{http://schemas.openxmlformats.org/drawingml/2006/main}blip"
 _R_EMBED = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed"
 _R_ID = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
 _TRACKED = {_W + t for t in ("ins", "del", "moveFrom", "moveTo")}
-_SKIPPED = {_W + "del", _W + "moveFrom"}  # deleted text is dropped
-_TRANSPARENT = {_W + t for t in ("sdt", "sdtContent", "smartTag", "ins", "moveTo", "fldSimple")}
+_TRANSPARENT = {
+    _W + t
+    for t in (
+        "sdt",
+        "sdtContent",
+        "smartTag",
+        "customXml",
+        "ins",
+        "moveTo",
+        "fldSimple",
+    )
+}
+# Wrappers around block content that are read through (w:del / w:moveFrom are dropped).
+_BLOCK_WRAPPERS = {_W + t for t in ("sdtContent", "customXml", "ins", "moveTo", "smartTag")}
 
 
 @dataclass(frozen=True)
@@ -156,7 +168,8 @@ def _list_info(ctx: _Ctx, p: etree._Element, chain: list[Any]) -> tuple[int, str
     if not num_id or num_id == "0":
         return None
     try:
-        return int(num_id), _num_kind(ctx, num_id, ilvl), max(int(ilvl), 0)
+        kind = _num_kind(ctx, num_id, ilvl)
+        return None if kind == "none" else (int(num_id), kind, max(int(ilvl), 0))
     except ValueError:
         return None
 
@@ -177,7 +190,8 @@ def _num_kind(ctx: _Ctx, num_id: str, ilvl: str) -> str:
         return "ul"
     levels = abstract.findall(qn("w:lvl"))
     lvl = next((x for x in levels if x.get(qn("w:ilvl")) == ilvl), levels[0] if levels else None)
-    return "ul" if _val(lvl, "w:numFmt") == "bullet" else "ol"
+    fmt = _val(lvl, "w:numFmt")
+    return "none" if fmt == "none" else "ul" if fmt == "bullet" else "ol"
 
 
 # ----- inline content --------------------------------------------------------------------
@@ -407,6 +421,8 @@ class _Blocks:
                 inner = node.find(qn("w:sdtContent"))
                 if inner is not None:
                     yield from self._children(inner)
+            elif node.tag in _BLOCK_WRAPPERS:
+                yield from self._children(node)
             elif node.tag in (_W + "p", _W + "tbl"):
                 yield node
 

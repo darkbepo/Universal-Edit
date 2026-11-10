@@ -280,3 +280,120 @@ def test_unreadable_docx_is_a_plain_error(tmp_path):
     (tmp_path / "bad.docx").write_bytes(b"nope")
     with pytest.raises(ConversionError):
         read(tmp_path / "bad.docx")
+
+
+# ----- reader: wrappers and real-world cases -----------------------------------------------
+
+
+def _body_xml(tmp_path, xml, name="x.docx"):
+    """A document whose body is replaced by ``xml`` (a string of w: elements)."""
+    from lxml import etree
+
+    d = docx.Document()
+    body = d.element.body
+    sect = body.find(qn("w:sectPr"))
+    for child in list(body):
+        if child is not sect:
+            body.remove(child)
+    ns = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+    root = etree.fromstring(f"<root {ns}>{xml}</root>")
+    for el in list(root):
+        sect.addprevious(el)
+    path = tmp_path / name
+    d.save(path)
+    return path
+
+
+@pytest.mark.parametrize(
+    ("wrapper", "tracked"),
+    [("w:customXml", False), ("w:smartTag", False), ("w:ins", True), ("w:moveTo", True)],
+)
+def test_block_wrappers_keep_text(tmp_path, wrapper, tracked):
+    attrs = ' w:id="1" w:author="A"' if tracked else ""
+    path = _body_xml(tmp_path, f"<{wrapper}{attrs}><w:p><w:r><w:t>cx</w:t></w:r></w:p></{wrapper}>")
+    got = read(path)
+    assert got.html == "<p>cx</p>"
+    assert (W_TRACKED in got.warnings) is tracked
+
+
+@pytest.mark.parametrize("wrapper", ["w:del", "w:moveFrom"])
+def test_block_deletions_are_dropped(tmp_path, wrapper):
+    path = _body_xml(
+        tmp_path,
+        f'<{wrapper} w:id="1" w:author="A"><w:p><w:r><w:t>gone</w:t></w:r></w:p></{wrapper}>'
+        "<w:p><w:r><w:t>kept</w:t></w:r></w:p>",
+    )
+    assert read(path).html == "<p>kept</p>"
+
+
+def test_content_controls_keep_text(tmp_path):
+    path = _body_xml(
+        tmp_path,
+        "<w:sdt><w:sdtContent><w:p><w:r><w:t>block</w:t></w:r></w:p></w:sdtContent></w:sdt>"
+        "<w:p><w:sdt><w:sdtContent><w:r><w:t>inline</w:t></w:r></w:sdtContent></w:sdt></w:p>",
+    )
+    assert read(path).html == "<p>block</p><p>inline</p>"
+
+
+def test_highlight_colour(tmp_path):
+    path = _body_xml(
+        tmp_path,
+        '<w:p><w:r><w:rPr><w:highlight w:val="yellow"/></w:rPr><w:t>h</w:t></w:r></w:p>',
+    )
+    assert read(path).html == '<p><span style="background-color:#ffff00">h</span></p>'
+
+
+def test_list_from_paragraph_style_only(tmp_path):
+    d = docx.Document()
+    d.add_paragraph("a", style="List Bullet")
+    d.add_paragraph("b", style="List Number")
+    d.save(tmp_path / "ls.docx")
+    assert read(tmp_path / "ls.docx").html == "<ul><li>a</li></ul><ol><li>b</li></ol>"
+
+
+def test_numbering_format_none_is_not_a_list(tmp_path):
+    d = docx.Document()
+    d.add_paragraph("a", style="List Bullet")
+    numbering = d.part.numbering_part.element
+    for fmt in numbering.iter(qn("w:numFmt")):
+        fmt.set(qn("w:val"), "none")
+    d.save(tmp_path / "none.docx")
+    assert read(tmp_path / "none.docx").html == "<p>a</p>"
+
+
+def test_vertical_merge_by_hand(tmp_path):
+    def tc(vm, text):
+        mark = f"<w:vMerge{vm}/>" if vm is not None else ""
+        return f"<w:tc><w:tcPr>{mark}</w:tcPr><w:p><w:r><w:t>{text}</w:t></w:r></w:p></w:tc>"
+
+    restart = ' w:val="restart"'
+    rows = (
+        f"<w:tr>{tc(restart, 'a')}{tc(None, 'b')}</w:tr>"
+        f"<w:tr>{tc('', '')}{tc(None, 'c')}</w:tr>"
+        f"<w:tr>{tc('', '')}{tc(None, 'd')}</w:tr>"
+    )
+    path = _body_xml(tmp_path, f"<w:tbl>{rows}</w:tbl><w:p><w:r><w:t>after</w:t></w:r></w:p>")
+    assert (
+        read(path).html
+        == normalise_html(
+            '<table><tr><td rowspan="3"><p>a</p></td><td><p>b</p></td></tr>'
+            "<tr><td><p>c</p></td></tr><tr><td><p>d</p></td></tr></table><p>after</p>"
+        )[0]
+    )
+
+
+def test_non_web_picture_is_converted_to_png(tmp_path):
+    from PIL import Image
+
+    buf = BytesIO()
+    Image.new("RGB", (2, 2), (0, 0, 255)).save(buf, "TIFF")
+    d = docx.Document()
+    d.add_paragraph().add_run().add_picture(BytesIO(PNG_1PX))
+    part = next(r.target_part for r in d.part.rels.values() if r.reltype.endswith("/image"))
+    part._blob = buf.getvalue()
+    part._content_type = "image/tiff"
+    d.save(tmp_path / "tif.docx")
+    got = read(tmp_path / "tif.docx")
+    assert list(got.images) == ["img/1.png"] and 'src="img/1.png"' in got.html
+    assert got.images["img/1.png"].startswith(b"\x89PNG")
+    assert W_PICTURES not in got.warnings
