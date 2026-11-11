@@ -314,8 +314,10 @@ On the desktop, opening such a file shows an error instead of the document.
   - `test_bad_url_is_dropped_not_fatal`: `<p><a href="http://[::1/x">t</a><img src="http://[::1/x.png"></p>` gives `<p>t</p>`, and the remote-picture warning is shown when the picture was dropped.
   - `test_html_without_body`: `<html><head><title>T</title></head></html>` gives an empty document and title "T", without raising. `<html><p>x</p></html>` gives `<p>x</p>`.
   - Each output must equal what the web port (Task 2, `web/src/doceditor/subset.ts`) produces. Run both, and if they differ, align the desktop with the web behaviour described in the Task 2 report.
+  - `test_indent_is_capped`: `<p style="margin-left:1000000000000000000000000000000pt">x</p>` (31 digits) gives `<p style="margin-left:720pt">x</p>`. Exponent forms like `1e30pt` aren't lengths in either app, so they give no margin. Indent levels are capped at 20 (20 × 36 pt), the same cap the web port uses, so both apps print valid CSS.
+  - `test_c1_character_references`: `<p>it&#146;s &#150; &#128;5</p>` gives `<p>it’s – €5</p>`. Old Word / Windows HTML writes curly quotes and dashes as C1 references; HTML5 and the web port map them through Windows-1252, but the desktop drops them, which silently loses text.
 - [ ] **Step 2: Run** — Expected: FAIL (desktop raises).
-- [ ] **Step 3: Implement:** catch `ValueError` from URL parsing (treat as unusable: drop the link target and keep its text, drop the picture), and handle a missing body. Regenerate the vectors, then run `npm test -- doceditor` in `web/`; both apps must pass the new vectors.
+- [ ] **Step 3: Implement:** map numeric references `&#128;`–`&#159;` (decimal and hex) to their Windows-1252 characters before parsing, as HTML5 does. Catch `ValueError` from URL parsing (treat as unusable: drop the link target and keep its text, drop the picture), and handle a missing body. Regenerate the vectors, then run `npm test -- doceditor` in `web/`; both apps must pass the new vectors.
 - [ ] **Step 4: Run** the full `pytest`, ruff, and `npm test` — Expected: PASS.
 - [ ] **Step 5: Commit** `Don't fail on bad URLs or a missing body when cleaning HTML`.
 
