@@ -4,7 +4,7 @@
  * small XML helpers both use. Needs DOMParser / XMLSerializer (the page, not a worker).
  */
 
-import { unzipSync, zipSync, type Zippable } from "fflate";
+import { Inflate, strFromU8, zipSync, type Zippable } from "fflate";
 import { NS, XML_HEAD } from "./docx-template";
 import { MAX_UNPACKED_BYTES, TOO_LARGE } from "./types";
 
@@ -269,20 +269,112 @@ export function contentTypeOf(types: Document, name: string): string | null {
   return byExt;
 }
 
+interface ZipEntry {
+  name: string;
+  method: number;
+  compressedSize: number;
+  size: number; // the uncompressed size the central directory declares
+  offset: number; // of the local header
+}
+
+/** The entries of a zip's central directory (ZIP64 included); throws when it has none. */
+function zipEntries(bytes: Uint8Array): ZipEntry[] {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const u16 = (at: number) => view.getUint16(at, true);
+  const u32 = (at: number) => view.getUint32(at, true);
+  const u64 = (at: number) => Number(view.getBigUint64(at, true));
+  let end = bytes.length - 22;
+  const stop = Math.max(0, bytes.length - 65557);
+  while (end >= stop && u32(end) !== 0x06054b50) end--;
+  if (end < stop) throw new Error("Not a zip file");
+  let count = u16(end + 10);
+  let at = u32(end + 16);
+  if (end >= 20 && u32(end - 20) === 0x07064b50) {
+    const z = u64(end - 12);
+    if (z + 56 <= bytes.length && u32(z) === 0x06064b50) {
+      count = u64(z + 32);
+      at = u64(z + 48);
+    }
+  }
+  const out: ZipEntry[] = [];
+  for (let i = 0; i < count; i++) {
+    if (at + 46 > bytes.length || u32(at) !== 0x02014b50) throw new Error("Bad zip directory");
+    const nameLen = u16(at + 28);
+    const extraLen = u16(at + 30);
+    const entry: ZipEntry = {
+      name: strFromU8(bytes.subarray(at + 46, at + 46 + nameLen), !(u16(at + 8) & 0x800)),
+      method: u16(at + 10),
+      compressedSize: u32(at + 20),
+      size: u32(at + 24),
+      offset: u32(at + 42),
+    };
+    // ZIP64: the values written as 0xFFFFFFFF follow in the extra field, in this order
+    for (let x = at + 46 + nameLen; x + 4 <= at + 46 + nameLen + extraLen; ) {
+      const id = u16(x);
+      const len = u16(x + 2);
+      if (id === 1) {
+        let y = x + 4;
+        for (const key of ["size", "compressedSize", "offset"] as const) {
+          if (entry[key] === 0xffffffff && y + 8 <= x + 4 + len) {
+            entry[key] = u64(y);
+            y += 8;
+          }
+        }
+      }
+      x += 4 + len;
+    }
+    out.push(entry);
+    at += 46 + nameLen + extraLen + u16(at + 32);
+  }
+  return out;
+}
+
+// Compressed bytes inflated at a time: at most ~1000 times this comes out before the output
+// is checked against the declared size.
+const INFLATE_STEP = 16 * 1024;
+
+/** One entry's bytes; a deflated entry that inflates past its declared size throws as soon
+ * as it does (a lying header), so it costs neither memory nor time. */
+function entryData(bytes: Uint8Array, e: ZipEntry): Uint8Array {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const local = view.getUint16(e.offset + 26, true) + view.getUint16(e.offset + 28, true);
+  const start = e.offset + 30 + local;
+  const data = bytes.subarray(start, start + e.compressedSize);
+  if (e.method === 0) return data.slice();
+  if (e.method !== 8) throw new Error(`Unknown compression ${e.method} for ${e.name}`);
+  const parts: Uint8Array[] = [];
+  let length = 0;
+  const inflate = new Inflate((chunk) => {
+    parts.push(chunk);
+    length += chunk.length;
+  });
+  for (let i = 0; i < data.length || i === 0; i += INFLATE_STEP) {
+    inflate.push(data.subarray(i, i + INFLATE_STEP), i + INFLATE_STEP >= data.length);
+    if (length > e.size) throw new Error(`${e.name} inflates past its declared size`);
+  }
+  const out = new Uint8Array(length);
+  let at = 0;
+  for (const part of parts) {
+    out.set(part, at);
+    at += part.length;
+  }
+  return out;
+}
+
 /**
  * The files of a zip (throws when `bytes` isn't one). A package whose entries declare more
- * than MAX_UNPACKED_BYTES unpacked throws TOO_LARGE before anything past the limit is
- * inflated (a zip bomb); fflate never inflates an entry past its declared size, so lying
- * headers are bounded too.
+ * than MAX_UNPACKED_BYTES unpacked throws TOO_LARGE before anything is inflated (a zip bomb),
+ * and an entry is inflated a little at a time and stopped as soon as it passes its declared
+ * size, so a lying header costs neither memory nor time.
  */
 export function unzipPackage(bytes: Uint8Array): Files {
+  const entries = zipEntries(bytes);
   let total = 0;
-  const filter = (file: { originalSize: number }) => {
-    total += file.originalSize;
-    if (total > MAX_UNPACKED_BYTES) throw new Error(TOO_LARGE);
-    return true;
-  };
-  return new Map(Object.entries(unzipSync(bytes, { filter })));
+  for (const e of entries) total += e.size;
+  if (total > MAX_UNPACKED_BYTES) throw new Error(TOO_LARGE);
+  const files: Files = new Map();
+  for (const e of entries) files.set(e.name, entryData(bytes, e));
+  return files;
 }
 
 /** Zip `files`: content types first, pictures stored, fixed dates (same input, same bytes). */

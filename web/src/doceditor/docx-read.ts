@@ -42,6 +42,7 @@ import {
   W_NOTES,
   W_OBJECTS,
   W_PICTURES,
+  W_RTL_RUBY,
   W_TEXTBOX,
   W_TRACKED,
   nextImageName,
@@ -117,6 +118,8 @@ const IMAGE_EXT: Record<string, string> = {
   "image/webp": "webp",
 };
 const TRACKED = new Set(["ins", "del", "moveFrom", "moveTo"]);
+// A ruby annotation (w:rt) and a right-to-left direction are dropped (their text is kept).
+const RTL_RUBY = new Set(["rt", "dir", "bdo"]);
 const TRANSPARENT = new Set([
   "sdt",
   "sdtContent",
@@ -514,7 +517,15 @@ function runItems(
       if (base) inlineNodes(ctx, base, heading, link, segs);
     } else if (tag === "sym") {
       const char = symbol(wAttr(child, "char"));
-      if (char) add("t", keepSpaces(char, segs[segs.length - 1].last));
+      const font = wAttr(child, "font");
+      if (char && font && char >= "\ue000" && char <= "\uf8ff") {
+        // a symbol font's own character: it keeps the font
+        const { key: _, ...plain } = fmt;
+        const own = { ...plain, family: font };
+        const seg = segs[segs.length - 1];
+        seg.items.push({ kind: "t", value: char, fmt: { ...own, key: JSON.stringify(own) }, link });
+        seg.last = char;
+      } else if (char) add("t", keepSpaces(char, segs[segs.length - 1].last));
     } else if (tag === "t") add("t", keepSpaces(leadText(child), segs[segs.length - 1].last));
     else if (tag === "tab") add("t", "\t");
     else if (tag === "noBreakHyphen") add("t", "-");
@@ -891,9 +902,10 @@ function collectWarnings(ctx: Ctx, root: Element, body: Element): void {
       if (unsupportedField(wAttr(el, "instr") || leadText(el))) found.add(W_FIELDS);
     } else if (tag === "object") found.add(W_OBJECTS);
     else if (tag === "altChunk") found.add(W_EQUATIONS);
+    else if (RTL_RUBY.has(tag)) found.add(W_RTL_RUBY);
   }
   const order = [W_TEXTBOX, W_COLUMNS, W_TRACKED, W_COMMENTS, W_NOTES, W_FIELDS, W_OBJECTS];
-  for (const text of [...order, W_EQUATIONS]) {
+  for (const text of [...order, W_EQUATIONS, W_RTL_RUBY]) {
     if (found.has(text)) ctx.warn(text);
   }
 }

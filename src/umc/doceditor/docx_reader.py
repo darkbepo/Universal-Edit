@@ -13,7 +13,7 @@ import posixpath
 import re
 import zipfile
 from collections.abc import Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -40,6 +40,7 @@ from umc.doceditor.types import (
     W_NOTES,
     W_OBJECTS,
     W_PICTURES,
+    W_RTL_RUBY,
     W_TEXTBOX,
     W_TRACKED,
     DocImages,
@@ -128,6 +129,8 @@ _TRANSPARENT = {
 # Wrappers around block content that are read through (w:del / w:moveFrom are dropped).
 _BLOCK_WRAPPERS = {_W + t for t in ("sdtContent", "customXml", "ins", "moveTo", "smartTag")}
 _EQUATIONS = {_M + "oMath", _M + "oMathPara", _W + "altChunk"}
+# A ruby annotation (w:rt) and a right-to-left direction are dropped (their text is kept).
+_RTL_RUBY = {_W + "rt", _W + "dir", _W + "bdo"}
 
 
 @dataclass(frozen=True)
@@ -428,7 +431,11 @@ def _run_items(
                 _inline_nodes(ctx, base, heading, link, segs)
         elif tag == _W + "sym":
             if char := _symbol(child.get(qn("w:char"))):
-                add("t", _keep_spaces(char, _last_char(segs[-1])))
+                font = child.get(qn("w:font"))
+                if font and "\ue000" <= char <= "\uf8ff":  # a symbol font's own character
+                    segs[-1].items.append(("t", char, replace(fmt, family=font), link))
+                else:
+                    add("t", _keep_spaces(char, _last_char(segs[-1])))
         elif tag == _W + "t":
             add("t", _keep_spaces(child.text or "", _last_char(segs[-1])))
         elif tag == _W + "tab":
@@ -796,6 +803,8 @@ def _collect_warnings(ctx: _Ctx) -> None:
             found.add(W_OBJECTS)
         elif tag in _EQUATIONS:
             found.add(W_EQUATIONS)
+        elif tag in _RTL_RUBY:
+            found.add(W_RTL_RUBY)
     for text in (
         W_TEXTBOX,
         W_COLUMNS,
@@ -805,6 +814,7 @@ def _collect_warnings(ctx: _Ctx) -> None:
         W_FIELDS,
         W_OBJECTS,
         W_EQUATIONS,
+        W_RTL_RUBY,
     ):
         if text in found:
             ctx.warn(text)

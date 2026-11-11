@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
+import { Deflate, strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import vectorsJson from "../../tests/fixtures/doceditor-vectors.json";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { readDocx } from "../src/doceditor/docx-read";
@@ -1449,7 +1449,7 @@ function vectorDocx(v: { body: string; rels?: string; types?: string; parts?: Re
 
 describe("shared docx vectors", () => {
   test("cover every case", () => {
-    expect(docxVectors.length).toBe(10);
+    expect(docxVectors.length).toBe(11);
     expect(docxVectors.filter((v) => v.warnings.includes(W_EQUATIONS)).length).toBe(2);
   });
   test.each(docxVectors.map((v) => [v.name, v] as const))("%s", (_name, v) => {
@@ -1496,7 +1496,103 @@ describe("zip bombs", () => {
   test("a normal package opens", () => {
     expect(readDocx(good()).html).toBe("<p>x</p>");
   });
+
+  test("claims that add up to exactly the limit open; one byte more is refused", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const zip = good();
+    let others = 0;
+    unzipSync(zip, {
+      filter: (f) => {
+        if (f.name !== "_rels/.rels") others += f.originalSize;
+        return false;
+      },
+    });
+    const at = (extra: number) =>
+      readDocx(claimedSize(zip, "_rels/.rels", MAX_UNPACKED_BYTES - others + extra));
+    expect(at(0).html).toBe("<p>x</p>");
+    expect(() => at(1)).toThrow(TOO_LARGE);
+    error.mockRestore();
+  });
+
+  test("an entry claiming 100 bytes that inflates to 200 MB is stopped quickly", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    // 200 MB of zeros, deflated in 1 MB pieces (never 200 MB in memory)
+    const pieces: Uint8Array[] = [];
+    const deflate = new Deflate({ level: 1 }, (chunk) => {
+      pieces.push(chunk);
+    });
+    const zeros = new Uint8Array(1 << 20);
+    for (let i = 0; i < 200; i++) deflate.push(zeros, i === 199);
+    const files = unzip(good());
+    const bomb = rawZip([
+      ...Object.entries(files).filter(([name]) => name !== "word/document.xml"),
+      ["word/document.xml", joined(pieces), 100],
+    ]);
+    const start = performance.now();
+    expect(() => readDocx(bomb)).toThrow("This Word document could not be opened.");
+    expect(performance.now() - start).toBeLessThan(1000);
+    error.mockRestore();
+  });
 });
+
+function joined(parts: Uint8Array[]): Uint8Array {
+  let n = 0;
+  for (const p of parts) n += p.length;
+  const out = new Uint8Array(n);
+  n = 0;
+  for (const p of parts) {
+    out.set(p, n);
+    n += p.length;
+  }
+  return out;
+}
+
+/** A zip of stored entries ([name, data]) and deflated ones ([name, deflated data, the
+ * uncompressed size it claims]); CRCs are left 0 (the website doesn't check them). */
+function rawZip(entries: ([string, Uint8Array] | [string, Uint8Array, number])[]): Uint8Array {
+  const locals: Uint8Array[] = [];
+  const central: Uint8Array[] = [];
+  let offset = 0;
+  for (const [name, data, claimed] of entries) {
+    const fname = strToU8(name);
+    const method = claimed === undefined ? 0 : 8;
+    const size = claimed ?? data.length;
+    const head = (sig: number, len: number) => {
+      const h = new Uint8Array(len + fname.length);
+      const v = new DataView(h.buffer);
+      v.setUint32(0, sig, true);
+      return { h, v };
+    };
+    const local = head(0x04034b50, 30);
+    local.v.setUint16(4, 20, true);
+    local.v.setUint16(8, method, true);
+    local.v.setUint32(18, data.length, true);
+    local.v.setUint32(22, size, true);
+    local.v.setUint16(26, fname.length, true);
+    local.h.set(fname, 30);
+    const cd = head(0x02014b50, 46);
+    cd.v.setUint16(4, 20, true);
+    cd.v.setUint16(6, 20, true);
+    cd.v.setUint16(10, method, true);
+    cd.v.setUint32(20, data.length, true);
+    cd.v.setUint32(24, size, true);
+    cd.v.setUint16(28, fname.length, true);
+    cd.v.setUint32(42, offset, true);
+    cd.h.set(fname, 46);
+    locals.push(local.h, data);
+    central.push(cd.h);
+    offset += local.h.length + data.length;
+  }
+  const dir = joined(central);
+  const end = new Uint8Array(22);
+  const v = new DataView(end.buffer);
+  v.setUint32(0, 0x06054b50, true);
+  v.setUint16(8, entries.length, true);
+  v.setUint16(10, entries.length, true);
+  v.setUint32(12, dir.length, true);
+  v.setUint32(16, offset, true);
+  return joined([...locals, dir, end]);
+}
 
 describe("XML declarations TextDecoder misreads", () => {
   test.each(["ucs-2", "unicode", "x-user-defined", "UTF-16"])(

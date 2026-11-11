@@ -48,6 +48,7 @@ DOCX_NAMESPACES = {
     "mc": "http://schemas.openxmlformats.org/markup-compatibility/2006",
 }
 _W_EQUATIONS = "equations and embedded documents"
+_W_RTL_RUBY = "ruby annotations and right-to-left direction"
 
 
 def _r(text: str) -> str:
@@ -126,7 +127,7 @@ DOCX_CASES: list[dict] = [
             '<w:bdo w:val="rtl">' + _r("abc") + "</w:bdo>"
         ),
         "html": "<p>שלום abc</p>",
-        "warnings": [],
+        "warnings": [_W_RTL_RUBY],
     },
     {
         "name": "ruby keeps the base text",
@@ -139,6 +140,12 @@ DOCX_CASES: list[dict] = [
             + _r("字")
         ),
         "html": "<p>漢字</p>",
+        "warnings": [_W_RTL_RUBY],
+    },
+    {
+        "name": "ruby without an annotation loses nothing",
+        "body": _p("<w:r><w:ruby><w:rubyBase>" + _r("base") + "</w:rubyBase></w:ruby></w:r>"),
+        "html": "<p>base</p>",
         "warnings": [],
     },
     {
@@ -154,10 +161,10 @@ DOCX_CASES: list[dict] = [
         "name": "symbols",
         "body": _p(
             '<w:r><w:t>a</w:t><w:sym w:font="Wingdings" w:char="F04A"/><w:t>b</w:t>'
-            '<w:sym w:char="263a"/><w:sym w:char="0x41"/><w:sym w:char="D800"/>'
-            '<w:sym w:char="9"/><w:sym w:char="110000"/><w:sym/></w:r>'
+            '<w:sym w:font="Symbol" w:char="263a"/><w:sym w:char="F061"/><w:sym w:char="0x41"/>'
+            '<w:sym w:char="D800"/><w:sym w:char="9"/><w:sym w:char="110000"/><w:sym/></w:r>'
         ),
-        "html": "<p>ab☺</p>",
+        "html": '<p>a<span style="font-family:Wingdings">\uf04a</span>b\u263a\uf061</p>',
         "warnings": [],
     },
     {

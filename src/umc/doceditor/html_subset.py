@@ -299,15 +299,17 @@ _TAG_START = re.compile(r"<(?:(!--)|(/?)([A-Za-z][^\t\n\f\r />]*))")
 _HTML_SPACE = "\t\n\f\r "
 
 
-def _tag_end(html: str, i: int) -> int:
+def _tag_end(html: str, i: int) -> tuple[int, bool]:
     """The index of the ">" that ends a tag whose attributes start at ``i`` (-1 when it never
-    ends). Quoted attribute values are skipped, so a ">" or "<xmp>" inside one is not markup."""
+    ends), and whether the tag ends with a self-closing "/". Quoted attribute values are
+    skipped, so a ">" or "<xmp>" inside one is not markup."""
     n = len(html)
     in_name = False  # in (or after) an attribute name, where "=" starts its value
+    slash = -1  # the last "/" outside attribute values
     while i < n:
         c = html[i]
         if c == ">":
-            return i
+            return i, slash == i - 1
         if c == "=" and in_name:
             i += 1
             while i < n and html[i] in _HTML_SPACE:
@@ -315,7 +317,7 @@ def _tag_end(html: str, i: int) -> int:
             if i < n and html[i] in "\"'":
                 close = html.find(html[i], i + 1)
                 if close < 0:
-                    return -1
+                    return -1, False
                 i = close + 1
             else:  # unquoted: up to a space or ">"
                 while i < n and html[i] not in _HTML_SPACE and html[i] != ">":
@@ -324,18 +326,20 @@ def _tag_end(html: str, i: int) -> int:
             continue
         if c == "/":
             in_name = False
+            slash = i
         elif c not in _HTML_SPACE:
             in_name = True
         i += 1
-    return -1
+    return -1, False
 
 
 def _html5_text(html: str) -> str:
     """Prepare ``html`` for libxml2 so it reads what an HTML5 parser (the website) reads:
-    numeric references, and the content of raw text / RCDATA elements (escaped, so libxml2
-    keeps it as text). One pass from left to right; the tags in between are read with their
-    attributes, so a tag name written inside a quoted value starts nothing."""
-    if "&#" not in html and not _SPECIAL_START.search(html):
+    numeric references, the content of raw text / RCDATA elements (escaped, so libxml2
+    keeps it as text), and the "/" of a self-closing start tag (dropped: HTML5 ignores it, so
+    ``<p/>x</p>`` is one paragraph). One pass from left to right; the tags in between are read
+    with their attributes, so a tag name written inside a quoted value starts nothing."""
+    if "&#" not in html and "/>" not in html and not _SPECIAL_START.search(html):
         return html
     out: list[str] = []
     pos = i = 0
@@ -344,10 +348,13 @@ def _html5_text(html: str) -> str:
             end = html.find("-->", m.end())
             i = len(html) if end < 0 else end + 3
             continue
-        gt = _tag_end(html, m.end())
+        gt, self_closing = _tag_end(html, m.end())
         if gt < 0:
             break
         i = gt + 1
+        if self_closing and not m.group(2):
+            out.append(_num_refs(html[pos : gt - 1]))
+            pos = gt
         name = m.group(3).lower()
         if m.group(2) or name not in _SPECIAL:
             continue

@@ -22,6 +22,7 @@ from umc.doceditor.types import (
     W_HEADERS,
     W_NOTES,
     W_PICTURES,
+    W_RTL_RUBY,
     W_TRACKED,
 )
 
@@ -615,7 +616,53 @@ def test_entry_that_inflates_past_its_size_is_not_unpacked(tmp_path):
     assert str(err.value) == "This Word document could not be opened."
 
 
-def test_unpacked_size_at_the_limit_opens(tmp_path):
-    path = tmp_path / "ok.docx"
-    path.write_bytes(docx_package({"body": "<w:p><w:r><w:t>ok</w:t></w:r></w:p>"}))
-    assert read(path).html == "<p>ok</p>"
+def test_unpacked_size_up_to_the_limit_opens(tmp_path):
+    """Claims that add up to exactly MAX_UNPACKED_BYTES open; one byte more is refused."""
+    import zipfile
+
+    good = docx_package({"body": "<w:p><w:r><w:t>ok</w:t></w:r></w:p>"})
+    with zipfile.ZipFile(BytesIO(good)) as z:
+        others = sum(i.file_size for i in z.infolist() if i.filename != "_rels/.rels")
+    for extra, opens in ((0, True), (1, False)):
+        data = _claimed_size(good, "_rels/.rels", MAX_UNPACKED_BYTES - others + extra)
+        path = tmp_path / f"{extra}.docx"
+        path.write_bytes(data)
+        if opens:
+            assert read(path).html == "<p>ok</p>"
+        else:
+            with pytest.raises(ConversionError) as err:
+                read(path)
+            assert str(err.value) == TOO_LARGE
+
+
+def test_rtl_ruby_warning_text():
+    assert W_RTL_RUBY == "ruby annotations and right-to-left direction"
+
+
+def test_symbol_font_survives_saving_over_the_original(tmp_path):
+    case = next(c for c in DOCX_CASES if c["name"] == "symbols")
+    path = tmp_path / "sym.docx"
+    path.write_bytes(docx_package(case))
+    opened = read(path)
+    write(opened.html, opened.images, path, template=path)
+    runs = docx.Document(path).paragraphs[0].runs
+    sym = next(r for r in runs if "\uf04a" in r.text)
+    fonts = sym._r.find(qn("w:rPr")).find(qn("w:rFonts"))
+    assert fonts.get(qn("w:ascii")) == "Wingdings"
+    assert read(path).html == case["html"]
+
+
+def test_saving_over_a_file_without_a_numbering_part(tmp_path):
+    path = tmp_path / "plain.docx"
+    path.write_bytes(docx_package({"body": "<w:p><w:r><w:t>intro</w:t></w:r></w:p>"}))
+    opened = read(path)
+    edited = opened.html + "<ul><li>a</li><li>b</li></ul><ol><li>c</li></ol>"
+    write(edited, opened.images, path, template=path)
+    assert read(path).html == edited
+    import zipfile
+
+    with zipfile.ZipFile(path) as z:
+        types = z.read("[Content_Types].xml").decode()
+        names = z.namelist()
+    assert "word/numbering.xml" in names
+    assert "wordprocessingml.numbering+xml" in types

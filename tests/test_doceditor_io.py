@@ -474,3 +474,10 @@ def test_carriage_return_references_and_stray_paragraph_ends():
     assert normalise_html("<p>a&#13;b</p><pre>a&#13;b</pre>")[0] == "<p>a b</p><pre>a\rb</pre>"
     assert normalise_html("<p><xmp>x</xmp></p>")[0] == "<p></p><p>x</p>"
     assert normalise_html("<p>a</p></p><div>b</p>c</div>")[0] == "<p>a</p><p>bc</p>"
+
+
+def test_self_closing_slash_is_ignored_like_html5():
+    # HTML5 ignores the "/" of <p/> (the paragraph stays open); libxml2 would close it.
+    assert normalise_html("<p/>x</p>")[0] == "<p>x</p>"
+    assert normalise_html("<div/>y<p title='a/'/>t</p>")[0] == ("<p>y</p><p>t</p>")
+    assert normalise_html("<p><a href=x/>l</a>a<br/>z</p>")[0] == '<p><a href="x/">l</a>a<br>z</p>'

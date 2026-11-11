@@ -34,6 +34,7 @@ W_RAWHTML = "embedded HTML the editor doesn't support"
 W_MDEXTRA = "footnotes and other Markdown extras"
 W_MDFORMAT = "inline code, small headings, picture descriptions, comments and table alignment"
 W_EQUATIONS = "equations and embedded documents"
+W_RTL_RUBY = "ruby annotations and right-to-left direction"
 
 
 @dataclass

@@ -27,6 +27,7 @@ export const W_RAWHTML = "embedded HTML the editor doesn't support";
 export const W_MDEXTRA = "footnotes and other Markdown extras";
 export const W_MDFORMAT = "inline code, small headings, picture descriptions, comments and table alignment";
 export const W_EQUATIONS = "equations and embedded documents";
+export const W_RTL_RUBY = "ruby annotations and right-to-left direction";
 
 export const WARNINGS: Record<string, string> = {
   W_HEADERS,
@@ -45,6 +46,7 @@ export const WARNINGS: Record<string, string> = {
   W_MDEXTRA,
   W_MDFORMAT,
   W_EQUATIONS,
+  W_RTL_RUBY,
 };
 
 export interface OpenedDocument {

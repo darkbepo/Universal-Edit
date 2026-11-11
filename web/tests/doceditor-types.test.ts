@@ -11,12 +11,12 @@ import {
 } from "../src/doceditor/types";
 
 test("warning strings match the desktop", () => {
-  expect(Object.keys(WARNINGS).length).toBe(16);
+  expect(Object.keys(WARNINGS).length).toBe(17);
   for (const [name, value] of Object.entries(WARNINGS)) {
     expect(py).toContain(`${name} = ${JSON.stringify(value)}`);
   }
   expect(py).toContain(`TOO_LARGE = ${JSON.stringify(TOO_LARGE)}`);
-  const wNames = [...py.matchAll(/^(W_[A-Z]+) = /gm)].map((m) => m[1]);
+  const wNames = [...py.matchAll(/^(W_[A-Z_]+) = /gm)].map((m) => m[1]);
   expect(Object.keys(WARNINGS).sort()).toEqual(wNames.sort());
 });
 

@@ -25,9 +25,12 @@ import docx
 import lxml.html
 from docx.enum.style import WD_STYLE_TYPE
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.opc.constants import CONTENT_TYPE as CT
 from docx.opc.constants import RELATIONSHIP_TYPE as RT
-from docx.oxml import OxmlElement
-from docx.oxml.ns import qn
+from docx.opc.packuri import PackURI
+from docx.oxml import OxmlElement, parse_xml
+from docx.oxml.ns import nsdecls, qn
+from docx.parts.numbering import NumberingPart
 from docx.shared import Emu, Pt, RGBColor
 from lxml import etree
 
@@ -539,6 +542,26 @@ def _from_template(template: Path) -> Any:
 TEMPLATE_LOST = "Couldn't keep the original file's layout; it was saved with default styles."
 
 
+def _numbering(document: Any) -> Any:
+    """The document's numbering XML; a file without a numbering part gets an empty one (its
+    relationship and content type come with it). python-docx can't create one itself."""
+    part = document.part
+    try:
+        return part.numbering_part.element
+    except NotImplementedError:
+        pass
+    taken = {str(p.partname) for p in part.package.iter_parts()}
+    name = "/word/numbering.xml"
+    for n in range(1, 1000):
+        if name not in taken:
+            break
+        name = f"/word/numbering{n}.xml"
+    element = parse_xml(f"<w:numbering {nsdecls('w')}/>")
+    numbering = NumberingPart(PackURI(name), CT.WML_NUMBERING, element, part.package)
+    part.relate_to(numbering, RT.NUMBERING)
+    return numbering.element
+
+
 def write(
     html: str,
     images: DocImages,
@@ -565,10 +588,7 @@ def write(
     if document is None:
         document = docx.Document()
     _ensure_styles(document)
-    ctx = _Ctx(
-        images,
-        document.part.numbering_part.element,
-    )
+    ctx = _Ctx(images, _numbering(document))
     root = lxml.html.fragment_fromstring(html or "<p></p>", create_parent="div")
     _write_blocks(ctx, document, [], root)
     if not document.paragraphs:
