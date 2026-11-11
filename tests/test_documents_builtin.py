@@ -136,3 +136,30 @@ def test_raw_html_headings_get_or_keep_ids(tmp_path):
     assert re.search(r'<h2 class="x" id="plain">Plain</h2>', out)
     assert 'id="mine" class="y"' in out
     assert '<h1 id="mine-1">Mine</h1>' in out
+
+
+def test_toc_escapes_ids_from_raw_html(tmp_path):
+    out = _ids(tmp_path, "[TOC]\n\n<h2 id='a\"b'>Raw</h2>\n")
+    toc = out.split("</div>")[0]
+    assert 'href="#a&quot;b"' in toc and 'href="#a"b"' not in toc
+
+
+def test_heading_scan_is_linear():
+    import time
+
+    from umc.tools import htmlpdf
+
+    for body in ("<h1>" * 20000 + "x", "<h2>a</h2>" * 20000, "<h1 " * 20000):
+        start = time.perf_counter()
+        htmlpdf._add_heading_ids(body)
+        assert time.perf_counter() - start < 2
+
+
+def test_headings_inside_pre_and_code_get_no_ids():
+    from umc.tools import htmlpdf
+
+    out = htmlpdf._add_heading_ids(
+        "<pre><h2>In pre</h2></pre><code><h3>In code</h3></code><h2>Real</h2>"
+    )
+    assert "<h2>In pre</h2>" in out and "<h3>In code</h3>" in out
+    assert '<h2 id="real">Real</h2>' in out

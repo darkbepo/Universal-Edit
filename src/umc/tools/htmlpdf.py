@@ -57,9 +57,36 @@ def docx_to_html(src: Path, dest: Path) -> Path:
     return dest
 
 
-_HEADING = re.compile(r"<h([1-6])((?:\s[^>]*)?)>(.*?)</h\1>", re.S)
+# Tags the heading scan cares about. `[^<>]*` (not `[^>]*`) keeps a failed match from running to
+# the end of the text, so many unclosed openers stay linear.
+_SCAN_TAG = re.compile(r"<(/?)(pre|code|h[1-6])(?=[\s>])([^<>]*)>")
 _ID_ATTR = re.compile(r"""\sid\s*=\s*(["'])(.*?)\1""", re.S)
 _TOC_MARKER = re.compile(r"<p>\[TOC\]</p>")
+
+
+def _headings(body: str):
+    """Yield (start, end, level, attrs, inner) for each <hN>…</hN> outside <pre>/<code>, in one
+    left-to-right pass (a close tag is looked up with str.find, and a level whose close tag is
+    missing from some point on is remembered, so the scan is linear)."""
+    pos, skip = 0, 0
+    no_close_from: dict[str, int] = {}
+    while m := _SCAN_TAG.search(body, pos):
+        pos = m.end()
+        closing, name = m.group(1), m.group(2)
+        if name in ("pre", "code"):
+            skip = max(0, skip + (-1 if closing else 1))
+            continue
+        if closing or skip:
+            continue
+        if name in no_close_from and no_close_from[name] <= m.start():
+            continue
+        end_tag = f"</{name}>"
+        close = body.find(end_tag, pos)
+        if close < 0:
+            no_close_from[name] = m.start()
+            continue
+        yield m.start(), close + len(end_tag), int(name[1]), m.group(3), body[pos:close]
+        pos = close + len(end_tag)
 
 
 def _add_heading_ids(body: str) -> str:
@@ -67,27 +94,31 @@ def _add_heading_ids(body: str) -> str:
     "-2"…), so in-document links like [see](#usage) work in the PDF. Headings that already
     carry an id (raw HTML) keep it. A paragraph that is exactly [TOC] becomes a nested list of
     links to the headings."""
-    used = {m.group(2) for h in _HEADING.finditer(body) if (m := _ID_ATTR.search(h.group(2)))}
+    heads = list(_headings(body))
+    used = {m.group(2) for h in heads if (m := _ID_ATTR.search(h[3]))}
     entries: list[tuple[int, str, str]] = []  # (level, id, heading text)
 
-    def add(m: re.Match) -> str:
-        level, attrs, inner = int(m.group(1)), m.group(2), m.group(3)
+    next_n: dict[str, int] = {}
+    parts: list[str] = []
+    last = 0
+    for start, end, level, attrs, inner in heads:
         found = _ID_ATTR.search(attrs)
         text = re.sub(r"<[^>]+>", "", inner)
         if found:
             slug = found.group(2)
         else:
             base = re.sub(r"\W+", "-", html.unescape(text).lower()).strip("-") or "section"
-            slug, n = base, 0
+            slug, n = base, next_n.get(base, 0)  # resume: repeated titles stay linear
             while slug in used:
                 n += 1
                 slug = f"{base}-{n}"
             used.add(slug)
+            next_n[base] = n
             attrs += f' id="{slug}"'
         entries.append((level, slug, text))
-        return f"<h{level}{attrs}>{inner}</h{level}>"
-
-    body = _HEADING.sub(add, body)
+        parts += [body[last:start], f"<h{level}{attrs}>{inner}</h{level}>"]
+        last = end
+    body = "".join(parts) + body[last:]
     if entries and _TOC_MARKER.search(body):
         body = _TOC_MARKER.sub(lambda _m: _toc_html(entries), body)
     return body
@@ -107,7 +138,7 @@ def _toc_html(entries: list[tuple[int, str, str]]) -> str:
         else:
             out.append("<ul>")
             stack.append(level)
-        out.append(f'<li><a href="#{slug}">{text}</a>')
+        out.append(f'<li><a href="#{html.escape(slug, quote=True)}">{text}</a>')
     out.append("</li>" + "</ul></li>" * (len(stack) - 1) + "</ul>")
     return '<div class="toc">' + "".join(out) + "</div>"
 
