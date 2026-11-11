@@ -384,6 +384,12 @@ Found by the Task 4 review: 28 probe files read identically by both apps, which 
 
   Test: a DOCX without styles.xml whose paragraphs use these ids.
 - **Web only, `docx-package.ts` `decodeXml`:** an XML declaration labelled `ucs-2`, `unicode` or `x-user-defined` is mapped by TextDecoder to UTF-16LE or odd bytes, which garbles a part that is really UTF-8. Treat those labels like declared UTF-16 without a BOM (read as UTF-8), with a test.
+- **HTML cleanup corner cases (from Task 4d):**
+  - check `&#13;` (CR as a reference) gives the same text in both apps;
+  - `<p><xmp>…</xmp></p>`: the web adds an extra empty paragraph, which should match the desktop;
+  - the raw-text and `<pre` pre-scans in both normalisers react to a tag name written inside an attribute value (`<a title="<xmp>">`) — make them skip quoted attribute values.
+
+  Each becomes a shared normalise vector.
 - **Can't keep → warn:** equations and altChunk. Add `W_EQUATIONS = "equations and embedded documents"` to both `types.py` and `types.ts`, raised when `m:oMath` / `m:oMathPara` / `w:altChunk` occur. The text around them is kept.
 
 - [ ] **Step 1: Tests (both apps, same inputs):**
