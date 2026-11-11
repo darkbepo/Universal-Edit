@@ -632,7 +632,7 @@ describe("template", () => {
   });
 
   test("an unreadable template falls back to a new document", () => {
-    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
     const { doc } = write("<p>a</p>", new Map(), strToU8("not a zip"));
     expect(paras(doc).map(text)).toEqual(["a"]);
   });
@@ -1300,5 +1300,108 @@ describe("reader: large documents", () => {
     expect(got.html.startsWith(`<p>p1 ${NBSP}x</p><ol><li>l1</li></ol><p>p2`)).toBe(true);
     expect(got.html.split("<ol>").length).toBe(n + 1);
     expect(ms).toBeLessThan(20000);
+  });
+});
+
+// ----- fix round 1: encodings, template fallback, no styles part ---------------------------
+
+/** `text` as single bytes (Latin-1, plus the windows-1252 characters used here). */
+function singleByte(text: string): Uint8Array {
+  const cp1252: Record<string, number> = { "€": 0x80, "–": 0x96, "“": 0x93, "”": 0x94 };
+  return Uint8Array.from(Array.from(text), (c) => cp1252[c] ?? c.charCodeAt(0));
+}
+
+/** `text` as UTF-16LE with a byte order mark. */
+function utf16(text: string): Uint8Array {
+  const out = new Uint8Array(2 + text.length * 2);
+  out[0] = 0xff;
+  out[1] = 0xfe;
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    out[2 + 2 * i] = code & 0xff;
+    out[3 + 2 * i] = code >> 8;
+  }
+  return out;
+}
+
+const declared = (encoding: string, xml: string) =>
+  `<?xml version="1.0" encoding="${encoding}" standalone="yes"?>\n${xml.replace(/^<\?xml[^>]*\?>\s*/, "")}`;
+
+describe("XML encodings", () => {
+  test.each([
+    ["ISO-8859-1", "café naïve"],
+    ["windows-1252", "café – “€”"],
+  ])("a document.xml declared %s is decoded by its declaration", (encoding, words) => {
+    const xml = declared(
+      encoding,
+      `<w:document xmlns:w="${W}"><w:body>${para(run(words))}<w:sectPr/></w:body></w:document>`,
+    );
+    const got = read("", { files: { "word/document.xml": singleByte(xml) } });
+    expect(got.html).toBe(`<p>${words}</p>`);
+  });
+
+  test("a UTF-16 template is used, and the parts the writer changes become UTF-8", () => {
+    const files = unzip(makeTemplate());
+    for (const name of [
+      "[Content_Types].xml",
+      "_rels/.rels",
+      "word/document.xml",
+      "word/_rels/document.xml.rels",
+      "word/styles.xml",
+      "word/header1.xml",
+    ]) {
+      files[name] = utf16(declared("UTF-16", strFromU8(files[name])));
+    }
+    const template = zipSync(files);
+    const onWarning = vi.fn();
+    const bytes = writeDocx("<p>new</p>", new Map(), template, { onWarning });
+    expect(onWarning).not.toHaveBeenCalled();
+    const out = unzip(bytes);
+    const xml = strFromU8(out["word/document.xml"]);
+    expect(xml.startsWith('<?xml version="1.0" encoding="UTF-8"')).toBe(true);
+    const sect = kid(body(parse(xml)), "sectPr") as Element;
+    expect(kid(sect, "pgSz")?.getAttributeNS(W, "orient")).toBe("landscape");
+    expect(kid(sect, "headerReference")?.getAttributeNS(R, "id")).toBe("rIdHead");
+    expect(out["word/header1.xml"]).toEqual(files["word/header1.xml"]);
+    const back = readDocx(bytes);
+    expect(back.html).toBe("<p>new</p>");
+    expect(back.warnings).toEqual([W_HEADERS]); // the UTF-16 header is read too
+  });
+});
+
+describe("template fallback", () => {
+  test("is reported through onWarning and console.error", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const onWarning = vi.fn();
+    const files = unzip(writeDocx("<p>a</p>", new Map(), strToU8("not a zip"), { onWarning }));
+    expect(paras(part(files, "word/document.xml")).map(text)).toEqual(["a"]);
+    expect(onWarning).toHaveBeenCalledTimes(1);
+    expect(onWarning).toHaveBeenCalledWith(
+      "Couldn't keep the original file's layout; it was saved with default styles.",
+    );
+    expect(error).toHaveBeenCalled();
+    onWarning.mockClear();
+    writeDocx("<p>a</p>", new Map(), makeTemplate(), { onWarning });
+    writeDocx("<p>a</p>", new Map(), null, { onWarning });
+    expect(onWarning).not.toHaveBeenCalled();
+  });
+});
+
+describe("reader: a package without styles.xml", () => {
+  test("reads like the desktop (python-docx's default styles have no headings)", () => {
+    const source =
+      "<h1>A</h1><h2>B</h2><blockquote><p>q</p></blockquote><pre>c</pre><p>x</p>" +
+      "<table><tr><td><p>t</p></td></tr></table>";
+    const files = unzip(writeDocx(source, new Map()));
+    delete files["word/styles.xml"];
+    const drop = (name: string, re: RegExp) => {
+      files[name] = strToU8(strFromU8(files[name]).replace(re, ""));
+    };
+    drop("word/_rels/document.xml.rels", /<Relationship [^>]*\/styles"[^>]*\/>/);
+    drop("[Content_Types].xml", /<Override PartName="\/word\/styles.xml"[^>]*\/>/);
+    // the desktop's docx_reader.read() on the same file (scratchpad probe, fix round 1)
+    expect(readDocx(zipSync(files)).html).toBe(
+      "<p>A</p><p>B</p><p>q</p><p>c</p><p>x</p><table><tr><td><p>t</p></td></tr></table>",
+    );
   });
 });

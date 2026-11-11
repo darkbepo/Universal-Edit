@@ -14,7 +14,7 @@
 
 import { strToU8 } from "fflate";
 import { CT, HYPERLINK_STYLE, NS, PARTS, RT, STYLES, XML_HEAD, codeStyle } from "./docx-template";
-import { type ImageInfo, extent, imageInfo, pyRound } from "./docx-image";
+import { type ImageInfo, extent, imageInfo } from "./docx-image";
 import {
   type Files,
   Rels,
@@ -34,6 +34,7 @@ import {
   wKids,
   zipPackage,
 } from "./docx-package";
+import { pyRound } from "./pycompat";
 import { normaliseHtml } from "./subset";
 import type { DocImages } from "./types";
 
@@ -806,6 +807,14 @@ class Body {
   }
 }
 
+export const TEMPLATE_LOST =
+  "Couldn't keep the original file's layout; it was saved with default styles.";
+
+export interface WriteOptions {
+  /** Called with a plain-language message the page shows (e.g. the template was unusable). */
+  onWarning?: (message: string) => void;
+}
+
 /**
  * Write `html` (the editor's subset) and its `images` as a DOCX package.
  *
@@ -815,6 +824,7 @@ export function writeDocx(
   html: string,
   images: DocImages,
   template?: Uint8Array | null,
+  opts: WriteOptions = {},
 ): Uint8Array {
   const fragment = normaliseHtml(html).html || "<p></p>";
   let writer: Writer | null = null;
@@ -822,8 +832,9 @@ export function writeDocx(
     try {
       writer = new Writer(unzipPackage(template), images);
     } catch (err) {
-      // changed, damaged or not a Word file: start from scratch
-      console.warn("Can't use the original file as the template; writing a new document", err);
+      // changed, damaged or not a Word file: start from scratch, and say so
+      console.error("Can't use the original file as the template; writing a new document", err);
+      opts.onWarning?.(TEMPLATE_LOST);
     }
   }
   writer ??= new Writer(new Map(PARTS.map(([name, text]) => [name, strToU8(text)])), images);

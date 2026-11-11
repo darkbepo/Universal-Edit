@@ -4,11 +4,7 @@
  * as on the desktop. Anything else (TIFF, WebP, broken data) is `null`: left out, as there.
  */
 
-/** Python's round(): halves go to the even neighbour. */
-export function pyRound(x: number): number {
-  const r = Math.round(x);
-  return Math.abs(x % 1) === 0.5 && r % 2 !== 0 ? r - 1 : r;
-}
+import { pyRound } from "./pycompat";
 
 export interface ImageInfo {
   ext: string;

@@ -4,7 +4,7 @@
  * small XML helpers both use. Needs DOMParser / XMLSerializer (the page, not a worker).
  */
 
-import { strFromU8, unzipSync, zipSync, type Zippable } from "fflate";
+import { unzipSync, zipSync, type Zippable } from "fflate";
 import { NS, XML_HEAD } from "./docx-template";
 
 const XMLNS = "http://www.w3.org/2000/xmlns/";
@@ -12,6 +12,38 @@ const FIXED_MTIME = new Date(2000, 0, 1);
 const CONTENT_TYPES = "[Content_Types].xml";
 
 // ----- XML --------------------------------------------------------------------------------
+
+const UTF16 = /^utf-?16/i;
+
+/**
+ * The text of an XML part, decoded like an XML parser does: by its byte order mark, else
+ * UTF-16 by its first bytes, else by the encoding its declaration names (Latin-1,
+ * windows-1252, …), else UTF-8. A part written back is always UTF-8 (`serialise` writes
+ * that declaration).
+ */
+export function decodeXml(data: Uint8Array): string {
+  const decode = (label: string, from = 0) => new TextDecoder(label).decode(data.subarray(from));
+  const [a, b, c] = data;
+  if (a === 0xef && b === 0xbb && c === 0xbf) return decode("utf-8", 3);
+  if (a === 0xff && b === 0xfe) return decode("utf-16le", 2);
+  if (a === 0xfe && b === 0xff) return decode("utf-16be", 2);
+  if (a === 0x3c && b === 0x00) return decode("utf-16le");
+  if (a === 0x00 && b === 0x3c) return decode("utf-16be");
+  // the declaration is ASCII; only a short prefix is looked at
+  let head = "";
+  for (let i = 0; i < Math.min(data.length, 200) && data[i] !== 0x3e; i++) {
+    head += String.fromCharCode(data[i]);
+  }
+  const m = /^<\?xml\s[^?]*encoding\s*=\s*["']([A-Za-z][A-Za-z0-9._:-]*)["']/.exec(head);
+  if (m && !UTF16.test(m[1])) {
+    try {
+      return decode(m[1]);
+    } catch {
+      /* a name TextDecoder doesn't know: read it as UTF-8 */
+    }
+  }
+  return decode("utf-8");
+}
 
 export function parseXml(text: string): Document {
   const doc = new DOMParser().parseFromString(text, "application/xml");
@@ -116,7 +148,7 @@ export function actualName(files: Files, name: string): string {
 /** The text of part `name` (matched like `actualName`), or null when there is none. */
 export function partText(files: Files, name: string): string | null {
   const data = files.get(actualName(files, name));
-  return data ? strFromU8(data) : null;
+  return data ? decodeXml(data) : null;
 }
 
 // ----- relationships ----------------------------------------------------------------------
@@ -195,7 +227,7 @@ export function reachable(files: Files): Set<string> {
     const data = files.get(relsName);
     if (!data) continue;
     seen.add(relsName);
-    for (const rel of new Rels(strFromU8(data)).all()) {
+    for (const rel of new Rels(decodeXml(data)).all()) {
       if (rel.getAttribute("TargetMode") === "External") continue;
       const name = actualName(files, resolve(from || "/", rel.getAttribute("Target") ?? ""));
       if (files.has(name) && !seen.has(name)) {

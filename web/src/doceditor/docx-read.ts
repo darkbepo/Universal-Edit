@@ -13,12 +13,12 @@
  */
 
 import { CT, NS, RT } from "./docx-template";
-import { pyRound } from "./docx-image";
 import {
   type Files,
   type Rel,
   actualName,
   contentTypeOf,
+  decodeXml,
   isW,
   parseXml,
   partText,
@@ -27,7 +27,8 @@ import {
   unzipPackage,
   wAttr,
 } from "./docx-package";
-import { isPySpace, normaliseHtml, pyStrip } from "./subset";
+import { escAttr, escText, firstWord, pyG, pyInt, pyRound, pyRoundTo, pyStrip } from "./pycompat";
+import { normaliseHtml } from "./subset";
 import {
   type DocImages,
   type OpenedDocument,
@@ -172,44 +173,6 @@ function leadText(el: Element): string {
     out += (n as CharacterData).data;
   }
   return out;
-}
-
-/** Python's int() of a string, or null where it would raise. */
-function pyInt(value: string | null | undefined): number | null {
-  const s = pyStrip(value ?? "");
-  return /^[+-]?\d+(?:_\d+)*$/.test(s) ? Number.parseInt(s.replaceAll("_", ""), 10) : null;
-}
-
-/** Python's `f"{x:g}"`. */
-function pyG(x: number): string {
-  if (x === 0) return "0";
-  const [mant, e] = x.toExponential(5).split("e");
-  const exp = Number(e);
-  const strip = (s: string) => (s.includes(".") ? s.replace(/0+$/, "").replace(/\.$/, "") : s);
-  if (exp < -4 || exp >= 6) {
-    return `${strip(mant)}e${exp < 0 ? "-" : "+"}${String(Math.abs(exp)).padStart(2, "0")}`;
-  }
-  return strip(x.toFixed(5 - exp));
-}
-
-const escText = (s: string) =>
-  s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
-const escAttr = (s: string) => escText(s).replaceAll('"', "&quot;").replaceAll("'", "&#x27;");
-
-/** The first word of `text` (split on Python white space). */
-function firstWord(text: string): string {
-  let i = 0;
-  while (i < text.length && isPySpace(text[i])) i++;
-  let j = i;
-  while (j < text.length && !isPySpace(text[j])) j++;
-  return text.slice(i, j);
-}
-
-function decodeXml(data: Uint8Array): string {
-  let enc = "utf-8";
-  if (data[0] === 0xff && data[1] === 0xfe) enc = "utf-16le";
-  else if (data[0] === 0xfe && data[1] === 0xff) enc = "utf-16be";
-  return new TextDecoder(enc).decode(data); // drops a byte order mark
 }
 
 // ----- the package ------------------------------------------------------------------------
@@ -359,7 +322,7 @@ function fontSize(rPr: Element | null): number | null {
     if (halfPoints === null) return null;
     emu = Math.trunc((halfPoints / 2) * 12700);
   }
-  return Math.round((emu / 12700) * 100) / 100;
+  return pyRoundTo(emu / 12700, 2);
 }
 
 /** The rPr of the run's character style and the styles it is based on, nearest first. */

@@ -8,6 +8,7 @@
  * in <pre>, the newline after <pre>). The HTML is serialised from our own tokens.
  */
 
+import { PY_WS, escAttr, escText, pyRound, pyStrip, trimWith } from "./pycompat";
 import {
   MAX_FILE_BYTES,
   W_PAGESTYLE,
@@ -69,23 +70,8 @@ const IMAGE_EXTS: Record<string, string> = {
 const FONT_SIZES_PT: Record<string, number> = { 1: 8, 2: 10, 3: 12, 4: 14, 5: 18, 6: 24, 7: 36 };
 const SAFE_SCHEMES = new Set(["", "http", "https", "mailto", "tel"]);
 
-// Python's str.isspace() characters (used by strip(), split() and the Unicode \s of re).
-const PY_WS =
-  "\\t\\n\\x0b\\x0c\\r\\x1c-\\x1f \\x85\\xa0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000";
+// Python's white space (strip(), split() and re's Unicode classes), as a character class.
 const S = `[${PY_WS}]`;
-const PY_SPACE = new RegExp(S);
-
-// Index loops, not regexes: `\s+$` is quadratic on long runs of white space.
-function trimWith(s: string, isSpace: (c: string) => boolean): string {
-  let start = 0;
-  let end = s.length;
-  while (start < end && isSpace(s[start])) start++;
-  while (end > start && isSpace(s[end - 1])) end--;
-  return start === 0 && end === s.length ? s : s.slice(start, end);
-}
-export const isPySpace = (c: string): boolean => PY_SPACE.test(c);
-/** Python's str.strip(). */
-export const pyStrip = (s: string): string => trimWith(s, isPySpace);
 const isHtmlSpace = (c: string) =>
   c === " " || c === "\t" || c === "\r" || c === "\n" || c === "\f";
 /** Python's `text.strip(" \t\r\n\f")` is not empty. */
@@ -312,14 +298,6 @@ function formatNumber(value: number): string {
   return s.replace(/0+$/, "").replace(/\.$/, "");
 }
 
-/** Python's round() (half to even). */
-function pyRound(x: number): number {
-  const f = Math.floor(x);
-  const d = x - f;
-  if (d < 0.5) return f;
-  if (d > 0.5) return f + 1;
-  return f % 2 === 0 ? f : f + 1;
-}
 
 /** A CSS length in pt or px, as points. */
 function points(value: string): number | null {
@@ -378,14 +356,6 @@ function notBold(tag: string, node: Element): boolean {
   );
 }
 
-/** html.escape(value, quote=True). */
-function escAttr(value: string): string {
-  return escText(value).replace(/"/g, "&quot;").replace(/'/g, "&#x27;");
-}
-/** html.escape(value, quote=False). */
-function escText(value: string): string {
-  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
 
 // \r inside <pre> is kept by libxml2 but turned into \n by an HTML5 parser: it travels as this
 // noncharacter and is put back whenever text or attributes are read.
