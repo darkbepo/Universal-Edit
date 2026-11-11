@@ -284,6 +284,17 @@ describe("saveDocument", () => {
     expect(await blobBytes(out.blob)).toEqual(new Uint8Array([37, 80, 68, 70]));
   });
 
+  test("pdf is laid out like the desktop's: A4 portrait, 56 pt margins, its page styles", async () => {
+    const convert = vi.fn<Convert>(async () => new Uint8Array([1]));
+    await saveDocument(base, "pdf", "a", convert);
+    const [bytes, , , name, options] = convert.mock.calls[0];
+    expect(name).toBe("a.html");
+    expect(options).toEqual({ paper: "a4", orientation: "portrait", margin_mm: (56 * 25.4) / 72 });
+    const page = new TextDecoder().decode(bytes);
+    expect(page).toContain("<style>");
+    expect(page).toContain("body { font-family: sans-serif; font-size: 11pt; line-height: 1.4; }");
+  });
+
   test("odt / rtf convert the DOCX", async () => {
     const convert = vi.fn<Convert>(async () => new Uint8Array([9]));
     const out = await saveDocument(base, "rtf", "a", convert);

@@ -18,12 +18,16 @@ import {
   type OpenedDocument,
 } from "./types";
 
-/** Converts `bytes` from one format to another (the page runs it in the conversion worker). */
+/**
+ * Converts `bytes` from one format to another (the page runs it in the conversion worker).
+ * `options` are the target converter's option values, e.g. the doc:pdf paper settings.
+ */
 export type Convert = (
   bytes: Uint8Array,
   fromExt: string,
   toExt: string,
   name: string,
+  options?: Record<string, string | number | boolean>,
 ) => Promise<Uint8Array>;
 
 export const EMPTY = "<p></p>";

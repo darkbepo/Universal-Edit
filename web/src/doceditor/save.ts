@@ -44,11 +44,27 @@ const HTML_SRC = new RegExp(`(?<![\\p{L}\\p{N}_])(src=")(img/${NAME}+)(")`, "gu"
 const MD_LINK = new RegExp(`((?<!\\\\)\\]\\()(img/${NAME}+)((?:[${PY_WS}]+"[^"]*")?\\))`, "gu");
 const MD_IMG = new RegExp(`(<img src=")(img/${NAME}+)(")`, "gu"); // sized pictures (raw HTML)
 
-/** The standalone web page the desktop writes (`htmlpdf._page`). */
-export function htmlPage(title: string, body: string): string {
+// The desktop lays a saved PDF out on A4 portrait with 56 pt margins (htmlpdf.A4 / MARGIN) and
+// these body styles (htmlpdf.PAGE_CSS); the doc:pdf converter's paper options do the same here.
+const PAGE_CSS = `
+body { font-family: sans-serif; font-size: 11pt; line-height: 1.4; }
+h1 { font-size: 20pt; } h2 { font-size: 16pt; } h3 { font-size: 13pt; }
+table { border-collapse: collapse; margin: 6pt 0; }
+td, th { border: 1px solid #999; padding: 3pt 6pt; vertical-align: top; }
+th { background: #eee; }
+img { max-width: 100%; }
+pre, code { font-family: monospace; font-size: 9.5pt; }
+pre { white-space: pre-wrap; }
+blockquote { margin-left: 18pt; color: #444; }
+`;
+const PDF_OPTIONS = { paper: "a4", orientation: "portrait", margin_mm: (56 * 25.4) / 72 };
+
+/** The standalone web page the desktop writes (`htmlpdf._page`); `css` goes into its head. */
+export function htmlPage(title: string, body: string, css = ""): string {
   return (
     '<!DOCTYPE html>\n<html><head><meta charset="utf-8">' +
-    `<title>${escAttr(title)}</title></head><body>\n${body}\n</body></html>\n`
+    `<title>${escAttr(title)}</title>${css ? `<style>${css}</style>` : ""}</head><body>\n` +
+    `${body}\n</body></html>\n`
   );
 }
 
@@ -139,8 +155,9 @@ export async function saveDocument(
       return named(zipSync(files, { level: 6 }), "zip");
     }
     case "pdf": {
-      const page = htmlPage(stem, withDataUris(content.html, content.images));
-      return named(await convert(new TextEncoder().encode(page), "html", "pdf", `${stem}.html`));
+      const page = htmlPage(stem, withDataUris(content.html, content.images), PAGE_CSS);
+      const bytes = new TextEncoder().encode(page);
+      return named(await convert(bytes, "html", "pdf", `${stem}.html`, { ...PDF_OPTIONS }));
     }
     case "odt":
     case "rtf":
