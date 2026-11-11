@@ -427,6 +427,22 @@ Each resulting file must be under ~800 lines. Update `CLAUDE.md`'s architecture 
 
 ---
 
+### Task 4h: Verify zip checksums when opening a Word file (web; check the desktop)
+
+Found in the Task 4f re-review. The web's own zip reader (`docx-package.ts` `unzipPackage`) never checks the entries' CRC-32. A damaged DOCX can therefore open as quietly garbled text or a broken picture, instead of the plain "This Word document could not be opened." Python's `zipfile` does check it and raises `BadZipFile`.
+
+**Files:**
+- Modify: `web/src/doceditor/docx-package.ts`, `web/tests/doceditor-docx.test.ts` (tests that build zips with CRC 0 now need real CRCs), `src/umc/doceditor/docx_reader.py` or `docx_package.py` (only if `BadZipFile` isn't mapped to the plain error), `tests/test_doceditor_docx.py`
+- Implementation: a table-driven CRC-32 (~10 lines; fflate exports none publicly) over each entry's bytes, compared with the central-directory CRC. Keep the zip-bomb abort ahead of it.
+
+- [ ] **Step 1: Tests (both apps).** A DOCX with one flipped byte inside a stored picture, and one inside a deflated `document.xml`, gives the plain "could not be opened" error.
+- [ ] **Step 2:** Run. Expected: FAIL on the web (it opens garbled).
+- [ ] **Step 3:** Implement. Map `BadZipFile` to the plain error on the desktop if it isn't already.
+- [ ] **Step 4:** Run the full suites. Expected: PASS. Opening a normal 40 MB DOCX is still fast.
+- [ ] **Step 5: Commit** `Check zip checksums when opening Word files`.
+
+---
+
 ### Task 5: Markdown, TXT, HTML, ODT/RTF opening and saving
 
 **Files:**
