@@ -7,8 +7,8 @@ import {
   hasMarkdownExtras,
   mdToHtml,
   splitFrontMatter,
-  toMarkdown,
 } from "../src/doceditor/markdown";
+import { toMarkdown } from "../src/doceditor/md-writer";
 import { type Convert, decodeText, openDocument } from "../src/doceditor/open";
 import { SAVE_FORMATS, saveDocument } from "../src/doceditor/save";
 import {
@@ -187,14 +187,14 @@ describe("mdToHtml reads like the desktop's markdown-it-py", () => {
     ["a <!-- x ---> b", "<p>a &lt;!-- x ---&gt; b</p>\n"],
     ["x\\   \ny", "<p>x\\ <br />\ny</p>\n"],
     ["\x0ba\x0b", "<p>a</p>\n"],
-    ["# 　T　", "<h1>T</h1>\n"],
+    ["# \u3000T\u3000", "<h1>T</h1>\n"],
     ["a <b\x1cx=1> c", "<p>a <b\x1cx=1> c</p>\n"],
     // block HTML starts the way Python's \s reads it
     ["<div\x1cx>\n*a*\n", "<div\x1cx>\n*a*\n"],
     ["<div\x85>\n*b*\n", "<div\x85>\n*b*\n"],
-    ["<div﻿>\n*c*\n", "<p>&lt;div﻿&gt;\n<em>c</em></p>\n"],
+    ["<div\ufeff>\n*c*\n", "<p>&lt;div\ufeff&gt;\n<em>c</em></p>\n"],
     ["<span a=1\x1c>\n*d*\n", "<span a=1\x1c>\n*d*\n"],
-    ["<span﻿>\n*e*\n", "<p>&lt;span﻿&gt;\n<em>e</em></p>\n"],
+    ["<span\ufeff>\n*e*\n", "<p>&lt;span\ufeff&gt;\n<em>e</em></p>\n"],
     ["<pre\x1c>\n*f*\n", "<pre\x1c>\n*f*\n"],
   ])("%j", (md, html) => {
     expect(mdToHtml(md)).toBe(html);

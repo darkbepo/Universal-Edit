@@ -3,7 +3,8 @@
 // desktop code) must come out byte-identical on the website.
 import vectorsJson from "../../tests/fixtures/doceditor-vectors.json";
 import { describe, expect, test } from "vitest";
-import { mdToHtml, splitFrontMatter, toMarkdown } from "../src/doceditor/markdown";
+import { mdToHtml, splitFrontMatter } from "../src/doceditor/markdown";
+import { toMarkdown } from "../src/doceditor/md-writer";
 import { openDocument, txtToHtml } from "../src/doceditor/open";
 import { normaliseHtml } from "../src/doceditor/subset";
 

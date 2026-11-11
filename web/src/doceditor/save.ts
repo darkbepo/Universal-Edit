@@ -6,7 +6,7 @@
 
 import { zipSync } from "fflate";
 import { writeDocx } from "./docx-write";
-import { toMarkdown } from "./markdown";
+import { toMarkdown } from "./md-writer";
 import type { Convert } from "./open";
 import { PY_WS, escAttr } from "./pycompat";
 import type { DocImages, SaveContent } from "./types";
