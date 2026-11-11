@@ -230,6 +230,97 @@ test("nextImageName", () => { /* empty map → "img/1.png"; after img/1.png and 
 
 ---
 
+### Task 4b: Desktop — read Markdown with markdown-it-py (same parser as the website)
+
+Owner decision (2026-11-11): both apps read Markdown with markdown-it, GitHub style.
+- Reason: Python-Markdown needs 4-space indents, so a README with 2-space nested lists (`- one\n  - two`) is read flat and its structure changes when saved over.
+- markdown-it-py (MIT, Executable Books) is the official Python port of markdown-it.
+
+**Files:**
+- Modify:
+  - `pyproject.toml` (add `"markdown-it-py>=3.0",`)
+  - `src/umc/doceditor/io.py` (the MD branch only)
+  - `packaging/umc.spec` (`collect_submodules("markdown_it")` in hiddenimports if needed)
+  - `src/umc/selftest.py` (the document editor step also opens a small MD with a 2-space nested list and a table)
+  - `scripts/make_doceditor_vectors.py` + the regenerated `tests/fixtures/doceditor-vectors.json`
+  - `tests/test_doceditor_io.py`
+- The converter's own MD → HTML edge (`tools/htmlpdf.markdown_to_html`, Python-Markdown) is NOT changed in this task.
+
+**Interfaces:**
+- Produces: `umc.doceditor.io.md_to_html(text: str) -> str`, which is `MarkdownIt("commonmark", {"html": True}).enable(["table", "strikethrough"]).render(text)`.
+- The website's `mdToHtml` (Task 5) must use the same configuration: `new MarkdownIt("commonmark", { html: true }).enable(["table", "strikethrough"])`.
+
+- [ ] **Step 1: Tests** (`tests/test_doceditor_io.py`):
+  - `test_two_space_nested_list` — `- one\n  - two\n    - three\n` opens as `<ul><li>one<ul><li>two<ul><li>three</li></ul></li></ul></li></ul>` and survives 3 save-over cycles unchanged;
+  - the existing MD tests still pass (fences, quote, table, front matter, `<u>` / `<s>`, sized picture, a `---` rule at the start, `W_MDEXTRA` / `W_MDFORMAT`);
+  - `md_writer` output re-reads to the same HTML (its 4-space nested lists are valid CommonMark).
+- [ ] **Step 2: Run** — Expected: FAIL on the 2-space test.
+- [ ] **Step 3: Implement**:
+  - the MD branch of `open_document` uses `md_to_html`, then `normalise_html_report`;
+  - add a nested-list vector with 2-space indents;
+  - regenerate the vectors (the expected HTML changes for the markdown section only).
+  - Check whether `md_writer` must change for CommonMark. Examples: escaping, a `1)`-style marker, hard breaks, lazy continuation lines. If it does, fix it and keep the 3-cycle stability tests green.
+- [ ] **Step 4: Run** the full `pytest`, `ruff check .`, `ruff format --check .` and `python -m umc --self-test <path>` — Expected: PASS.
+- [ ] **Step 5: Commit** `Read Markdown with markdown-it in the document editor`.
+
+---
+
+### Task 4c: Desktop — the converter reads Markdown with markdown-it too
+
+The converter's built-in MD → HTML edge (`tools/htmlpdf.markdown_to_html`, used for MD → HTML/PDF when Pandoc isn't installed) still uses Python-Markdown. A README converted to PDF would therefore nest 2-space lists differently from the editor. After this task, Python-Markdown is no longer used anywhere.
+
+**Files:**
+- Modify:
+  - `src/umc/tools/htmlpdf.py` (`markdown_to_html`)
+  - `pyproject.toml` (remove `"Markdown>=3.6"` once nothing imports `markdown`)
+  - `packaging/umc.spec` (drop the `markdown.extensions.*` hidden imports; add `markdown_it` if Task 4b didn't)
+  - `src/umc/selftest.py` (the existing `markdown_to_html` step keeps working)
+  - the converter's MD tests (find them with `grep -rn "markdown_to_html\|doc:pdf.*md\|\.md" tests/test_document*.py`)
+- Python-Markdown's `toc` extension gave headings `id` attributes, so in-document links (`[see](#usage)`) work in the PDF. Keep that with a small post-pass, so no new plugin dependency is needed. The id is the heading text, lowercased, with non-word characters turned into `-`, runs of `-` collapsed, ends trimmed, and duplicates suffixed `-1`, `-2`.
+
+**Interfaces:**
+- Consumes: `umc.doceditor.io.md_to_html` (Task 4b). Reuse it, with no second configuration.
+- Produces: `markdown_to_html(src, dest)` unchanged in signature.
+
+- [ ] **Step 1: Tests:**
+  - `test_md_to_pdf_two_space_nested_list` — MD → PDF with Pandoc unavailable (monkeypatch the route like the existing tests) gives a PDF whose text order shows "two" nested under "one". It's enough to check that the HTML intermediate has `<li>one<ul><li>two`.
+  - `test_heading_ids_for_links` — `# Usage` gets `id="usage"`, and a duplicate heading gets `id="usage-1"`.
+  - Every existing converter MD test still passes.
+- [ ] **Step 2: Run** — Expected: FAIL on the new tests.
+- [ ] **Step 3: Implement**:
+  - `markdown_to_html` = `md_to_html` + the heading-id pass, wrapped in `_page`.
+  - Remove the `Markdown` dependency and its spec entries.
+  - Grep that nothing imports `markdown` any more (`grep -rn "^import markdown\|from markdown " src tests scripts`).
+- [ ] **Step 4: Run** the full `pytest`, ruff, self-test, and `python scripts/convert_matrix.py --out <scratchpad>/matrix` (MD rows must not newly fail) — Expected: PASS.
+- [ ] **Step 5: Commit** `Read Markdown with markdown-it in the converter too`.
+
+---
+
+### Task 4d: Desktop — the HTML normaliser must not crash on odd input
+
+Found while porting (Task 2 report): `normalise_html` raises instead of cleaning in two cases, and the web port handles both.
+- A link or picture whose URL makes `urllib.parse` raise, e.g. an invalid IPv6 host `http://[::1/x`.
+- An `<html>` document with no `<body>`.
+
+On the desktop, opening such a file shows an error instead of the document.
+
+**Files:**
+- Modify:
+  - `src/umc/doceditor/html_subset.py`
+  - `tests/test_doceditor_io.py`
+  - `scripts/make_doceditor_vectors.py` + `tests/fixtures/doceditor-vectors.json` (add both inputs as normalise vectors)
+
+- [ ] **Step 1: Tests:**
+  - `test_bad_url_is_dropped_not_fatal`: `<p><a href="http://[::1/x">t</a><img src="http://[::1/x.png"></p>` gives `<p>t</p>`, and the remote-picture warning is shown when the picture was dropped.
+  - `test_html_without_body`: `<html><head><title>T</title></head></html>` gives an empty document and title "T", without raising. `<html><p>x</p></html>` gives `<p>x</p>`.
+  - Each output must equal what the web port (Task 2, `web/src/doceditor/subset.ts`) produces. Run both, and if they differ, align the desktop with the web behaviour described in the Task 2 report.
+- [ ] **Step 2: Run** — Expected: FAIL (desktop raises).
+- [ ] **Step 3: Implement:** catch `ValueError` from URL parsing (treat as unusable: drop the link target and keep its text, drop the picture), and handle a missing body. Regenerate the vectors, then run `npm test -- doceditor` in `web/`; both apps must pass the new vectors.
+- [ ] **Step 4: Run** the full `pytest`, ruff, and `npm test` — Expected: PASS.
+- [ ] **Step 5: Commit** `Don't fail on bad URLs or a missing body when cleaning HTML`.
+
+---
+
 ### Task 5: Markdown, TXT, HTML, ODT/RTF opening and saving
 
 **Files:**
@@ -245,7 +336,7 @@ test("nextImageName", () => { /* empty map → "img/1.png"; after img/1.png and 
 - Produces:
   - `type Convert = (bytes: Uint8Array, fromExt: string, toExt: string, name: string) => Promise<Uint8Array>`. The page implements it with the conversion worker; tests pass a fake.
   - `splitFrontMatter(text: string): [frontMatter: string, body: string]`, with the desktop's rule: line 1 is `---`, line 2 is non-blank `^[A-Za-z0-9_-]+\s*:`, and a closing `---`/`...` exists.
-  - `mdToHtml(md: string): string`: markdown-it with `html: true`, tables, fences and linkify off. Its output equals Python-Markdown's for every vector after `normaliseHtml`.
+  - `mdToHtml(md: string): string`: `new MarkdownIt("commonmark", { html: true }).enable(["table", "strikethrough"]).render(md)`. This is the same parser and configuration the desktop uses since Task 4b, so its output equals the desktop's for every vector after `normaliseHtml`.
   - `toMarkdown(html: string): string`: a port of `md_writer.py`, byte-identical on the vectors.
   - `openDocument(file: File, convert: Convert): Promise<OpenedDocument>`:
     - size check BEFORE reading the bytes;
