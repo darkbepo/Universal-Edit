@@ -716,10 +716,7 @@ class Normaliser {
   /** Flatten a list item: its paragraphs become lines, nested lists stay lists. */
   private liWalk(node: Element, groups: Group[]): void {
     this.enter();
-    const breakLine = () => {
-      const [toks, nested] = groups[groups.length - 1];
-      if (toks.length && !isBr(toks[toks.length - 1]) && !nested.length) toks.push(BR());
-    };
+    const breakLine = () => breakItemLine(groups[groups.length - 1]);
     for (const child of Array.from(node.childNodes)) {
       if (child.nodeType === 3) {
         const text = restore((child as Text).data);
@@ -798,6 +795,29 @@ function separate(toks: Token[]): void {
     toks.push(["S", "<br>"]);
     return;
   }
+}
+
+/** End the item's current line where a paragraph starts or ends. White space before the
+ * break is source formatting: dropped, so a blank span or "a <p>b" leaves no space. */
+function breakItemLine([toks, nested]: Group): void {
+  if (nested.length) return;
+  let i = toks.length;
+  while (i > 0) {
+    const [kind, raw] = toks[i - 1];
+    if (kind === "C") i -= 1;
+    else if (kind === "T") {
+      const text = collapseWs(raw);
+      let end = text.length;
+      while (end > 0 && text[end - 1] === " ") end--;
+      if (end) {
+        toks[i - 1] = [kind, text.slice(0, end)];
+        break;
+      }
+      toks.splice(i - 1, 1);
+      i -= 1;
+    } else break;
+  }
+  if (toks.length && !isBr(toks[toks.length - 1])) toks.push(BR());
 }
 
 /** Add inline tokens to the item being built (a new item after a nested list). */
@@ -970,7 +990,8 @@ function lostParts(page: Document): string[] {
     else if (RAW_DROPPED.has(tag)) found.add(W_RAWHTML);
     else if (tag === "img") {
       const parsed = urlparse(pyStrip(attr(el, "src") ?? ""));
-      if (parsed && (parsed.scheme === "http" || parsed.scheme === "https" || parsed.netloc))
+      // A URL that can't be split has a broken host part: a web picture, dropped.
+      if (!parsed || parsed.scheme === "http" || parsed.scheme === "https" || parsed.netloc)
         found.add(W_WEBPICS);
     }
     const cls = attr(el, "class");

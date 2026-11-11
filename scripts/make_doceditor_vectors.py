@@ -71,6 +71,23 @@ NORMALISE = [
     f'<p>a<img src="data:image/png;base64,{base64.b64encode(PNG_1PX).decode()}" width="10"></p>',
     "<pre>line 1\n  line 2</pre><blockquote><p>q</p></blockquote><hr>",
     '<p style="text-align:justify;margin-left:36pt">m</p><p style="page-break-before:always">n</p>',
+    # odd input that must not fail: a URL urllib can't split, a page without a body
+    '<p><a href="http://[::1/x">t</a><img src="http://[::1/x.png"></p>',
+    "<html><head><title>T</title></head></html>",
+    "<html><p>x</p></html>",
+    # indents are capped at 20 levels (720 pt); exponents aren't lengths
+    '<p style="margin-left:1000000000000000000000000000000pt">x</p>',
+    '<p style="margin-left:1e30pt">x</p><p style="margin-left:738pt">y</p>',
+    f'<ul><li style="margin-left:{"9" * 400}px">x</li></ul>',
+    # white space where a list item's paragraph starts or ends
+    "<ul><li><span> </span><p>x</p></li></ul>",
+    "<ul><li>a <p>b</p></li></ul>",
+    "<ul><li><p>a </p>\nb</li><li><b>a </b><p>b</p></li></ul>",
+    # numeric references as HTML5 reads them (Windows-1252 for 128-159)
+    "<p>it&#146;s &#150; &#128;5</p>",
+    "<p>&#x92;&#X96;&#0146;&#146x &#00000000000000000000150; &#129;&#160;&#127;</p>",
+    "<p>&#0;a&#xD800;b&#x110000;c&#99999999999999999999999;d&#x10FFFF;</p>"
+    '<p><a href="http://x/&#146;">l</a></p>',
 ]
 
 FENCE_MD = (

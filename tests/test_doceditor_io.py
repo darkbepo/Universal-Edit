@@ -291,3 +291,110 @@ def test_italic_alone_in_bold_is_written_with_underscores():
     from umc.doceditor.md_writer import to_markdown
 
     assert to_markdown("<p><b><i>x</i></b> <i><b>y</b></i></p>") == "**_x_** ***y***\n"
+
+
+def test_bad_url_is_dropped_not_fatal():
+    from umc.doceditor.html_subset import html_title, normalise_html_report
+    from umc.doceditor.types import W_WEBPICS
+
+    src = '<p><a href="http://[::1/x">t</a><img src="http://[::1/x.png"></p>'
+    html, images, warnings = normalise_html_report(src)
+    assert (html, images) == ("<p>t</p>", {})
+    assert warnings == [W_WEBPICS]
+    assert html_title(src) == ""
+    assert text_length(src) == 1
+
+
+def test_html_without_body():
+    from umc.doceditor.html_subset import html_title, normalise_html_report
+
+    src = "<html><head><title>T</title></head></html>"
+    assert normalise_html_report(src) == ("", {}, [])
+    assert html_title(src) == "T"
+    assert text_length(src) == 0
+    assert normalise_html("<html><p>x</p></html>") == ("<p>x</p>", {})
+
+
+def test_indent_is_capped():
+    big = "1" + "0" * 30
+    assert normalise_html(f'<p style="margin-left:{big}pt">x</p>')[0] == (
+        '<p style="margin-left:720pt">x</p>'
+    )
+    huge = "9" * 400  # float("9" * 400) is inf
+    assert normalise_html(f'<li style="margin-left:{huge}px">x</li>')[0] == (
+        '<p style="margin-left:720pt">x</p>'
+    )
+    assert normalise_html('<p style="margin-left:1e30pt">x</p>')[0] == "<p>x</p>"
+    assert normalise_html('<p style="margin-left:738pt">x</p>')[0] == (
+        '<p style="margin-left:720pt">x</p>'
+    )
+
+
+def test_table_first_in_cell(tmp_path):
+    want = "<table><tr><td><table><tr><td><p>in</p></td></tr></table><p>after</p></td></tr></table>"
+    alone = "<table><tr><td><table><tr><td><p>in</p></td></tr></table></td></tr></table>"
+    for html in (want, alone):
+        p = tmp_path / "a.docx"
+        current = html
+        for _ in range(3):
+            write(current, {}, p)
+            current = read(p).html
+            assert current == html
+    cell = docx.Document(str(tmp_path / "a.docx")).tables[0].cell(0, 0)._tc
+    assert [c.tag.rsplit("}", 1)[1] for c in cell][1:] == ["tbl", "p"]  # Word's trailing p
+
+
+def test_style_id_collision(tmp_path):
+    from docx.enum.style import WD_STYLE_TYPE
+    from docx.oxml.ns import qn
+
+    tpl = docx.Document()
+    for name, sid, kind in (
+        ("Web Link", "Hyperlink", WD_STYLE_TYPE.CHARACTER),
+        ("Source Text", "Code", WD_STYLE_TYPE.PARAGRAPH),
+        ("Pull Quote", "Quote", WD_STYLE_TYPE.PARAGRAPH),
+    ):
+        tpl.styles.add_style(name, kind).element.set(qn("w:styleId"), sid)
+    for el in tpl.styles.element.findall(qn("w:style")):  # the real Quote style is missing
+        if el.find(qn("w:name")).get(qn("w:val")) == "Quote":
+            tpl.styles.element.remove(el)
+    tpl.save(tmp_path / "tpl.docx")
+    html = '<p><a href="https://x.org/">l</a></p><pre>code</pre><blockquote><p>q</p></blockquote>'
+    p = write(html, {}, tmp_path / "a.docx", template=tmp_path / "tpl.docx")
+    d = docx.Document(str(p))
+    els = d.styles.element.findall(qn("w:style"))
+    ids = [el.get(qn("w:styleId")) for el in els]
+    assert len(ids) == len(set(ids))
+    by_id = {el.get(qn("w:styleId")): el.find(qn("w:name")).get(qn("w:val")) for el in els}
+    assert by_id["Hyperlink"] == "Web Link" and by_id["Code"] == "Source Text"
+    assert by_id["Hyperlink1"] == "Hyperlink" and by_id["Code1"] == "Code"
+    assert by_id["Quote1"] == "Quote"
+    used = {el.get(qn("w:val")) for el in d.element.body.iter(qn("w:rStyle"), qn("w:pStyle"))}
+    assert {"Hyperlink1", "Code1", "Quote1"} <= used
+    assert read(p).html == html
+
+
+def test_li_whitespace_edges():
+    assert normalise_html("<ul><li><span> </span><p>x</p></li></ul>")[0] == "<ul><li>x</li></ul>"
+    assert normalise_html("<ul><li>a <p>b</p></li></ul>")[0] == "<ul><li>a<br>b</li></ul>"
+    assert normalise_html("<ul><li><p>a </p>\nb</li></ul>")[0] == "<ul><li>a<br>b</li></ul>"
+    assert normalise_html("<ul><li><b>a </b><p>b</p></li></ul>")[0] == (
+        "<ul><li><b>a</b><br>b</li></ul>"
+    )
+
+
+def test_c1_character_references():
+    from umc.doceditor.html_subset import html_title
+
+    assert normalise_html("<p>it&#146;s &#150; &#128;5</p>")[0] == "<p>it’s – €5</p>"
+    assert normalise_html("<p>&#x92;&#X96;&#0146;&#146x &#00000000000000000000150;</p>")[0] == (
+        "<p>’–’’x –</p>"
+    )
+    # Not in Windows-1252 (0x81), outside 128-159, and too long to be a number: unchanged.
+    assert normalise_html("<p>&#129;&#160;&#127;&#99999999999999999999999;</p>")[0] == (
+        "<p>\x81\xa0\x7f�</p>"
+    )
+    assert html_title("<title>a&#151;b</title>") == "a—b"
+    assert normalise_html('<p><a href="http://x/&#146;">l</a></p>')[0] == (
+        '<p><a href="http://x/’">l</a></p>'
+    )

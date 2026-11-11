@@ -106,31 +106,40 @@ def _ensure_styles(doc: Any) -> None:
     """Every style the writer uses exists: missing ones are copied from python-docx's default
     template (a template made by Word only defines the styles it uses)."""
     styles = doc.styles
-    names = {s.name for s in styles}
     have = {_style_name(el) for el in styles.element.findall(qn("w:style"))}
-    missing = [n for n in _USED_STYLES if n.lower() not in have]
+    missing = {n.lower() for n in _USED_STYLES if n.lower() not in have}
     if missing:
         default = docx.Document().styles.element
-        ids = {el.get(qn("w:styleId")) for el in styles.element.findall(qn("w:style"))}
         for el in default.findall(qn("w:style")):
-            if (
-                _style_name(el) in {m.lower() for m in missing}
-                and el.get(qn("w:styleId")) not in ids
-            ):
+            if _style_name(el) in missing:
                 copy = deepcopy(el)
                 for num_pr in copy.iter(qn("w:numPr")):  # the writer numbers lists itself
                     num_pr.getparent().remove(num_pr)
+                _free_id(styles.element, copy)  # styles are used by name, so a new id is fine
                 styles.element.append(copy)
-        names = {s.name for s in styles}
+    names = {s.name for s in styles}
     if "Hyperlink" not in names:
         link = styles.add_style("Hyperlink", WD_STYLE_TYPE.CHARACTER)
+        _free_id(styles.element, link.element)
         link.font.color.rgb = RGBColor(0x05, 0x63, 0xC1)
         link.font.underline = True
     if "Code" not in names:
         code = styles.add_style("Code", WD_STYLE_TYPE.PARAGRAPH)
+        _free_id(styles.element, code.element)
         code.base_style = styles["Normal"]
         code.font.name = "Consolas"
         code.font.size = Pt(10)
+
+
+def _free_id(styles: Any, style: Any) -> None:
+    """Give ``style`` a style id no other style uses ("Code", else "Code1", ...): a template
+    may already use the id for a style with another name."""
+    taken = {el.get(qn("w:styleId")) for el in styles.findall(qn("w:style")) if el is not style}
+    base = style.get(qn("w:styleId")) or ""
+    sid, n = base, 1
+    while sid in taken:
+        sid, n = f"{base}{n}", n + 1
+    style.set(qn("w:styleId"), sid)
 
 
 def _own_num(ctx: _Ctx, ordered: bool) -> int:
@@ -373,7 +382,7 @@ def _table_rows(table: etree._Element) -> list[etree._Element]:
     return rows
 
 
-def _write_table(ctx: _Ctx, container: Any, node: etree._Element) -> None:
+def _write_table(ctx: _Ctx, container: Any, reuse: list[Any], node: etree._Element) -> None:
     rows = _table_rows(node)
     placed: list[tuple[int, int, int, int, etree._Element]] = []  # row, col, rowspan, colspan, td
     taken: set[tuple[int, int]] = set()
@@ -393,7 +402,15 @@ def _write_table(ctx: _Ctx, container: Any, node: etree._Element) -> None:
             ncols = max(ncols, c)
     if not placed:
         return
+    # An unused first paragraph of a cell would stay in front of the table and take the text
+    # that follows it.
+    for par in reuse:
+        par._p.getparent().remove(par._p)
+    reuse.clear()
     table = container.add_table(len(rows), ncols)
+    after = table._tbl.getnext()  # in a cell python-docx adds the paragraph Word requires
+    if after is not None and after.tag == qn("w:p") and len(after) == 0:
+        after.getparent().remove(after)  # added back below only when nothing follows
     plain = "border:none" in (node.get("style") or "")
     if not plain:
         table.style = "Table Grid"
@@ -490,7 +507,7 @@ def _write_blocks(ctx: _Ctx, container: Any, reuse: list[Any], root: etree._Elem
             _write_list(ctx, container, reuse, child, 1, None)
         elif tag == "table":
             flush()
-            _write_table(ctx, container, child)
+            _write_table(ctx, container, reuse, child)
         elif tag == "hr":
             flush()
             _write_hr(container, reuse)

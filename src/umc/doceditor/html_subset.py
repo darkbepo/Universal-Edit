@@ -24,7 +24,7 @@ import os
 import re
 import sys
 from pathlib import Path, PurePosixPath, PureWindowsPath
-from urllib.parse import unquote, urlparse
+from urllib.parse import ParseResult, unquote, urlparse
 
 import lxml.html
 from lxml import etree
@@ -163,6 +163,10 @@ _CANON_IMG = re.compile(r"^img/\d+\.(?:png|jpg|gif|bmp|webp)$")
 # (source formatting). Tabs elsewhere and no-break spaces (U+00A0) are content and are kept.
 _WS = re.compile(r"[ \t]*[\r\n\f][ \t\r\n\f]*| {2,}")
 _XML_DECL = re.compile(r"^\s*<\?xml[^>]*\?>", re.I)
+# Numeric character references (see _num_ref).
+_NUM_REF = re.compile(r"&#(?:[xX]([0-9a-fA-F]+)|([0-9]+));?")
+# Deepest paragraph indent: 20 levels of 36 pt (huge values used to print as "1e+27pt").
+_MAX_INDENT = 20
 _BR = ("V", "<br>")
 
 # A token is (kind, text): T = text, O = opening tag, C = closing tag, V = void tag,
@@ -233,6 +237,37 @@ def _css_emphasis(css: dict[str, str]) -> list[str]:
     if "line-through" in deco:
         tags.append("s")
     return tags
+
+
+def _num_ref(m: re.Match[str]) -> str:
+    """One numeric reference, read the way HTML5 does where libxml2 differs."""
+    hex_digits, dec_digits = m.group(1), m.group(2)
+    digits = (hex_digits or dec_digits).lstrip("0")
+    # Longer numbers are past U+10FFFF anyway (and int() refuses very long ones).
+    n = int(digits or "0", 16 if hex_digits else 10) if len(digits) <= 8 else 0x110000
+    if 128 <= n <= 159:
+        try:
+            return bytes([n]).decode("cp1252")
+        except UnicodeDecodeError:  # 0x81, 0x8d, 0x8f, 0x90, 0x9d: kept as they are
+            return m.group(0)
+    if n == 0 or n > 0x10FFFF or 0xD800 <= n <= 0xDFFF:
+        return "�"  # libxml2 drops these
+    return m.group(0)
+
+
+def _c1_refs(html: str) -> str:
+    """Numeric references as HTML5 reads them: ``&#146;`` and friends are Windows-1252 (old
+    Word / Windows pages use them for curly quotes and dashes; libxml2 would give control
+    characters), and impossible code points are U+FFFD."""
+    return _NUM_REF.sub(_num_ref, html) if "&#" in html else html
+
+
+def _urlparse(url: str) -> ParseResult | None:
+    """``urlparse``, or None for a URL it can't split (such as ``http://[::1/x``)."""
+    try:
+        return urlparse(url)
+    except ValueError:
+        return None
 
 
 def _not_bold(tag: str, node: etree._Element) -> bool:
@@ -324,8 +359,8 @@ class _Normaliser:
             except (binascii.Error, ValueError):
                 return None
             return self._add_image(data, _IMAGE_EXTS[m.group(1).lower()]) if data else None
-        parsed = urlparse(src)
-        if parsed.scheme or parsed.netloc or not parsed.path:
+        parsed = _urlparse(src)
+        if parsed is None or parsed.scheme or parsed.netloc or not parsed.path:
             return None
         found = self._read_relative(unquote(parsed.path))
         if found is not None:
@@ -378,7 +413,8 @@ class _Normaliser:
             toks.append(("C", f"</{out}>"))
         elif tag == "a":
             href = re.sub(r"[\x00-\x1f\x7f]", "", node.get("href") or "").strip()
-            if href and urlparse(href).scheme.lower() in _SAFE_SCHEMES:
+            parsed = _urlparse(href) if href else None
+            if parsed is not None and parsed.scheme.lower() in _SAFE_SCHEMES:
                 toks.append(("O", f'<a href="{_attr(href)}">'))
                 self._inline_children(node, toks)
                 toks.append(("C", "</a>"))
@@ -450,8 +486,9 @@ class _Normaliser:
             parts.append(f"text-align:{align}")
         if "margin-left" in css:
             pts = _points(css["margin-left"])
-            if pts is not None and round(pts / 36) >= 1:
-                parts.append(f"margin-left:{36 * round(pts / 36)}pt")
+            level = 0 if pts is None else round(min(pts, 36 * _MAX_INDENT) / 36)
+            if level >= 1:
+                parts.append(f"margin-left:{36 * level}pt")
         if (css.get("page-break-before") or css.get("break-before") or "").lower() in (
             "always",
             "page",
@@ -546,6 +583,30 @@ class _Normaliser:
             groups.append(([], []))
         groups[-1][0].extend(new)
 
+    @staticmethod
+    def _break_line(group: tuple[list[_Token], list[str]]) -> None:
+        """End the item's current line where a paragraph starts or ends. White space before
+        the break is source formatting: dropped, so a blank span or "a <p>b" leaves no space."""
+        toks, nested = group
+        if nested:
+            return
+        i = len(toks)
+        while i > 0:
+            kind, text = toks[i - 1]
+            if kind == "C":
+                i -= 1
+            elif kind == "T":
+                text = _WS.sub(" ", text).rstrip(" ")
+                if text:
+                    toks[i - 1] = (kind, text)
+                    break
+                del toks[i - 1]
+                i -= 1
+            else:
+                break
+        if toks and toks[-1] != _BR:
+            toks.append(_BR)
+
     def _li_walk(self, node: etree._Element, groups: list[tuple[list[_Token], list[str]]]) -> None:
         """Flatten a list item: its paragraphs become lines, nested lists stay lists."""
         self._li_text(groups, node.text, node[0] if len(node) else None)
@@ -554,13 +615,9 @@ class _Normaliser:
             if tag in _LISTS:
                 groups[-1][1].append(self._list(child, tag))
             elif tag in _BLOCK:
-                toks = groups[-1][0]
-                if toks and toks[-1] != _BR and not groups[-1][1]:
-                    toks.append(_BR)
+                self._break_line(groups[-1])
                 self._li_walk(child, groups)
-                toks = groups[-1][0]
-                if toks and toks[-1] != _BR and not groups[-1][1]:
-                    toks.append(_BR)
+                self._break_line(groups[-1])
             elif tag is not None:
                 new: list[_Token] = []
                 self._inline(child, new)
@@ -629,13 +686,17 @@ _UNREADABLE = "This file couldn't be read as HTML."
 
 
 def _parse(html: str) -> etree._Element | None:
-    html = _XML_DECL.sub("", html)
+    html = _c1_refs(_XML_DECL.sub("", html))
     if not html.strip():
         return None
     try:
         return lxml.html.fragment_fromstring(
             html, create_parent="div", parser=lxml.html.HTMLParser(huge_tree=True)
         )
+    except (AssertionError, IndexError):  # a page without a <body>: nothing to show
+        if _page(html) is None:
+            raise ConversionError(_UNREADABLE, details="no body") from None
+        return lxml.html.Element("div")
     except (etree.LxmlError, ValueError) as exc:
         raise ConversionError(_UNREADABLE, details=str(exc)) from exc
 
@@ -643,7 +704,9 @@ def _parse(html: str) -> etree._Element | None:
 def _page(html: str) -> etree._Element | None:
     """The whole page, <head> included (the fragment parser drops it)."""
     try:
-        return etree.fromstring(_XML_DECL.sub("", html), lxml.html.HTMLParser(huge_tree=True))
+        return etree.fromstring(
+            _c1_refs(_XML_DECL.sub("", html)), lxml.html.HTMLParser(huge_tree=True)
+        )
     except (etree.LxmlError, ValueError):
         return None
 
@@ -667,8 +730,9 @@ def _lost_parts(html: str) -> list[str]:
         elif tag in _RAW_DROPPED:
             found.add(W_RAWHTML)
         elif tag == "img":
-            parsed = urlparse((el.get("src") or "").strip())
-            if parsed.scheme.lower() in ("http", "https") or parsed.netloc:
+            parsed = _urlparse((el.get("src") or "").strip())
+            # A URL that can't be split has a broken host part: a web picture, dropped.
+            if parsed is None or parsed.scheme.lower() in ("http", "https") or parsed.netloc:
                 found.add(W_WEBPICS)
         if (el.get("class") and not _is_language_class(el.get("class") or "")) or any(
             k.lower().startswith("on") for k in el.attrib

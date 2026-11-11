@@ -151,6 +151,68 @@
    "in": "<p style=\"text-align:justify;margin-left:36pt\">m</p><p style=\"page-break-before:always\">n</p>",
    "out": "<p style=\"text-align:justify;margin-left:36pt\">m</p><p style=\"page-break-before:always\">n</p>",
    "warnings": []
+  },
+  {
+   "in": "<p><a href=\"http://[::1/x\">t</a><img src=\"http://[::1/x.png\"></p>",
+   "out": "<p>t</p>",
+   "warnings": [
+    "pictures from the web"
+   ]
+  },
+  {
+   "in": "<html><head><title>T</title></head></html>",
+   "out": "",
+   "warnings": []
+  },
+  {
+   "in": "<html><p>x</p></html>",
+   "out": "<p>x</p>",
+   "warnings": []
+  },
+  {
+   "in": "<p style=\"margin-left:1000000000000000000000000000000pt\">x</p>",
+   "out": "<p style=\"margin-left:720pt\">x</p>",
+   "warnings": []
+  },
+  {
+   "in": "<p style=\"margin-left:1e30pt\">x</p><p style=\"margin-left:738pt\">y</p>",
+   "out": "<p>x</p><p style=\"margin-left:720pt\">y</p>",
+   "warnings": []
+  },
+  {
+   "in": "<ul><li style=\"margin-left:9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999px\">x</li></ul>",
+   "out": "<ul><li style=\"margin-left:720pt\">x</li></ul>",
+   "warnings": []
+  },
+  {
+   "in": "<ul><li><span> </span><p>x</p></li></ul>",
+   "out": "<ul><li>x</li></ul>",
+   "warnings": []
+  },
+  {
+   "in": "<ul><li>a <p>b</p></li></ul>",
+   "out": "<ul><li>a<br>b</li></ul>",
+   "warnings": []
+  },
+  {
+   "in": "<ul><li><p>a </p>\nb</li><li><b>a </b><p>b</p></li></ul>",
+   "out": "<ul><li>a<br>b</li><li><b>a</b><br>b</li></ul>",
+   "warnings": []
+  },
+  {
+   "in": "<p>it&#146;s &#150; &#128;5</p>",
+   "out": "<p>it’s – €5</p>",
+   "warnings": []
+  },
+  {
+   "in": "<p>&#x92;&#X96;&#0146;&#146x &#00000000000000000000150; &#129;&#160;&#127;</p>",
+   "out": "<p>’–’’x –  </p>",
+   "warnings": []
+  },
+  {
+   "in": "<p>&#0;a&#xD800;b&#x110000;c&#99999999999999999999999;d&#x10FFFF;</p><p><a href=\"http://x/&#146;\">l</a></p>",
+   "out": "<p>�a�b�c�d􏿿</p><p><a href=\"http://x/’\">l</a></p>",
+   "warnings": []
   }
  ],
  "markdown": [
