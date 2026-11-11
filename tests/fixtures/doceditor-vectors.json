@@ -206,12 +206,70 @@
   },
   {
    "in": "<p>&#x92;&#X96;&#0146;&#146x &#00000000000000000000150; &#129;&#160;&#127;</p>",
-   "out": "<p>’–’’x –  </p>",
+   "out": "<p>’–’’x –  �</p>",
    "warnings": []
   },
   {
    "in": "<p>&#0;a&#xD800;b&#x110000;c&#99999999999999999999999;d&#x10FFFF;</p><p><a href=\"http://x/&#146;\">l</a></p>",
-   "out": "<p>�a�b�c�d􏿿</p><p><a href=\"http://x/’\">l</a></p>",
+   "out": "<p>�a�b�c�d�</p><p><a href=\"http://x/’\">l</a></p>",
+   "warnings": []
+  },
+  {
+   "in": "<p>&#1;&#xFFFE;&#xD800;&#x110000;&#0;&#127;&#xFDD0;&#xFDEF;&#x1FFFF;&#x10FFFE;&#11;&#31;</p><p>a&#9;b&#xFDCF;&#xFDF0;&#x10FFFD;</p>",
+   "out": "<p>������������</p><p>a\tb﷏ﷰ􏿽</p>",
+   "warnings": []
+  },
+  {
+   "in": "<p><a href=\"http://[abc]/x\">t</a><a href=\"javascript://[abc]/%0aalert(1)\">j</a><a href=\"//[abc]/y\">r</a><a href=\"http://[::1/x\">u</a><img src=\"http://[abc]/p.png\"></p>",
+   "out": "<p><a href=\"http://[abc]/x\">t</a>j<a href=\"//[abc]/y\">r</a>u</p>",
+   "warnings": [
+    "pictures from the web"
+   ]
+  },
+  {
+   "in": "<xmp>&#146; <b>x</b> &amp;</xmp>",
+   "out": "<p>&amp;#146; &lt;b&gt;x&lt;/b&gt; &amp;amp;</p>",
+   "warnings": []
+  },
+  {
+   "in": "<noembed><i>a</i></noembed><noframes><i>a</i></noframes><p>b</p>",
+   "out": "<p>&lt;i&gt;a&lt;/i&gt;&lt;i&gt;a&lt;/i&gt;</p><p>b</p>",
+   "warnings": []
+  },
+  {
+   "in": "<plaintext>a<p>b</p>",
+   "out": "<p>a&lt;p&gt;b&lt;/p&gt;</p>",
+   "warnings": []
+  },
+  {
+   "in": "<iframe><img src=\"http://x/a.png\"></iframe><p>x</p>",
+   "out": "<p>x</p>",
+   "warnings": [
+    "embedded HTML the editor doesn't support"
+   ]
+  },
+  {
+   "in": "<script>\"<xmp>\"</script><p>hi</p><!-- <xmp> --><p>&#146;</p>",
+   "out": "<p>hi</p><p>’</p>",
+   "warnings": [
+    "page styles, classes and scripts"
+   ]
+  },
+  {
+   "in": "<title>a<b>b</b>&#146;</title><textarea>&#1;<b>t</b></textarea><p>&#1;</p>",
+   "out": "<p>�</p>",
+   "warnings": [
+    "embedded HTML the editor doesn't support"
+   ]
+  },
+  {
+   "in": "<ul><li><b> </b><p>x</p></li></ul>",
+   "out": "<ul><li>x</li></ul>",
+   "warnings": []
+  },
+  {
+   "in": "<ul><li>a<span style=\"color:red\"><i> </i></span><p>b</p></li></ul>",
+   "out": "<ul><li>a<br>b</li></ul>",
    "warnings": []
   }
  ],

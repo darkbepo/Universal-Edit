@@ -88,6 +88,22 @@ NORMALISE = [
     "<p>&#x92;&#X96;&#0146;&#146x &#00000000000000000000150; &#129;&#160;&#127;</p>",
     "<p>&#0;a&#xD800;b&#x110000;c&#99999999999999999999999;d&#x10FFFF;</p>"
     '<p><a href="http://x/&#146;">l</a></p>',
+    # references to characters XML can't hold become U+FFFD
+    "<p>&#1;&#xFFFE;&#xD800;&#x110000;&#0;&#127;&#xFDD0;&#xFDEF;&#x1FFFF;&#x10FFFE;&#11;&#31;</p>"
+    "<p>a&#9;b&#xFDCF;&#xFDF0;&#x10FFFD;</p>",
+    # links whose host urllib refuses keep a safe scheme; pictures are dropped
+    '<p><a href="http://[abc]/x">t</a><a href="javascript://[abc]/%0aalert(1)">j</a>'
+    '<a href="//[abc]/y">r</a><a href="http://[::1/x">u</a><img src="http://[abc]/p.png"></p>',
+    # raw text and RCDATA elements read as HTML5 does
+    "<xmp>&#146; <b>x</b> &amp;</xmp>",
+    "<noembed><i>a</i></noembed><noframes><i>a</i></noframes><p>b</p>",
+    "<plaintext>a<p>b</p>",
+    '<iframe><img src="http://x/a.png"></iframe><p>x</p>',
+    '<script>"<xmp>"</script><p>hi</p><!-- <xmp> --><p>&#146;</p>',
+    "<title>a<b>b</b>&#146;</title><textarea>&#1;<b>t</b></textarea><p>&#1;</p>",
+    # an inline wrapper left empty before a break in a list item
+    "<ul><li><b> </b><p>x</p></li></ul>",
+    '<ul><li>a<span style="color:red"><i> </i></span><p>b</p></li></ul>',
 ]
 
 FENCE_MD = (

@@ -239,6 +239,24 @@ def _css_emphasis(css: dict[str, str]) -> list[str]:
     return tags
 
 
+_REPLACEMENT = chr(0xFFFD)  # U+FFFD
+
+
+def _bad_code_point(n: int) -> bool:
+    """A numeric reference HTML5 reads as U+FFFD here (libxml2 drops these or keeps controls
+    that aren't valid XML): 0, C0 controls other than tab / LF / FF / CR, DEL, surrogates,
+    noncharacters and anything past U+10FFFF."""
+    return (
+        n == 0
+        or (n < 0x20 and n not in (0x09, 0x0A, 0x0C, 0x0D))
+        or n == 0x7F
+        or 0xD800 <= n <= 0xDFFF
+        or 0xFDD0 <= n <= 0xFDEF
+        or (n & 0xFFFE) == 0xFFFE
+        or n > 0x10FFFF
+    )
+
+
 def _num_ref(m: re.Match[str]) -> str:
     """One numeric reference, read the way HTML5 does where libxml2 differs."""
     hex_digits, dec_digits = m.group(1), m.group(2)
@@ -250,16 +268,71 @@ def _num_ref(m: re.Match[str]) -> str:
             return bytes([n]).decode("cp1252")
         except UnicodeDecodeError:  # 0x81, 0x8d, 0x8f, 0x90, 0x9d: kept as they are
             return m.group(0)
-    if n == 0 or n > 0x10FFFF or 0xD800 <= n <= 0xDFFF:
-        return "�"  # libxml2 drops these
-    return m.group(0)
+    return _REPLACEMENT if _bad_code_point(n) else m.group(0)
 
 
-def _c1_refs(html: str) -> str:
+def _num_refs(html: str) -> str:
     """Numeric references as HTML5 reads them: ``&#146;`` and friends are Windows-1252 (old
     Word / Windows pages use them for curly quotes and dashes; libxml2 would give control
-    characters), and impossible code points are U+FFFD."""
+    characters), and impossible or invalid code points are U+FFFD."""
     return _NUM_REF.sub(_num_ref, html) if "&#" in html else html
+
+
+# Elements whose content HTML5 reads as text, where libxml2 parses tags and references in it:
+# raw text (nothing decoded) and RCDATA (references decoded, tags are text). Comments, <script>
+# and <style> are only skipped, so a "<xmp" inside them isn't taken for a tag.
+_RAW_TEXT = frozenset({"xmp", "noembed", "noframes", "plaintext", "iframe"})
+_RCDATA = frozenset({"title", "textarea"})
+_SPECIAL_START = re.compile(
+    r"<(?:(!--)|(script|style|xmp|noembed|noframes|plaintext|iframe|title|textarea)"
+    r"(?=[\t\n\f\r />]))",
+    re.I,
+)
+_SPECIAL_END = {
+    name: re.compile(rf"</{name}(?=[\t\n\f\r />])", re.I)
+    for name in ("script", "style", "xmp", "noembed", "noframes", "iframe", "title", "textarea")
+}
+
+
+def _html5_text(html: str) -> str:
+    """Prepare ``html`` for libxml2 so it reads what an HTML5 parser (the website) reads:
+    numeric references, and the content of raw text / RCDATA elements (escaped, so libxml2
+    keeps it as text). One pass from left to right."""
+    if "&#" not in html and not _SPECIAL_START.search(html):
+        return html
+    out: list[str] = []
+    pos = 0
+    while (m := _SPECIAL_START.search(html, pos)) is not None:
+        if m.group(1):  # a comment, up to "-->" (an unclosed one runs to the end)
+            end = html.find("-->", m.end())
+            end = len(html) if end < 0 else end + 3
+            out.append(_num_refs(html[pos:end]))
+            pos = end
+            continue
+        name = m.group(2).lower()
+        gt = html.find(">", m.end())
+        if gt < 0:
+            break
+        out.append(_num_refs(html[pos : gt + 1]))
+        if name == "plaintext":  # never ends
+            end = len(html)
+        else:
+            close = _SPECIAL_END[name].search(html, gt + 1)
+            end = close.start() if close else len(html)
+        body = html[gt + 1 : end]
+        if name in _RAW_TEXT:
+            body = body.replace("&", "&amp;").replace("<", "&lt;")
+        elif name in _RCDATA:
+            body = _num_refs(body.replace("<", "&lt;"))
+        else:  # script / style: libxml2 keeps them as text already
+            body = _num_refs(body)
+        out.append(body)
+        pos = end
+    out.append(_num_refs(html[pos:]))
+    return "".join(out)
+
+
+_SCHEME = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*:")
 
 
 def _urlparse(url: str) -> ParseResult | None:
@@ -268,6 +341,28 @@ def _urlparse(url: str) -> ParseResult | None:
         return urlparse(url)
     except ValueError:
         return None
+
+
+def _link_scheme(href: str) -> str | None:
+    """The scheme of a link (lower case, "" for a relative one), or None when the link is
+    unusable. A host urlparse refuses ("http://[abc]/", on Python 3.11.4+) still has a
+    scheme; only unbalanced brackets in the host are refused, as on the website."""
+    try:
+        return urlparse(href).scheme.lower()
+    except ValueError:
+        pass
+    m = _SCHEME.match(href)
+    rest = href[m.end() :] if m else href
+    if rest.startswith("//"):
+        end = len(rest)
+        for c in "/?#":
+            i = rest.find(c, 2)
+            if i >= 0:
+                end = min(end, i)
+        netloc = rest[2:end]
+        if ("[" in netloc) != ("]" in netloc):
+            return None
+    return m.group(0)[:-1].lower() if m else ""
 
 
 def _not_bold(tag: str, node: etree._Element) -> bool:
@@ -413,8 +508,8 @@ class _Normaliser:
             toks.append(("C", f"</{out}>"))
         elif tag == "a":
             href = re.sub(r"[\x00-\x1f\x7f]", "", node.get("href") or "").strip()
-            parsed = _urlparse(href) if href else None
-            if parsed is not None and parsed.scheme.lower() in _SAFE_SCHEMES:
+            scheme = _link_scheme(href) if href else None
+            if scheme in _SAFE_SCHEMES:
                 toks.append(("O", f'<a href="{_attr(href)}">'))
                 self._inline_children(node, toks)
                 toks.append(("C", "</a>"))
@@ -586,7 +681,8 @@ class _Normaliser:
     @staticmethod
     def _break_line(group: tuple[list[_Token], list[str]]) -> None:
         """End the item's current line where a paragraph starts or ends. White space before
-        the break is source formatting: dropped, so a blank span or "a <p>b" leaves no space."""
+        the break is source formatting: dropped, so a blank span, "a <p>b" or "<b> </b><p>"
+        leaves no space and no empty wrapper."""
         toks, nested = group
         if nested:
             return
@@ -601,6 +697,9 @@ class _Normaliser:
                     toks[i - 1] = (kind, text)
                     break
                 del toks[i - 1]
+                i -= 1
+            elif kind == "O" and i < len(toks) and toks[i][0] == "C":
+                del toks[i - 1 : i + 1]  # an inline wrapper left empty
                 i -= 1
             else:
                 break
@@ -686,7 +785,7 @@ _UNREADABLE = "This file couldn't be read as HTML."
 
 
 def _parse(html: str) -> etree._Element | None:
-    html = _c1_refs(_XML_DECL.sub("", html))
+    html = _html5_text(_XML_DECL.sub("", html))
     if not html.strip():
         return None
     try:
@@ -705,7 +804,7 @@ def _page(html: str) -> etree._Element | None:
     """The whole page, <head> included (the fragment parser drops it)."""
     try:
         return etree.fromstring(
-            _c1_refs(_XML_DECL.sub("", html)), lxml.html.HTMLParser(huge_tree=True)
+            _html5_text(_XML_DECL.sub("", html)), lxml.html.HTMLParser(huge_tree=True)
         )
     except (etree.LxmlError, ValueError):
         return None

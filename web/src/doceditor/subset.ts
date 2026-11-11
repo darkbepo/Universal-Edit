@@ -798,7 +798,8 @@ function separate(toks: Token[]): void {
 }
 
 /** End the item's current line where a paragraph starts or ends. White space before the
- * break is source formatting: dropped, so a blank span or "a <p>b" leaves no space. */
+ * break is source formatting: dropped, so a blank span, "a <p>b" or "<b> </b><p>" leaves no
+ * space and no empty wrapper. */
 function breakItemLine([toks, nested]: Group): void {
   if (nested.length) return;
   let i = toks.length;
@@ -814,6 +815,9 @@ function breakItemLine([toks, nested]: Group): void {
         break;
       }
       toks.splice(i - 1, 1);
+      i -= 1;
+    } else if (kind === "O" && i < toks.length && toks[i][0] === "C") {
+      toks.splice(i - 1, 2); // an inline wrapper left empty
       i -= 1;
     } else break;
   }
@@ -859,6 +863,94 @@ function blockStyle(node: Element): string {
   const brk = (css.get("page-break-before") || css.get("break-before") || "").toLowerCase();
   if (brk === "always" || brk === "page") parts.push("page-break-before:always");
   return parts.length ? ` style="${parts.join(";")}"` : "";
+}
+
+// ----- numeric references (the desktop's _html5_text) --------------------------------------
+
+const REPLACEMENT = String.fromCharCode(0xfffd);
+const NUM_REF = /&#(?:[xX]([0-9a-fA-F]+)|([0-9]+));?/g;
+// Windows-1252 for 0x80-0x9F (0: not defined there, the reference is kept).
+const CP1252 = [
+  0x20ac, 0, 0x201a, 0x0192, 0x201e, 0x2026, 0x2020, 0x2021, 0x02c6, 0x2030, 0x0160, 0x2039,
+  0x0152, 0, 0x017d, 0, 0, 0x2018, 0x2019, 0x201c, 0x201d, 0x2022, 0x2013, 0x2014, 0x02dc, 0x2122,
+  0x0161, 0x203a, 0x0153, 0, 0x017e, 0x0178,
+];
+
+/** A reference read as U+FFFD: 0, C0 controls other than tab / LF / FF / CR, DEL, surrogates,
+ * noncharacters and anything past U+10FFFF (the desktop's libxml2 can't keep them). */
+function badCodePoint(n: number): boolean {
+  return (
+    n === 0 ||
+    (n < 0x20 && n !== 0x09 && n !== 0x0a && n !== 0x0c && n !== 0x0d) ||
+    n === 0x7f ||
+    (n >= 0xd800 && n <= 0xdfff) ||
+    (n >= 0xfdd0 && n <= 0xfdef) ||
+    (n & 0xfffe) === 0xfffe ||
+    n > 0x10ffff
+  );
+}
+
+function numRef(ref: string, hex: string | undefined, dec: string | undefined): string {
+  const digits = (hex ?? dec ?? "").replace(/^0+/, "");
+  // Longer numbers are past U+10FFFF anyway.
+  const n = digits.length <= 8 ? parseInt(digits || "0", hex !== undefined ? 16 : 10) : 0x110000;
+  if (n >= 128 && n <= 159) {
+    const c = CP1252[n - 128];
+    return c ? String.fromCharCode(c) : ref;
+  }
+  return badCodePoint(n) ? REPLACEMENT : ref;
+}
+
+const numRefs = (s: string) => (s.includes("&#") ? s.replace(NUM_REF, numRef) : s);
+
+// Raw text elements: references in them are text, so they are left alone. Comments, <script>,
+// <style> and the RCDATA elements (<title>, <textarea>) are scanned past, so a "<xmp" inside
+// them isn't taken for a tag.
+const RAW_TEXT = set("xmp noembed noframes plaintext iframe");
+const SPECIAL_START =
+  /<(?:(!--)|(script|style|xmp|noembed|noframes|plaintext|iframe|title|textarea)(?=[\t\n\f\r />]))/gi;
+const SPECIAL_END = new Map(
+  "script style xmp noembed noframes iframe title textarea"
+    .split(" ")
+    .map((name) => [name, new RegExp(`</${name}(?=[\\t\\n\\f\\r />])`, "gi")]),
+);
+
+/** Numeric references the way the desktop reads them (it maps them before libxml2 parses the
+ * page): invalid code points become U+FFFD. One pass from left to right. */
+function html5Refs(html: string): string {
+  if (!html.includes("&#")) return html;
+  const out: string[] = [];
+  let pos = 0;
+  for (;;) {
+    SPECIAL_START.lastIndex = pos;
+    const m = SPECIAL_START.exec(html);
+    if (!m) break;
+    const after = m.index + m[0].length;
+    if (m[1]) {
+      // a comment, up to "-->" (an unclosed one runs to the end)
+      const close = html.indexOf("-->", after);
+      const end = close < 0 ? html.length : close + 3;
+      out.push(numRefs(html.slice(pos, end)));
+      pos = end;
+      continue;
+    }
+    const name = m[2].toLowerCase();
+    const gt = html.indexOf(">", after);
+    if (gt < 0) break;
+    out.push(numRefs(html.slice(pos, gt + 1)));
+    let end = html.length; // <plaintext> never ends
+    const closer = SPECIAL_END.get(name);
+    if (closer) {
+      closer.lastIndex = gt + 1;
+      const close = closer.exec(html);
+      if (close) end = close.index;
+    }
+    const body = html.slice(gt + 1, end);
+    out.push(RAW_TEXT.has(name) ? body : numRefs(body));
+    pos = end;
+  }
+  out.push(numRefs(html.slice(pos)));
+  return out.join("");
 }
 
 // ----- parsing -----------------------------------------------------------------------------
@@ -931,7 +1023,7 @@ function onlyDoctypeAndComments(html: string): boolean {
 }
 
 function parseDocument(html: string): Document {
-  return new DOMParser().parseFromString(libxmlLike(html), "text/html");
+  return new DOMParser().parseFromString(libxmlLike(html5Refs(html)), "text/html");
 }
 
 const FULL_HTML = new RegExp(`^${S}*<(?:html|!doctype)`, "i");

@@ -390,11 +390,68 @@ def test_c1_character_references():
     assert normalise_html("<p>&#x92;&#X96;&#0146;&#146x &#00000000000000000000150;</p>")[0] == (
         "<p>’–’’x –</p>"
     )
-    # Not in Windows-1252 (0x81), outside 128-159, and too long to be a number: unchanged.
+    # Not in Windows-1252 (0x81) and outside 128-159: unchanged; DEL and too long: U+FFFD.
     assert normalise_html("<p>&#129;&#160;&#127;&#99999999999999999999999;</p>")[0] == (
-        "<p>\x81\xa0\x7f�</p>"
+        "<p>\x81\xa0��</p>"
     )
     assert html_title("<title>a&#151;b</title>") == "a—b"
     assert normalise_html('<p><a href="http://x/&#146;">l</a></p>')[0] == (
         '<p><a href="http://x/’">l</a></p>'
     )
+
+
+def test_bad_numeric_references_become_replacement_characters():
+    bad = "&#1;&#xFFFE;&#xD800;&#x110000;&#0;&#127;&#xFDD0;&#xFDEF;&#x1FFFF;&#x10FFFE;&#11;&#31;"
+    assert normalise_html(f"<p>{bad}</p>")[0] == "<p>" + "�" * 12 + "</p>"
+    assert normalise_html("<p>a&#9;b&#xFDCF;&#xFDF0;&#x10FFFD;</p>")[0] == (
+        "<p>a\tb﷏ﷰ\U0010fffd</p>"
+    )
+    assert normalise_html("<p>a\x01b\x7fc</p>")[0] == "<p>ab\x7fc</p>"  # literal: as before
+
+
+def test_unparsable_link_with_a_safe_scheme_is_kept():
+    from umc.doceditor.html_subset import normalise_html_report
+    from umc.doceditor.types import W_WEBPICS
+
+    src = (
+        '<p><a href="http://[abc]/x">t</a><a href="javascript://[abc]/%0aalert(1)">j</a>'
+        '<a href="//[abc]/y">r</a><a href="http://[::1/x">u</a>'
+        '<img src="http://[abc]/p.png"></p>'
+    )
+    assert normalise_html_report(src) == (
+        '<p><a href="http://[abc]/x">t</a>j<a href="//[abc]/y">r</a>u</p>',
+        {},
+        [W_WEBPICS],
+    )
+
+
+def test_raw_text_elements_follow_html5():
+    from umc.doceditor.html_subset import html_title, normalise_html_report
+    from umc.doceditor.types import W_PAGESTYLE, W_RAWHTML
+
+    assert normalise_html("<xmp>&#146; <b>x</b> &amp;</xmp>")[0] == (
+        "<p>&amp;#146; &lt;b&gt;x&lt;/b&gt; &amp;amp;</p>"
+    )
+    for tag in ("noembed", "noframes"):
+        assert normalise_html(f"<{tag}><i>a</i></{tag}><p>b</p>")[0] == (
+            "<p>&lt;i&gt;a&lt;/i&gt;</p><p>b</p>"
+        )
+    assert normalise_html("<plaintext>a<p>b</p>")[0] == "<p>a&lt;p&gt;b&lt;/p&gt;</p>"
+    assert normalise_html_report('<iframe><img src="http://x/a.png"></iframe><p>x</p>') == (
+        "<p>x</p>",
+        {},
+        [W_RAWHTML],
+    )
+    assert html_title("<title>a<b>b</b>&#146;</title>") == "a<b>b</b>’"
+    assert normalise_html_report('<script>"<xmp>"</script><p>hi</p>') == (
+        "<p>hi</p>",
+        {},
+        [W_PAGESTYLE],
+    )
+
+
+def test_empty_wrapper_before_an_item_break():
+    assert normalise_html("<ul><li><b> </b><p>x</p></li></ul>")[0] == "<ul><li>x</li></ul>"
+    assert normalise_html('<ul><li>a<span style="color:red"><i> </i></span><p>b</p></li></ul>')[
+        0
+    ] == ("<ul><li>a<br>b</li></ul>")
