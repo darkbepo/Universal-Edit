@@ -623,3 +623,116 @@ describe("template", () => {
     expect(paras(doc).map(text)).toEqual(["a"]);
   });
 });
+
+// ----- broken or unusual templates (review round 1) -----------------------------------------
+
+/** A template made by the writer, with `edit` applied to its files. */
+function editedTemplate(edit: (files: Files) => void): Uint8Array {
+  const files = unzip(writeDocx("<p>seed</p>", new Map()));
+  edit(files);
+  return zipSync(files);
+}
+
+describe("template edge cases", () => {
+  test("parts named by the relationships but missing get no second relationship", () => {
+    const template = editedTemplate((f) => {
+      delete f["word/styles.xml"];
+      delete f["word/numbering.xml"];
+    });
+    const { files, doc } = write("<h1>T</h1><ul><li>a</li></ul>", new Map(), template);
+    const r = rels(files);
+    for (const kind of ["/styles", "/numbering"]) {
+      const of = r.filter((x) => x.type.endsWith(kind));
+      expect(of.length).toBe(1);
+      expect(Object.keys(files)).toContain(`word/${of[0].target}`);
+    }
+    expect(pStyle(paras(doc)[0])).toBe("Heading1");
+    const overrides = all(part(files, "[Content_Types].xml"), "Override", CT).map((o) =>
+      o.getAttribute("PartName"),
+    );
+    expect(overrides.filter((n) => n === "/word/styles.xml").length).toBe(1);
+    expect(overrides.filter((n) => n === "/word/numbering.xml").length).toBe(1);
+  });
+
+  test("new numbering goes before w:numIdMacAtCleanup", () => {
+    const template = editedTemplate((f) => {
+      f["word/numbering.xml"] = strToU8(
+        `<w:numbering xmlns:w="${W}"><w:abstractNum w:abstractNumId="4"><w:lvl w:ilvl="0"/>` +
+          '</w:abstractNum><w:numIdMacAtCleanup w:val="3"/></w:numbering>',
+      );
+    });
+    const { files } = write("<ul><li>a</li></ul>", new Map(), template);
+    const root = part(files, "word/numbering.xml").documentElement;
+    expect(Array.from(root.children).map((c) => c.localName)).toEqual([
+      "abstractNum",
+      "abstractNum",
+      "num",
+      "numIdMacAtCleanup",
+    ]);
+  });
+
+  test("Hyperlink and Code get free ids when theirs are taken by other styles", () => {
+    const template = makeTemplate((styles) => {
+      for (const s of all(styles, "style")) {
+        const id = s.getAttributeNS(W, "styleId");
+        if (id === "Hyperlink") kid(s, "name")?.setAttributeNS(W, "w:val", "Fancy");
+        if (id === "Code") kid(s, "name")?.setAttributeNS(W, "w:val", "Mono");
+      }
+    });
+    const { files, doc } = write(
+      '<p><a href="https://x.org/">x</a></p><pre>c</pre>',
+      new Map(),
+      template,
+    );
+    const styles = all(part(files, "word/styles.xml"), "style");
+    const idOf = (name: string) =>
+      styles.find((s) => val(kid(s, "name"))?.toLowerCase() === name)?.getAttributeNS(W, "styleId");
+    const ids = styles.map((s) => s.getAttributeNS(W, "styleId"));
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(idOf("hyperlink")).toBe("Hyperlink1");
+    expect(idOf("code")).toBe("Code1");
+    const link = all(doc, "hyperlink")[0];
+    expect(val(kid(kid(kid(link, "r"), "rPr"), "rStyle"))).toBe("Hyperlink1");
+    expect(pStyle(paras(doc)[1])).toBe("Code1");
+  });
+
+  test("a prefix the template binds to another namespace is left alone", () => {
+    const DML = "http://schemas.openxmlformats.org/drawingml/2006/main";
+    const template = editedTemplate((f) => {
+      const xml = strFromU8(f["word/document.xml"]);
+      f["word/document.xml"] = strToU8(xml.replace(`xmlns:a="${DML}"`, 'xmlns:a="urn:other"'));
+    });
+    const { doc } = write(
+      '<p><img src="img/1.png" width="2"></p>',
+      new Map([["img/1.png", PNG]]),
+      template,
+    );
+    expect(doc.documentElement.lookupNamespaceURI("a")).toBe("urn:other");
+    expect(all(doc, "blip", DML).length).toBe(1);
+    expect(all(doc, "graphic", DML).length).toBe(1);
+  });
+
+  test("part names are matched case-insensitively and percent-decoded", () => {
+    const template = editedTemplate((f) => {
+      f["word/My Header.xml"] = strToU8(HEADER);
+      f["word/_rels/document.xml.rels"] = strToU8(
+        strFromU8(f["word/_rels/document.xml.rels"]).replace(
+          "</Relationships>",
+          '<Relationship Id="rIdHead" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="MY%20HEADER.XML"/></Relationships>',
+        ),
+      );
+      f["[Content_Types].xml"] = strToU8(
+        strFromU8(f["[Content_Types].xml"]).replace(
+          "</Types>",
+          '<Override PartName="/word/my%20header.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/></Types>',
+        ),
+      );
+    });
+    const { files } = write("<p>new</p>", new Map(), template);
+    expect(strFromU8(files["word/My Header.xml"])).toBe(HEADER);
+    const overrides = all(part(files, "[Content_Types].xml"), "Override", CT).map((o) =>
+      o.getAttribute("PartName"),
+    );
+    expect(overrides).toContain("/word/my%20header.xml");
+  });
+});

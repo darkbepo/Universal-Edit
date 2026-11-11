@@ -109,8 +109,14 @@ class Xml {
     let p = this.prefixes.get(key);
     if (p === undefined) {
       const root = this.doc.documentElement;
-      p = root.lookupPrefix(NS[key]) ?? key;
-      if (root.lookupNamespaceURI(p) !== NS[key]) root.setAttributeNS(XMLNS, `xmlns:${p}`, NS[key]);
+      const bound = root.lookupPrefix(NS[key]);
+      if (bound) p = bound;
+      else {
+        // a fresh prefix: the template may bind ours to something else
+        p = key;
+        for (let n = 1; root.lookupNamespaceURI(p) !== null; n++) p = `${key}${n}`;
+        root.setAttributeNS(XMLNS, `xmlns:${p}`, NS[key]);
+      }
       this.prefixes.set(key, p);
     }
     return p;
@@ -163,6 +169,25 @@ function resolve(from: string, target: string): string {
   return parts.join("/");
 }
 
+/** OPC part names are case-insensitive and may be percent-encoded in rels / Overrides. */
+function partKey(name: string): string {
+  let out = name;
+  try {
+    out = decodeURIComponent(name);
+  } catch {
+    /* keep it as it is */
+  }
+  return out.toLowerCase();
+}
+
+/** The zip entry `name` refers to (`name` itself when there is none). */
+function actualName(files: Files, name: string): string {
+  if (files.has(name)) return name;
+  const key = partKey(name);
+  for (const have of files.keys()) if (partKey(have) === key) return have;
+  return name;
+}
+
 /** A part's relationships (`_rels/*.rels`), with python-docx's rId numbering. */
 class Rels {
   readonly xml: Xml;
@@ -212,7 +237,7 @@ function reachable(files: Files): Set<string> {
     seen.add(relsName);
     for (const rel of new Rels(strFromU8(data)).all()) {
       if (rel.getAttribute("TargetMode") === "External") continue;
-      const name = resolve(from || "/", rel.getAttribute("Target") ?? "");
+      const name = actualName(files, resolve(from || "/", rel.getAttribute("Target") ?? ""));
       if (files.has(name) && !seen.has(name)) {
         seen.add(name);
         stack.push(name);
@@ -266,7 +291,7 @@ class Writer {
   }
 
   private text(name: string): string | null {
-    const data = this.files.get(name);
+    const data = this.files.get(actualName(this.files, name));
     return data ? strFromU8(data) : null;
   }
 
@@ -289,7 +314,7 @@ class Writer {
   private open(): void {
     this.types = parseXml(this.text("[Content_Types].xml") ?? "");
     const root = new Rels(this.text("_rels/.rels"));
-    this.docName = resolve("/", root.target(RT.officeDocument) ?? "");
+    this.docName = actualName(this.files, resolve("/", root.target(RT.officeDocument) ?? ""));
     this.doc = new Xml(parseXml(this.text(this.docName) ?? ""));
     const body = this.doc.doc.getElementsByTagNameNS(NS.w, "body")[0];
     if (!body) throw new Error("No document body");
@@ -307,24 +332,37 @@ class Writer {
     for (const name of Array.from(this.files.keys())) {
       if (name !== "[Content_Types].xml" && !keep.has(name)) this.files.delete(name);
     }
+    const present = new Set(Array.from(this.files.keys(), partKey));
     for (const o of Array.from(this.types.documentElement.children)) {
       const part = o.localName === "Override" ? (o.getAttribute("PartName") ?? "").slice(1) : null;
-      if (part !== null && !this.files.has(part)) o.remove();
+      if (part !== null && !present.has(partKey(part))) o.remove();
     }
     this.openStyles();
     this.openNumbering();
   }
 
-  private openStyles(): void {
-    const target = this.rels.target(RT.styles);
-    this.stylesName = target ? resolve(this.docName, target) : "";
-    const text = target ? this.text(this.stylesName) : null;
+  /**
+   * The document's part of relationship `type`: its name and text. A missing part is created
+   * from `fallback` (where the relationship points, or a new relationship when there is none).
+   */
+  private relatedPart(type: string, base: string, contentType: string, fallback: string) {
+    const target = this.rels.target(type);
+    const name = target
+      ? actualName(this.files, resolve(this.docName, target))
+      : this.freeName(`${dirOf(this.docName)}${base}`, "xml");
+    let text = this.text(name);
     if (text === null) {
-      this.stylesName = this.freeName(`${dirOf(this.docName)}styles`, "xml");
-      this.rels.add(RT.styles, this.stylesName.slice(dirOf(this.docName).length));
-      this.addPart(this.stylesName, CT.styles, STYLES);
+      if (!target) this.rels.add(type, name.slice(dirOf(this.docName).length));
+      this.addPart(name, contentType, fallback);
+      text = fallback;
     }
-    this.styles = parseXml(text ?? STYLES);
+    return { name, text };
+  }
+
+  private openStyles(): void {
+    const { name, text } = this.relatedPart(RT.styles, "styles", CT.styles, STYLES);
+    this.stylesName = name;
+    this.styles = parseXml(text);
     this.ensureStyles();
     for (const s of wKids(this.styles.documentElement, "style")) {
       const name = (wAttr(wKids(s, "name")[0], "val") ?? "").toLowerCase();
@@ -351,9 +389,17 @@ class Writer {
       root.appendChild(copy); // the writer numbers lists itself
       this.stylesChanged = true;
     };
-    const parsed = (xml: string) =>
-      parseXml(`<w:styles xmlns:w="${NS.w}">${xml}</w:styles>`).documentElement
+    /** A new style, with a style id no other style uses ("Code", else "Code1", …). */
+    const parsed = (xml: string) => {
+      const style = parseXml(`<w:styles xmlns:w="${NS.w}">${xml}</w:styles>`).documentElement
         .firstElementChild as Element;
+      const taken = new Set(wKids(root, "style").map((s) => wAttr(s, "styleId")));
+      const base = wAttr(style, "styleId") ?? "";
+      let id = base;
+      for (let n = 1; taken.has(id); n++) id = `${base}${n}`;
+      style.setAttributeNS(NS.w, "w:styleId", id);
+      return style;
+    };
     if (missing.size) {
       const ids = new Set(wKids(root, "style").map((s) => wAttr(s, "styleId")));
       for (const s of wKids(parseXml(STYLES).documentElement, "style")) {
@@ -369,15 +415,9 @@ class Writer {
   }
 
   private openNumbering(): void {
-    const target = this.rels.target(RT.numbering);
-    this.numberingName = target ? resolve(this.docName, target) : "";
-    let text = target ? this.text(this.numberingName) : null;
-    if (text === null) {
-      this.numberingName = this.freeName(`${dirOf(this.docName)}numbering`, "xml");
-      text = `${XML_HEAD}<w:numbering xmlns:w="${NS.w}"/>`;
-      this.rels.add(RT.numbering, this.numberingName.slice(dirOf(this.docName).length));
-      this.addPart(this.numberingName, CT.numbering, text);
-    }
+    const empty = `${XML_HEAD}<w:numbering xmlns:w="${NS.w}"/>`;
+    const { name, text } = this.relatedPart(RT.numbering, "numbering", CT.numbering, empty);
+    this.numberingName = name;
     this.numbering = new Xml(parseXml(text));
     const root = this.numbering.doc.documentElement;
     for (const a of wKids(root, "abstractNum")) {
@@ -431,7 +471,8 @@ class Writer {
         ),
       );
     }
-    root.insertBefore(abstract, this.firstNum);
+    const cleanup = wKids(root, "numIdMacAtCleanup")[0] ?? null;
+    root.insertBefore(abstract, this.firstNum ?? cleanup); // schema: abstractNum*, num*, cleanup
     while (this.numIds.has(this.nextNum)) this.nextNum++;
     const numId = this.nextNum;
     this.numIds.add(numId);
@@ -445,7 +486,6 @@ class Writer {
         x.el("w:lvlOverride", { "w:ilvl": "0" }, x.el("w:startOverride", { "w:val": "1" })),
       );
     }
-    const cleanup = wKids(root, "numIdMacAtCleanup")[0] ?? null;
     root.insertBefore(num, cleanup);
     this.firstNum ??= num;
     this.numberingChanged = true;
