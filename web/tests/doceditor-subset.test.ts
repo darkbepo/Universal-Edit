@@ -154,3 +154,115 @@ test("htmlTitle", () => {
   expect(htmlTitle("<html><head><title> a \n b </title></head><body>x</body></html>")).toBe("a b");
   expect(htmlTitle("<p>x</p>")).toBe("");
 });
+
+// ----- robustness: hostile or huge input must not freeze the tab -----------------------------
+
+const timed = (input: string, opts?: { resolveImage?: (s: string) => Uint8Array | null }) => {
+  const t = performance.now();
+  const got = normaliseHtmlReport(input, opts);
+  return { got, ms: performance.now() - t };
+};
+
+test.each([
+  ["1 MB space run", () => "<p>a" + " ".repeat(1_000_000) + "b</p>"],
+  ["1 MB tab run", () => "<p>a" + "\t".repeat(1_000_000) + "b</p>"],
+  ["1 MB leading whitespace", () => " ".repeat(1_000_000) + "x"],
+  ["50 000 unclosed comments", () => "<!doctype html>" + "<!--".repeat(50_000)],
+  ["50 000 unterminated <pre", () => "<pre".repeat(50_000)],
+  ["50 000 < inside a pre", () => "<pre>" + "<a ".repeat(50_000) + "\r\n"],
+  [
+    "100 000 quotes in a font name",
+    () => `<span style="font-family:${"'".repeat(100_000)}x">y</span>`,
+  ],
+])("%s normalises quickly", { timeout: 60000 }, (_name, make) => {
+  const { ms } = timed(make());
+  expect(ms).toBeLessThan(2000);
+});
+
+test("200 000 line breaks in a paragraph or a list item", { timeout: 120000 }, () => {
+  const lines = "line<br>".repeat(200_000);
+  const p = normaliseHtml(`<p>${lines}</p>`).html;
+  expect(p.startsWith("<p>line<br>line")).toBe(true);
+  const li = normaliseHtml(`<ul><li>a<ul><li>b</li></ul><b>${lines}</b></li></ul>`).html;
+  expect(li).toContain("<li><b>line<br>line");
+  expect(textLength(`<p>${lines}</p>`)).toBe(800_000);
+});
+
+// ----- security: nothing executable survives --------------------------------------------------
+
+const NBSP = String.fromCharCode(0xa0);
+const NUL = String.fromCharCode(0);
+const HOSTILE = [
+  '<a href="javascript:alert(1)">x</a>',
+  '<a href="JaVaScRiPt:alert(1)">x</a>',
+  '<a href="java\tscript:alert(1)">x</a>',
+  '<a href="java&#x09;script:alert(1)">x</a>',
+  `<a href="${NBSP}javascript:alert(1)">x</a>`,
+  `<a href="java${NUL}script:alert(1)">x</a>`,
+  '<a href="&#106;avascript:alert(1)">x</a>',
+  '<a href=" javascript:alert(1)">x</a>',
+  '<a href="vbscript:msgbox(1)">x</a>',
+  '<a href="data:text/html,<script>alert(1)</script>">x</a>',
+  '<p onclick="alert(1)" onmouseover="x()">a</p><img src="img/1.png" onerror="alert(1)">',
+  '<span style="color:red" onfocus="x()">a</span>',
+  "<svg><script>alert(1)</script></svg><p>a</p>",
+  "<math><mtext><script>alert(1)</script></mtext></math>",
+  '<math><style><img src=x onerror="alert(1)"></style></math>',
+  '<template><img src=x onerror="alert(1)"></template>',
+  '<iframe srcdoc="<script>alert(1)</script>"></iframe>',
+  '<xmp><img src=x onerror="alert(1)"></xmp>',
+  '<noembed><img src=x onerror="alert(1)"></noembed>',
+  "<script>alert(1)</script><style>*{}</style>",
+  '<p style="background-image:url(javascript:alert(1))">a</p>',
+  '<span style="background-image:url(http://x/a.png);color:red">a</span>',
+  '<span style="font-family:x;background:url(http://x)">a</span>',
+  "<a href='x\" onclick=\"alert(1)'>a</a>",
+  '<a href="http://x/?a=&quot; onclick=&quot;alert(1)">a</a>',
+  "<img src='img/1.png\" onerror=\"alert(1)'>",
+  "<span style='font-family:a\" onclick=\"x'>a</span>",
+];
+
+function assertHarmless(html: string): void {
+  for (const bad of ["<script", "<iframe", "<svg", "<math", "<style", "<template"]) {
+    expect(html.toLowerCase()).not.toContain(bad);
+  }
+  const doc = new DOMParser().parseFromString(`<body>${html}</body>`, "text/html");
+  for (const el of Array.from(doc.body.querySelectorAll("*"))) {
+    for (const name of el.getAttributeNames()) {
+      expect(name.startsWith("on")).toBe(false);
+      expect(["href", "src", "width", "height", "style", "colspan", "rowspan"]).toContain(name);
+    }
+    const href = el.getAttribute("href");
+    if (href !== null) {
+      const proto = new URL(href, "https://base.invalid/").protocol;
+      expect(["http:", "https:", "mailto:", "tel:"]).toContain(proto);
+    }
+    const style = el.getAttribute("style") ?? "";
+    for (const decl of style.split(";")) {
+      if (!decl.startsWith("font-family:")) expect(decl).not.toContain("url(");
+    }
+  }
+}
+
+test.each(HOSTILE)("hostile input stays harmless: %s", (input) => {
+  const out = normaliseHtml(input).html;
+  assertHarmless(out);
+  expect(normaliseHtml(out).html).toBe(out);
+});
+
+// ----- small rulings ----------------------------------------------------------------------
+
+test("an unclosed <plaintext> doesn't show the wrapper", () => {
+  const out = normaliseHtml("<plaintext><b>x").html;
+  expect(out).toContain("&lt;b&gt;x");
+  expect(out).not.toContain("body");
+  expect(out).not.toContain("html");
+});
+
+test("a huge indent is capped at 20 levels", () => {
+  const huge = "1" + "0".repeat(30);
+  expect(normaliseHtml(`<p style="margin-left:${huge}pt">x</p>`).html).toBe(
+    '<p style="margin-left:720pt">x</p>',
+  );
+  expect(normaliseHtml('<p style="margin-left:1e30pt">x</p>').html).toBe("<p>x</p>");
+});

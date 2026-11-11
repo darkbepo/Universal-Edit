@@ -73,14 +73,74 @@ const SAFE_SCHEMES = new Set(["", "http", "https", "mailto", "tel"]);
 const PY_WS =
   "\\t\\n\\x0b\\x0c\\r\\x1c-\\x1f \\x85\\xa0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000";
 const S = `[${PY_WS}]`;
-const PY_STRIP = new RegExp(`^${S}+|${S}+$`, "g");
-const pyStrip = (s: string) => s.replace(PY_STRIP, "");
+const PY_SPACE = new RegExp(S);
+
+// Index loops, not regexes: `\s+$` is quadratic on long runs of white space.
+function trimWith(s: string, isSpace: (c: string) => boolean): string {
+  let start = 0;
+  let end = s.length;
+  while (start < end && isSpace(s[start])) start++;
+  while (end > start && isSpace(s[end - 1])) end--;
+  return start === 0 && end === s.length ? s : s.slice(start, end);
+}
+const isPySpace = (c: string) => PY_SPACE.test(c);
+/** Python's str.strip(). */
+const pyStrip = (s: string) => trimWith(s, isPySpace);
+const isHtmlSpace = (c: string) =>
+  c === " " || c === "\t" || c === "\r" || c === "\n" || c === "\f";
+/** Python's `text.strip(" \t\r\n\f")` is not empty. */
+const hasContent = (s: string) => {
+  for (let i = 0; i < s.length; i++) if (!isHtmlSpace(s[i])) return true;
+  return false;
+};
+
+/** `WS.sub(" ", text)` in linear time: runs of spaces, and line breaks with the indentation
+ * around them, become one space; other tabs stay. */
+function collapseWs(s: string): string {
+  const parts: string[] = [];
+  const n = s.length;
+  let i = 0;
+  let from = 0; // start of the text not copied yet
+  while (i < n) {
+    const c = s[i];
+    if (c !== " " && c !== "\t" && c !== "\r" && c !== "\n" && c !== "\f") {
+      i++;
+      continue;
+    }
+    let j = i;
+    while (j < n && (s[j] === " " || s[j] === "\t")) j++;
+    if (j < n && (s[j] === "\r" || s[j] === "\n" || s[j] === "\f")) {
+      while (j < n && isHtmlSpace(s[j])) j++;
+      parts.push(s.slice(from, i), " ");
+      i = from = j;
+      continue;
+    }
+    // Spaces and tabs without a line break after them (true at every position of the run):
+    // only runs of 2+ spaces collapse.
+    for (let k = i; k < j;) {
+      if (s[k] !== " ") {
+        k++;
+        continue;
+      }
+      let e = k;
+      while (e < j && s[e] === " ") e++;
+      if (e - k >= 2) {
+        parts.push(s.slice(from, k), " ");
+        from = e;
+      }
+      k = e;
+    }
+    i = j === i ? i + 1 : j;
+  }
+  parts.push(s.slice(from));
+  return parts.join("");
+}
 
 const DATA_URI = new RegExp(`^data:image/(png|jpe?g|gif|bmp|webp)(?:;[^,;]*)*;base64,(.*)$`, "is");
 const CANON_IMG = /^img\/\d+\.(?:png|jpg|gif|bmp|webp)$/;
-// Collapsed to one space: runs of spaces, and line breaks with the indentation around them.
-const WS = /[ \t]*[\r\n\f][ \t\r\n\f]*| {2,}/g;
 const XML_DECL = new RegExp(`^${S}*<\\?xml[^>]*\\?>`, "i");
+// Deepest paragraph indent, 720 pt (huge values used to print as "1e+27pt").
+const MAX_INDENT = 20;
 const UNREADABLE = "This file couldn't be read as HTML.";
 // Python's recursion limit while normalising (the desktop raises past it); JS stack overflows
 // are reported the same way.
@@ -273,7 +333,7 @@ function points(value: string): number | null {
 
 function fontFamily(value: string): string | null {
   let first = pyStrip(value.split(",")[0]);
-  first = pyStrip(first.replace(/^['"]+|['"]+$/g, ""));
+  first = pyStrip(trimWith(first, (c) => c === "'" || c === '"'));
   first = first.replace(/[<>"';{}]/g, "");
   return first || null;
 }
@@ -353,7 +413,7 @@ function finalise(tokens: Token[], pre = false, dropTrailingBr = false): string 
     for (const [kind, raw] of tokens) {
       let text = raw;
       if (kind === "T") {
-        text = text.replace(WS, " ");
+        text = collapseWs(text);
         if (prevSpace && text.startsWith(" ")) text = text.slice(1);
         if (!text) continue;
         prevSpace = text.endsWith(" ");
@@ -372,7 +432,9 @@ function finalise(tokens: Token[], pre = false, dropTrailingBr = false): string 
         tokens.splice(i - 1, 1);
         i -= 1;
       } else if (kind === "T" && text.endsWith(" ")) {
-        tokens[i - 1] = [kind, text.replace(/ +$/, "")];
+        let end = text.length;
+        while (end > 0 && text[end - 1] === " ") end--;
+        tokens[i - 1] = [kind, text.slice(0, end)];
         break;
       } else break;
     }
@@ -473,6 +535,11 @@ function b64decode(s: string): Uint8Array | null {
 type Group = [Token[], string[]];
 
 class TooDeep extends Error {}
+
+/** The engine's own "too much recursion" error (V8, SpiderMonkey, JavaScriptCore). */
+function isStackOverflow(err: unknown): boolean {
+  return err instanceof Error && /call stack|too much recursion/i.test(err.message);
+}
 
 class Normaliser {
   images: DocImages = new Map();
@@ -593,11 +660,7 @@ class Normaliser {
     this.enter();
     const run: Token[] = [];
     const flush = () => {
-      if (
-        run.some(
-          ([k, t]) => k === "V" || (k === "T" && t.replace(/^[ \t\r\n\f]+|[ \t\r\n\f]+$/g, "")),
-        )
-      ) {
+      if (run.some(([k, t]) => k === "V" || (k === "T" && hasContent(t)))) {
         out.push(`<p>${finalise(run)}</p>`);
       }
       run.length = 0;
@@ -661,7 +724,7 @@ class Normaliser {
         // a list nested directly in a list belongs to the item above
         const last = items[items.length - 1];
         items[items.length - 1] = last.slice(0, -"</li>".length) + this.list(child, ctag) + "</li>";
-      } else items.push(...this.li(child));
+      } else for (const item of this.li(child)) items.push(item);
     }
     this.depth--;
     return `<${tag}>${items.join("")}</${tag}>`;
@@ -762,11 +825,11 @@ function separate(toks: Token[]): void {
 /** Add inline tokens to the item being built (a new item after a nested list). */
 function add(groups: Group[], tokens: Token[]): void {
   if (groups[groups.length - 1][1].length) {
-    if (tokens.every(([k, t]) => k === "T" && !t.replace(/^[ \t\r\n\f]+|[ \t\r\n\f]+$/g, "")))
-      return;
+    if (tokens.every(([k, t]) => k === "T" && !hasContent(t))) return;
     groups.push([[], []]);
   }
-  groups[groups.length - 1][0].push(...tokens);
+  const toks = groups[groups.length - 1][0];
+  for (const t of tokens) toks.push(t); // no push(...): it overflows on huge arrays
 }
 
 function spanStyle(node: Element, font: boolean): string {
@@ -792,8 +855,8 @@ function blockStyle(node: Element): string {
   if (["left", "center", "right", "justify"].includes(align)) parts.push(`text-align:${align}`);
   if (css.has("margin-left")) {
     const pts = points(css.get("margin-left") as string);
-    if (pts !== null && pyRound(pts / 36) >= 1)
-      parts.push(`margin-left:${36 * pyRound(pts / 36)}pt`);
+    const level = pts === null ? 0 : pyRound(pts / 36);
+    if (level >= 1) parts.push(`margin-left:${36 * Math.min(level, MAX_INDENT)}pt`);
   }
   const brk = (css.get("page-break-before") || css.get("break-before") || "").toLowerCase();
   if (brk === "always" || brk === "page") parts.push("page-break-before:always");
@@ -807,13 +870,66 @@ function libxmlLike(html: string): string {
   // libxml2 turns NUL into a space and drops the other characters XML 1.0 forbids.
   html = html.replace(/\x00/g, " ").replace(XML_FORBIDDEN, "");
   // Inside <pre>: keep \r (as CR, see above) and the first newline, which HTML5 drops.
-  return html.replace(
-    /(<pre\b[^>]*>)([\s\S]*?)(?=<\/pre\s*>|$)/gi,
-    (_m, open: string, body: string) => {
-      const kept = body.replace(/(<[^>]*>)|\r/g, (_c, tag: string | undefined) => tag ?? CR);
-      return open + (kept.startsWith("\n") ? "\n" : "") + kept;
-    },
-  );
+  // Scanned with indexOf, not regexes: many unterminated "<pre" or "<" must stay linear.
+  const openTag = /<pre/gi;
+  const closeTag = /<\/pre\s*>/gi;
+  const find = (re: RegExp, from: number) => {
+    re.lastIndex = from;
+    return re.exec(html)?.index ?? -1;
+  };
+  const parts: string[] = [];
+  let from = 0;
+  let at = find(openTag, 0);
+  while (at >= 0) {
+    if (/\w/.test(html[at + 4] ?? "")) {
+      at = find(openTag, at + 4); // <prefix>, not <pre>
+      continue;
+    }
+    const gt = html.indexOf(">", at + 4);
+    if (gt < 0) break; // no tag can end after this
+    let end = find(closeTag, gt + 1);
+    if (end < 0) end = html.length;
+    const kept = keepCarriageReturns(html.slice(gt + 1, end));
+    parts.push(html.slice(from, gt + 1), kept.startsWith("\n") ? "\n" : "", kept);
+    from = end;
+    at = find(openTag, end);
+  }
+  parts.push(html.slice(from));
+  return parts.join("");
+}
+
+/** \r becomes CR in text, not inside tags. */
+function keepCarriageReturns(body: string): string {
+  if (!body.includes("\r")) return body;
+  let out = "";
+  let i = 0;
+  while (i < body.length) {
+    const lt = body.indexOf("<", i);
+    const gt = lt < 0 ? -1 : body.indexOf(">", lt + 1);
+    const textEnd = gt < 0 ? body.length : lt;
+    out += body.slice(i, textEnd).replace(/\r/g, CR);
+    if (gt < 0) break;
+    out += body.slice(lt, gt + 1);
+    i = gt + 1;
+  }
+  return out;
+}
+
+/** A whole page with nothing but a doctype and comments in it (linear: no regex backtracking). */
+function onlyDoctypeAndComments(html: string): boolean {
+  let i = 0;
+  for (;;) {
+    while (i < html.length && /\s/.test(html[i])) i++;
+    if (i >= html.length) return true;
+    let end = -1;
+    if (html.slice(i, i + 9).toLowerCase() === "<!doctype") end = html.indexOf(">", i + 9) + 1;
+    else if (html.startsWith("<!--", i)) {
+      end = html.indexOf("-->", i + 4);
+      if (end >= 0) end += 3;
+    }
+    if (end <= 0) return false;
+    i = end;
+  }
 }
 
 function parseDocument(html: string): Document {
@@ -830,11 +946,12 @@ function parse(html: string): HTMLElement | null {
   // whole document (a lone doctype has nothing in it); anything else is put inside a <body>, so
   // a leading <noscript> or <title> stays in the content instead of moving into <head>.
   if (FULL_HTML.test(html)) {
-    if (!/[^\s]/.test(html.replace(/<!doctype[^>]*>|<!--[\s\S]*?-->/gi, ""))) {
+    if (onlyDoctypeAndComments(html)) {
       throw new Error(UNREADABLE);
     }
   } else {
-    html = `<html><body>${html}</body></html>`;
+    // No closing tags: after an unclosed <plaintext> or <xmp> they would show up as text.
+    html = `<html><body>${html}`;
   }
   const body = parseDocument(html).body;
   if (!body || body.localName !== "body") throw new Error(UNREADABLE);
@@ -920,7 +1037,7 @@ export function normaliseHtmlReport(
   try {
     norm.blocks(root, out);
   } catch (err) {
-    if (err instanceof TooDeep || err instanceof RangeError) throw new Error(UNREADABLE);
+    if (err instanceof TooDeep || isStackOverflow(err)) throw new Error(UNREADABLE);
     throw err;
   }
   return { html: out.join(""), images: norm.images, warnings };
@@ -944,9 +1061,15 @@ export function textLength(html: string): number {
   while (stack.length) {
     const node = stack.pop() as Node;
     if (node.nodeType === 3) {
-      n += [...restore((node as Text).data)].length;
+      // Code points, like Python's len (a U+FDD0 standing for \r is one character too).
+      const text = (node as Text).data;
+      for (let i = 0; i < text.length; i++) {
+        const c = text.charCodeAt(i);
+        const low = c >= 0xdc00 && c <= 0xdfff;
+        if (!low || i === 0 || (text.charCodeAt(i - 1) & 0xfc00) !== 0xd800) n++;
+      }
     } else if (node === root || (node.nodeType === 1 && !DROP.has(tagOf(node) as string))) {
-      stack.push(...Array.from(node.childNodes));
+      for (const child of Array.from(node.childNodes)) stack.push(child);
     }
   }
   return n;
