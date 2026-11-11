@@ -55,6 +55,10 @@ NORMALISE = [
     "<ul><li>a<ul><li>b</li></ul>c</li><li>d</li></ul>",
     "<ul><li>a<ul><li>b</li></ul>\n<ul><li>e</li></ul></li></ul>",
     "<ol><li>a<ol><li>b<ol><li>c</li></ol></li></ol></li></ol>",
+    # loose lists (markdown-it puts each item's text in a paragraph)
+    "<ul>\n<li>\n<p>a</p>\n</li>\n<li>\n<p>b</p>\n</li>\n</ul>",
+    "<ol>\n<li>\n<p>a</p>\n<p>para two</p>\n<ul>\n<li>x</li>\n</ul>\n</li>\n"
+    "<li>\n<p>b</p>\n</li>\n</ol>",
     # tables
     '<table style="border:none"><tr><td><p>x</p></td><td><p>y</p></td></tr></table>',
     '<table border="1"><tr><th>H</th><th>I</th></tr><tr><td>1</td><td></td></tr></table>',
@@ -84,6 +88,11 @@ MARKDOWN = [
     {"md": "Text with `code` and a footnote[^1].\n\n[^1]: note\n"},
     {"md": "#### Small\n\nline one  \nline two\n"},
     {"md": "- a\n  - b\n    - c\n\n1. x\n   - y\n"},
+    {"md": "- a\n\n- b\n"},
+    {"md": "1. a\n\n   para two\n\n2. b\n"},
+    {"md": "- [ ] todo\n- [x] done\n"},
+    {"md": "<!-- note -->\n\n| a | b |\n|:--|--:|\n| 1 | 2 |\n"},
+    {"md": "##\n\ntext\n"},
     {"md": "***bi*** and **_x_** and [a b](<u v>)\n"},
     {"md": "Café — *Blåbær* 你好\n\n* star\n* list\n"},
 ]

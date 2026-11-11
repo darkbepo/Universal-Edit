@@ -723,7 +723,15 @@ class Normaliser {
     for (const child of Array.from(node.childNodes)) {
       if (child.nodeType === 3) {
         const text = restore((child as Text).data);
-        if (text) add(groups, [["T", text]]);
+        if (!text) continue;
+        if (!hasContent(text)) {
+          // White space beside a block (the newlines of a loose list) is dropped.
+          const toks = groups[groups.length - 1][0];
+          let next = child.nextSibling;
+          while (next && next.nodeType !== 1) next = next.nextSibling;
+          if (!toks.length || isBr(toks[toks.length - 1]) || (next && BLOCK.has(tagOf(next) as string))) continue;
+        }
+        add(groups, [["T", text]]);
         continue;
       }
       if (child.nodeType !== 1) continue;

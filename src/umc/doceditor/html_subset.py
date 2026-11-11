@@ -548,8 +548,7 @@ class _Normaliser:
 
     def _li_walk(self, node: etree._Element, groups: list[tuple[list[_Token], list[str]]]) -> None:
         """Flatten a list item: its paragraphs become lines, nested lists stay lists."""
-        if node.text:
-            self._add(groups, [("T", node.text)])
+        self._li_text(groups, node.text, node[0] if len(node) else None)
         for child in node:
             tag = _tag(child)
             if tag in _LISTS:
@@ -567,8 +566,23 @@ class _Normaliser:
                 self._inline(child, new)
                 if new:
                     self._add(groups, new)
-            if child.tail:
-                self._add(groups, [("T", child.tail)])
+            self._li_text(groups, child.tail, child.getnext())
+
+    def _li_text(
+        self,
+        groups: list[tuple[list[_Token], list[str]]],
+        text: str | None,
+        following: etree._Element | None,
+    ) -> None:
+        """Text inside an item. White space beside a block (the newlines of a loose list) is
+        dropped, so a paragraph never starts or doubles a line break."""
+        if not text:
+            return
+        if not text.strip(" \t\r\n\f"):
+            toks = groups[-1][0]
+            if not toks or toks[-1] == _BR or (following is not None and _tag(following) in _BLOCK):
+                return
+        self._add(groups, [("T", text)])
 
     def _table(self, node: etree._Element, out: list[str]) -> None:
         rows: list[etree._Element] = []

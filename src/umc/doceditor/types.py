@@ -30,7 +30,7 @@ W_PAGESTYLE = "page styles, classes and scripts"
 W_WEBPICS = "pictures from the web"
 W_RAWHTML = "embedded HTML the editor doesn't support"
 W_MDEXTRA = "footnotes and other Markdown extras"
-W_MDFORMAT = "inline code, small headings and picture descriptions"
+W_MDFORMAT = "inline code, small headings, picture descriptions, comments and table alignment"
 
 
 @dataclass

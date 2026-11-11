@@ -23,7 +23,7 @@ export const W_PAGESTYLE = "page styles, classes and scripts";
 export const W_WEBPICS = "pictures from the web";
 export const W_RAWHTML = "embedded HTML the editor doesn't support";
 export const W_MDEXTRA = "footnotes and other Markdown extras";
-export const W_MDFORMAT = "inline code, small headings and picture descriptions";
+export const W_MDFORMAT = "inline code, small headings, picture descriptions, comments and table alignment";
 
 export const WARNINGS: Record<string, string> = {
   W_HEADERS,

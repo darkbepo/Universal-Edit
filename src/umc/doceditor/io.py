@@ -36,6 +36,10 @@ _FOOTNOTE = re.compile(r"(?<!\\)\[\^")
 # What the editor can't show and Markdown saving drops (W_MDFORMAT).
 _SMALL_HEADING = re.compile(r"^ {0,3}#{4,6}(?:[ \t]|$)", re.M)
 _ALT_TEXT = re.compile(r"(?<!\\)!\[[^\]\n]+\]\(")
+# An HTML comment (the writer's own "<!-- -->" list separator is not the author's), and a table
+# delimiter row with alignment colons.
+_COMMENT = re.compile(r"<!--(?!\s*-->).*?-->", re.S)
+_ALIGN_ROW = re.compile(r"^(?=[ \t|:-]*\|)(?=[ \t|-]*:)[ \t|:-]*-[ \t|:-]*\r?$", re.M)
 _FRONT_KEY = re.compile(r"^[A-Za-z0-9_-]+\s*:")
 # A line that starts a block of raw HTML (CommonMark's block-level tags; not comments).
 _BLOCK_HTML = re.compile(
@@ -79,9 +83,11 @@ def _has_markdown_extras(text: str) -> bool:
 
 
 def _has_dropped_formats(text: str) -> bool:
-    """Inline code spans, level 4-6 headings or picture descriptions, outside fenced code."""
+    """Inline code, level 4-6 headings, picture descriptions, comments or table alignment,
+    outside fenced code."""
     text = _FENCED.sub("", text)
-    return any(r.search(text) for r in (_CODE_SPAN, _SMALL_HEADING, _ALT_TEXT))
+    found = (_CODE_SPAN, _SMALL_HEADING, _ALT_TEXT, _COMMENT, _ALIGN_ROW)
+    return any(r.search(text) for r in found)
 
 
 def _txt_to_html(text: str) -> str:

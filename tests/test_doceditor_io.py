@@ -222,3 +222,72 @@ def test_two_space_nested_list(tmp_path):
 def test_md_to_html_is_the_shared_configuration():
     assert io_mod.md_to_html("~~x~~\n").strip() == "<p><s>x</s></p>"
     assert "<table>" in io_mod.md_to_html("| a |\n|---|\n| 1 |\n")
+
+
+def _three_cycles(tmp_path, text):
+    from tests.test_doceditor_fixes import cycle
+
+    p = tmp_path / "a.md"
+    p.write_text(text, encoding="utf-8")
+    docs = cycle(p, "md")
+    assert all(d.html == docs[0].html for d in docs)
+    return docs[0], p.read_text(encoding="utf-8")
+
+
+def test_loose_list_is_plain_items(tmp_path):
+    doc, md = _three_cycles(tmp_path, "- a\n\n- b\n")
+    assert doc.html == "<ul><li>a</li><li>b</li></ul>"
+    assert md == "- a\n- b\n"
+
+
+def test_loose_list_second_paragraph_keeps_two_lines(tmp_path):
+    doc, md = _three_cycles(tmp_path, "1. a\n\n   para two\n\n2. b\n")
+    assert doc.html == "<ol><li>a<br>para two</li><li>b</li></ol>"
+    assert md == "1. a<br>para two\n1. b\n"
+
+
+def test_task_list_stays_a_task_list(tmp_path):
+    doc, md = _three_cycles(tmp_path, "- [ ] todo\n- [x] done\n- [X] big\n")
+    assert md == "- [ ] todo\n- [x] done\n- [X] big\n"
+
+
+def test_comments_and_table_alignment_warn(tmp_path):
+    from umc.doceditor.types import W_MDFORMAT
+
+    for text in (
+        "<!-- note -->\n\ntext\n",
+        "| a |\n|:--|\n| 1 |\n",
+        "| a | b |\n|--:|:-:|\n| 1 | 2 |\n",
+    ):
+        p = tmp_path / "a.md"
+        p.write_text(text, encoding="utf-8")
+        assert W_MDFORMAT in open_document(p).warnings, text
+    p.write_text("| a |\n|---|\n| 1 |\n\n- x\n", encoding="utf-8")
+    assert W_MDFORMAT not in open_document(p).warnings
+
+
+def test_writers_own_list_separator_does_not_warn(tmp_path):
+    from umc.doceditor.save import save_document
+    from umc.doceditor.types import W_MDFORMAT, SaveContent
+
+    p = tmp_path / "a.md"
+    save_document(SaveContent("<ul><li>a</li></ul><ul><li>b</li></ul>", {}), p, "md")
+    assert "<!-- -->" in p.read_text("utf-8")
+    assert W_MDFORMAT not in open_document(p).warnings
+
+
+def test_empty_heading_stays_stable(tmp_path):
+    doc, md = _three_cycles(tmp_path, "##\n\ntext\n")
+    assert md.startswith("##\n")
+
+
+def test_link_space_is_written_as_percent_20():
+    from umc.doceditor.md_writer import to_markdown
+
+    assert to_markdown('<p><a href="https://x.org/a b">l</a></p>') == "[l](https://x.org/a%20b)\n"
+
+
+def test_italic_alone_in_bold_is_written_with_underscores():
+    from umc.doceditor.md_writer import to_markdown
+
+    assert to_markdown("<p><b><i>x</i></b> <i><b>y</b></i></p>") == "**_x_** ***y***\n"

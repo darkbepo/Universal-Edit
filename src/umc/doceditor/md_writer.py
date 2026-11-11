@@ -22,6 +22,7 @@ _ALWAYS = {"\\": "\\\\", "`": "\\`", "*": "\\*", "_": "\\_", "[": "\\[", "]": "\
 _ENTITIES = {"&": "&amp;", "<": "&lt;", ">": "&gt;"}
 # At the start of a line these would start a heading, quote, list, rule or code fence.
 _LINE_START = re.compile(r"^(?:[#>+=~-]|\d+[.)](?=\s|$))")
+_TASK = re.compile(r"(\[[ xX]\])(?:[ ]+|$)")
 _TRAILING_HASHES = re.compile(r"(#+)$")
 
 
@@ -174,7 +175,7 @@ class _Writer:
         if tag in ("h1", "h2", "h3"):
             text = _Inline().render(node)
             text = _TRAILING_HASHES.sub(lambda m: "\\#" * len(m.group(1)), text)
-            return f"{'#' * int(tag[1])} {text}" if text else None
+            return f"{'#' * int(tag[1])} {text}" if text else "#" * int(tag[1])  # stays a heading
         if tag == "p":
             return _Inline().render(node) or None
         if tag == "blockquote":
@@ -203,7 +204,13 @@ class _Writer:
                     nested.append(child)
                 else:
                     holder.append(child)  # moves it with its tail
-            text = _Inline().render(holder) or "<span></span>"  # an empty item stays an item
+            task = _TASK.match(holder.text or "")
+            if task:  # "[ ] todo" / "[x] done": a checkbox on GitHub, so not escaped
+                holder.text = holder.text[task.end() :]
+            text = _Inline().render(holder)
+            if task:
+                text = task.group(1) + (" " + text if text else "")
+            text = text or "<span></span>"  # an empty item stays an item
             lines.append(f"{pad}{marker}{text}")
             for sub in nested:
                 lines.extend(self._list(sub, _tag(sub), level + 1))
