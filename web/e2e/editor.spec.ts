@@ -1070,3 +1070,37 @@ test("windows: Enter in a field means OK; Enter on a focused Close button just c
   expect(smaller[0]).toBe(Math.round(w / 2));
   await expect(page.locator("dialog.canvas-size")).toHaveCount(0);
 });
+
+// ------------------------------------------------------------------ live text layers
+
+test("text: a layer from the first click, shown live while typing, movable by its grip, one undo step", async ({ page }) => {
+  await openEditor(page);
+  const layers = () => page.evaluate(() => (window.__editor as EditorHook).doc.layers.length);
+  const top = () => page.evaluate(() => {
+    const d = (window.__editor as EditorHook).doc as EditorHook["doc"] & { layers: { x: number; width: number; text?: { text: string } | null }[] };
+    const l = d.layers[d.layers.length - 1];
+    return { text: l.text?.text ?? null, x: l.x, width: l.width };
+  });
+  const n = await layers();
+  await page.keyboard.press("t");
+  const p = await at(page, 20, 20);
+  await page.mouse.click(p.x, p.y);
+  await expect.poll(layers).toBe(n + 1); // before anything is typed
+  await expect(page.locator(".layers li")).toHaveCount(n + 1);
+  await page.locator("textarea.text-box").pressSequentially("Hi");
+  await expect.poll(async () => (await top()).text).toBe("Hi"); // drawn while typing
+  expect((await top()).width).toBeGreaterThan(1);
+  const x0 = (await top()).x;
+  const g = (await page.locator(".text-grip").boundingBox())!;
+  await page.mouse.move(g.x + g.width / 2, g.y + g.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(g.x + g.width / 2 + 30, g.y + g.height / 2, { steps: 4 });
+  await page.mouse.up();
+  await expect.poll(async () => (await top()).x).toBeGreaterThan(x0); // moved while typing
+  await expect(page.locator("textarea.text-box")).toBeFocused(); // and still typing
+  await page.keyboard.press("Control+Enter");
+  await expect(page.locator("textarea.text-box")).toHaveCount(0);
+  expect((await top()).text).toBe("Hi");
+  await page.keyboard.press("Control+z"); // the whole typing is one step
+  await expect.poll(layers).toBe(n);
+});

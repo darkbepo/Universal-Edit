@@ -1311,3 +1311,52 @@ def test_a_window_minimised_before_its_preview_shows_stays_parked(page, qtbot):
     page.panels.minimise("quick_fix")  # …but the window is tucked away first
     qtbot.wait(150)
     assert page.canvas._preview_layer is None and page._preview_owner is not dlg
+
+
+# ------------------------------------------------------------------ live text layers
+
+
+def test_text_is_a_layer_while_it_is_typed_and_one_undo_step(page, qtbot):
+    page.select_tool("text")
+    c = page.canvas
+    n = len(page.doc.layers)
+    qtbot.mouseClick(c, Qt.MouseButton.LeftButton, pos=c.image_to_widget(5, 5))
+    assert len(page.doc.layers) == n + 1  # a layer at once, before anything is typed
+    assert page.layers.list.count() == n + 1
+    page.text_box.setPlainText("Hi")
+    live = page.doc.active_layer
+    assert live.text is not None and live.text.text == "Hi" and live.image.width > 1
+    x0 = live.x
+    page._text_grip.dragged.emit(20 * c.zoom, 0)  # drag the grip 20 picture pixels right
+    assert page.doc.active_layer.x == x0 + 20
+    page.commit_text()
+    assert len(page.doc.layers) == n + 1 and page.doc.active_layer.text.text == "Hi"
+    assert page.doc.active_layer.x == x0 + 20 and page.history.undo_label == "Text"
+    page.canvas.undo()
+    assert len(page.doc.layers) == n  # the whole typing is one step
+
+
+def test_an_empty_text_box_leaves_no_layer(page, qtbot):
+    page.select_tool("text")
+    c = page.canvas
+    n = len(page.doc.layers)
+    qtbot.mouseClick(c, Qt.MouseButton.LeftButton, pos=c.image_to_widget(5, 5))
+    page.commit_text()
+    assert len(page.doc.layers) == n and not page.history.can_undo
+
+
+def test_editing_text_updates_live_and_can_move_it(page, qtbot):
+    page.select_tool("text")
+    c = page.canvas
+    qtbot.mouseClick(c, Qt.MouseButton.LeftButton, pos=c.image_to_widget(5, 5))
+    page.text_box.setPlainText("Hello")
+    page.commit_text()
+    i = page.doc.active
+    page.edit_text(i)
+    page.text_box.setPlainText("Hello there")
+    assert page.doc.layers[i].text.text == "Hello there"  # shown before it's committed
+    page._text_grip.dragged.emit(0, 10 * c.zoom)
+    page.commit_text()
+    assert page.doc.layers[i].text.text == "Hello there" and page.history.undo_label == "Edit text"
+    page.canvas.undo()
+    assert page.doc.layers[i].text.text == "Hello"

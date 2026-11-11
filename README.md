@@ -86,6 +86,7 @@ The browser version's source is in [`web/`](web/README.md).
 | Image editor: move a selection by dragging inside it (or with the arrow keys) — the outline moves, the picture stays | ✅ | ✅ |
 | Image editor tool rail: every tool and action grouped (Select, Move & crop, Paint, Retouch, Shapes & text, Adjust, Filters, Image) with names shown, or narrowed to icons only (remembered) | ✅ | ✅ |
 | Image editor windows: every tool's options and every feature with settings (adjustments, filters, resize, stickers, feather, shortcuts) open in a window over the picture — drag it anywhere, minimise it back into its icon, keep several open; positions are remembered | ✅ | ✅ |
+| Image editor live text: clicking with the Text tool makes the text layer at once; it is drawn in its real style while you type, can be dragged by its handle while typing, and stays editable text | ✅ | ✅ |
 | Layered projects: save and open OpenRaster `.ora` (GIMP and Krita open it too); `.ora` → any image format | ✅ | ✅ |
 | Files never leave your computer | ✅ | ✅ |
 | No install needed | ❌ | ✅ |

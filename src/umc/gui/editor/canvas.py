@@ -57,6 +57,7 @@ class EditorCanvas(QWidget):
     text_requested = Signal(float, float)  # text tool clicked at image coordinates
     nudge_requested = Signal(int, int)  # arrow keys with the Move tool
     tool_notice = Signal(str)  # a tool needs something first (e.g. a clone source)
+    view_changed = Signal()  # zoomed or panned (things placed over the picture follow)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -243,6 +244,7 @@ class EditorCanvas(QWidget):
         else:
             oy = min(keep - v.y0 * z, max(self.height() - v.y1 * z - keep, oy))
         self._origin = QPointF(ox, oy)
+        self.view_changed.emit()
 
     def widget_to_image(self, pos: QPointF) -> tuple[float, float]:
         return ((pos.x() - self._origin.x()) / self.zoom, (pos.y() - self._origin.y()) / self.zoom)

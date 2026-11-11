@@ -645,7 +645,15 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
          corner until dragged, title = the tool); clicking the chosen tool's icon toggles it. The
          right side holds only colours and layers. e2e `openEditor` minimises the tool window
          (it covers the picture); `showToolOptions()` brings it back.
-      5. Live text layers (a layer at once, movable while typing, editable until rasterised).
+      5. ✅ Live text layers (both apps): a Text-tool click puts a stand-in layer into the document
+         straight away (`placeholder_layer` / `placeholderLayer`, no history); every keystroke,
+         style or colour change redraws it (`live_text_layer` / `liveTextLayer` — also keeps a
+         renamed / hidden / masked layer's settings) and refreshes the layers list. The typing box
+         is transparent (desktop paints only the caret in `TextBox.paintEvent`, web
+         `.text-box.live` + `caret-color`); a grip (`TextGrip` / `.text-grip`, never takes focus)
+         drags the anchor. Committing restores the document (`_end_live_text` / `endLiveText`) and
+         pushes the usual add / edit command — one undo step; `edit_text_layer(…, anchor)` moves it.
+         The box follows zoom / pan (desktop `canvas.view_changed`).
       6. Shape layers (rectangle / ellipse / line / arrow keep handles until rasterised / merged).
       7. Layer effects: drop shadow, colour overlay, glow, outline (live, "fx" badge, kept in .ora).
 11. Ideas: installer for the app itself (Inno Setup), presets, batch queue.

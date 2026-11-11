@@ -218,25 +218,45 @@ def anchor_of(layer: Layer) -> tuple[int, int]:
     return (layer.x + spec.ox, layer.y + spec.oy) if spec is not None else (layer.x, layer.y)
 
 
-def edit_text_layer(doc: Document, index: int, spec: TextSpec) -> Command | None:
-    """Draw text layer ``index`` again from ``spec`` (empty text deletes the layer)."""
-    from umc.editor import ops
+def placeholder_layer(doc: Document, x: float, y: float) -> Layer:
+    """What a text layer shows before anything is typed (nothing; keeps its place in the list)."""
+    return Layer("Text", Image.new("RGBA", (1, 1)), x=math.floor(x), y=math.floor(y))
 
-    old = doc.layers[index]
+
+def live_text_layer(
+    doc: Document, spec: TextSpec, x: float, y: float, old: Layer | None = None
+) -> Layer:
+    """The layer for ``spec`` with its clicked point at (x, y) — while it is being typed, before
+    it is committed. Editing ``old`` keeps what the user set on it: a chosen name, visibility,
+    opacity and mask."""
     if not spec.text.strip():
-        return ops.delete_layers(doc, [index])
-    x, y = anchor_of(old)
+        return placeholder_layer(doc, x, y)
     new = _text_layer(doc, spec, x, y)
+    if old is None:
+        return new
     renamed = old.text is not None and old.name != _auto_name(old.text)
     keep_mask = old.mask is not None and old.mask.size == new.image.size
-    new = replace(
+    return replace(
         new,
         name=old.name if renamed else new.name,
         opacity=old.opacity if not spec.watermark else new.opacity,
         visible=old.visible,
         mask=old.mask if keep_mask else None,
     )
-    return ops._replace(doc, index, "Edit text", new)
+
+
+def edit_text_layer(
+    doc: Document, index: int, spec: TextSpec, anchor: tuple[float, float] | None = None
+) -> Command | None:
+    """Draw text layer ``index`` again from ``spec``, at ``anchor`` (default: where it was);
+    empty text deletes the layer."""
+    from umc.editor import ops
+
+    old = doc.layers[index]
+    if not spec.text.strip():
+        return ops.delete_layers(doc, [index])
+    x, y = anchor if anchor is not None else anchor_of(old)
+    return ops._replace(doc, index, "Edit text", live_text_layer(doc, spec, x, y, old))
 
 
 def painted_over(doc: Document, index: int) -> bool:

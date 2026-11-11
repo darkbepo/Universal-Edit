@@ -4,12 +4,22 @@ from __future__ import annotations
 
 import logging
 import threading
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QEventLoop, QMimeData, QObject, QPointF, Qt, QThread, Signal, Slot
-from PySide6.QtGui import QColor, QFont, QKeySequence, QShortcut
+from PySide6.QtCore import (
+    QEventLoop,
+    QMimeData,
+    QObject,
+    QPointF,
+    QRectF,
+    Qt,
+    QThread,
+    Signal,
+    Slot,
+)
+from PySide6.QtGui import QColor, QFont, QKeySequence, QPainter, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -21,6 +31,7 @@ from PySide6.QtWidgets import (
     QProgressDialog,
     QPushButton,
     QScrollArea,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -39,9 +50,12 @@ from umc.editor.tools.text import (
     add_text_layer,
     anchor_of,
     edit_text_layer,
+    live_text_layer,
     painted_over,
+    placeholder_layer,
     text_layer_at,
 )
+from umc.gui import icons, theme
 from umc.gui.editor.canvas import EditorCanvas, pil_to_qimage, qimage_to_pil
 from umc.gui.editor.crop_bar import CropBar
 from umc.gui.editor.dialogs import (
@@ -134,8 +148,39 @@ class _BackgroundWorker(QObject):
             self.failed.emit("Couldn't remove the background. See the log for details.")
 
 
+class TextGrip(QToolButton):
+    """The handle next to the text being typed: drag it to move the text (the typing box keeps
+    the keyboard)."""
+
+    dragged = Signal(float, float)  # screen pixels
+
+    def __init__(self, parent: QWidget) -> None:
+        super().__init__(parent)
+        self.setObjectName("TextGrip")
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # clicking it mustn't end the typing
+        self.setCursor(Qt.CursorShape.SizeAllCursor)
+        self.setToolTip("Drag to move the text")
+        self.setIcon(icons.icon("arrows-move", theme.palette()["text"], 16))
+        self.setFixedSize(24, 24)
+        self._last: QPointF | None = None
+
+    def mousePressEvent(self, e) -> None:  # noqa: N802
+        self._last = e.globalPosition()
+
+    def mouseMoveEvent(self, e) -> None:  # noqa: N802
+        if self._last is not None:
+            d = e.globalPosition() - self._last
+            self._last = e.globalPosition()
+            self.dragged.emit(d.x(), d.y())
+
+    def mouseReleaseEvent(self, e) -> None:  # noqa: N802
+        self._last = None
+
+
 class TextBox(QPlainTextEdit):
-    """On-canvas text entry. Ctrl+Enter, Esc or clicking elsewhere commits."""
+    """On-canvas text entry. Ctrl+Enter, Esc or clicking elsewhere commits. Its own letters are
+    invisible — the text layer underneath shows the text live, in its real style; only the
+    caret and the selection are drawn here."""
 
     committed = Signal()
 
@@ -166,6 +211,14 @@ class TextBox(QPlainTextEdit):
     def focusOutEvent(self, e) -> None:  # noqa: N802
         super().focusOutEvent(e)
         self.committed.emit()
+
+    def paintEvent(self, e) -> None:  # noqa: N802
+        super().paintEvent(e)
+        if self.hasFocus():  # the caret (the text itself is transparent)
+            p = QPainter(self.viewport())
+            r = self.cursorRect()
+            p.fillRect(QRectF(r.x(), r.y(), 2, r.height()), QColor(theme.palette()["accent"]))
+            p.end()
 
 
 class EditorPage(QWidget):
@@ -212,6 +265,7 @@ class EditorPage(QWidget):
         self.canvas.changed.connect(self._on_changed)
         self.canvas.color_picked.connect(lambda c, b: self.swatches.set_color(c, b))
         self.canvas.zoom_changed.connect(lambda _z: self._update_info())
+        self.canvas.view_changed.connect(self._place_text_box)  # the typing box follows
         self.canvas.cursor_moved.connect(lambda x, y: self._update_info((x, y)))
         self.canvas.text_requested.connect(self._open_text_box)
         self.canvas.nudge_requested.connect(self._nudge)
@@ -227,6 +281,7 @@ class EditorPage(QWidget):
         self.panels.state_changed.connect(self._panel_state)
         self.tool_settings = ToolSettings()
         self.tool_settings.changed.connect(self.canvas.update)
+        self.tool_settings.changed.connect(self._update_live_text)  # size, bold… while typing
         self.tool_settings.setMinimumWidth(250)
         self.tool_settings.title.hide()  # the window's title already names the tool
         middle.addWidget(self._build_side())
@@ -291,6 +346,7 @@ class EditorPage(QWidget):
         lay.setSpacing(10)
         lay.addWidget(QLabel("COLOURS", objectName="Section"))
         self.swatches = ColorSwatches()
+        self.swatches.colors_changed.connect(self._update_live_text)  # recolour while typing
         lay.addWidget(self.swatches)
         self.layers = LayersPanel()
         self.layers.command.connect(self._push)
@@ -800,26 +856,85 @@ class EditorPage(QWidget):
         if editing is not None:
             self._load_text_style(self.doc.layers[editing].text)
         self._text_anchor = (x, y)
-        opts = self.tool_settings.options_for(self.tools["text"])
+        # the text is a layer from the first moment: a live stand-in, swapped for the real
+        # (undoable) change when typing ends
+        doc = self.doc
+        if editing is None:
+            self._live = {
+                "index": doc.active + 1,
+                "old": None,
+                "before": (list(doc.layers), doc.active, set(doc.selected)),
+            }
+            doc.layers = list(doc.layers)
+            doc.layers.insert(doc.active + 1, placeholder_layer(doc, x, y))
+            doc.active += 1
+            doc.selected = set()
+        else:
+            self._live = {"index": editing, "old": doc.layers[editing], "before": None}
         box = TextBox(self.canvas)
+        box.setStyleSheet(
+            "QPlainTextEdit#TextBox { background: transparent; color: rgba(0, 0, 0, 0);"
+            " border: 1px dashed #888; padding: 0;"
+            " selection-background-color: rgba(91, 94, 240, 90); }"
+        )
+        box.committed.connect(self.commit_text)
+        if editing is not None:
+            box.setPlainText(doc.layers[editing].text.text)
+        box.textChanged.connect(self._update_live_text)
+        grip = TextGrip(self.canvas)
+        grip.dragged.connect(self._drag_text)
+        self.text_box, self._text_grip = box, grip
+        self._place_text_box()
+        box.show()
+        grip.show()
+        box.setFocus()
+        self._update_live_text()
+
+    def _place_text_box(self) -> None:
+        """Keep the typing box (font scaled to the zoom) and its grip on the text's place."""
+        box = self.text_box
+        if box is None:
+            return
+        opts = self.tool_settings.options_for(self.tools["text"])
         font = QFont(self.tool_settings.font_family())
         font.setPixelSize(max(6, round(opts.size * self.canvas.zoom)))
         font.setBold(opts.bold)
         font.setItalic(opts.italic)
         box.setFont(font)
-        color = QColor(*self.swatches.primary)
-        box.setStyleSheet(
-            f"QPlainTextEdit#TextBox {{ background: transparent; color: {color.name()};"
-            " border: 1px dashed #888; padding: 0; }"
-        )
-        box.move(self.canvas.image_to_widget(x, y))
-        box.committed.connect(self.commit_text)
-        if editing is not None:
-            box.setPlainText(self.doc.layers[editing].text.text)
         box._fit()
-        box.show()
-        box.setFocus()
-        self.text_box = box
+        pos = self.canvas.image_to_widget(*self._text_anchor)
+        box.move(pos)
+        self._text_grip.move(pos.x() - self._text_grip.width() - 4, pos.y())
+
+    def _drag_text(self, dx: float, dy: float) -> None:
+        x, y = self._text_anchor
+        z = self.canvas.zoom
+        self._text_anchor = (x + dx / z, y + dy / z)
+        self._update_live_text()
+
+    def _update_live_text(self) -> None:
+        """Draw the text being typed into its layer, in its real style (no undo step yet)."""
+        live, box = getattr(self, "_live", None), self.text_box
+        if live is None or box is None or self.doc is None:
+            return
+        spec = self._spec_from_settings(box.toPlainText(), live["old"])
+        layer = live_text_layer(self.doc, spec, *self._text_anchor, old=live["old"])
+        self.doc.layers = list(self.doc.layers)
+        self.doc.layers[live["index"]] = layer
+        self._place_text_box()
+        self.canvas.refresh()
+        self.layers.refresh(self.doc)
+
+    def _end_live_text(self) -> None:
+        """Put the document back as it was before typing (the real change is pushed next)."""
+        live, self._live = getattr(self, "_live", None), None
+        if live is None or self.doc is None:
+            return
+        if live["before"] is not None:
+            self.doc.layers, self.doc.active, self.doc.selected = live["before"]
+        else:
+            self.doc.layers = list(self.doc.layers)
+            self.doc.layers[live["index"]] = live["old"]
 
     def _load_text_style(self, spec) -> None:
         """Put a text layer's style into the Text tool's settings and the colours."""
@@ -830,8 +945,9 @@ class EditorPage(QWidget):
         self.swatches.set_color(spec.color, "primary")
         self.swatches.set_color(spec.box_color if spec.box else spec.outline_color, "secondary")
 
-    def _text_command(self, text: str, x: float, y: float, opts):
-        """A new text layer, or the edited one (style from the Text tool's settings)."""
+    def _spec_from_settings(self, text: str, old) -> TextSpec:
+        """The text in the Text tool's current style (``old``: the layer being edited)."""
+        opts = self.tool_settings.options_for(self.tools["text"])
         style = {
             "align": opts.align,
             "outline": opts.outline,
@@ -841,40 +957,39 @@ class EditorPage(QWidget):
             "box_color": tuple(self.swatches.secondary),
             "watermark": opts.watermark,
         }
-        family = self.tool_settings.font_family()
-        editing, self._editing = getattr(self, "_editing", None), None
-        if editing is not None and editing < len(self.doc.layers):
-            old = self.doc.layers[editing].text
-            if old is not None:
-                # the back swatch showed only one of the two colours: keep the other one
-                if old.box:
-                    style["outline_color"] = old.outline_color
-                else:
-                    style["box_color"] = old.box_color
-            spec = TextSpec(
-                text,
-                family,
-                opts.size,
-                opts.bold,
-                opts.italic,
-                tuple(self.swatches.primary),
-                **style,
-            )
-            if old is not None and replace(spec, ox=old.ox, oy=old.oy) == old:
-                return None  # opened and closed without a change: no undo step
-            return edit_text_layer(self.doc, editing, spec)
-        return add_text_layer(
-            self.doc,
+        spec_old = old.text if old is not None else None
+        if spec_old is not None:
+            # the back swatch showed only one of the two colours: keep the other one
+            if spec_old.box:
+                style["outline_color"] = spec_old.outline_color
+            else:
+                style["box_color"] = spec_old.box_color
+        return TextSpec(
             text,
-            x,
-            y,
-            family,
+            self.tool_settings.font_family(),
             opts.size,
             opts.bold,
             opts.italic,
-            self.swatches.primary,
+            tuple(self.swatches.primary),
             **style,
         )
+
+    def _text_command(self, text: str, x: float, y: float, opts):
+        """A new text layer, or the edited one (style from the Text tool's settings)."""
+        editing, self._editing = getattr(self, "_editing", None), None
+        if editing is not None and editing < len(self.doc.layers):
+            old_layer = self.doc.layers[editing]
+            old = old_layer.text
+            spec = self._spec_from_settings(text, old_layer)
+            moved = (x, y) != anchor_of(old_layer)
+            if old is not None and not moved and replace(spec, ox=old.ox, oy=old.oy) == old:
+                return None  # opened and closed without a change: no undo step
+            return edit_text_layer(self.doc, editing, spec, (x, y))
+        spec = self._spec_from_settings(text, None)
+        fields = {k: v for k, v in asdict(spec).items() if k not in ("ox", "oy")}
+        text, family, size = fields.pop("text"), fields.pop("font"), fields.pop("size")
+        bold, italic, color = fields.pop("bold"), fields.pop("italic"), fields.pop("color")
+        return add_text_layer(self.doc, text, x, y, family, size, bold, italic, color, **fields)
 
     def commit_text(self) -> None:
         box = self.text_box
@@ -886,6 +1001,11 @@ class EditorPage(QWidget):
             text = box.toPlainText()
             box.hide()
             box.deleteLater()
+            grip, self._text_grip = getattr(self, "_text_grip", None), None
+            if grip is not None:
+                grip.hide()
+                grip.deleteLater()
+            self._end_live_text()
             if self.doc is None:
                 return
             opts = self.tool_settings.options_for(self.tools["text"])

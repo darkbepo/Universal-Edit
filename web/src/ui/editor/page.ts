@@ -6,7 +6,8 @@ import { converterById } from "../../core/registry";
 import type { InputFile } from "../../core/types";
 import { checkSize, composite, EditorError, selectedIndices, type EditorDoc } from "../../editor/document";
 import { History, type Command } from "../../editor/history";
-import type { RGBA } from "../../editor/layer";
+import type { Layer, RGBA } from "../../editor/layer";
+import { ICONS as TABLER } from "../icon_data";
 import { loadLayers, openFiles, type OpenSource } from "../../editor/open";
 import * as ops from "../../editor/ops";
 import { writeOra } from "../../editor/ora";
@@ -19,7 +20,7 @@ import { canvasPng, canvasRasterizer, decodeBlob, type Decoded } from "../../edi
 import type { Tool, ToolContext } from "../../editor/tools/base";
 import { makeTools } from "../../editor/tools/index";
 import { clearSelection, deselect, selectAll } from "../../editor/tools/select";
-import { addTextLayer, anchorOf, editTextLayer, paintedOver, makeSpec, textLayerAt, type TextSpec } from "../../editor/tools/text";
+import { addTextLayer, anchorOf, editTextLayer, liveTextLayer, makeSpec, paintedOver, placeholderLayer, textLayerAt, type TextSpec } from "../../editor/tools/text";
 import type { ConversionClient } from "../../worker/client";
 import * as effects from "../../editor/effects";
 import type { Effect } from "../../editor/effects";
@@ -95,6 +96,9 @@ export class EditorPage {
   private floating!: FloatingHost;
   /** Redoes the live preview of the adjustment window that showed it last. */
   private previewRefresh: (() => void) | null = null;
+  /** The text being typed: its stand-in layer, and what to put back when typing ends. */
+  private liveText: { index: number; old: Layer | null; before: { layers: Layer[]; active: number; selected: number[] } | null } | null = null;
+  private textGrip: HTMLButtonElement | null = null;
   private lastSize = "";
   private swatches: Swatches;
   private layers: LayersPanel;
@@ -133,8 +137,11 @@ export class EditorPage {
       },
       (id) => void this.railAction(id),
     );
-    this.settings = new ToolSettings(() => this.canvas.draw());
-    this.swatches = new Swatches();
+    this.settings = new ToolSettings(() => {
+      this.canvas.draw();
+      this.updateLiveText(); // size, bold… while typing
+    });
+    this.swatches = new Swatches(() => this.updateLiveText()); // recolour while typing
     this.layers = new LayersPanel(
       (cmd) => this.push(cmd),
       () => {
@@ -712,13 +719,18 @@ export class EditorPage {
       this.swatches.set(s.box ? s.box_color : s.outline_color, "right");
     }
     this.textAnchor = [x, y];
-    const o = this.settings.optionsFor(textTool);
-    const box = h("textarea", { class: "text-box", rows: 1, ariaLabel: "Text" });
-    const [r, g, b, a] = this.swatches.colors[0];
-    box.style.color = `rgba(${r},${g},${b},${a / 255})`;
-    box.style.fontFamily = `"${this.settings.font.value}", sans-serif`;
-    box.style.fontWeight = o.bold ? "bold" : "normal";
-    box.style.fontStyle = o.italic ? "italic" : "normal";
+    // the text is a layer from the first moment: a live stand-in, swapped for the real
+    // (undoable) change when typing ends
+    const doc = this.doc as EditorDoc;
+    if (editing === null) {
+      this.liveText = { index: doc.active + 1, old: null, before: { layers: [...doc.layers], active: doc.active, selected: [...(doc.selected ?? [])] } };
+      doc.layers = [...doc.layers];
+      doc.layers.splice(doc.active + 1, 0, placeholderLayer(x, y));
+      doc.active += 1;
+      doc.selected = [];
+    } else this.liveText = { index: editing, old: doc.layers[editing], before: null };
+    // its own letters are invisible: the layer underneath shows the text in its real style
+    const box = h("textarea", { class: "text-box live", rows: 1, ariaLabel: "Text" });
     box.addEventListener("keydown", (e) => {
       if (e.key === "Escape" || (e.key === "Enter" && (e.ctrlKey || e.metaKey))) {
         e.preventDefault();
@@ -726,12 +738,76 @@ export class EditorPage {
       }
     });
     if (editing !== null && this.doc) box.value = (this.doc.layers[editing].text as TextSpec).text;
-    box.addEventListener("input", () => this.placeTextBox());
+    box.addEventListener("input", () => this.updateLiveText());
     box.addEventListener("blur", () => this.commitText());
+    const grip = h("button", { type: "button", class: "text-grip", title: "Drag to move the text", ariaLabel: "Move the text" });
+    grip.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${(TABLER as Record<string, string>)["arrows-move"]}</svg>`;
+    let last: [number, number] | null = null;
+    grip.addEventListener("pointerdown", (e) => {
+      e.preventDefault(); // keep the keyboard in the typing box (a blur would end the typing)
+      last = [e.clientX, e.clientY];
+      grip.setPointerCapture(e.pointerId);
+    });
+    grip.addEventListener("pointermove", (e) => {
+      if (!last) return;
+      const z = this.canvas.zoom;
+      this.textAnchor = [this.textAnchor[0] + (e.clientX - last[0]) / z, this.textAnchor[1] + (e.clientY - last[1]) / z];
+      last = [e.clientX, e.clientY];
+      this.updateLiveText();
+    });
+    for (const ev of ["pointerup", "pointercancel"]) grip.addEventListener(ev, () => (last = null));
     this.textBox = box;
-    this.canvas.el.append(box);
-    this.placeTextBox();
+    this.textGrip = grip;
+    this.canvas.el.append(box, grip);
     box.focus();
+    this.updateLiveText();
+  }
+
+  /** Draw the text being typed into its layer, in its real style (no undo step yet). */
+  private updateLiveText(): void {
+    const live = this.liveText;
+    const box = this.textBox;
+    if (!live || !box || !this.doc) return;
+    const spec = this.specFromSettings(box.value, live.old);
+    const layer = liveTextLayer(this.doc, canvasRasterizer, spec, this.textAnchor[0], this.textAnchor[1], live.old);
+    this.doc.layers = [...this.doc.layers];
+    this.doc.layers[live.index] = layer;
+    this.placeTextBox();
+    this.canvas.refresh();
+    this.layers.render(this.doc);
+  }
+
+  /** Put the document back as it was before typing (the real change is pushed next). */
+  private endLiveText(): void {
+    const live = this.liveText;
+    this.liveText = null;
+    if (!live || !this.doc) return;
+    if (live.before) {
+      this.doc.layers = live.before.layers;
+      this.doc.active = live.before.active;
+      this.doc.selected = live.before.selected;
+    } else {
+      this.doc.layers = [...this.doc.layers];
+      this.doc.layers[live.index] = live.old as Layer;
+    }
+  }
+
+  /** The text in the Text tool's current style (`old`: the layer being edited). */
+  private specFromSettings(text: string, old: Layer | null): TextSpec {
+    const o = this.settings.optionsFor(this.tools.find((t) => t.id === "text") as Tool);
+    const [front, back] = this.swatches.colors;
+    const spec = makeSpec(text, {
+      font: this.settings.font.value, size: Number(o.size), bold: !!o.bold, italic: !!o.italic,
+      color: front as RGBA, align: (o.align as TextSpec["align"]) ?? "left", outline: Number(o.outline) || 0,
+      outline_color: back as RGBA, shadow: !!o.shadow, box: !!o.box, box_color: back as RGBA, watermark: !!o.watermark,
+    });
+    const s = old?.text as TextSpec | null | undefined;
+    if (s) {
+      // the back swatch showed only one of the two colours: keep the other one
+      if (s.box) spec.outline_color = s.outline_color;
+      else spec.box_color = s.box_color;
+    }
+    return spec;
   }
 
   private placeTextBox(): void {
@@ -743,6 +819,13 @@ export class EditorPage {
     box.style.left = `${p.x}px`;
     box.style.top = `${p.y}px`;
     box.style.fontSize = `${size}px`;
+    box.style.fontFamily = `"${this.settings.font.value}", sans-serif`;
+    box.style.fontWeight = o.bold ? "bold" : "normal";
+    box.style.fontStyle = o.italic ? "italic" : "normal";
+    if (this.textGrip) {
+      this.textGrip.style.left = `${p.x - 28}px`;
+      this.textGrip.style.top = `${p.y}px`;
+    }
     const lines = box.value.split("\n");
     box.style.width = `${Math.max(4, ...lines.map((l) => l.length + 1)) * size * 0.62}px`;
     box.style.height = `${lines.length * size * 1.25 + 8}px`;
@@ -756,26 +839,27 @@ export class EditorPage {
       this.textBox = null;
       const text = box.value;
       box.remove();
+      this.textGrip?.remove();
+      this.textGrip = null;
+      this.endLiveText();
       if (!this.doc) return;
-      const o = this.settings.optionsFor(this.tools.find((t) => t.id === "text") as Tool);
       const [x, y] = this.textAnchor;
-      const [front, back] = this.swatches.colors;
-      const spec = makeSpec(text, {
-        font: this.settings.font.value, size: Number(o.size), bold: !!o.bold, italic: !!o.italic,
-        color: front as RGBA, align: (o.align as TextSpec["align"]) ?? "left", outline: Number(o.outline) || 0,
-        outline_color: back as RGBA, shadow: !!o.shadow, box: !!o.box, box_color: back as RGBA, watermark: !!o.watermark,
-      });
       const editing = this.editingText;
       this.editingText = null;
-      const old = editing !== null ? (this.doc.layers[editing]?.text as TextSpec | null | undefined) : null;
-      if (old) {
-        // the back swatch showed only one of the two colours: keep the other one
-        if (old.box) spec.outline_color = old.outline_color;
-        else spec.box_color = old.box_color;
-        if (JSON.stringify({ ...spec, ox: old.ox, oy: old.oy }) === JSON.stringify({ ...makeSpec(old.text), ...old })) return; // no change: no undo step
+      const oldLayer = editing !== null ? this.doc.layers[editing] ?? null : null;
+      const spec = this.specFromSettings(text, oldLayer);
+      const old = oldLayer?.text as TextSpec | null | undefined;
+      let cmd: Command | null = null;
+      if (old && oldLayer) {
+        const [ax, ay] = anchorOf(oldLayer);
+        const unchanged = JSON.stringify({ ...spec, ox: old.ox, oy: old.oy }) === JSON.stringify({ ...makeSpec(old.text), ...old });
+        if (!(unchanged && ax === x && ay === y)) cmd = editTextLayer(this.doc, canvasRasterizer, editing as number, spec, [x, y]);
+      } else cmd = addTextLayer(this.doc, canvasRasterizer, spec, x, y);
+      if (cmd) this.push(cmd);
+      else {
+        this.canvas.refresh(); // nothing changed (or nothing typed): the stand-in is gone again
+        this.layers.render(this.doc);
       }
-      if (editing !== null && editing < this.doc.layers.length) this.push(editTextLayer(this.doc, canvasRasterizer, editing, spec));
-      else this.push(addTextLayer(this.doc, canvasRasterizer, spec, x, y));
       this.canvas.view.focus();
     } finally {
       this.committing = false;

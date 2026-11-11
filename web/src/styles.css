@@ -430,3 +430,7 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 .tool-options .tool-settings > :first-child { display: none; } /* the window's title already names the tool */
 .rail-item[data-panel="open"] { background: var(--accent-soft); }
 .rail-item[data-panel="minimised"] { border-style: dashed; border-color: var(--accent); }
+/* live text: the box shows only the caret and the selection; the layer shows the real text */
+.text-box.live { color: transparent; caret-color: var(--accent); }
+.text-box.live::selection { background: rgba(91, 94, 240, .35); }
+.text-grip { position: absolute; z-index: 4; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 6px; cursor: move; touch-action: none; box-shadow: 0 2px 6px rgba(0,0,0,.15); }

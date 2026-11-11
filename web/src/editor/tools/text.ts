@@ -159,21 +159,36 @@ export function anchorOf(layer: Layer): [number, number] {
 }
 
 /** Draw text layer `index` again from `spec` (empty text deletes the layer). */
-export function editTextLayer(doc: EditorDoc, raster: Rasterizer, index: number, spec: TextSpec): Command | null {
-  const old = doc.layers[index];
-  if (!spec.text.trim()) return ops.deleteLayers(doc, [index]);
-  const [x, y] = anchorOf(old);
+/** What a text layer shows before anything is typed (nothing; keeps its place in the list). */
+export function placeholderLayer(x: number, y: number): Layer {
+  return makeLayer("Text", 1, 1, undefined, { x: Math.floor(x), y: Math.floor(y) });
+}
+
+/** The layer for `spec` with its clicked point at (x, y), while it is being typed. Editing `old`
+ *  keeps what the user set on it: a chosen name, visibility, opacity and mask. Same as
+ *  live_text_layer in text.py. */
+export function liveTextLayer(doc: EditorDoc, raster: Rasterizer, spec: TextSpec, x: number, y: number, old: Layer | null = null): Layer {
+  if (!spec.text.trim()) return placeholderLayer(x, y);
   const fresh = textLayer(doc, raster, spec, x, y);
-  // keep what the user set on the layer: name (unless it was the automatic one), visibility, mask
+  if (!old) return fresh;
   const oldSpec = old.text as TextSpec | null | undefined;
   const renamed = !!oldSpec && old.name !== autoName(oldSpec);
   const keepMask = !!old.mask && fresh.width === old.width && fresh.height === old.height;
-  return ops.replaceLayer(doc, index, "Edit text", withProps(fresh, {
+  return withProps(fresh, {
     name: renamed ? old.name : fresh.name,
     opacity: spec.watermark ? fresh.opacity : old.opacity,
     visible: old.visible,
     mask: keepMask ? old.mask : null,
-  }));
+  });
+}
+
+/** Draw text layer `index` again from `spec`, at `anchor` (default: where it was); empty text
+ *  deletes the layer. */
+export function editTextLayer(doc: EditorDoc, raster: Rasterizer, index: number, spec: TextSpec, anchor?: [number, number]): Command | null {
+  const old = doc.layers[index];
+  if (!spec.text.trim()) return ops.deleteLayers(doc, [index]);
+  const [x, y] = anchor ?? anchorOf(old);
+  return ops.replaceLayer(doc, index, "Edit text", liveTextLayer(doc, raster, spec, x, y, old));
 }
 
 /** True when text layer `index` was changed with other tools since it was drawn (editing the
