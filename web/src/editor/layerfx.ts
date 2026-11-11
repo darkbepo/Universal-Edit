@@ -296,7 +296,7 @@ export function renderFx(data: Uint8ClampedArray, w: number, h: number, fx: Laye
   const tint = rgbOf(fx.overlay_color);
   over(out, n, alpha, (i, c) => data[i * 4 + c] * (1 - k) + tint[c] * k);
   const res = new Uint8ClampedArray(n * 4);
-  for (let i = 0; i < n * 4; i++) res[i] = (i % 4 === 3 ? out[i] * 255 : out[i]) + 0.5;
+  for (let i = 0; i < n * 4; i++) res[i] = i % 4 === 3 ? out[i] * 255 : out[i]; // the array rounds
   for (let i = 0; i < n * 4; i += 4) if (res[i + 3] === 0) res[i] = res[i + 1] = res[i + 2] = 0;
   return res;
 }

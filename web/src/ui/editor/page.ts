@@ -282,7 +282,7 @@ export class EditorPage {
 
   async open(files: InputFile[]): Promise<boolean> {
     try {
-      const { doc, errors } = await openFiles(files.map((f) => this.source(f)), canvasPng);
+      const { doc, errors } = await openFiles(files.map((f) => this.source(f)), canvasPng, canvasRasterizer);
       this.setDocument(doc);
       this.sources = files.map((f) => f.name);
       this.lastSave = null;
@@ -301,7 +301,7 @@ export class EditorPage {
       await this.open(files);
       return;
     }
-    const { layers, width, height, errors } = await loadLayers(files.map((f) => this.source(f)), canvasPng);
+    const { layers, width, height, errors } = await loadLayers(files.map((f) => this.source(f)), canvasPng, canvasRasterizer);
     try {
       if (layers.length) checkSize(width, height);
     } catch (e) {
@@ -946,7 +946,7 @@ export class EditorPage {
       let bytes: Uint8Array;
       let type: string;
       if (save.format === "ora") {
-        bytes = await writeOra(snapshot, canvasPng);
+        bytes = await writeOra(snapshot, canvasPng, canvasRasterizer);
         type = MIME.ora;
       } else {
         const png = await canvasPng.encode(composite(snapshot), snapshot.width, snapshot.height);

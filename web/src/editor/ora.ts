@@ -1,10 +1,68 @@
 // OpenRaster (.ora): a ZIP of PNG layers plus stack.xml — the same format the desktop app writes
 // (src/umc/editor/ora.py) and GIMP / Krita read.
-import { makeSpec } from "./tools/text";
+import { anchorOf, liveTextLayer, makeSpec, type TextSpec } from "./tools/text";
+import { canvasPoints, shapeLayer, type ShapeSpec } from "./tools/shapes";
+import { fxFromDict } from "./layerfx";
 import { strFromU8, strToU8, unzipSync, zipSync, type Zippable } from "fflate";
 import { checkSize, composite, EditorError, type EditorDoc } from "./document";
-import { layerPixels, makeLayer, type Layer } from "./layer";
-import type { PngCodec } from "./raster";
+import { layerBounds, layerPixels, makeLayer, type Layer } from "./layer";
+import type { PngCodec, Rasterizer } from "./raster";
+
+/** A text / shape layer drawn again from its recipe (null when it has none). */
+function redrawn(layer: Layer, doc: EditorDoc, raster: Rasterizer): Layer | null {
+  if (layer.shape) return shapeLayer(raster, layer.name, { ...(layer.shape as ShapeSpec), points: canvasPoints(layer) }, layer);
+  if (layer.text) return liveTextLayer(doc, raster, layer.text as TextSpec, ...anchorOf(layer), layer);
+  return null;
+}
+
+const same = (a: Layer, b: Layer) =>
+  a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height && a.data.every((v, i) => v === b.data[i]);
+
+/** Nearly the same pixels: another app's anti-aliasing or the browser's PNG rounding, not
+ *  painting. At most 2 % of the drawn pixels may differ by more than a little (as ora.py). */
+function close(a: Layer, b: Layer): boolean {
+  const box = layerBounds(a).union(layerBounds(b));
+  const planes = [a, b].map((l) => {
+    const out = new Uint8ClampedArray(box.width * box.height * 4);
+    for (let y = 0; y < l.height; y++) out.set(l.data.subarray(y * l.width * 4, (y + 1) * l.width * 4), ((l.y - box.y0 + y) * box.width + (l.x - box.x0)) * 4);
+    return out;
+  });
+  let bad = 0, drawnA = 0, drawnB = 0;
+  for (let i = 0; i < planes[0].length; i += 4) {
+    let d = 0;
+    for (let c = 0; c < 4; c++) d = Math.max(d, Math.abs(planes[0][i + c] - planes[1][i + c]));
+    if (d > 96) bad++;
+    if (planes[0][i + 3]) drawnA++;
+    if (planes[1][i + 3]) drawnB++;
+  }
+  return bad <= Math.max(4, Math.floor(Math.max(drawnA, drawnB) / 50));
+}
+
+/** Save a text / shape recipe only while the pixels are still exactly what it draws (and there is
+ *  no mask, which the file bakes into the pixels). Without a rasterizer: always (unit tests). */
+function keepsRecipe(layer: Layer, doc: EditorDoc, raster?: Rasterizer): boolean {
+  if (!layer.text && !layer.shape) return false;
+  if (!raster) return true;
+  if (layer.mask) return false;
+  try {
+    const again = redrawn(layer, doc, raster);
+    return !!again && same(again, layer);
+  } catch {
+    return false;
+  }
+}
+
+/** A text / shape layer read from a file: drawn again here when the stored pixels match (so it
+ *  stays editable, even if the other app drew it), else plain pixels. */
+function fromRecipe(layer: Layer, doc: EditorDoc, raster: Rasterizer): Layer {
+  try {
+    const again = redrawn(layer, doc, raster);
+    if (again && close(again, layer)) return again;
+  } catch {
+    /* fall through: keep the pixels */
+  }
+  return { ...layer, text: null, shape: null };
+}
 
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const unesc = (s: string) =>
@@ -56,15 +114,16 @@ export function sampleThumbnail(layer: { width: number; height: number; data: Ui
   return { data: out, width: tw, height: th };
 }
 
-export async function writeOra(doc: EditorDoc, png: PngCodec): Promise<Uint8Array> {
+export async function writeOra(doc: EditorDoc, png: PngCodec, raster?: Rasterizer): Promise<Uint8Array> {
   const files: Zippable = { mimetype: [strToU8("image/openraster"), { level: 0 }] };
   const entries: string[] = [];
   for (let i = doc.layers.length - 1; i >= 0; i--) {
     const l = doc.layers[i];
     const src = `data/layer${i}.png`;
     files[src] = [await png.encode(layerPixels(l), l.width, l.height), { level: 0 }]; // ORA has no masks: baked in
+    const keep = keepsRecipe(l, doc, raster);
     entries.push(
-      `<layer name="${esc(l.name)}" src="${src}" x="${l.x}" y="${l.y}" opacity="${l.opacity.toFixed(4)}" visibility="${l.visible ? "visible" : "hidden"}"${i === doc.active ? ' selected="true"' : ""}${l.text ? ` umc-text="${esc(JSON.stringify(l.text))}"` : ""}${l.shape ? ` umc-shape="${esc(JSON.stringify(l.shape))}"` : ""}/>`, // our extra: keeps text editable
+      `<layer name="${esc(l.name)}" src="${src}" x="${l.x}" y="${l.y}" opacity="${l.opacity.toFixed(4)}" visibility="${l.visible ? "visible" : "hidden"}"${i === doc.active ? ' selected="true"' : ""}${keep && l.text ? ` umc-text="${esc(JSON.stringify(l.text))}"` : ""}${keep && l.shape ? ` umc-shape="${esc(JSON.stringify(l.shape))}"` : ""}${l.fx ? ` umc-fx="${esc(JSON.stringify(l.fx))}"` : ""}/>`, // our extras: text / shapes stay editable, effects stay live
     );
   }
   const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<image version="0.0.3" w="${doc.width}" h="${doc.height}"><stack>${entries.join("")}</stack></image>`;
@@ -82,19 +141,19 @@ function attrs(tag: string): Record<string, string> {
   return out;
 }
 
-/** A text layer's recipe saved by either app (JSON of TextSpec); null if absent or damaged. */
 /** A shape layer's recipe saved by either app (JSON of ShapeSpec); null if absent or damaged. */
 function parseShape(raw: string | undefined): unknown {
   if (!raw) return null;
   try {
     const t = JSON.parse(raw);
-    const ok = t && typeof t === "object" && typeof t.kind === "string" && Array.isArray(t.points) && t.points.length === 4;
+    const ok = t && typeof t === "object" && ["line", "arrow", "rect", "ellipse"].includes(t.kind) && Array.isArray(t.points) && t.points.length === 4;
     return ok ? { color: [0, 0, 0, 255], fill: [255, 255, 255, 255], width: 4, mode: "outline", heads: "end", opacity: 100, ...t } : null;
   } catch {
     return null; // keep the pixels, lose the editing
   }
 }
 
+/** A text layer's recipe saved by either app (JSON of TextSpec); null if absent or damaged. */
 function parseText(raw: string | undefined): unknown {
   if (!raw) return null;
   try {
@@ -106,7 +165,17 @@ function parseText(raw: string | undefined): unknown {
   }
 }
 
-export async function readOra(bytes: Uint8Array, png: PngCodec, name = "file"): Promise<EditorDoc> {
+function parseFx(raw: string | undefined) {
+  if (!raw) return null;
+  try {
+    return fxFromDict(JSON.parse(raw));
+  } catch {
+    return null; // the layer without its effects
+  }
+}
+
+/** `raster` (the page passes it) re-draws text / shape layers so they stay editable. */
+export async function readOra(bytes: Uint8Array, png: PngCodec, name = "file", raster?: Rasterizer): Promise<EditorDoc> {
   let files: Record<string, Uint8Array>;
   let xml: string;
   try {
@@ -134,9 +203,11 @@ export async function readOra(bytes: Uint8Array, png: PngCodec, name = "file"): 
       visible: a.visibility !== "hidden",
       text: parseText(a["umc-text"]),
       shape: parseShape(a["umc-shape"]),
+      fx: parseFx(a["umc-fx"]),
     });
-    if (a.selected === "true") active = layer;
-    layers.push(layer);
+    const fixed = raster && (layer.text || layer.shape) ? fromRecipe(layer, { width, height, layers: [], active: 0, selection: null, dirty: false }, raster) : layer;
+    if (a.selected === "true") active = fixed;
+    layers.push(fixed);
   }
   if (!layers.length) throw new EditorError(`“${name}” has no layers.`);
   layers.reverse(); // ours: bottom first

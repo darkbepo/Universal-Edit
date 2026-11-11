@@ -1,6 +1,7 @@
 // A layer: an RGBA pixel array placed on the canvas. Layers are treated as immutable by
 // structural commands (see history.ts) — change one with withProps(), which keeps `data`.
 import { Rect } from "./geometry";
+import type { LayerFx } from "./layerfx";
 
 export type RGBA = [number, number, number, number];
 
@@ -20,6 +21,8 @@ export interface Layer {
   readonly text?: unknown;
   /** How a shape layer was made (tools/shapes.ts ShapeSpec, points relative to x / y). */
   readonly shape?: unknown;
+  /** Live layer effects (layerfx.ts LayerFx: shadow, glow, outline, colour overlay); null = none. */
+  readonly fx?: LayerFx | null;
 }
 
 /** Test hook: the largest crop made (in pixels) — lets tests prove strokes don't copy whole layers. */

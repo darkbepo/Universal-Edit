@@ -87,3 +87,54 @@ describe("shape layers", () => {
     expect(canvasPoints(back.layers[1])).toEqual([10, 40, 100, 40]);
   });
 });
+
+// mirrors the review-fix tests in tests/test_editor_annotate.py
+describe("shape layers: review fixes", () => {
+  it("clicking a handle without dragging changes nothing", () => {
+    const d = doc();
+    const t = new RectTool(stubRaster);
+    stroke(t, d, [10, 10], [40, 30], ctx(t));
+    const c = ctx(t);
+    t.press(d, 42, 32, c);
+    expect(t.release(d, 42, 32, c)).toBeNull();
+    t.press(d, 42, 32, c);
+    t.move(d, 52, 32, c);
+    t.release(d, 52, 32, c);
+    expect(canvasPoints(d.layers[d.active])).toEqual([10, 10, 50, 30]);
+  });
+
+  it("a flat rectangle adds no layer", () => {
+    const d = doc();
+    const t = new RectTool(stubRaster);
+    expect(stroke(t, d, [10, 10], [40, 10], ctx(t, { mode: "filled", width: 1 }))).toBeNull();
+    expect(d.layers.length).toBe(1);
+  });
+
+  it("reshaping keeps the mask on the same picture pixels", () => {
+    const d = doc();
+    const t = new RectTool(stubRaster);
+    stroke(t, d, [10, 10], [40, 30], ctx(t, { mode: "filled" }));
+    const l = d.layers[1];
+    const mask = solid(l.width, l.height, [255, 255, 255, 255]);
+    mask.set([0, 0, 0, 255], ((20 - l.y) * l.width + (20 - l.x)) * 4);
+    d.layers[1] = { ...l, mask };
+    const c = ctx(t, { mode: "filled" });
+    t.press(d, 10, 10, c);
+    t.move(d, 2, 4, c);
+    t.release(d, 2, 4, c);
+    const n = d.layers[1];
+    expect(n.mask?.length).toBe(n.data.length);
+    expect(n.mask?.[((20 - n.y) * n.width + (20 - n.x)) * 4]).toBe(0);
+    expect(n.mask?.[((6 - n.y) * n.width + (4 - n.x)) * 4]).toBe(255);
+  });
+
+  it("files keep a recipe only while it matches, and ignore shapes they can't draw", async () => {
+    const d = doc();
+    const t = new RectTool(stubRaster);
+    stroke(t, d, [10, 10], [40, 30], ctx(t));
+    expect((await readOra(await writeOra(d, fakePng, stubRaster), fakePng, "a", stubRaster)).layers[1].shape).toBeTruthy();
+    d.layers[1].data.set([0, 255, 0, 255], 0); // painted on
+    const back = await readOra(await writeOra(d, fakePng, stubRaster), fakePng, "a", stubRaster);
+    expect(back.layers[1].shape).toBeFalsy();
+  });
+});

@@ -2,7 +2,7 @@
 import { checkSize, EditorError, type EditorDoc } from "./document";
 import { makeLayer, type Layer } from "./layer";
 import { readOra } from "./ora";
-import type { Decoded, PngCodec } from "./raster";
+import type { Decoded, PngCodec, Rasterizer } from "./raster";
 
 export interface OpenSource {
   name: string;
@@ -14,7 +14,7 @@ export interface OpenSource {
 const stem = (name: string) => name.replace(/\.[^.]+$/, "") || name;
 
 /** Layers for `sources` (first at the bottom), the largest size, and plain-language errors. */
-export async function loadLayers(sources: OpenSource[], png: PngCodec): Promise<{ layers: Layer[]; width: number; height: number; errors: string[] }> {
+export async function loadLayers(sources: OpenSource[], png: PngCodec, raster?: Rasterizer): Promise<{ layers: Layer[]; width: number; height: number; errors: string[] }> {
   const layers: Layer[] = [];
   const errors: string[] = [];
   let width = 0;
@@ -22,7 +22,7 @@ export async function loadLayers(sources: OpenSource[], png: PngCodec): Promise<
   for (const s of sources) {
     try {
       if (s.name.toLowerCase().endsWith(".ora")) {
-        const doc = await readOra(await s.read(), png, s.name);
+        const doc = await readOra(await s.read(), png, s.name, raster);
         layers.push(...doc.layers);
         width = Math.max(width, doc.width);
         height = Math.max(height, doc.height);
@@ -42,8 +42,8 @@ export async function loadLayers(sources: OpenSource[], png: PngCodec): Promise<
   return { layers, width, height, errors };
 }
 
-export async function openFiles(sources: OpenSource[], png: PngCodec): Promise<{ doc: EditorDoc; errors: string[] }> {
-  const { layers, width, height, errors } = await loadLayers(sources, png);
+export async function openFiles(sources: OpenSource[], png: PngCodec, raster?: Rasterizer): Promise<{ doc: EditorDoc; errors: string[] }> {
+  const { layers, width, height, errors } = await loadLayers(sources, png, raster);
   if (!layers.length) throw new EditorError("None of the files could be opened as an image." + (errors.length === 1 ? ` ${errors[0]}` : ""));
   checkSize(width, height);
   return { doc: { width, height, layers, active: layers.length - 1, selection: null, dirty: false }, errors };

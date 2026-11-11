@@ -1,5 +1,6 @@
 // The editor document: canvas size plus a stack of layers (index 0 = bottom).
 // Port of src/umc/editor/document.py. No DOM here — runs in node tests too.
+import { anyFx, fxBounds, fxRegion } from "./layerfx";
 import { Rect } from "./geometry";
 import { layerBounds, makeLayer, type Layer } from "./layer";
 
@@ -71,12 +72,31 @@ export function pasteboard(doc: EditorDoc, step = 1, budget = PASTEBOARD_BUDGET)
   let out = bounds;
   const m = pasteboardMargin(doc.width, doc.height, budget);
   const limit = new Rect(-m, -m, doc.width + m, doc.height + m);
-  for (const l of doc.layers) if (l.visible && l.opacity > 0) out = out.union(layerBounds(l).intersect(limit));
+  for (const l of doc.layers) if (l.visible && l.opacity > 0) out = out.union(fxBounds(l).intersect(limit));
   if (step > 1 && !out.equals(bounds)) {
     const up = (v: number) => (v > 0 ? Math.ceil(v / step) * step : 0);
     out = new Rect(-up(-out.x0), -up(-out.y0), doc.width + up(out.x1 - doc.width), doc.height + up(out.y1 - doc.height)).intersect(limit);
   }
   return out;
+}
+
+/** Paint `src` (part.width × part.height, straight alpha) at `part` over `out` (rect `r`). */
+function overRegion(out: Uint8ClampedArray, r: Rect, src: Uint8ClampedArray, part: Rect, op: number): void {
+  for (let y = part.y0; y < part.y1; y++) {
+    let si = (y - part.y0) * part.width * 4;
+    let di = ((y - r.y0) * r.width + (part.x0 - r.x0)) * 4;
+    for (let x = part.x0; x < part.x1; x++, si += 4, di += 4) {
+      const sa = (src[si + 3] / 255) * op;
+      if (sa <= 0) continue;
+      const da = out[di + 3] / 255;
+      const oa = sa + da * (1 - sa);
+      const k = da * (1 - sa);
+      out[di] = (src[si] * sa + out[di] * k) / oa;
+      out[di + 1] = (src[si + 1] * sa + out[di + 1] * k) / oa;
+      out[di + 2] = (src[si + 2] * sa + out[di + 2] * k) / oa;
+      out[di + 3] = oa * 255;
+    }
+  }
 }
 
 /** Flatten the visible layers. `clip = false` lets `rect` reach past the canvas (the pasteboard). */
@@ -86,6 +106,11 @@ export function composite(doc: EditorDoc, rect?: Rect, override?: Map<number, Ui
   if (r.empty) return out;
   doc.layers.forEach((layer, i) => {
     if (!layer.visible || layer.opacity <= 0) return;
+    if (anyFx(layer.fx)) {
+      const fxPart = fxBounds(layer).intersect(r);
+      if (!fxPart.empty) overRegion(out, r, fxRegion(layer, fxPart, override?.get(i) ?? layer.data), fxPart, layer.opacity);
+      return;
+    }
     const part = layerBounds(layer).intersect(r);
     if (part.empty) return;
     const src = override?.get(i) ?? layer.data;

@@ -4,7 +4,8 @@
 import { checkSize, docBounds, EditorError, type EditorDoc } from "./document";
 import { fullMask } from "./selection";
 import { Rect } from "./geometry";
-import { DocStateCommand, LayerListCommand, type Command } from "./history";
+import { DocStateCommand, LayerListCommand, type Command, type History } from "./history";
+import { anyFx, bakedLayer, sameFx, type LayerFx } from "./layerfx";
 import { copyLayer, cropData, layerBounds, layerPixels, makeLayer, solidMask, withProps, type Layer } from "./layer";
 import { overPixel } from "./tools/base";
 
@@ -284,7 +285,8 @@ export function deleteLayers(doc: EditorDoc, indices: Iterable<number>): Command
   return change(doc, plural(chosen.length, "Delete layer", "Delete layers"), layers, Math.max(0, chosen[0] - 1));
 }
 
-function flatten(group: Layer[]): { data: Uint8ClampedArray; box: Rect } {
+function flatten(layers: Layer[]): { data: Uint8ClampedArray; box: Rect } {
+  const group = layers.map(bakedLayer); // effects become pixels
   let box = layerBounds(group[0]);
   for (const l of group.slice(1)) box = box.union(layerBounds(l));
   const data = new Uint8ClampedArray(box.width * box.height * 4);
@@ -500,6 +502,35 @@ export function maskFrom(doc: EditorDoc, alpha: Uint8Array, label = "Remove back
 /** Turn a text or shape layer into plain pixels (it can't be edited as text / shape then). */
 export function rasterizeLayer(doc: EditorDoc, index = doc.active): Command | null {
   const l = doc.layers[index];
-  if (!l.text && !l.shape) return null;
+  if (!l.text && !l.shape && !l.fx) return null;
+  // effects are drawn in (and the mask, which they were made from)
+  if (l.fx) return replace(doc, index, "Rasterize layer", bakedLayer(l));
   return replace(doc, index, "Rasterize layer", withProps(l, { text: null, shape: null }));
+}
+
+/** Give layer `index` these effects (null or all off = none). */
+export function setLayerFx(doc: EditorDoc, index: number, fx: LayerFx | null, label = "Layer effects"): Command | null {
+  const l = doc.layers[index];
+  const next = anyFx(fx) ? fx : null;
+  if (sameFx(next, l.fx)) return null;
+  return replace(doc, index, label, withProps(l, { fx: next }));
+}
+
+export function clearLayerFx(doc: EditorDoc, index = doc.active): Command | null {
+  return setLayerFx(doc, index, null, "Clear layer effects");
+}
+
+/** A settings window changed layer `index`'s effects: one undo step per run of changes from the
+ *  same window (`label`) to the same layer, like dragging a slider. True when the picture changed.
+ *  Same as tweak_layer_fx in ops.py. */
+export function tweakLayerFx(doc: EditorDoc, history: History, index: number, fx: LayerFx | null, label: string): boolean {
+  const last = history.last as (Command & { fxRun?: [number, string, Layer] }) | null;
+  const run = last?.fxRun;
+  const sameRun = !!run && run[0] === index && run[1] === label && doc.layers[index] === run[2];
+  if (sameRun) history.undo();
+  const cmd = setLayerFx(doc, index, fx, label) as (Command & { fxRun?: [number, string, Layer] }) | null;
+  if (!cmd) return sameRun;
+  cmd.fxRun = [index, label, doc.layers[index]];
+  history.push(cmd);
+  return true;
 }
