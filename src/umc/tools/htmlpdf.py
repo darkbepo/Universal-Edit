@@ -1,7 +1,8 @@
 """Documents → HTML → PDF without LibreOffice or Pandoc.
 
-DOCX is read with mammoth (BSD-2), Markdown with Python-Markdown (BSD-3), and HTML is laid out
-into PDF pages by PyMuPDF's Story engine — the same idea as the website (MuPDF lays out HTML).
+DOCX is read with mammoth (BSD-2), Markdown with markdown-it (MIT, as in the document editor),
+and HTML is laid out into PDF pages by PyMuPDF's Story engine — the same idea as the website
+(MuPDF lays out HTML).
 The layout is simpler than LibreOffice's (no headers/footers, page breaks or exact fonts), so
 the document route planner only picks these steps when LibreOffice isn't installed.
 """
@@ -56,12 +57,29 @@ def docx_to_html(src: Path, dest: Path) -> Path:
     return dest
 
 
-def markdown_to_html(src: Path, dest: Path) -> Path:
-    import markdown
+_HEADING = re.compile(r"<h([1-6])>(.*?)</h\1>", re.S)
 
-    body = markdown.markdown(
-        read_text(src), extensions=["tables", "fenced_code", "sane_lists", "toc"]
-    )
+
+def _add_heading_ids(body: str) -> str:
+    """id="…" on every heading (text lowercased, non-word runs → "-", duplicates "-1", "-2"),
+    so in-document links like [see](#usage) work in the PDF."""
+    seen: dict[str, int] = {}
+
+    def add(m: re.Match) -> str:
+        text = html.unescape(re.sub(r"<[^>]+>", "", m.group(2)))
+        base = re.sub(r"\W+", "-", text.lower()).strip("-") or "section"
+        n = seen.get(base)
+        seen[base] = 0 if n is None else n + 1
+        slug = base if n is None else f"{base}-{n + 1}"
+        return f'<h{m.group(1)} id="{slug}">{m.group(2)}</h{m.group(1)}>'
+
+    return _HEADING.sub(add, body)
+
+
+def markdown_to_html(src: Path, dest: Path) -> Path:
+    from umc.doceditor.io import md_to_html  # the same reader as the document editor
+
+    body = _add_heading_ids(md_to_html(read_text(src)))
     dest.write_text(_page(src.stem, body), encoding="utf-8")
     return dest
 

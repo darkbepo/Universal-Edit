@@ -122,7 +122,7 @@ def _pdf_to_word_check(d: Path, out: Path) -> list[Path]:
 
 
 def _builtin_documents_check(d: Path, out: Path) -> list[Path]:
-    """Word / Markdown → PDF with the built-in engines (mammoth, Markdown, PyMuPDF Story)."""
+    """Word / Markdown → PDF with the built-in engines (mammoth, markdown-it, PyMuPDF Story)."""
     import pymupdf
 
     from umc.converters import document

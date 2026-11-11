@@ -1,6 +1,7 @@
 """DOCX / Markdown / HTML / TXT → PDF with nothing installed (no LibreOffice, no Pandoc)."""
 
 import io
+import re
 
 import pymupdf
 import pytest
@@ -74,3 +75,27 @@ def test_docx_to_html_without_pandoc(nothing_installed, tmp_path):
     [out] = convert([_docx(tmp_path / "r.docx")], "doc:html", tmp_path / "out")
     html = out.read_text(encoding="utf-8")
     assert "<table>" in html and "Århus" in html and "data:image/png" in html
+
+
+def test_md_to_pdf_two_space_nested_list(nothing_installed, tmp_path):
+    from umc.tools import htmlpdf
+
+    src = tmp_path / "list.md"
+    src.write_text("- one\n  - two\n- three\n", encoding="utf-8")
+    html_out = htmlpdf.markdown_to_html(src, tmp_path / "list.html").read_text(encoding="utf-8")
+    assert re.search(r"<li>one\s*<ul>\s*<li>two", html_out)
+    [out] = convert([src], "doc:pdf", tmp_path / "out")
+    with pymupdf.open(out) as doc:
+        text = doc[0].get_text()
+    assert text.index("one") < text.index("two") < text.index("three")
+
+
+def test_heading_ids_for_links(tmp_path):
+    from umc.tools import htmlpdf
+
+    src = tmp_path / "ids.md"
+    src.write_text("# Usage\n\n## Usage\n\n### Q & A: Why?\n\n[see](#usage)\n", encoding="utf-8")
+    html_out = htmlpdf.markdown_to_html(src, tmp_path / "ids.html").read_text(encoding="utf-8")
+    assert '<h1 id="usage">Usage</h1>' in html_out
+    assert '<h2 id="usage-1">Usage</h2>' in html_out
+    assert '<h3 id="q-a-why">' in html_out

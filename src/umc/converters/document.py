@@ -25,7 +25,7 @@ from umc.tools import calibre, htmlpdf, libreoffice, pandoc, pdf
 PYMUPDF, PANDOC, SOFFICE = "pymupdf", "pandoc", "libreoffice"
 PDF2DOCX = "pdf2docx"
 CALIBRE = "calibre"
-# Built-in (no download): DOCX → HTML (mammoth), Markdown → HTML (Python-Markdown),
+# Built-in (no download): DOCX → HTML (mammoth), Markdown → HTML (markdown-it),
 # HTML / TXT → PDF (PyMuPDF Story). Simpler layout than LibreOffice, so priced above it.
 MAMMOTH, MARKDOWN, HTMLPDF = "mammoth", "markdown", "pymupdf-html"
 # Calibre reads these and writes the e-book formats below (Kindle formats only through it)

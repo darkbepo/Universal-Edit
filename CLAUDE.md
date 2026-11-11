@@ -311,7 +311,7 @@ weighted edge (e.g. pandoc md→docx, libreoffice docx→pdf) and picks the chea
 `md → pdf` becomes `md →(pandoc) docx →(libreoffice) pdf`. Engines that aren't installed get a
 +100 penalty, so working routes are preferred and a missing tool only triggers the download
 prompt when there's no alternative. To support a new document format, add edges — not special cases.
-Built-in edges (`tools/htmlpdf.py`: mammoth DOCX → HTML, Python-Markdown MD → HTML, PyMuPDF Story
+Built-in edges (`tools/htmlpdf.py`: mammoth DOCX → HTML, markdown-it MD → HTML, PyMuPDF Story
 HTML/TXT → PDF via `pdf.layout_html`) make Word / Markdown / HTML / TXT → PDF work with nothing
 installed. They're priced above LibreOffice (simpler layout), so LibreOffice wins when present.
 LibreOffice reuses one profile (`%LOCALAPPDATA%\UniversalEdit\libreoffice-profile`,
