@@ -1,7 +1,6 @@
 # 3D editor (both apps) — design
 
-Date: 2026-11-11 · Roadmap item 10.8 · Status: **step 0 (viewer) implemented**, steps 1–5 proposed,
-waiting for the owner's go-ahead.
+Date: 2026-11-11 · Roadmap item 10.8 · Status: **step 0 (viewer) implemented**; steps 1–5 agreed with the owner (2026-11-11).
 
 ## Goal
 
@@ -72,13 +71,11 @@ then save it as STL / 3MF / OBJ / PLY / GLB. Everything lands in both apps, one 
   converter in the worker with "Centre on the print bed" and "Repair" off.
 - Self-test step per new library; README "What works where" rows and a roadmap line per step.
 
-## Open questions for the owner
+## Decisions (owner, 2026-11-11)
 
-1. Is the order right (transform → repair → parts/bed → cut → simplify/measure)?
-2. Printer bed presets: which printers do you use? (Default bed size for the outline.)
-3. Cutting with a closed cut face and triangle reduction need extra libraries:
-   desktop `manifold3d` (Apache-2.0, robust cuts) or `mapbox-earcut` (ISC, cap triangulation),
-   and `fast-simplification` (MIT); web `manifold-3d` wasm (Apache-2.0) and `meshoptimizer`
-   (MIT). All AGPL-compatible — OK to add them when we reach steps 4–5?
-4. Drag handles ("gizmo") in the view for move / rotate / scale, or numbers + buttons in the side
-   panel first (proposed: numbers first, handles as a later polish step)?
+| Question | Decision |
+|---|---|
+| Order of the steps | As listed: transform → repair → parts / bed → cut → simplify / measure. |
+| Printer bed | The owner doesn't know their printer: default to a generic 220 × 220 × 250 mm bed, with presets for common printers and a custom size; the choice is remembered. |
+| Extra libraries | Approved for steps 4–5: desktop `manifold3d` (Apache-2.0), `fast-simplification` (MIT); web `manifold-3d` (Apache-2.0), `meshoptimizer` (MIT). |
+| Moving / rotating / scaling | **Drag handles in the view from the start** (move arrows + bed-plane drag, rotation rings, scale boxes), with the number fields in the side panel as well for exact values. |
