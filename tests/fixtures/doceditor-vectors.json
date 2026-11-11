@@ -316,6 +316,16 @@
    "in": "<p/>x</p><div/>y<p title='a/'/>t</p><p><a href=x/>l</a>a<br/>z</p>",
    "out": "<p>x</p><p>y</p><p>t</p><p><a href=\"x/\">l</a>a<br>z</p>",
    "warnings": []
+  },
+  {
+   "in": "<p>a</br>b</p>",
+   "out": "<p>a<br>b</p>",
+   "warnings": []
+  },
+  {
+   "in": "<p>a</BR >b</br class=x>c</p><p title='</br>'>d</brx>e</p>",
+   "out": "<p>a<br>b<br>c</p><p>de</p>",
+   "warnings": []
   }
  ],
  "markdown": [

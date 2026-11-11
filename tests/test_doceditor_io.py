@@ -481,3 +481,13 @@ def test_self_closing_slash_is_ignored_like_html5():
     assert normalise_html("<p/>x</p>")[0] == "<p>x</p>"
     assert normalise_html("<div/>y<p title='a/'/>t</p>")[0] == ("<p>y</p><p>t</p>")
     assert normalise_html("<p><a href=x/>l</a>a<br/>z</p>")[0] == '<p><a href="x/">l</a>a<br>z</p>'
+
+
+def test_closing_br_is_a_line_break_like_html5():
+    # "</br>" is a common README habit; browsers and GitHub read it as <br>, libxml2 drops it.
+    assert normalise_html("<p>a</br>b</p>")[0] == "<p>a<br>b</p>"
+    assert normalise_html("<p>a</BR >b</br class=x>c</p>")[0] == "<p>a<br>b<br>c</p>"
+    assert normalise_html('<p title="</br>">a</p><!-- </br> --><p>b</brx>c</p>')[0] == (
+        "<p>a</p><p>bc</p>"
+    )
+

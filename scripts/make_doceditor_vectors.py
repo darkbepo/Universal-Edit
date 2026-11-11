@@ -118,6 +118,9 @@ NORMALISE = [
     '<p data-x="<p>">a</p></p><p x=y>b</p><p =">">c</p>',
     # the "/" of a self-closing start tag is ignored, as HTML5 does
     "<p/>x</p><div/>y<p title='a/'/>t</p><p><a href=x/>l</a>a<br/>z</p>",
+    # "</br>" (a common README habit) is a line break, as in browsers and on GitHub
+    "<p>a</br>b</p>",
+    "<p>a</BR >b</br class=x>c</p><p title='</br>'>d</brx>e</p>",
 ]
 
 FENCE_MD = (

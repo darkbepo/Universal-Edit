@@ -2,8 +2,9 @@
 parser (the website) reads.
 
 Numeric references (Windows-1252 and invalid code points), the content of raw text / RCDATA
-elements, and the "/" of self-closing start tags are adjusted by one pass from left to right
-over the tags, read with their attributes. The website's `subset-scan.ts` is the mirror image.
+elements, the "/" of self-closing start tags and ``</br>`` end tags are adjusted by one pass
+from left to right over the tags, read with their attributes. The website's
+`subset-scan.ts` is the mirror image (an HTML5 parser reads ``</br>`` as <br> by itself).
 """
 
 from __future__ import annotations
@@ -71,6 +72,8 @@ _SPECIAL = frozenset(_SPECIAL_END) | {"plaintext"}
 # "/" or ">").
 _TAG_START = re.compile(r"<(?:(!--)|(/?)([A-Za-z][^\t\n\f\r />]*))")
 _HTML_SPACE = "\t\n\f\r "
+# An end tag "</br>" (any case, attributes allowed): HTML5 reads it as <br>, libxml2 drops it.
+_BR_END = re.compile(r"</br(?=[\t\n\f\r />])", re.I)
 
 
 def _tag_end(html: str, i: int) -> tuple[int, bool]:
@@ -110,10 +113,16 @@ def _tag_end(html: str, i: int) -> tuple[int, bool]:
 def html5_text(html: str) -> str:
     """Prepare ``html`` for libxml2 so it reads what an HTML5 parser (the website) reads:
     numeric references, the content of raw text / RCDATA elements (escaped, so libxml2
-    keeps it as text), and the "/" of a self-closing start tag (dropped: HTML5 ignores it, so
-    ``<p/>x</p>`` is one paragraph). One pass from left to right; the tags in between are read
-    with their attributes, so a tag name written inside a quoted value starts nothing."""
-    if "&#" not in html and "/>" not in html and not _SPECIAL_START.search(html):
+    keeps it as text), the "/" of a self-closing start tag (dropped: HTML5 ignores it, so
+    ``<p/>x</p>`` is one paragraph), and ``</br>`` (a line break in HTML5, so written ``<br>``).
+    One pass from left to right; the tags in between are read with their attributes, so a tag
+    name written inside a quoted value starts nothing."""
+    if (
+        "&#" not in html
+        and "/>" not in html
+        and not _SPECIAL_START.search(html)
+        and not _BR_END.search(html)
+    ):
         return html
     out: list[str] = []
     pos = i = 0
@@ -126,10 +135,15 @@ def html5_text(html: str) -> str:
         if gt < 0:
             break
         i = gt + 1
+        name = m.group(3).lower()
+        if m.group(2) and name == "br":
+            out.append(_num_refs(html[pos : m.start()]))
+            out.append("<br>")
+            pos = i
+            continue
         if self_closing and not m.group(2):
             out.append(_num_refs(html[pos : gt - 1]))
             pos = gt
-        name = m.group(3).lower()
         if m.group(2) or name not in _SPECIAL:
             continue
         out.append(_num_refs(html[pos:i]))
