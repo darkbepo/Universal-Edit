@@ -907,13 +907,84 @@ const numRefs = (s: string) => (s.includes("&#") ? s.replace(NUM_REF, numRef) : 
 // <style> and the RCDATA elements (<title>, <textarea>) are scanned past, so a "<xmp" inside
 // them isn't taken for a tag.
 const RAW_TEXT = set("xmp noembed noframes plaintext iframe");
-const SPECIAL_START =
-  /<(?:(!--)|(script|style|xmp|noembed|noframes|plaintext|iframe|title|textarea)(?=[\t\n\f\r />]))/gi;
 const SPECIAL_END = new Map(
   "script style xmp noembed noframes iframe title textarea"
     .split(" ")
     .map((name) => [name, new RegExp(`</${name}(?=[\\t\\n\\f\\r />])`, "gi")]),
 );
+// A comment, or a start / end tag and its name (HTML5: a letter, then anything up to a space,
+// "/" or ">").
+const TAG_START = /<(?:(!--)|(\/?)([A-Za-z][^\t\n\f\r />]*))/g;
+const isTagSpace = (c: string) => c === " " || c === "\t" || c === "\n" || c === "\f" || c === "\r";
+
+/** The index of the ">" that ends a tag whose attributes start at `i` (-1 when it never ends).
+ * Quoted attribute values are skipped, so a ">" or "<xmp>" inside one is not markup. */
+function tagEnd(html: string, i: number): number {
+  const n = html.length;
+  let inName = false; // in (or after) an attribute name, where "=" starts its value
+  while (i < n) {
+    const c = html[i];
+    if (c === ">") return i;
+    if (c === "=" && inName) {
+      i++;
+      while (i < n && isTagSpace(html[i])) i++;
+      if (i < n && (html[i] === '"' || html[i] === "'")) {
+        const close = html.indexOf(html[i], i + 1);
+        if (close < 0) return -1;
+        i = close + 1;
+      } else {
+        // unquoted: up to a space or ">"
+        while (i < n && !isTagSpace(html[i]) && html[i] !== ">") i++;
+      }
+      inName = false;
+      continue;
+    }
+    if (c === "/") inName = false;
+    else if (!isTagSpace(c)) inName = true;
+    i++;
+  }
+  return -1;
+}
+
+interface Tag {
+  name: string; // lower case
+  closing: boolean;
+  nameEnd: number; // where the attributes start
+  end: number; // just past the ">"
+  bodyEnd: number; // just past the text content of a raw text / RCDATA / script element
+}
+
+/** The next start or end tag from `from` on, read the way the desktop's scan reads it
+ * (html_subset._html5_text): comments are skipped, and so is the text of raw text, RCDATA,
+ * <script> and <style> elements (up to `bodyEnd`). Null when no further tag ends. */
+function nextTag(html: string, from: number): Tag | null {
+  let i = from;
+  for (;;) {
+    TAG_START.lastIndex = i;
+    const m = TAG_START.exec(html);
+    if (!m) return null;
+    const after = m.index + m[0].length;
+    if (m[1]) {
+      // a comment, up to "-->" (an unclosed one runs to the end)
+      const close = html.indexOf("-->", after);
+      if (close < 0) return null;
+      i = close + 3;
+      continue;
+    }
+    const gt = tagEnd(html, after);
+    if (gt < 0) return null;
+    const name = m[3].toLowerCase();
+    const closing = m[2] === "/";
+    let bodyEnd = gt + 1;
+    if (!closing && name === "plaintext") bodyEnd = html.length; // never ends
+    else if (!closing && SPECIAL_END.has(name)) {
+      const closer = SPECIAL_END.get(name) as RegExp;
+      closer.lastIndex = gt + 1;
+      bodyEnd = closer.exec(html)?.index ?? html.length;
+    }
+    return { name, closing, nameEnd: after, end: gt + 1, bodyEnd };
+  }
+}
 
 /** Numeric references the way the desktop reads them (it maps them before libxml2 parses the
  * page): invalid code points become U+FFFD. One pass from left to right. */
@@ -921,33 +992,11 @@ function html5Refs(html: string): string {
   if (!html.includes("&#")) return html;
   const out: string[] = [];
   let pos = 0;
-  for (;;) {
-    SPECIAL_START.lastIndex = pos;
-    const m = SPECIAL_START.exec(html);
-    if (!m) break;
-    const after = m.index + m[0].length;
-    if (m[1]) {
-      // a comment, up to "-->" (an unclosed one runs to the end)
-      const close = html.indexOf("-->", after);
-      const end = close < 0 ? html.length : close + 3;
-      out.push(numRefs(html.slice(pos, end)));
-      pos = end;
-      continue;
+  for (let t = nextTag(html, 0); t; t = nextTag(html, t.bodyEnd)) {
+    if (t.bodyEnd > t.end && RAW_TEXT.has(t.name)) {
+      out.push(numRefs(html.slice(pos, t.end)), html.slice(t.end, t.bodyEnd));
+      pos = t.bodyEnd;
     }
-    const name = m[2].toLowerCase();
-    const gt = html.indexOf(">", after);
-    if (gt < 0) break;
-    out.push(numRefs(html.slice(pos, gt + 1)));
-    let end = html.length; // <plaintext> never ends
-    const closer = SPECIAL_END.get(name);
-    if (closer) {
-      closer.lastIndex = gt + 1;
-      const close = closer.exec(html);
-      if (close) end = close.index;
-    }
-    const body = html.slice(gt + 1, end);
-    out.push(RAW_TEXT.has(name) ? body : numRefs(body));
-    pos = end;
   }
   out.push(numRefs(html.slice(pos)));
   return out.join("");
@@ -955,34 +1004,40 @@ function html5Refs(html: string): string {
 
 // ----- parsing -----------------------------------------------------------------------------
 
+// Marks the <p> start tags of the source, so the empty paragraph HTML5 makes for a stray </p>
+// (libxml2 ignores it) can be told apart and removed.
+const P_MARK = "data-umc-p";
+
 /** Make an HTML5 parser read `html` the way libxml2 does where they differ. */
 function libxmlLike(html: string): string {
   // libxml2 turns NUL into a space and drops the other characters XML 1.0 forbids.
   html = html.replace(/\x00/g, " ").replace(XML_FORBIDDEN, "");
-  // Inside <pre>: keep \r (as CR, see above) and the first newline, which HTML5 drops.
-  // Scanned with indexOf, not regexes: many unterminated "<pre" or "<" must stay linear.
-  const openTag = /<pre/gi;
-  const closeTag = /<\/pre\s*>/gi;
-  const find = (re: RegExp, from: number) => {
-    re.lastIndex = from;
-    return re.exec(html)?.index ?? -1;
-  };
-  const parts: string[] = [];
+  const marked: string[] = [];
   let from = 0;
-  let at = find(openTag, 0);
-  while (at >= 0) {
-    if (/\w/.test(html[at + 4] ?? "")) {
-      at = find(openTag, at + 4); // <prefix>, not <pre>
+  for (let t = nextTag(html, 0); t; t = nextTag(html, t.bodyEnd)) {
+    if (t.name === "p" && !t.closing) {
+      // with a value, so a "=" that follows (`<p ="x">`) doesn't become its value
+      marked.push(html.slice(from, t.nameEnd), ` ${P_MARK}=""`);
+      from = t.nameEnd;
+    }
+  }
+  marked.push(html.slice(from));
+  html = marked.join("");
+  // Inside <pre>: keep \r (as CR, see above) and the first newline, which HTML5 drops.
+  const closeTag = /<\/pre\s*>/gi;
+  const parts: string[] = [];
+  from = 0;
+  for (let t = nextTag(html, 0); t; ) {
+    if (t.name !== "pre" || t.closing) {
+      t = nextTag(html, t.bodyEnd);
       continue;
     }
-    const gt = html.indexOf(">", at + 4);
-    if (gt < 0) break; // no tag can end after this
-    let end = find(closeTag, gt + 1);
-    if (end < 0) end = html.length;
-    const kept = keepCarriageReturns(html.slice(gt + 1, end));
-    parts.push(html.slice(from, gt + 1), kept.startsWith("\n") ? "\n" : "", kept);
+    closeTag.lastIndex = t.end;
+    const end = closeTag.exec(html)?.index ?? html.length;
+    const kept = keepCarriageReturns(html.slice(t.end, end));
+    parts.push(html.slice(from, t.end), kept.startsWith("\n") ? "\n" : "", kept);
     from = end;
-    at = find(openTag, end);
+    t = nextTag(html, end);
   }
   parts.push(html.slice(from));
   return parts.join("");
@@ -1023,7 +1078,12 @@ function onlyDoctypeAndComments(html: string): boolean {
 }
 
 function parseDocument(html: string): Document {
-  return new DOMParser().parseFromString(libxmlLike(html5Refs(html)), "text/html");
+  const doc = new DOMParser().parseFromString(libxmlLike(html5Refs(html)), "text/html");
+  for (const p of Array.from(doc.getElementsByTagName("p"))) {
+    if (p.hasAttribute(P_MARK)) p.removeAttribute(P_MARK);
+    else if (!p.firstChild) p.remove(); // made for a stray </p>
+  }
+  return doc;
 }
 
 const FULL_HTML = new RegExp(`^${S}*<(?:html|!doctype)`, "i");

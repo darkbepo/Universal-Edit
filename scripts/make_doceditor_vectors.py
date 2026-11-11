@@ -104,6 +104,17 @@ NORMALISE = [
     # an inline wrapper left empty before a break in a list item
     "<ul><li><b> </b><p>x</p></li></ul>",
     '<ul><li>a<span style="color:red"><i> </i></span><p>b</p></li></ul>',
+    # a carriage return written as a reference
+    "<p>a&#13;b</p><pre>a&#13;b</pre><p>c&#13;&#10;d</p>",
+    # a stray </p> starts no paragraph (libxml2 ignores it; HTML5 would add an empty one)
+    "<p><xmp>x <b>y</b></xmp></p><p>t<xmp>x</xmp>u</p>",
+    "<p>a</p></p><div>b</p>c</div>x</p>y<p><pre>z</pre></p><p></p>",
+    # a tag name inside a quoted attribute value starts nothing
+    '<p><a title="<xmp>" href="http://a">l</a>&#1;</p><p>b</p>',
+    "<p><span title='<xmp>'>s</span>&#146;<b>b</b></p>",
+    '<xmp title=">">a&#1;</xmp><p>&#1;b</p>',
+    "<p title='<pre>'>x</p><pre>\n\na</pre>",
+    '<p data-x="<p>">a</p></p><p x=y>b</p><p =">">c</p>',
 ]
 
 FENCE_MD = (

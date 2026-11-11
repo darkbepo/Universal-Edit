@@ -455,3 +455,22 @@ def test_empty_wrapper_before_an_item_break():
     assert normalise_html('<ul><li>a<span style="color:red"><i> </i></span><p>b</p></li></ul>')[
         0
     ] == ("<ul><li>a<br>b</li></ul>")
+
+
+def test_tag_names_in_attribute_values_are_not_tags():
+    # A "<xmp>" or "<pre>" inside a quoted attribute value starts nothing (HTML5 reads it so).
+    assert normalise_html('<p><a title="<xmp>" href="http://a">l</a>&#1;</p><p>b</p>')[0] == (
+        '<p><a href="http://a">l</a>�</p><p>b</p>'
+    )
+    assert normalise_html("<p><span title='<xmp>'>s</span>&#146;<b>b</b></p>")[0] == (
+        "<p>s’<b>b</b></p>"
+    )
+    assert normalise_html('<xmp title=">">a&#1;</xmp><p>&#1;b</p>')[0] == (
+        "<p>a&amp;#1;</p><p>�b</p>"
+    )
+
+
+def test_carriage_return_references_and_stray_paragraph_ends():
+    assert normalise_html("<p>a&#13;b</p><pre>a&#13;b</pre>")[0] == "<p>a b</p><pre>a\rb</pre>"
+    assert normalise_html("<p><xmp>x</xmp></p>")[0] == "<p></p><p>x</p>"
+    assert normalise_html("<p>a</p></p><div>b</p>c</div>")[0] == "<p>a</p><p>bc</p>"

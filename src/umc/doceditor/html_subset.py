@@ -292,34 +292,72 @@ _SPECIAL_END = {
     name: re.compile(rf"</{name}(?=[\t\n\f\r />])", re.I)
     for name in ("script", "style", "xmp", "noembed", "noframes", "iframe", "title", "textarea")
 }
+_SPECIAL = frozenset(_SPECIAL_END) | {"plaintext"}
+# A comment, or a start / end tag and its name (HTML5: a letter, then anything up to a space,
+# "/" or ">").
+_TAG_START = re.compile(r"<(?:(!--)|(/?)([A-Za-z][^\t\n\f\r />]*))")
+_HTML_SPACE = "\t\n\f\r "
+
+
+def _tag_end(html: str, i: int) -> int:
+    """The index of the ">" that ends a tag whose attributes start at ``i`` (-1 when it never
+    ends). Quoted attribute values are skipped, so a ">" or "<xmp>" inside one is not markup."""
+    n = len(html)
+    in_name = False  # in (or after) an attribute name, where "=" starts its value
+    while i < n:
+        c = html[i]
+        if c == ">":
+            return i
+        if c == "=" and in_name:
+            i += 1
+            while i < n and html[i] in _HTML_SPACE:
+                i += 1
+            if i < n and html[i] in "\"'":
+                close = html.find(html[i], i + 1)
+                if close < 0:
+                    return -1
+                i = close + 1
+            else:  # unquoted: up to a space or ">"
+                while i < n and html[i] not in _HTML_SPACE and html[i] != ">":
+                    i += 1
+            in_name = False
+            continue
+        if c == "/":
+            in_name = False
+        elif c not in _HTML_SPACE:
+            in_name = True
+        i += 1
+    return -1
 
 
 def _html5_text(html: str) -> str:
     """Prepare ``html`` for libxml2 so it reads what an HTML5 parser (the website) reads:
     numeric references, and the content of raw text / RCDATA elements (escaped, so libxml2
-    keeps it as text). One pass from left to right."""
+    keeps it as text). One pass from left to right; the tags in between are read with their
+    attributes, so a tag name written inside a quoted value starts nothing."""
     if "&#" not in html and not _SPECIAL_START.search(html):
         return html
     out: list[str] = []
-    pos = 0
-    while (m := _SPECIAL_START.search(html, pos)) is not None:
+    pos = i = 0
+    while (m := _TAG_START.search(html, i)) is not None:
         if m.group(1):  # a comment, up to "-->" (an unclosed one runs to the end)
             end = html.find("-->", m.end())
-            end = len(html) if end < 0 else end + 3
-            out.append(_num_refs(html[pos:end]))
-            pos = end
+            i = len(html) if end < 0 else end + 3
             continue
-        name = m.group(2).lower()
-        gt = html.find(">", m.end())
+        gt = _tag_end(html, m.end())
         if gt < 0:
             break
-        out.append(_num_refs(html[pos : gt + 1]))
+        i = gt + 1
+        name = m.group(3).lower()
+        if m.group(2) or name not in _SPECIAL:
+            continue
+        out.append(_num_refs(html[pos:i]))
         if name == "plaintext":  # never ends
             end = len(html)
         else:
-            close = _SPECIAL_END[name].search(html, gt + 1)
+            close = _SPECIAL_END[name].search(html, i)
             end = close.start() if close else len(html)
-        body = html[gt + 1 : end]
+        body = html[i:end]
         if name in _RAW_TEXT:
             body = body.replace("&", "&amp;").replace("<", "&lt;")
         elif name in _RCDATA:
@@ -327,7 +365,7 @@ def _html5_text(html: str) -> str:
         else:  # script / style: libxml2 keeps them as text already
             body = _num_refs(body)
         out.append(body)
-        pos = end
+        pos = i = end
     out.append(_num_refs(html[pos:]))
     return "".join(out)
 

@@ -271,6 +271,46 @@
    "in": "<ul><li>a<span style=\"color:red\"><i> </i></span><p>b</p></li></ul>",
    "out": "<ul><li>a<br>b</li></ul>",
    "warnings": []
+  },
+  {
+   "in": "<p>a&#13;b</p><pre>a&#13;b</pre><p>c&#13;&#10;d</p>",
+   "out": "<p>a b</p><pre>a\rb</pre><p>c d</p>",
+   "warnings": []
+  },
+  {
+   "in": "<p><xmp>x <b>y</b></xmp></p><p>t<xmp>x</xmp>u</p>",
+   "out": "<p></p><p>x &lt;b&gt;y&lt;/b&gt;</p><p>t</p><p>xu</p>",
+   "warnings": []
+  },
+  {
+   "in": "<p>a</p></p><div>b</p>c</div>x</p>y<p><pre>z</pre></p><p></p>",
+   "out": "<p>a</p><p>bc</p><p>xy</p><p></p><pre>z</pre><p></p>",
+   "warnings": []
+  },
+  {
+   "in": "<p><a title=\"<xmp>\" href=\"http://a\">l</a>&#1;</p><p>b</p>",
+   "out": "<p><a href=\"http://a\">l</a>�</p><p>b</p>",
+   "warnings": []
+  },
+  {
+   "in": "<p><span title='<xmp>'>s</span>&#146;<b>b</b></p>",
+   "out": "<p>s’<b>b</b></p>",
+   "warnings": []
+  },
+  {
+   "in": "<xmp title=\">\">a&#1;</xmp><p>&#1;b</p>",
+   "out": "<p>a&amp;#1;</p><p>�b</p>",
+   "warnings": []
+  },
+  {
+   "in": "<p title='<pre>'>x</p><pre>\n\na</pre>",
+   "out": "<p>x</p><pre>\n\na</pre>",
+   "warnings": []
+  },
+  {
+   "in": "<p data-x=\"<p>\">a</p></p><p x=y>b</p><p =\">\">c</p>",
+   "out": "<p>a</p><p>b</p><p>\"&gt;c</p>",
+   "warnings": []
   }
  ],
  "markdown": [
