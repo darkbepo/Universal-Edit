@@ -82,16 +82,23 @@ class _ShapeTool(Tool):
         return self.draw_points(self._points(ctx), ctx, (bw, bh))
 
     def draw_points(
-        self, pts, ctx: ToolContext, canvas: tuple[int, int] | None = None
+        self,
+        pts,
+        ctx: ToolContext,
+        canvas: tuple[int, int] | None = None,
+        limit: Rect | None = None,
     ) -> tuple[Image.Image, int, int] | None:
         """The shape through ``pts`` (canvas coordinates): (image, x, y). With ``canvas`` the
-        preview is limited to it (plus the stroke); a layer keeps the whole shape."""
+        preview is limited to it (plus the stroke), with ``limit`` to that area (a reshape's
+        live preview: the pasteboard); a layer keeps the whole shape."""
         pad = self._pad(ctx)
         box = Rect.from_points(*pts)
         box = Rect(box.x0 - pad, box.y0 - pad, box.x1 + pad, box.y1 + pad)
         if canvas is not None:
             bw, bh = canvas
             box = box.intersect(Rect(-pad, -pad, bw + pad, bh + pad))  # nothing off-canvas
+        if limit is not None:
+            box = box.intersect(limit)
         if box.empty:
             return None
         s = supersample(box.width * box.height)
@@ -123,7 +130,10 @@ class _ShapeTool(Tool):
             if shape_painted_over(layer):
                 self.notice = "This shape was painted on, so it's pixels now (its handles are off)."
             else:
-                self._grab = (hit, layer, doc.active)  # reshape it instead of drawing a new one
+                hx, hy = handle_points(layer)[hit]
+                # reshape it instead of drawing a new one; the handle keeps its offset to the
+                # pointer, so a click without a drag changes nothing
+                self._grab = (hit, layer, doc.active, (hx - x, hy - y))
                 return None
         self._start = self._end = (x, y)
         return None
@@ -143,13 +153,15 @@ class _ShapeTool(Tool):
 
     def release(self, doc: Document, x: float, y: float, ctx: ToolContext) -> Command | None:
         if self._grab is not None:
-            self._reshape(doc, x, y, ctx)
-            _hit, old, index = self._grab
+            hit, old, index, (ox, oy) = self._grab
             self._grab = None
-            new = doc.layers[index]
             doc.layers = list(doc.layers)
             doc.layers[index] = old  # the live preview goes; the undoable change comes
-            if new is old:
+            pts = self._reshaped(old, hit, x + ox, y + oy)
+            if pts == canvas_points(old):
+                return None
+            new = shape_layer(old.name, replace(old.shape, points=pts), old)
+            if new is None:
                 return None
             from umc.editor import ops
 
@@ -167,14 +179,14 @@ class _ShapeTool(Tool):
         from umc.editor import ops
 
         layer = shape_layer(ops.unique_name(doc, self.label), spec)
-        if layer is None:
-            return None
+        if layer is None or layer.image.getbbox() is None:
+            return None  # e.g. a rectangle dragged flat: nothing to show
         return ops.add_layers(doc, [layer], self.label)
 
     def cancel(self, doc: Document) -> Rect | None:
         old = self._overlay_rect()
         if self._grab is not None:
-            _hit, layer, index = self._grab
+            layer, index = self._grab[1], self._grab[2]
             self._grab = None
             dirty = doc.layers[index].bounds.union(layer.bounds)
             doc.layers = list(doc.layers)
@@ -200,8 +212,9 @@ class _ShapeTool(Tool):
                 return i
         return None
 
-    def _reshape(self, doc: Document, x: float, y: float, ctx: ToolContext) -> Rect | None:
-        hit, old, index = self._grab
+    @staticmethod
+    def _reshaped(old: Layer, hit: int, x: float, y: float) -> tuple:
+        """``old``'s canvas points with handle ``hit`` dragged to (x, y)."""
         pts = list(canvas_points(old))
         if old.shape.kind in ("line", "arrow"):
             pts[2 * hit : 2 * hit + 2] = [x, y]
@@ -209,7 +222,14 @@ class _ShapeTool(Tool):
             xi = 0 if hit in (0, 3) else 2
             yi = 1 if hit in (0, 1) else 3
             pts[xi], pts[yi] = x, y
-        new = shape_layer(old.name, replace(old.shape, points=tuple(pts)), old)
+        return tuple(pts)
+
+    def _reshape(self, doc: Document, x: float, y: float, ctx: ToolContext) -> Rect | None:
+        hit, old, index, (ox, oy) = self._grab
+        pts = self._reshaped(old, hit, x + ox, y + oy)
+        # the live preview only draws what the view can show (a handle dragged far away on a
+        # big picture would otherwise draw a huge image on every move)
+        new = shape_layer(old.name, replace(old.shape, points=pts), old, doc.pasteboard())
         if new is None:
             return None
         cur = doc.layers[index]
@@ -341,7 +361,10 @@ class ShapeSpec:
     def from_dict(cls, d: dict) -> ShapeSpec:
         known = set(cls.__dataclass_fields__)
         clean = {k: (tuple(v) if k in ("points", "color", "fill") else v) for k, v in d.items()}
-        return cls(**{k: v for k, v in clean.items() if k in known})
+        spec = cls(**{k: v for k, v in clean.items() if k in known})
+        if spec.kind not in ("line", "arrow", "rect", "ellipse") or len(spec.points) != 4:
+            raise ValueError("not a shape this version can draw")
+        return spec
 
 
 _KINDS: dict[str, type] = {}
@@ -380,15 +403,28 @@ def _context(spec: ShapeSpec) -> ToolContext:
     return ToolContext(spec.color, spec.fill, tool.options_cls(**fields))
 
 
-def render_shape(spec: ShapeSpec) -> tuple[Image.Image, int, int] | None:
+def render_shape(spec: ShapeSpec, limit: Rect | None = None) -> tuple[Image.Image, int, int] | None:
     """(image, x, y) of a shape whose points are in canvas coordinates."""
-    return _tool_for(spec.kind).draw_points(spec.points, _context(spec))
+    return _tool_for(spec.kind).draw_points(spec.points, _context(spec), limit=limit)
 
 
-def shape_layer(name: str, spec: ShapeSpec, old: Layer | None = None) -> Layer | None:
+def replaced_mask(old: Layer, x: int, y: int, size: tuple[int, int]) -> Image.Image | None:
+    """``old``'s mask for the same layer redrawn at (x, y) with ``size``: it stays on the same
+    picture pixels; areas it didn't cover yet show (white)."""
+    if old.mask is None:
+        return None
+    mask = Image.new("L", size, 255)
+    mask.paste(old.mask, (old.x - x, old.y - y))
+    return mask
+
+
+def shape_layer(
+    name: str, spec: ShapeSpec, old: Layer | None = None, limit: Rect | None = None
+) -> Layer | None:
     """A layer holding the shape (``spec`` in canvas coordinates). Redrawing ``old`` keeps what
-    the user set on it: visibility, opacity and its mask when the size still fits."""
-    drawn = render_shape(spec)
+    the user set on it: visibility, opacity, effects and its mask (on the same picture pixels).
+    ``limit`` draws only that part (live previews)."""
+    drawn = render_shape(spec, limit)
     if drawn is None:
         return None
     img, x, y = drawn
@@ -396,9 +432,12 @@ def shape_layer(name: str, spec: ShapeSpec, old: Layer | None = None) -> Layer |
     local = replace(spec, points=(p[0] - x, p[1] - y, p[2] - x, p[3] - y))
     layer = Layer(name, img, x=x, y=y, shape=local)
     if old is not None:
-        keep_mask = old.mask is not None and old.mask.size == img.size
         layer = replace(
-            layer, opacity=old.opacity, visible=old.visible, mask=old.mask if keep_mask else None
+            layer,
+            opacity=old.opacity,
+            visible=old.visible,
+            mask=replaced_mask(old, x, y, img.size),
+            fx=old.fx,
         )
     return layer
 

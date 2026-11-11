@@ -10,6 +10,7 @@ from dataclasses import replace
 
 from PIL import Image
 
+from umc.editor import layerfx
 from umc.editor.document import Document, check_size, with_opacity
 from umc.editor.geometry import Rect
 from umc.editor.history import (
@@ -89,7 +90,8 @@ def crop(doc: Document, rect: Rect) -> Command | None:
         shifted = layer.bounds.offset(-rect.x0, -rect.y0)
         keep = shifted.intersect(canvas)
         if keep.empty:
-            layers.append(replace(layer, image=Image.new("RGBA", (1, 1)), x=0, y=0, mask=None))
+            empty = Image.new("RGBA", (1, 1))
+            layers.append(replace(layer, image=empty, x=0, y=0, mask=None, text=None, shape=None))
             continue
         box = keep.offset(-shifted.x0, -shifted.y0).box
         layers.append(_moved(layer, x=keep.x0, y=keep.y0, op=lambda im, b=box: im.crop(b)))
@@ -297,6 +299,7 @@ def merge_down(doc: Document) -> Command | None:
     if i == 0:
         return None
     lower, upper = doc.layers[i - 1], doc.layers[i]
+    lower, upper = layerfx.baked(lower), layerfx.baked(upper)  # effects become pixels
     box = lower.bounds.union(upper.bounds) if upper.visible else lower.bounds
     img = Image.new("RGBA", (box.width, box.height))
     for la in (lower, upper):
@@ -319,7 +322,7 @@ def merge_layers(doc: Document, indices) -> Command | None:
     if len(chosen) < 2:
         return None
     group = [doc.layers[i] for i in chosen]
-    shown = [la for la in group if la.visible] or group
+    shown = [layerfx.baked(la) for la in group if la.visible] or [layerfx.baked(la) for la in group]
     box = shown[0].bounds
     for la in shown[1:]:
         box = box.union(la.bounds)
@@ -568,6 +571,38 @@ def rasterize_layer(doc: Document, index: int | None = None) -> Command | None:
     """Turn a text or shape layer into plain pixels (it can't be edited as text / shape then)."""
     i = doc.active if index is None else index
     layer = doc.layers[i]
-    if layer.text is None and layer.shape is None:
+    if layer.text is None and layer.shape is None and layer.fx is None:
         return None
+    if layer.fx is not None:  # effects drawn in (and the mask, which they were made from)
+        return _replace(doc, i, "Rasterize layer", layerfx.baked(layer))
     return _replace(doc, i, "Rasterize layer", replace(layer, text=None, shape=None))
+
+
+def set_layer_fx(doc: Document, index: int, fx, label: str = "Layer effects") -> Command | None:
+    """Give layer ``index`` these effects (``layerfx.LayerFx``; None or all off = none)."""
+    layer = doc.layers[index]
+    fx = fx if fx is not None and fx.any() else None
+    if fx == layer.fx:
+        return None
+    return _replace(doc, index, label, replace(layer, fx=fx))
+
+
+def clear_layer_fx(doc: Document, index: int | None = None) -> Command | None:
+    return set_layer_fx(doc, doc.active if index is None else index, None, "Clear layer effects")
+
+
+def tweak_layer_fx(doc: Document, history, index: int, fx, label: str) -> bool:
+    """A settings window changed layer ``index``'s effects: one undo step per run of changes
+    from the same window (``label``) to the same layer, like dragging a slider. Returns True
+    when the picture changed."""
+    last = history.last
+    run = getattr(last, "fx_run", None)
+    same_run = run is not None and run[0] == (index, label) and doc.layers[index] is run[1]
+    if same_run:
+        history.undo()
+    cmd = set_layer_fx(doc, index, fx, label)
+    if cmd is None:
+        return same_run  # back where the run started: the undone step was the whole change
+    cmd.fx_run = ((index, label), doc.layers[index])
+    history.push(cmd)
+    return True

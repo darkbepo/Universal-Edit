@@ -228,7 +228,7 @@ def live_text_layer(
 ) -> Layer:
     """The layer for ``spec`` with its clicked point at (x, y) — while it is being typed, before
     it is committed. Editing ``old`` keeps what the user set on it: a chosen name, visibility,
-    opacity and mask."""
+    opacity, mask and effects."""
     if not spec.text.strip():
         return placeholder_layer(doc, x, y)
     new = _text_layer(doc, spec, x, y)
@@ -242,6 +242,7 @@ def live_text_layer(
         opacity=old.opacity if not spec.watermark else new.opacity,
         visible=old.visible,
         mask=old.mask if keep_mask else None,
+        fx=old.fx,
     )
 
 

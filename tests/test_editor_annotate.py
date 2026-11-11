@@ -179,3 +179,123 @@ def test_shape_layers_stay_editable_through_an_ora_file(tmp_path):
     la = back.layers[1]
     assert la.shape.kind == "arrow" and la.shape.heads == "both" and la.shape.width == 5
     assert canvas_points(la) == (10, 40, 100, 40)
+
+
+def test_clicking_a_handle_without_dragging_changes_nothing():
+    from umc.editor.tools.shapes import RectTool, canvas_points
+
+    doc = _doc()
+    t = RectTool()
+    _stroke(t, doc, [(10, 10), (40, 30)], _ctx(t))
+    c = _ctx(t)
+    t.press(doc, 42, 32, c)  # near the bottom-right handle, not on it exactly
+    assert t.release(doc, 42, 32, c) is None
+    t.press(doc, 42, 32, c)
+    t.move(doc, 52, 32, c)  # the corner moves by the drag, keeping its offset to the pointer
+    t.release(doc, 52, 32, c)
+    assert canvas_points(doc.active_layer) == (10, 10, 50, 30)
+
+
+def test_a_flat_rectangle_adds_no_layer():
+    from umc.editor.tools.shapes import RectTool
+
+    doc = _doc()
+    t = RectTool()
+    assert _stroke(t, doc, [(10, 10), (40, 10)], _ctx(t, mode="filled", width=1)) is None
+    assert len(doc.layers) == 1
+
+
+def test_reshaping_keeps_the_mask_on_the_same_picture_pixels():
+    from dataclasses import replace
+
+    from umc.editor.tools.shapes import RectTool
+
+    doc = _doc()
+    t = RectTool()
+    _stroke(t, doc, [(10, 10), (40, 30)], _ctx(t, mode="filled"))
+    la = doc.active_layer
+    mask = Image.new("L", la.image.size, 255)
+    mask.putpixel((20 - la.x, 20 - la.y), 0)  # hide the picture pixel (20, 20)
+    doc.layers[-1] = replace(la, mask=mask)
+    c = _ctx(t, mode="filled")
+    t.press(doc, 10, 10, c)  # the top-left corner, dragged up-left: the layer moves and grows
+    t.move(doc, 2, 4, c)
+    t.release(doc, 2, 4, c)
+    new = doc.active_layer
+    assert new.mask is not None and new.mask.size == new.image.size
+    assert new.mask.getpixel((20 - new.x, 20 - new.y)) == 0  # still hides (20, 20)
+    assert new.mask.getpixel((4 - new.x, 6 - new.y)) == 255  # the new area shows
+
+
+def test_crop_away_a_shape_drops_its_recipe():
+    from umc.editor.geometry import Rect
+    from umc.editor.tools.shapes import RectTool
+
+    doc = _doc()
+    t = RectTool()
+    _stroke(t, doc, [(80, 50), (110, 70)], _ctx(t))
+    ops.crop(doc, Rect(0, 0, 30, 30))
+    assert doc.layers[-1].shape is None
+
+
+def test_ora_keeps_a_recipe_only_while_it_matches(tmp_path):
+    import zipfile
+
+    from umc.editor.ora import read_ora, write_ora
+    from umc.editor.tools.shapes import RectTool
+
+    doc = _doc()
+    t = RectTool()
+    _stroke(t, doc, [(10, 10), (40, 30)], _ctx(t))
+    path = tmp_path / "a.ora"
+    write_ora(doc, path)
+    assert read_ora(path).layers[-1].shape is not None
+    doc.active_layer.image.putpixel((15, 10), (0, 255, 0, 255))  # painted on
+    write_ora(doc, path)
+    assert b"umc-shape" not in zipfile.ZipFile(path).read("stack.xml")
+    assert read_ora(path).layers[-1].shape is None
+
+
+def test_ora_redraws_a_shape_another_app_drew_slightly_differently(tmp_path):
+    import zipfile
+
+    from umc.editor.ora import read_ora, write_ora
+    from umc.editor.tools.shapes import EllipseTool
+
+    doc = _doc()
+    t = EllipseTool()
+    _stroke(t, doc, [(10, 10), (60, 50)], _ctx(t))
+    drawn = doc.active_layer.image
+    px = drawn.load()
+    for x in range(drawn.width):  # other anti-aliasing: edge pixels off by a little
+        for y in range(drawn.height):
+            r, g, b, a = px[x, y]
+            if 0 < a < 255:
+                px[x, y] = (r, g, b, min(255, a + 20))
+    path = tmp_path / "b.ora"
+    write_ora(doc, path)
+    with zipfile.ZipFile(path) as z:
+        files = {n: z.read(n) for n in z.namelist()}
+    # what the other app would write: the recipe next to its own pixels
+    spec = json.dumps(doc.active_layer.shape.to_dict()).replace('"', "&quot;")
+    name = doc.active_layer.name
+    files["stack.xml"] = files["stack.xml"].replace(
+        f'name="{name}"'.encode(), f'name="{name}" umc-shape="{spec}"'.encode()
+    )
+    assert b"umc-shape" in files["stack.xml"]
+    with zipfile.ZipFile(path, "w") as z:
+        for n, data in files.items():
+            z.writestr(n, data)
+    back = read_ora(path).layers[-1]
+    assert back.shape is not None  # still editable, drawn again by this app
+
+
+def test_ora_ignores_shapes_it_cannot_draw(tmp_path):
+    import pytest
+
+    from umc.editor.tools.shapes import ShapeSpec
+
+    with pytest.raises(ValueError):
+        ShapeSpec.from_dict({"kind": "star", "points": [0, 0, 1, 1]})
+    with pytest.raises(ValueError):
+        ShapeSpec.from_dict({"kind": "rect", "points": [0, 0, 1]})

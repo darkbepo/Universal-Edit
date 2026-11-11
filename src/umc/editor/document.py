@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from PIL import Image, ImageChops
 
 from umc.core.errors import ConversionError
+from umc.editor import layerfx
 from umc.editor.geometry import Rect
 from umc.editor.layer import Layer
 
@@ -91,7 +92,7 @@ class Document:
         limit = Rect(-m, -m, self.width + m, self.height + m)
         for la in self.layers:
             if la.visible and la.opacity > 0:
-                out = out.union(la.bounds.intersect(limit))
+                out = out.union(layerfx.bounds(la).intersect(limit))
         if step > 1 and out != self.bounds:
 
             def up(v: int) -> int:  # an overhang rounded up to whole steps
@@ -125,6 +126,13 @@ class Document:
                 continue
             image = (override or {}).get(i, layer.image)
             lb = Rect(layer.x, layer.y, layer.x + image.width, layer.y + image.height)
+            if layer.fx is not None and layer.fx.any():
+                m = layerfx.margin(layer.fx)
+                part = Rect(lb.x0 - m, lb.y0 - m, lb.x1 + m, lb.y1 + m).intersect(rect)
+                if not part.empty:
+                    src = with_opacity(layerfx.region(layer, part, image), layer.opacity)
+                    out.alpha_composite(src, (part.x0 - rect.x0, part.y0 - rect.y0))
+                continue
             part = lb.intersect(rect)
             if part.empty:
                 continue

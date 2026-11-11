@@ -214,11 +214,12 @@ class TextBox(QPlainTextEdit):
 
     def focusOutEvent(self, e) -> None:  # noqa: N802
         super().focusOutEvent(e)
-        QTimer.singleShot(0, self._after_focus_out)  # Qt has moved the focus by then
+        # Qt has moved the focus by then; the box as context: no call once it is deleted
+        QTimer.singleShot(0, self, self._after_focus_out)
 
     def _after_focus_out(self) -> None:
-        if self.hasFocus():
-            return
+        if self.hasFocus() or not self.isVisible():
+            return  # typing again, or already committed (a new box may have the focus now)
         w = QApplication.focusWidget()
         if w is None or w.window() is not self.window():
             return  # another window (the colour picker) or the app in the background: keep typing
@@ -554,8 +555,8 @@ class EditorPage(QWidget):
         self._update_info()
 
     def add_paths(self, paths: list[Path]) -> None:
-        self._commit_first()
         """Dropped images become new layers above the selected one."""
+        self._commit_first()
         if self.doc is None:
             self.open_paths(paths)
             return
@@ -613,9 +614,9 @@ class EditorPage(QWidget):
                 dlg.changed()
 
     def _window(self, key: str, title: str, make, on_accept=None) -> None:
-        self._commit_first()
         """Open the window for ``key`` (``make()`` builds its content), or minimise / bring
         back the one already open. ``on_accept`` runs when its OK button is pressed."""
+        self._commit_first()
         if self.panels.toggle(key):
             return
         dlg = make()
@@ -719,8 +720,8 @@ class EditorPage(QWidget):
 
     # ------------------------------------------------------------ operations
     def rail_action(self, name: str) -> None:
-        self._commit_first()
         """An action button in the tool rail (the Select group's ones aren't run_op ops)."""
+        self._commit_first()
         if self.doc is None:
             return
         select = {
@@ -1055,6 +1056,7 @@ class EditorPage(QWidget):
         try:
             self.text_box = None
             text = box.toPlainText()
+            box.committed.disconnect()  # a late focus-out must never commit the next box
             box.hide()
             box.deleteLater()
             grip, self._text_grip = getattr(self, "_text_grip", None), None
@@ -1136,8 +1138,8 @@ class EditorPage(QWidget):
 
     # ------------------------------------------------------------ background removal
     def remove_background(self) -> None:
-        self._commit_first()
         """Hide the background of the selected layer with a layer mask (the pixels are kept)."""
+        self._commit_first()
         from umc.tools import bgremove
 
         doc = self.doc

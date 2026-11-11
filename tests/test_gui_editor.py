@@ -1433,3 +1433,27 @@ def test_style_controls_take_the_focus_without_ending_the_typing(page, qtbot):
     assert page.doc.active_layer.text.size == 30  # the text follows
     qtbot.mouseClick(page.tool_bar.buttons["brush"], Qt.MouseButton.LeftButton)
     assert page.text_box is None and page.doc.active_layer.text.text == "Hi"  # done
+
+
+def test_clicking_elsewhere_with_text_opens_a_new_box_that_stays(page, qtbot):
+    page.show()
+    page.select_tool("text")
+    c = page.canvas
+    qtbot.mouseClick(c, Qt.MouseButton.LeftButton, pos=c.image_to_widget(5, 5))
+    page.text_box.setPlainText("One")
+    qtbot.mouseClick(c, Qt.MouseButton.LeftButton, pos=c.image_to_widget(40, 40))
+    for _ in range(3):
+        qtbot.wait(1)  # the old box's late focus-out runs here
+    assert page.text_box is not None  # the new box is still open
+    assert any(la.text is not None and la.text.text == "One" for la in page.doc.layers)
+
+
+def test_duplicating_a_shape_layer_keeps_it_editable(page, qtbot):
+    from umc.editor import ops
+    from umc.editor.tools.shapes import ShapeSpec, shape_layer
+
+    layer = shape_layer("Box", ShapeSpec("rect", (4, 4, 30, 20), (255, 0, 0, 255)))
+    page._push(ops.add_layers(page.doc, [layer], "Rectangle"))
+    page._push(ops.duplicate_layers(page.doc, [page.doc.active]))
+    assert page.doc.active_layer.shape is not None
+    assert all(la.shape is not None for la in [la.copy() for la in page.doc.layers[-2:]])

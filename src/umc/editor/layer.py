@@ -24,6 +24,8 @@ class Layer:
     text: Any = None
     # How a shape layer was made (tools.shapes.ShapeSpec, points relative to x / y); None otherwise.
     shape: Any = None
+    # Live layer effects (layerfx.LayerFx: shadow, glow, outline, colour overlay); None = none.
+    fx: Any = None
 
     def __post_init__(self) -> None:
         if self.image.mode != "RGBA":
@@ -36,17 +38,10 @@ class Layer:
         return Rect(self.x, self.y, self.x + self.image.width, self.y + self.image.height)
 
     def copy(self) -> Layer:
+        from dataclasses import replace
+
         mask = None if self.mask is None else self.mask.copy()
-        return Layer(
-            self.name,
-            self.image.copy(),
-            self.x,
-            self.y,
-            self.opacity,
-            self.visible,
-            mask,
-            self.text,
-        )
+        return replace(self, image=self.image.copy(), mask=mask)  # text / shape / fx kept
 
     def pixels(self, box: tuple[int, int, int, int] | None = None) -> Image.Image:
         """The image (or its ``box``) with the mask applied to alpha — what the layer shows."""
