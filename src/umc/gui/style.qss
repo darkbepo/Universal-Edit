@@ -598,4 +598,9 @@ QToolButton#PanelButton {
 }
 QToolButton#PanelButton:hover {
     background: @accent_soft;
+
+/* Document editor: the page column */
+#DocPage {
+    background: white;
+    color: black;
 }

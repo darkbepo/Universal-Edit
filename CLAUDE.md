@@ -202,6 +202,15 @@ src/umc/
                          #   SettingsPanel (auto form), FlowLayout
     editor/              # image editor view: EditorPage (top bar, shortcuts, saving on a QThread),
                          #   EditorCanvas (zoom/pan, cached composite), ToolBar, LayersPanel, dialogs
+    doceditor/           # document editor view: DocEditorPage (top bar, saving on a QThread),
+                         #   text_view (QTextEdit), format_bar, find_bar, formatting (merge/toggle
+                         #   helpers), html_export (QTextDocument → HTML subset)
+  doceditor/             # document editor model — pure Python, no Qt
+    types.py             # SaveContent / OpenedDocument, "parts that will be lost" warnings, limits
+    html_subset.py       # the small HTML the editor shows and saves (sanitise, picture names)
+    docx_reader.py, docx_writer.py  # DOCX ↔ that HTML subset (own code, python-docx / XML)
+    routes.py            # other formats go through the document route planner (Pandoc/LibreOffice)
+    io.py, save.py       # open_document(path) → OpenedDocument; save_document(content, dest, fmt)
   editor/                # image editor model — pure Python, no Qt
     document.py, layer.py  # Document (canvas size, layers bottom-first, selection), Layer (RGBA + x/y)
     history.py           # undo: PatchCommand (changed rect only), LayerList/DocumentState commands
@@ -601,7 +610,7 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
          files come from IMG.LY's CDN (staticimgly.com) as blob URLs. Vite still emits ORT's own
          24 MB wasm (unused). e2e fakes the model (`__editor.fakeSegmenter()`); the sandbox
          can't reach the CDN, so the real web download is only checked on the live site.
-   6. Owner's feedback round (Nov 2026), in this order, both apps, one step at a time:
+   6. ✅ Owner's feedback round (Nov 2026), in this order, both apps, one step at a time:
       1. ✅ Quick fixes. Web: `.layers` is `user-select: none` (+ `body.no-select` while a row
          is dragged) so dragging highlights no text; top-bar `details.menu` close on a pointerdown
          elsewhere / Esc, and opening one closes the others (`closeMenusOnOutsideClick`). Both:
@@ -694,6 +703,15 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
          Reshaping keeps the mask on the same picture pixels and the handle's grab offset (a click
          changes nothing); flat rectangles add no layer; the live reshape preview is limited to the
          pasteboard.
+   7. ✅ Document editor, first version (desktop) — spec `docs/superpowers/specs/2026-11-10-document-editor-design.md`:
+      Convert | Edit for one DOCX, ODT, RTF, DOC, Markdown, TXT or HTML file. A `QTextEdit` page
+      (`gui/doceditor/`) with headings, fonts, colours, highlight, lists, tables, pictures, links,
+      page breaks, find & replace and undo. The model is Qt-free (`doceditor/`): the document is a
+      small HTML subset plus picture bytes; DOCX is read and written by our own code, the other
+      formats go through the document route planner. Saves back to the same format, as PDF, or as
+      any document format; parts the editor can't keep (headers, comments, …) are listed in a
+      notice before they are lost. Self-test step "document editor".
+      Not yet: website, PDF editing, headers / footers, comments, tracked changes, zoom.
 11. Ideas: installer for the app itself (Inno Setup), presets, batch queue.
 
 ## Handoff — read this first (for the next Claude account)
@@ -760,7 +778,7 @@ converters for saving/exporting. Suggested order (most value first), one task pe
    `PySide6.QtMultimedia`, which `packaging/umc.spec` currently **excludes** (and is not in
    PySide6-Essentials — needs PySide6-Addons, check size/licence) — or play low-res proxy frames
    rendered by FFmpeg. Web: Mediabunny + WebCodecs for decoding/preview/export.
-4. **Text / document editing:** rich-text editing of DOCX/ODT/MD/TXT/HTML (`QTextEdit` reads and
+4. **Text / document editing** (✅ desktop first version, see roadmap 10.6; the website is next): rich-text editing of DOCX/ODT/MD/TXT/HTML (`QTextEdit` reads and
    writes HTML and Markdown; round-trip DOCX through Pandoc/LibreOffice via the document route
    planner). Web: a contenteditable/ProseMirror-style editor (MIT) + pandoc-wasm for import/export.
 

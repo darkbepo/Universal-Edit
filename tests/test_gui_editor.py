@@ -294,7 +294,7 @@ def window(qtbot, tmp_path, monkeypatch):
 
 def test_edit_disabled_for_non_images(window, media):
     assert window.mode_bar.isVisible() and not window.edit_mode.isEnabled()
-    window.add_files([str(media / "doc.md")])
+    window.add_files([str(media / "three.pdf")])
     assert not window.edit_mode.isEnabled()
     window.clear_files()
     assert not window.edit_mode.isEnabled()

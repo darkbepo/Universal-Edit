@@ -230,6 +230,41 @@ def _icon_check(d: Path) -> list[Path]:
     return [out]
 
 
+def _doc_editor_check(d: Path) -> list[Path]:
+    """Document editor: heading + table + picture -> DOCX (read back) and PDF."""
+    import io
+
+    import pymupdf
+    from PIL import Image
+
+    from umc.doceditor.io import open_document
+    from umc.doceditor.save import save_document
+    from umc.doceditor.types import SaveContent
+
+    buf = io.BytesIO()
+    Image.new("RGB", (8, 8), "red").save(buf, "PNG")
+    html = (
+        "<h1>Self-test</h1><table><tr><td><p>a</p></td></tr></table>"
+        '<p><img src="img/1.png" width="8"></p>'
+    )
+    content = SaveContent(html, {"img/1.png": buf.getvalue()})
+    d.mkdir(parents=True, exist_ok=True)
+    docx = save_document(content, d / "doc.docx", "docx")
+    pdf_out = save_document(content, d / "doc.pdf", "pdf")
+    opened = open_document(docx)
+    low = opened.html.lower()
+    if "<h1" not in low or "self-test" not in low:
+        raise RuntimeError("heading lost in DOCX round trip")
+    if "<table" not in low:
+        raise RuntimeError("table lost in DOCX round trip")
+    if len(opened.images) != 1:
+        raise RuntimeError(f"expected 1 picture, found {len(opened.images)}")
+    with pymupdf.open(pdf_out) as pdf_doc:
+        if "Self-test" not in pdf_doc[0].get_text():
+            raise RuntimeError("PDF text is missing the heading")
+    return [docx, pdf_out]
+
+
 def run(report: Path) -> int:
     from PIL import Image
 
@@ -279,6 +314,7 @@ def run(report: Path) -> int:
             ("CAD: dxf -> pdf/png, save as R12", lambda: _cad_check(d, out)),
             ("editor: layers -> ora -> png/jpg", lambda: _editor_check(d / "editor")),
             ("convert screen icons (QtSvg)", lambda: _icon_check(d / "icons")),
+            ("document editor", lambda: _doc_editor_check(d / "doceditor")),
             ("mp4 -> webm", lambda: _convert([out / "img0 slideshow.mp4"], "webm", out)),
             ("mp4 -> gif", lambda: _convert([out / "img0 slideshow.mp4"], "video:gif", out)),
             ("mp4 -> frames", lambda: _convert([out / "img0 slideshow.mp4"], "frames:png", out)),

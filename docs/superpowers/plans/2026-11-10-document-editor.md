@@ -101,6 +101,7 @@ def test_warning_text():
     )
     assert warning_text([]) == ""
 
+
 def test_normalise_keeps_subset_and_drops_the_rest():
     html, imgs = normalise_html(
         '<html><body><h1 class="x">T</h1><script>bad()</script>'
@@ -109,20 +110,24 @@ def test_normalise_keeps_subset_and_drops_the_rest():
         '<font face="Arial">d</font></p><div>e</div><h4>f</h4></body></html>'
     )
     assert "<script" not in html and "bad()" not in html and "class=" not in html
-    assert '<h1>T</h1>' in html
-    assert '<p style="text-align:center">' in html          # unknown block styles dropped
-    assert "<b>b</b>" in html                                 # strong → b
-    assert 'style="color:#ff0000;font-size:12pt"' in html     # colour normalised, position dropped
-    assert '<span style="font-family:Arial">d</span>' in html # <font face> → span
-    assert "<p>e</p>" in html and "<h3>f</h3>" in html        # div → p, h4–h6 → h3
+    assert "<h1>T</h1>" in html
+    assert '<p style="text-align:center">' in html  # unknown block styles dropped
+    assert "<b>b</b>" in html  # strong → b
+    assert 'style="color:#ff0000;font-size:12pt"' in html  # colour normalised, position dropped
+    assert '<span style="font-family:Arial">d</span>' in html  # <font face> → span
+    assert "<p>e</p>" in html and "<h3>f</h3>" in html  # div → p, h4–h6 → h3
     assert imgs == {}
+
 
 def test_normalise_images(tmp_path):
     (tmp_path / "pic.png").write_bytes(PNG_1PX)
     html, imgs = normalise_html(
         f'<p><img src="pic.png" width="10"><img src="data:image/png;base64,{b64(PNG_1PX)}">'
-        '<img src="https://example.com/x.png"></p>', base_dir=tmp_path)
+        '<img src="https://example.com/x.png"></p>',
+        base_dir=tmp_path,
+    )
     assert list(imgs) == ["img/1.png", "img/2.png"] and "example.com" not in html
+
 
 def test_text_length():
     assert text_length("<p>ab <b>c</b></p><p>d</p>") == 5
@@ -157,9 +162,12 @@ git commit -m "Add the document editor's HTML subset and types"
 
 ```python
 def test_write_headings_runs_alignment(tmp_path):
-    p = write('<h1>Title</h1><p style="text-align:center">a <b>b</b> <i>c</i> <u>d</u> <s>e</s> '
-              '<span style="font-family:Arial;font-size:14pt;color:#ff0000;background-color:#ffcc00">f</span></p>',
-              {}, tmp_path / "o.docx")
+    p = write(
+        '<h1>Title</h1><p style="text-align:center">a <b>b</b> <i>c</i> <u>d</u> <s>e</s> '
+        '<span style="font-family:Arial;font-size:14pt;color:#ff0000;background-color:#ffcc00">f</span></p>',
+        {},
+        tmp_path / "o.docx",
+    )
     d = docx.Document(p)
     assert d.paragraphs[0].style.name == "Heading 1"
     para = d.paragraphs[1]
@@ -170,12 +178,21 @@ def test_write_headings_runs_alignment(tmp_path):
     assert f.name == "Arial" and f.size.pt == 14 and str(f.color.rgb) == "FF0000"
     assert runs["f"]._r.rPr.find(qn("w:shd")).get(qn("w:fill")) == "FFCC00"
 
+
 def test_write_lists_restart_numbering(tmp_path):
-    d = docx.Document(write("<ol><li>a</li></ol><p>x</p><ol><li>b</li></ol>", {}, tmp_path / "o.docx"))
-    num_ids = [p._p.pPr.numPr.numId.val for p in d.paragraphs if p._p.pPr is not None and p._p.pPr.numPr is not None]
+    d = docx.Document(
+        write("<ol><li>a</li></ol><p>x</p><ol><li>b</li></ol>", {}, tmp_path / "o.docx")
+    )
+    num_ids = [
+        p._p.pPr.numPr.numId.val
+        for p in d.paragraphs
+        if p._p.pPr is not None and p._p.pPr.numPr is not None
+    ]
     assert len(set(num_ids)) == 2
 
-def test_write_table_merges_picture_link_break_hr_indent(tmp_path): ...
+
+def test_write_table_merges_picture_link_break_hr_indent(tmp_path):
+    ...
     # table 2×2 with colspan=2 in the first row → first row has one w:tc with gridSpan 2;
     # <img src="img/1.png" width="96"> → one inline picture 1 inch wide (914400 EMU);
     # <a href="https://x.org">x</a> → a w:hyperlink whose relationship target is https://x.org;
@@ -230,31 +247,44 @@ CASES = [
     '<table><tr><td colspan="2"><p>a</p></td></tr><tr><td><p>b</p></td><td><p>c</p></td></tr></table>',
 ]
 
+
 @pytest.mark.parametrize("html", CASES)
 def test_round_trip(tmp_path, html):
     expected, _ = normalise_html(html)
     assert read(write(html, {}, tmp_path / "o.docx")).html == expected
 
+
 def test_nested_lists_round_trip(tmp_path):
     html = "<ul><li>a<ul><li>b<ol><li>c</li></ol></li></ul></li></ul><ol><li>d</li></ol>"
     assert read(write(html, {}, tmp_path / "o.docx")).html == normalise_html(html)[0]
 
-def test_list_in_table_cell(tmp_path): ...       # <td><ul><li>a</li><li>b</li></ul></td> survives
-def test_picture_round_trip(tmp_path): ...       # img/1.png bytes equal, width="96" kept
+
+def test_list_in_table_cell(tmp_path): ...  # <td><ul><li>a</li><li>b</li></ul></td> survives
+def test_picture_round_trip(tmp_path): ...  # img/1.png bytes equal, width="96" kept
 def test_unicode_round_trip(tmp_path):
     html = "<p>Blåbærgrød — Привет — 你好 — 😀</p>"
     assert read(write(html, {}, tmp_path / "o.docx")).html == html
 
+
 def test_warnings(tmp_path):
-    d = docx.Document(); d.add_paragraph("x")
+    d = docx.Document()
+    d.add_paragraph("x")
     d.sections[0].header.paragraphs[0].text = "Head"
-    d.add_comment(d.paragraphs[0].runs or [d.paragraphs[0].add_run("y")], text="note")  # python-docx ≥ 1.2; skip if missing
-    p = tmp_path / "w.docx"; d.save(p)
+    d.add_comment(
+        d.paragraphs[0].runs or [d.paragraphs[0].add_run("y")], text="note"
+    )  # python-docx ≥ 1.2; skip if missing
+    p = tmp_path / "w.docx"
+    d.save(p)
     assert {W_HEADERS, W_COMMENTS} <= set(read(p).warnings)
 
-def test_tracked_changes_warn(tmp_path): ...     # inject <w:ins> around a run via lxml → W_TRACKED; text still read
-def test_unsupported_picture_warns(tmp_path): ...  # replace a picture part's blob with bytes Pillow can't open, content type image/x-emf → W_PICTURES, no <img>
-def test_plain_docx_has_no_warnings(tmp_path): ... # write("<p>a</p>") → warnings == []
+
+def test_tracked_changes_warn(
+    tmp_path,
+): ...  # inject <w:ins> around a run via lxml → W_TRACKED; text still read
+def test_unsupported_picture_warns(
+    tmp_path,
+): ...  # replace a picture part's blob with bytes Pillow can't open, content type image/x-emf → W_PICTURES, no <img>
+def test_plain_docx_has_no_warnings(tmp_path): ...  # write("<p>a</p>") → warnings == []
 ```
 `test_warnings` uses `pytest.importorskip`-style guard: `if not hasattr(d, "add_comment"): pytest.skip(...)`.
 
@@ -298,31 +328,48 @@ git commit -m "Add the document editor's DOCX reader"
 ```python
 def test_open_markdown(media):
     d = open_document(media / "doc.md")
-    assert d.source_format == "md" and "<h1>Title</h1>" in d.html and "<b>world</b>" in d.html and "<ul>" in d.html
+    assert (
+        d.source_format == "md"
+        and "<h1>Title</h1>" in d.html
+        and "<b>world</b>" in d.html
+        and "<ul>" in d.html
+    )
+
 
 def test_open_txt_cp1252(tmp_path):
-    p = tmp_path / "a.txt"; p.write_bytes("Café\nline 2\n".encode("cp1252"))
+    p = tmp_path / "a.txt"
+    p.write_bytes("Café\nline 2\n".encode("cp1252"))
     assert open_document(p).html == "<p>Café</p><p>line 2</p>"
 
-def test_open_html_with_local_picture(tmp_path): ...   # img next to the file → img/1.png in images
-def test_open_docx(tmp_path): ...                     # write() then open_document() == read()
+
+def test_open_html_with_local_picture(tmp_path): ...  # img next to the file → img/1.png in images
+def test_open_docx(tmp_path): ...  # write() then open_document() == read()
 def test_open_empty_files(tmp_path):
     (tmp_path / "e.txt").write_bytes(b"")
     docx.Document().save(tmp_path / "e.docx")
     for name in ("e.txt", "e.docx"):
         assert open_document(tmp_path / name).html == "<p></p>"
 
+
 def test_too_large(tmp_path, monkeypatch):
     monkeypatch.setattr(io_mod, "MAX_CHARS", 10)
-    p = tmp_path / "big.txt"; p.write_text("x" * 11)
+    p = tmp_path / "big.txt"
+    p.write_text("x" * 11)
     with pytest.raises(ConversionError, match="too large to edit here"):
         open_document(p)
+
 
 def test_open_odt_needs_a_tool(tmp_path, monkeypatch):
     # route planner says Pandoc/LibreOffice are missing → ToolMissingError, not a crash
     ...
-@pytest.mark.skipif(not (shutil.which("pandoc") or find_soffice()), reason="needs Pandoc or LibreOffice")
-def test_open_odt_round_trip(tmp_path): ...           # write DOCX → convert_file to odt → open_document: source_format "odt", heading kept
+
+
+@pytest.mark.skipif(
+    not (shutil.which("pandoc") or find_soffice()), reason="needs Pandoc or LibreOffice"
+)
+def test_open_odt_round_trip(
+    tmp_path,
+): ...  # write DOCX → convert_file to odt → open_document: source_format "odt", heading kept
 ```
 
 - [ ] **Step 2: Run** — Expected: FAIL.
@@ -432,17 +479,30 @@ SUBSET_CASES = CASES + [  # import CASES from test_doceditor_docx
     '<p>x<img src="img/1.png" width="20" height="20"></p>',
 ]
 
+
 @pytest.mark.parametrize("html", SUBSET_CASES)
 def test_load_then_export_is_identity(qtbot, html):
-    v = DocTextView(); qtbot.addWidget(v)
+    v = DocTextView()
+    qtbot.addWidget(v)
     v.load(OpenedDocument(html, {"img/1.png": PNG_1PX}, "docx"))
     assert v.content().html == normalise_html(html)[0]
 
-def test_export_nested_list_in_table(qtbot): ...  # <td><ul><li>a<ul><li>b</li></ul></li></ul></td> survives
-def test_load_resets_undo_and_modified(qtbot): ...  # after load: not isModified(), not isUndoAvailable()
-def test_insert_image_adds_resource(qtbot, tmp_path): ...  # images gets "img/1.png", content().html has <img
-def test_content_has_markdown_and_text(qtbot): ...  # content().plain_text == "T\nx", markdown startswith "# T"
-def test_page_column_width(qtbot): ...  # v.resize(1400, 800): viewport width == PAGE_WIDTH (+/- scrollbar)
+
+def test_export_nested_list_in_table(
+    qtbot,
+): ...  # <td><ul><li>a<ul><li>b</li></ul></li></ul></td> survives
+def test_load_resets_undo_and_modified(
+    qtbot,
+): ...  # after load: not isModified(), not isUndoAvailable()
+def test_insert_image_adds_resource(
+    qtbot, tmp_path
+): ...  # images gets "img/1.png", content().html has <img
+def test_content_has_markdown_and_text(
+    qtbot,
+): ...  # content().plain_text == "T\nx", markdown startswith "# T"
+def test_page_column_width(
+    qtbot,
+): ...  # v.resize(1400, 800): viewport width == PAGE_WIDTH (+/- scrollbar)
 ```
 
 - [ ] **Step 2: Run** `.venv\Scripts\pytest tests/test_gui_doceditor.py -v` — Expected: FAIL.
@@ -485,22 +545,36 @@ git commit -m "Add the document editor's text view"
 - [ ] **Step 1: Write the failing tests**
 
 ```python
-def test_bold_and_heading_export(view):          # view fixture: DocTextView loaded with "<p>hello world</p>"
-    c = view.textCursor(); c.select(QTextCursor.WordUnderCursor); view.setTextCursor(c)
-    toggle(c, "bold"); set_block_style(c, "h1")
-    assert view.content().html == "<h1>hello world</h1>"   # bold inside headings isn't emitted
+def test_bold_and_heading_export(
+    view,
+):  # view fixture: DocTextView loaded with "<p>hello world</p>"
+    c = view.textCursor()
+    c.select(QTextCursor.WordUnderCursor)
+    view.setTextCursor(c)
+    toggle(c, "bold")
+    set_block_style(c, "h1")
+    assert view.content().html == "<h1>hello world</h1>"  # bold inside headings isn't emitted
     set_block_style(c, "normal")
     assert view.content().html == "<p><b>hello</b> world</p>"
 
-def test_single_undo_step(view): ...              # set_block_style then view.undo() → back to "<p>hello world</p>"
-def test_lists_and_indent(view): ...              # toggle_list "bullet", change_indent +1 → nested ul in export
+
+def test_single_undo_step(
+    view,
+): ...  # set_block_style then view.undo() → back to "<p>hello world</p>"
+def test_lists_and_indent(view): ...  # toggle_list "bullet", change_indent +1 → nested ul in export
 def test_table_ops(view):
-    insert_table(view.textCursor(), 2, 2); table_op(view.textCursor(), "row_below")
+    insert_table(view.textCursor(), 2, 2)
+    table_op(view.textCursor(), "row_below")
     assert view.content().html.count("<tr>") == 3
+
+
 def test_clear_formatting_keeps_list(view): ...
 def test_format_bar_follows_cursor(qtbot, view):
-    bar = FormatBar(view); qtbot.addWidget(bar)
+    bar = FormatBar(view)
+    qtbot.addWidget(bar)
     # put cursor inside bold text → bar.buttons["bold"].isChecked(); move to plain text → not checked
+
+
 def test_table_menu_only_in_table(qtbot, view): ...
 ```
 
@@ -531,16 +605,18 @@ git commit -m "Add document formatting and the formatting bar"
 - [ ] **Step 1: Write the failing tests**
 
 ```python
-def test_find_wraps(qtbot, view_text):           # loaded "<p>a cat. A cat.</p>"
+def test_find_wraps(qtbot, view_text):  # loaded "<p>a cat. A cat.</p>"
     bar = FindBar(view_text)
-    assert bar.find("cat") and bar.find("cat") and bar.find("cat")   # third wraps to the first
+    assert bar.find("cat") and bar.find("cat") and bar.find("cat")  # third wraps to the first
     assert not bar.find("dog") and bar.status.text() == "No matches."
+
 
 def test_replace_all_case_and_whole_word(qtbot, view_text):
     bar = FindBar(view_text)
     assert bar.replace_all("a", "the", case=True, whole=True) == 1
     assert view_text.toPlainText() == "the cat. A cat."
-    view_text.undo(); assert view_text.toPlainText() == "a cat. A cat."
+    view_text.undo()
+    assert view_text.toPlainText() == "a cat. A cat."
 ```
 
 - [ ] **Step 2: Run** — Expected: FAIL.
@@ -625,14 +701,23 @@ git commit -m "Add the document editor page"
 
 ```python
 def test_switch_for_one_document(qtbot, window, media):
-    window.add_files([str(media / "doc.md")]); assert window.mode_bar.isVisible()
-    window.add_files([str(media / "notes.txt")]); assert not window.mode_bar.isVisible()  # two documents
+    window.add_files([str(media / "doc.md")])
+    assert window.mode_bar.isVisible()
+    window.add_files([str(media / "notes.txt")])
+    assert not window.mode_bar.isVisible()  # two documents
+
+
 def test_no_switch_for_pdf(qtbot, window, media): ...
 def test_edit_opens_document_editor(qtbot, window, media):
     window.add_files([str(media / "doc.md")])
     window.enter_edit()
     qtbot.waitSignal(window.doc_editor.opened, timeout=10000)
-    assert window.stack.currentWidget() is window.doc_editor and "Title" in window.doc_editor.view.toPlainText()
+    assert (
+        window.stack.currentWidget() is window.doc_editor
+        and "Title" in window.doc_editor.view.toPlainText()
+    )
+
+
 def test_back_returns_to_convert(qtbot, window, media): ...
 def test_images_still_open_image_editor(qtbot, window, media): ...
 ```
