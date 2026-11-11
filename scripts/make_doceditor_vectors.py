@@ -70,6 +70,9 @@ NORMALISE = [
     "<html><body><script>alert(1)</script><p>hi</p></body></html>",
     "  \n",
     f'<p>a<img src="data:image/png;base64,{base64.b64encode(PNG_1PX).decode()}" width="10"></p>',
+    # one picture used twice keeps one name (saving would otherwise make it two)
+    f'<p><img src="data:image/png;base64,{PNG_B64}"><img src="data:image/png;base64,{PNG_B64}">'
+    f'<img src="data:image/jpeg;base64,{PNG_B64}"></p>',
     "<pre>line 1\n  line 2</pre><blockquote><p>q</p></blockquote><hr>",
     '<p style="text-align:justify;margin-left:36pt">m</p><p style="page-break-before:always">n</p>',
     # odd input that must not fail: a URL urllib can't split, a page without a body
@@ -145,6 +148,34 @@ MARKDOWN = [
     {"md": "##\n\ntext\n"},
     {"md": "***bi*** and **_x_** and [a b](<u v>)\n"},
     {"md": "Café — *Blåbær* 你好\n\n* star\n* list\n"},
+    # Saving a file nobody edited must not change it (each one a real README habit):
+    # two code blocks in a row stay two
+    {"md": "```js\na()\n```\n\n```html\n<b>\n```\n\n```\nc\n\n```\n"},
+    # centred / indented blocks (raw HTML) keep their alignment, indent and page break
+    {
+        "md": '<h1 align="center">\n  <img src="logo.png" width="9"><br>\n  Title\n</h1>\n\n'
+        '<p align="center"><b>Fast</b> &amp; <i>small</i></p>\n\n'
+        '<p style="margin-left:72pt;page-break-before:always">x</p>\n\n'
+        '<ul><li style="text-align:right">r</li></ul>\n\n'
+        '> <p align="right">q</p>\n'
+    },
+    # a paragraph left empty (a web picture, an anchor) stays a paragraph
+    {"md": '![a](https://e.com/a.png)\n\n## H\n\n<a id="x"></a>\n### I\n'},
+    # tables a pipe table can't hold: lists, several paragraphs, spans, no borders, code
+    {
+        "md": '<table><tr><td><ol><li><a href="./d/a b.md">A</a></li></ol></td>'
+        "<td>\n\n**b**\n\n</td></tr></table>\n\n"
+        '<table border="0"><tr><td colspan="2"><p>a</p><p align="center">b</p></td></tr>'
+        "<tr><td>c</td></tr></table>\n\n"
+        "<table><tr><td><pre>x\ny</pre></td><td><h2>h</h2></td></tr></table>\n"
+    },
+    # a new marker starts a new nested list: two in a row stay two
+    {"md": "- a\n    - b\n    * e\n\n1. x\n    1. y\n    1) z\n    1. w\n"},
+    # links markdown-it would rewrite (spaces, non-ASCII, entities) keep their exact address
+    {
+        "md": '<a href="./a b.md">x</a>, <a href="https://e.com/Müller">y</a>, '
+        '<a href="?a=1&amp;amp;b=2">z</a> and [ok](https://e.com/a_(b))\n'
+    },
 ]
 TXT = [
     "def f():\n    return 1\n\tTabbed\nA    B\n",

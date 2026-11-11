@@ -3,10 +3,13 @@
  * byte). The output is read back by `markdown.ts` (markdown-it: CommonMark with tables and
  * strikethrough) to the same subset, so saving a Markdown file over itself never changes it.
  * What Markdown has no syntax for is written as inline HTML (`<u>`, `<s>`, `<br>`, styled
- * `<span>`); paragraph alignment, indents and page breaks have no Markdown form and are left out.
+ * `<span>`, `<a href>` for addresses markdown-it would rewrite). Blocks with alignment, an indent
+ * or a page break, and tables a pipe table can't hold, are written as one line of raw HTML
+ * (alignment as the `align` attribute GitHub shows); an empty paragraph is `<span></span>`.
  */
 
-import { PY_WS, escAttr, isPySpace } from "./pycompat";
+import { normalizeLink, validateLink } from "./markdown";
+import { PY_WS, escAttr, escText, isPySpace, pyStrip } from "./pycompat";
 import { P_MARK, html5Refs, libxmlLike, restore } from "./subset-scan";
 
 const NBSP = "\xa0";
@@ -31,6 +34,10 @@ const LINE_START = new RegExp(`^(?:[#>+=~-]|\\p{Nd}+[.)](?=[${PY_WS}]|$))`, "u")
 const TASK = /^(\[[ xX]\])(?: +|(?=\n?$))/;
 const TRAILING_HASHES = /(#+)(?=\n?$)/g;
 const TARGET_NEEDS_BRACKETS = new RegExp(`[${PY_WS}()]`);
+// markdown-it decodes entity references in a link's address.
+const ENTITY_LIKE = /&(?:#[0-9]+|#[xX][0-9a-fA-F]+|[A-Za-z][A-Za-z0-9]*);/;
+const VOID = new Set(["br", "img", "hr"]);
+const STYLED_BLOCKS = new Set(["p", "h1", "h2", "h3", "li"]);
 
 const tagOf = (node: Node): string =>
   node.nodeType === 1 ? (node as Element).localName.toLowerCase() : "";
@@ -153,11 +160,63 @@ class Inline {
       return `<span style="${escAttr(restore(node.getAttribute("style") ?? ""))}">${inner}</span>`;
     }
     if (tag === "a" && node.getAttribute("href")) {
-      return `[${inner}](${linkTarget(restore(node.getAttribute("href") ?? ""))})`;
+      const href = restore(node.getAttribute("href") ?? "");
+      // markdown-it would change the address: raw HTML
+      if (!keepsLink(href)) return `<a href="${escAttr(href)}">${inner}</a>`;
+      return `[${inner}](${linkTarget(href)})`;
     }
     return inner;
   }
 }
+
+/** True when markdown-it reads `[x](url)` back as exactly `url`. */
+const keepsLink = (url: string): boolean =>
+  validateLink(url) && normalizeLink(url) === url && !ENTITY_LIKE.test(url) && !url.includes("\\");
+
+/** Text inside raw HTML, kept on one line (a blank line would end the HTML block). */
+const rawText = (text: string): string =>
+  escText(text).replaceAll("\r", "&#13;").replaceAll("\n", "&#10;");
+
+function rawAttrs(node: Element, tag: string): string {
+  const attrs: [string, string][] = [];
+  for (const a of Array.from(node.attributes)) {
+    const value = restore(a.value);
+    if (a.name === "style" && STYLED_BLOCKS.has(tag)) {
+      const rest: string[] = [];
+      for (const part of value.split(";")) {
+        // GitHub keeps align="", drops style=""
+        if (part.startsWith("text-align:")) attrs.push(["align", part.slice("text-align:".length)]);
+        else if (part) rest.push(part);
+      }
+      if (rest.length) attrs.push(["style", rest.join(";")]);
+    } else {
+      attrs.push([a.name, value]);
+    }
+  }
+  return attrs.map(([k, v]) => ` ${k}="${escAttr(v)}"`).join("");
+}
+
+/** A block of the subset as one line of HTML that reads back to the same subset. */
+function raw(node: Element): string {
+  const out: string[] = [];
+  const walk = (el: Element): void => {
+    const tag = tagOf(el);
+    const own = tag !== "tbody"; // added by the HTML5 parser (lxml, and the subset, have none)
+    if (own) out.push(`<${tag}${rawAttrs(el, tag)}>`);
+    if (VOID.has(tag)) return;
+    for (let c = el.firstChild; c; c = c.nextSibling) {
+      if (c.nodeType === 3) out.push(rawText(textOf(c)));
+      else if (c.nodeType === 1) walk(c as Element);
+    }
+    if (own) out.push(`</${tag}>`);
+  };
+  walk(node);
+  return out.join("");
+}
+
+const styled = (node: Element): boolean =>
+  !!node.getAttribute("style") ||
+  Array.from(node.getElementsByTagName("li")).some((li) => !!li.getAttribute("style"));
 
 function preText(node: Element): string {
   const parts: string[] = [];
@@ -196,12 +255,13 @@ class Writer {
       const node = children[i];
       const tag = tagOf(node);
       if (tag === "pre") {
-        // one <pre> per code line: consecutive ones are one block
+        // one <pre> per code line: consecutive ones are one block ...
         const lines: string[] = [];
         while (i < children.length && tagOf(children[i]) === "pre") {
           const t = preText(children[i]);
           lines.push(t.endsWith("\n") ? t.slice(0, -1) : t);
           i++;
+          if (t.endsWith("\n")) break; // ... but Markdown's whole code block ends one
         }
         out.push(fence(lines.join("\n")));
         prev = tag;
@@ -220,13 +280,16 @@ class Writer {
   }
 
   private block(node: Element, tag: string): string | null {
+    if ((STYLED_BLOCKS.has(tag) || tag === "ul" || tag === "ol") && styled(node)) {
+      return raw(node); // alignment, indent, page break: no Markdown form
+    }
     if (tag === "h1" || tag === "h2" || tag === "h3") {
       const hashes = "#".repeat(Number(tag[1]));
       let text = new Inline().render(node);
       text = text.replace(TRAILING_HASHES, (h) => "\\#".repeat(h.length));
       return text ? `${hashes} ${text}` : hashes; // stays a heading
     }
-    if (tag === "p") return new Inline().render(node) || null;
+    if (tag === "p") return new Inline().render(node) || "<span></span>"; // an empty paragraph stays one
     if (tag === "blockquote") {
       const inner = new Writer().blocks(node).join("\n\n");
       return inner
@@ -240,8 +303,9 @@ class Writer {
     return new Inline().render(node) || null;
   }
 
-  private list(node: Element, tag: string, level: number, lines: string[] = []): string[] {
-    const marker = tag === "ol" ? "1. " : "- ";
+  /** `alt`: the other marker ("* ", "1) "), which starts a new list right after one. */
+  private list(node: Element, tag: string, level: number, lines: string[] = [], alt = false): string[] {
+    const marker = tag === "ol" ? (alt ? "1) " : "1. ") : alt ? "* " : "- ";
     const pad = "    ".repeat(level);
     for (const li of elementChildren(node)) {
       if (tagOf(li) !== "li") continue;
@@ -272,12 +336,20 @@ class Writer {
       if (task) text = task[1] + (text ? " " + text : "");
       text = text || "<span></span>"; // an empty item stays an item
       lines.push(`${pad}${marker}${text}`);
-      for (const sub of nested) this.list(sub, tagOf(sub), level + 1, lines);
+      let prev = "";
+      let altSub = false;
+      for (const sub of nested) {
+        // two lists of one kind in a row would be read as one
+        altSub = tagOf(sub) === prev && !altSub;
+        prev = tagOf(sub);
+        this.list(sub, prev, level + 1, lines, altSub);
+      }
     }
     return lines;
   }
 
   private table(node: Element): string | null {
+    if (!pipeTable(node)) return raw(node);
     const rows: string[][] = [];
     for (const tr of tableRows(node)) {
       const cells: string[] = [];
@@ -298,6 +370,40 @@ class Writer {
     });
     return lines.join("\n");
   }
+}
+
+/** Only white space among the node's own text. */
+function noText(node: Element): boolean {
+  for (let c = node.firstChild; c; c = c.nextSibling) {
+    if (c.nodeType === 3 && pyStrip(textOf(c))) return false;
+  }
+  return true;
+}
+
+/**
+ * True when a pipe table reads back to `table`: plain rows of equal length, each cell one plain
+ * paragraph (what markdown-it's tables become in the subset).
+ */
+function pipeTable(table: Element): boolean {
+  // the <tbody> the HTML5 parser adds (lxml, and the subset, have none)
+  const first = table.firstElementChild;
+  const body = first && tagOf(first) === "tbody" && table.children.length === 1 ? first : table;
+  const rows = elementChildren(body);
+  if (table.attributes.length || !rows.length || !noText(table) || !noText(body)) return false;
+  const width = rows[0].children.length;
+  for (const tr of rows) {
+    const cells = elementChildren(tr);
+    if (tagOf(tr) !== "tr" || tr.attributes.length || !noText(tr)) return false;
+    if (cells.length !== width || !width) return false;
+    for (const td of cells) {
+      if (tagOf(td) !== "td" || td.attributes.length || td.children.length !== 1 || !noText(td)) {
+        return false;
+      }
+      const p = td.children[0];
+      if (tagOf(p) !== "p" || p.attributes.length) return false;
+    }
+  }
+  return true;
 }
 
 function tableRows(table: Element): Element[] {
@@ -353,7 +459,7 @@ function parseFragment(html: string): HTMLElement {
 export function toMarkdown(html: string): string {
   let blank = true;
   for (let i = 0; i < html.length && blank; i++) blank = isPySpace(html[i]);
-  if (blank) return "";
+  if (blank || html === "<p></p>") return ""; // the empty document (opening "" gives "<p></p>")
   const blocks = new Writer().blocks(parseFragment(html));
   return blocks.length ? blocks.join("\n\n") + "\n" : "";
 }

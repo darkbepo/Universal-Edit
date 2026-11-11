@@ -204,7 +204,9 @@ describe("mdToHtml reads like the desktop's markdown-it-py", () => {
 
 describe("toMarkdown", () => {
   test("rules the desktop writer follows", () => {
-    expect(toMarkdown('<p><a href="a b(1)">l</a></p>')).toBe("[l](<a%20b(1)>)\n");
+    // markdown-it would read [l](a b) as "a%20b": the exact address is kept as raw HTML
+    expect(toMarkdown('<p><a href="a b(1)">l</a></p>')).toBe('<a href="a b(1)">l</a>\n');
+    expect(toMarkdown('<p><a href="a(1)">l</a></p>')).toBe("[l](<a(1)>)\n");
     expect(toMarkdown("<p><b><i>x</i></b></p>")).toBe("**_x_**\n");
     expect(toMarkdown("<ul><li>[x] done</li><li>[ ]</li></ul>")).toBe("- [x] done\n- [ ]\n");
     expect(toMarkdown("<h2></h2>")).toBe("##\n");
@@ -219,9 +221,16 @@ describe("toMarkdown", () => {
       '<span style="color:#ff0000">r</span> <u>u</u>\n',
     );
     expect(toMarkdown("<pre>a ``` b</pre><pre>c</pre>")).toBe("````\na ``` b\nc\n````\n");
+    expect(toMarkdown("<table><tr><td><p>a|b</p></td></tr></table>")).toBe("| a\\|b |\n| --- |\n");
+    // a table a pipe table can't hold, and an aligned paragraph: one line of raw HTML
     expect(toMarkdown("<table><tr><td><p>a|b</p><p>c</p></td></tr></table>")).toBe(
-      "| a\\|b<br>c |\n| --- |\n",
+      "<table><tr><td><p>a|b</p><p>c</p></td></tr></table>\n",
     );
+    expect(toMarkdown('<p style="text-align:center;margin-left:36pt">c</p>')).toBe(
+      '<p align="center" style="margin-left:36pt">c</p>\n',
+    );
+    expect(toMarkdown("<p></p><p>x</p>")).toBe("<span></span>\n\nx\n");
+    expect(toMarkdown("<p></p>")).toBe("");
     expect(toMarkdown("")).toBe("");
   });
 });
@@ -392,6 +401,16 @@ describe("Markdown ZIP saved by the website", () => {
     await expect(openDocument(fileOf(zipSync({ "a.md": enc("x"), "b.md": enc("y") }), "a.zip"), noConvert)).rejects.toThrow(
       CANT_EDIT,
     );
+  });
+
+  test("a picture used twice keeps one name from the first save on (md, docx)", async () => {
+    const content = { ...base, html: '<p><img src="img/1.png"><img src="img/1.png"></p>', images: new Map([["img/1.png", PNG]]) };
+    for (const fmt of ["md", "docx"]) {
+      const out = await saveDocument(content, fmt, "a", noConvert);
+      const doc = await openDocument(fileOf(await blobBytes(out.blob), out.name), noConvert);
+      expect([...doc.images.keys()]).toEqual(["img/1.png"]);
+      expect(doc.html.split('src="img/1.png"').length).toBe(3);
+    }
   });
 
   test("an entry outside the pictures folder is never read", async () => {

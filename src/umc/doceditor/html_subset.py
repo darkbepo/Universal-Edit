@@ -340,17 +340,21 @@ class _Normaliser:
     def __init__(self, base_dir: Path | None, reserved: set[str]) -> None:
         self.base_dir = base_dir.resolve() if base_dir else None
         self.images: DocImages = {}
+        self.names: dict[tuple[bytes, str], str] = {}  # one picture used twice keeps one name
         self.reserved = reserved
         self.lost_pictures = False  # a relative picture that couldn't be read (W_PICTURES)
 
     # ----- pictures -----------------------------------------------------
     def _add_image(self, data: bytes, ext: str) -> str:
+        if (data, ext) in self.names:
+            return self.names[(data, ext)]
         name = next_image_name(self.images, ext)
         n = len(self.images) + 1
         while name in self.images or name in self.reserved:
             n += 1
             name = f"img/{n}.{ext}"
         self.images[name] = data
+        self.names[(data, ext)] = name
         return name
 
     def _image_src(self, src: str) -> str | None:

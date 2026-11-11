@@ -26,3 +26,14 @@ def test_vectors_match_desktop():
     assert on_disk == expected, "run scripts/make_doceditor_vectors.py"
     data = json.loads(expected)
     assert all(data[k] for k in ("normalise", "markdown", "txt", "docx", "cases"))
+
+
+def test_markdown_vectors_reopen_unchanged():
+    """Saving a Markdown file nobody edited must not change it: what the writer makes reads
+    back to the HTML of the first open."""
+    from umc.doceditor.html_subset import normalise_html_report
+    from umc.doceditor.io import md_to_html
+
+    data = json.loads(VECTORS.read_bytes().decode("utf-8"))
+    for v in data["markdown"]:
+        assert normalise_html_report(md_to_html(v["md_out"]))[0] == v["html"], v["md"]

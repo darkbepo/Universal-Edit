@@ -191,9 +191,7 @@ def test_markdown_text_never_turns_into_syntax(tmp_path, html):
     save_document(SaveContent(html, {}), p, "md")
     first = p.read_text(encoding="utf-8")
     doc = open_document(p)
-    expected = html.replace("<td><p>c</p><p>d</p></td>", "<td><p>c<br>d</p></td>")
-    expected = expected.replace("a b(1)", "a%20b(1)")  # markdown-it writes a space as %20
-    assert doc.html == normalise_html(expected)[0]
+    assert doc.html == normalise_html(html)[0]  # exactly, from the first save on
     save_document(content_of(doc, p), p, "md")
     assert p.read_text(encoding="utf-8") == first
 

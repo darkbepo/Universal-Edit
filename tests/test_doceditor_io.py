@@ -67,7 +67,7 @@ def test_normalise_unicode_as_characters():
 def test_normalise_images(tmp_path):
     (tmp_path / "pic.png").write_bytes(PNG_1PX)
     html, imgs = normalise_html(
-        f'<p><img src="pic.png" width="10"><img src="data:image/png;base64,{b64(PNG_1PX)}">'
+        f'<p><img src="pic.png" width="10"><img src="data:image/png;base64,{b64(PNG_1PX[::-1])}">'
         '<img src="https://example.com/x.png"></p>',
         base_dir=tmp_path,
     )
@@ -235,6 +235,27 @@ def _three_cycles(tmp_path, text):
     return docs[0], p.read_text(encoding="utf-8")
 
 
+def test_picture_used_twice_keeps_one_name(tmp_path):
+    (tmp_path / "pic.png").write_bytes(PNG_1PX)
+    (tmp_path / "same.png").write_bytes(PNG_1PX)
+    doc, _ = _three_cycles(tmp_path, "![](pic.png) ![](pic.png) ![](same.png)\n")
+    assert list(doc.images) == ["img/1.png"]
+    assert doc.html.count('src="img/1.png"') == 3
+
+
+@pytest.mark.parametrize("fmt", ["docx", "html"])
+def test_picture_used_twice_keeps_one_name_in_other_formats(tmp_path, fmt):
+    from umc.doceditor.save import save_document
+    from umc.doceditor.types import SaveContent
+
+    p = tmp_path / f"a.{fmt}"
+    html = '<p><img src="img/1.png"><img src="img/1.png"></p>'
+    save_document(SaveContent(html, {"img/1.png": PNG_1PX}), p, fmt)
+    doc = open_document(p)
+    assert list(doc.images) == ["img/1.png"]
+    assert doc.html.count('src="img/1.png"') == 2
+
+
 def test_loose_list_is_plain_items(tmp_path):
     doc, md = _three_cycles(tmp_path, "- a\n\n- b\n")
     assert doc.html == "<ul><li>a</li><li>b</li></ul>"
@@ -282,10 +303,29 @@ def test_empty_heading_stays_stable(tmp_path):
     assert md.startswith("##\n")
 
 
-def test_link_space_is_written_as_percent_20():
+def test_link_markdown_it_would_rewrite_is_written_as_html():
     from umc.doceditor.md_writer import to_markdown
 
-    assert to_markdown('<p><a href="https://x.org/a b">l</a></p>') == "[l](https://x.org/a%20b)\n"
+    # markdown-it would read [l](a b) as "a%20b": the exact address is kept as raw HTML
+    assert to_markdown('<p><a href="https://x.org/a b">l</a></p>') == (
+        '<a href="https://x.org/a b">l</a>\n'
+    )
+    assert to_markdown('<p><a href="https://x.org/a">l</a></p>') == "[l](https://x.org/a)\n"
+
+
+def test_what_markdown_cant_hold_is_written_as_raw_html():
+    from umc.doceditor.md_writer import to_markdown
+
+    assert to_markdown("<table><tr><td><p>a|b</p><p>c</p></td></tr></table>") == (
+        "<table><tr><td><p>a|b</p><p>c</p></td></tr></table>\n"
+    )
+    assert to_markdown('<p style="text-align:center;margin-left:36pt">c</p>') == (
+        '<p align="center" style="margin-left:36pt">c</p>\n'
+    )
+    assert to_markdown("<p></p><p>x</p>") == "<span></span>\n\nx\n"
+    assert to_markdown("<p></p>") == ""
+    assert to_markdown("<pre>a\n</pre><pre>b\n</pre>") == "```\na\n```\n\n```\nb\n```\n"
+    assert to_markdown("<pre>a</pre><pre>b</pre>") == "```\na\nb\n```\n"  # one per line (Qt)
 
 
 def test_italic_alone_in_bold_is_written_with_underscores():

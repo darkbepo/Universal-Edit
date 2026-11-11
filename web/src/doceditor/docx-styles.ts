@@ -17,7 +17,7 @@ import {
   wAttr,
 } from "./docx-package";
 import { pyInt } from "./pycompat";
-import { type DocImages, W_LISTSTYLE } from "./types";
+import { type DocImages, PictureNames, W_LISTSTYLE } from "./types";
 // Word's built-in style ids, used when the file doesn't define the paragraph's style (no
 // styles part, or an id that isn't in it).
 export const BUILTIN_IDS: Record<string, string> = {
@@ -53,6 +53,7 @@ export const wVal = (el: Element | null | undefined, local: string): string | nu
 
 export class Ctx {
   images: DocImages = new Map();
+  readonly pictures = new PictureNames(); // one picture used twice keeps one name
   warnings: string[] = [];
   rels: Map<string, Rel>;
   private styleById = new Map<string, Element>();

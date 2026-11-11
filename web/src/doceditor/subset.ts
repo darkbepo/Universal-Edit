@@ -16,6 +16,7 @@ import {
   W_RAWHTML,
   W_WEBPICS,
   type DocImages,
+  PictureNames,
   nextImageName,
 } from "./types";
 import {
@@ -212,6 +213,7 @@ function isStackOverflow(err: unknown): boolean {
 
 class Normaliser {
   images: DocImages = new Map();
+  private readonly names = new PictureNames();
   /** A relative picture that couldn't be read (W_PICTURES). */
   lostPictures = false;
   private depth = 0;
@@ -227,6 +229,8 @@ class Normaliser {
 
   // ----- pictures -----
   private addImage(data: Uint8Array, ext: string): string {
+    const same = this.names.find(data, ext); // one picture used twice keeps one name
+    if (same !== null) return same;
     let name = nextImageName(this.images, ext);
     let n = this.images.size + 1;
     while (this.images.has(name) || this.reserved.has(name)) {
@@ -234,6 +238,7 @@ class Normaliser {
       name = `img/${n}.${ext}`;
     }
     this.images.set(name, data);
+    this.names.add(name, data, ext);
     return name;
   }
 

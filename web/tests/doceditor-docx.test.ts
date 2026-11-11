@@ -1220,13 +1220,14 @@ describe("reader: pictures", () => {
     expect(got.html).toBe("<p></p>");
   });
 
-  test("the same picture twice is two names", () => {
+  test("the same picture twice keeps one name (saving would otherwise make it two)", () => {
     const got = read(para(drawing("rIdP") + drawing("rIdP", 9525, 9525)), {
       rels: imageRel("rIdP", "media/p.png"),
       types: '<Default Extension="png" ContentType="image/png"/>',
       files: { "word/media/p.png": PNG },
     });
-    expect(Array.from(got.images.keys())).toEqual(["img/1.png", "img/2.png"]);
+    expect(Array.from(got.images.keys())).toEqual(["img/1.png"]);
+    expect(got.html.split('src="img/1.png"').length).toBe(3);
   });
 });
 

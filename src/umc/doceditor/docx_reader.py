@@ -162,6 +162,7 @@ class _Segment:
 class _Ctx:
     doc: Any
     images: DocImages = field(default_factory=dict)
+    picture_names: dict[tuple[bytes, str], str] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
     _numbering: Any = field(default=False, repr=False)
 
@@ -320,8 +321,11 @@ def _picture(ctx: _Ctx, drawing: etree._Element) -> str | None:
             log.warning("Picture of type %s can't be read; left out", ctype)
             ctx.warn(W_PICTURES)
             return None
-    name = next_image_name(ctx.images, ext)
-    ctx.images[name] = data
+    name = ctx.picture_names.get((data, ext))  # one picture used twice keeps one name
+    if name is None:
+        name = next_image_name(ctx.images, ext)
+        ctx.images[name] = data
+        ctx.picture_names[(data, ext)] = name
     attrs = f' src="{name}"'
     extent = drawing.find(f".//{_WP}extent")
     if extent is not None:

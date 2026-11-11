@@ -143,6 +143,15 @@
    }
   },
   {
+   "in": "<p><img src=\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC\"><img src=\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC\"><img src=\"data:image/jpeg;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC\"></p>",
+   "out": "<p><img src=\"img/1.png\"><img src=\"img/1.png\"><img src=\"img/2.jpg\"></p>",
+   "warnings": [],
+   "images": {
+    "img/1.png": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC",
+    "img/2.jpg": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+   }
+  },
+  {
    "in": "<pre>line 1\n  line 2</pre><blockquote><p>q</p></blockquote><hr>",
    "out": "<pre>line 1\n  line 2</pre><blockquote><p>q</p></blockquote><hr>",
    "warnings": []
@@ -457,6 +466,56 @@
    "front_matter": "",
    "warnings": [],
    "md_out": "Café — *Blåbær* 你好\n\n- star\n- list\n"
+  },
+  {
+   "md": "```js\na()\n```\n\n```html\n<b>\n```\n\n```\nc\n\n```\n",
+   "html": "<pre>a()\n</pre><pre>&lt;b&gt;\n</pre><pre>c\n\n</pre>",
+   "front_matter": "",
+   "warnings": [],
+   "md_out": "```\na()\n```\n\n```\n<b>\n```\n\n```\nc\n\n```\n"
+  },
+  {
+   "md": "<h1 align=\"center\">\n  <img src=\"logo.png\" width=\"9\"><br>\n  Title\n</h1>\n\n<p align=\"center\"><b>Fast</b> &amp; <i>small</i></p>\n\n<p style=\"margin-left:72pt;page-break-before:always\">x</p>\n\n<ul><li style=\"text-align:right\">r</li></ul>\n\n> <p align=\"right\">q</p>\n",
+   "html": "<h1 style=\"text-align:center\"><br>Title</h1><p style=\"text-align:center\"><b>Fast</b> &amp; <i>small</i></p><p style=\"margin-left:72pt;page-break-before:always\">x</p><ul><li style=\"text-align:right\">r</li></ul><blockquote><p style=\"text-align:right\">q</p></blockquote>",
+   "front_matter": "",
+   "warnings": [
+    "pictures in a format the editor can't show",
+    "footnotes and other Markdown extras"
+   ],
+   "md_out": "<h1 align=\"center\"><br>Title</h1>\n\n<p align=\"center\"><b>Fast</b> &amp; <i>small</i></p>\n\n<p style=\"margin-left:72pt;page-break-before:always\">x</p>\n\n<ul><li align=\"right\">r</li></ul>\n\n> <p align=\"right\">q</p>\n"
+  },
+  {
+   "md": "![a](https://e.com/a.png)\n\n## H\n\n<a id=\"x\"></a>\n### I\n",
+   "html": "<p></p><h2>H</h2><p></p><h3>I</h3>",
+   "front_matter": "",
+   "warnings": [
+    "pictures from the web",
+    "inline code, small headings, picture descriptions, comments and table alignment"
+   ],
+   "md_out": "<span></span>\n\n## H\n\n<span></span>\n\n### I\n"
+  },
+  {
+   "md": "<table><tr><td><ol><li><a href=\"./d/a b.md\">A</a></li></ol></td><td>\n\n**b**\n\n</td></tr></table>\n\n<table border=\"0\"><tr><td colspan=\"2\"><p>a</p><p align=\"center\">b</p></td></tr><tr><td>c</td></tr></table>\n\n<table><tr><td><pre>x\ny</pre></td><td><h2>h</h2></td></tr></table>\n",
+   "html": "<table><tr><td><ol><li><a href=\"./d/a b.md\">A</a></li></ol></td><td><p><b>b</b></p></td></tr></table><table style=\"border:none\"><tr><td colspan=\"2\"><p>a</p><p style=\"text-align:center\">b</p></td></tr><tr><td><p>c</p></td></tr></table><table><tr><td><pre>x\ny</pre></td><td><h2>h</h2></td></tr></table>",
+   "front_matter": "",
+   "warnings": [
+    "footnotes and other Markdown extras"
+   ],
+   "md_out": "<table><tr><td><ol><li><a href=\"./d/a b.md\">A</a></li></ol></td><td><p><b>b</b></p></td></tr></table>\n\n<table style=\"border:none\"><tr><td colspan=\"2\"><p>a</p><p align=\"center\">b</p></td></tr><tr><td><p>c</p></td></tr></table>\n\n<table><tr><td><pre>x&#10;y</pre></td><td><h2>h</h2></td></tr></table>\n"
+  },
+  {
+   "md": "- a\n    - b\n    * e\n\n1. x\n    1. y\n    1) z\n    1. w\n",
+   "html": "<ul><li>a<ul><li>b</li></ul><ul><li>e</li></ul></li></ul><ol><li>x<ol><li>y</li></ol><ol><li>z</li></ol><ol><li>w</li></ol></li></ol>",
+   "front_matter": "",
+   "warnings": [],
+   "md_out": "- a\n    - b\n    * e\n\n1. x\n    1. y\n    1) z\n    1. w\n"
+  },
+  {
+   "md": "<a href=\"./a b.md\">x</a>, <a href=\"https://e.com/Müller\">y</a>, <a href=\"?a=1&amp;amp;b=2\">z</a> and [ok](https://e.com/a_(b))\n",
+   "html": "<p><a href=\"./a b.md\">x</a>, <a href=\"https://e.com/Müller\">y</a>, <a href=\"?a=1&amp;amp;b=2\">z</a> and <a href=\"https://e.com/a_(b)\">ok</a></p>",
+   "front_matter": "",
+   "warnings": [],
+   "md_out": "<a href=\"./a b.md\">x</a>, <a href=\"https://e.com/Müller\">y</a>, <a href=\"?a=1&amp;amp;b=2\">z</a> and [ok](<https://e.com/a_(b)>)\n"
   }
  ],
  "txt": [

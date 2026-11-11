@@ -198,6 +198,10 @@ export function mdToHtml(text: string): string {
   return MD.render(text);
 }
 
+/** markdown-it's link address check and rewrite (used by the writer to keep addresses exact). */
+export const validateLink = (url: string): boolean => MD.validateLink(url);
+export const normalizeLink = (url: string): string => MD.normalizeLink(url);
+
 // ----- front matter ------------------------------------------------------------------------
 
 const FRONT_KEY = new RegExp(`^[A-Za-z0-9_-]+[${PY_WS}]*:`);

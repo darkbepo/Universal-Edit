@@ -37,6 +37,11 @@ describe("shared markdown vectors", () => {
     expect(toMarkdown(v.html)).toBe(v.md_out);
   });
 
+  test.each(vectors.markdown.map((v, i) => [i, v] as const))("markdown #%i reopens unchanged", (_i, v) => {
+    // Saving a file nobody edited must not change it.
+    expect(normaliseHtml(mdToHtml(v.md_out)).html).toBe(v.html);
+  });
+
   test.each(vectors.markdown.map((v, i) => [i, v] as const))("markdown #%i opens", async (_i, v) => {
     const doc = await openDocument(file(v.md, "a.md"), noConvert);
     expect(doc.html).toBe(v.html);

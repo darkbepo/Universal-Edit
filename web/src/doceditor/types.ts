@@ -83,3 +83,34 @@ export function warningText(warnings: string[]): string {
 export function nextImageName(images: DocImages, ext: string): string {
   return `img/${images.size + 1}.${ext}`;
 }
+
+/** 32-bit FNV-1a of `data` (a quick key; equal pictures are still compared byte by byte). */
+function fnv1a(data: Uint8Array): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < data.length; i++) h = Math.imul(h ^ data[i], 0x01000193);
+  return h >>> 0;
+}
+
+function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+/** The names given to pictures so far, so one picture used twice keeps one name (as on desktop,
+ * where the key is the bytes and the extension). */
+export class PictureNames {
+  private readonly byKey = new Map<string, { data: Uint8Array; name: string }[]>();
+
+  find(data: Uint8Array, ext: string): string | null {
+    for (const p of this.byKey.get(`${ext}:${data.length}:${fnv1a(data)}`) ?? []) {
+      if (sameBytes(p.data, data)) return p.name;
+    }
+    return null;
+  }
+
+  add(name: string, data: Uint8Array, ext: string): void {
+    const key = `${ext}:${data.length}:${fnv1a(data)}`;
+    this.byKey.set(key, [...(this.byKey.get(key) ?? []), { data, name }]);
+  }
+}

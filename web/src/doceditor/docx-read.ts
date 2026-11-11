@@ -312,8 +312,12 @@ function picture(ctx: Ctx, drawing: Element): string | null {
     ctx.warn(W_PICTURES);
     return null;
   }
-  const name = nextImageName(ctx.images, ext);
-  ctx.images.set(name, part.data);
+  let name = ctx.pictures.find(part.data, ext);
+  if (name === null) {
+    name = nextImageName(ctx.images, ext);
+    ctx.images.set(name, part.data);
+    ctx.pictures.add(name, part.data, ext);
+  }
   let attrs = ` src="${name}"`;
   const extent = wFirst(drawing, "extent", NS.wp);
   if (extent) {

@@ -3,8 +3,10 @@
 The output is read back by ``io.open_document`` (markdown-it: CommonMark with tables and
 strikethrough) to the same subset, so saving a Markdown file over itself never changes it.
 What Markdown has no syntax for is written as inline HTML
-(``<u>``, ``<s>``, ``<br>``, styled ``<span>``), which markdown-it passes through.
-Paragraph alignment, indents and page breaks have no Markdown form and are left out.
+(``<u>``, ``<s>``, ``<br>``, styled ``<span>``, ``<a href>`` for addresses markdown-it would
+rewrite), which markdown-it passes through. Blocks with alignment, an indent or a page break,
+and tables a pipe table can't hold, are written as one line of raw HTML (alignment as the
+``align`` attribute GitHub shows); an empty paragraph is ``<span></span>``.
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ from copy import deepcopy
 
 import lxml.html
 from lxml import etree
+from markdown_it.common.normalize_url import normalizeLink, validateLink
 
 NBSP = "\xa0"
 # Escaped wherever they appear in text (CommonMark reads "\\x" back as "x").
@@ -24,6 +27,10 @@ _ENTITIES = {"&": "&amp;", "<": "&lt;", ">": "&gt;"}
 _LINE_START = re.compile(r"^(?:[#>+=~-]|\d+[.)](?=\s|$))")
 _TASK = re.compile(r"(\[[ xX]\])(?:[ ]+|$)")
 _TRAILING_HASHES = re.compile(r"(#+)$")
+# markdown-it decodes entity references in a link's address.
+_ENTITY_LIKE = re.compile(r"&(?:#[0-9]+|#[xX][0-9a-fA-F]+|[A-Za-z][A-Za-z0-9]*);")
+_VOID = frozenset({"br", "img", "hr"})
+_STYLED_BLOCKS = frozenset({"p", "h1", "h2", "h3", "li"})
 
 
 def _tag(node: etree._Element) -> str:
@@ -117,8 +124,69 @@ class _Inline:
             style = _html.escape(node.get("style") or "", quote=True)
             return f'<span style="{style}">{inner}</span>'
         if tag == "a" and node.get("href"):
-            return f"[{inner}]({_link_target(node.get('href') or '')})"
+            href = node.get("href") or ""
+            if not _keeps_link(href):  # markdown-it would change the address: raw HTML
+                return f'<a href="{_html.escape(href, quote=True)}">{inner}</a>'
+            return f"[{inner}]({_link_target(href)})"
         return inner
+
+
+def _keeps_link(url: str) -> bool:
+    """True when markdown-it reads ``[x](url)`` back as exactly ``url``."""
+    return (
+        validateLink(url)
+        and normalizeLink(url) == url
+        and _ENTITY_LIKE.search(url) is None
+        and "\\" not in url
+    )
+
+
+def _raw_text(text: str) -> str:
+    """Text inside raw HTML, kept on one line (a blank line would end the HTML block)."""
+    text = _html.escape(text, quote=False)
+    return text.replace("\r", "&#13;").replace("\n", "&#10;")
+
+
+def _raw_attrs(node: etree._Element, tag: str) -> str:
+    attrs = []
+    for key, value in node.attrib.items():
+        if key == "style" and tag in _STYLED_BLOCKS:
+            rest = []
+            for part in value.split(";"):
+                if part.startswith("text-align:"):  # GitHub keeps align="", drops style=""
+                    attrs.append(("align", part.removeprefix("text-align:")))
+                elif part:
+                    rest.append(part)
+            if rest:
+                attrs.append(("style", ";".join(rest)))
+        else:
+            attrs.append((key, value))
+    return "".join(f' {k}="{_html.escape(v, quote=True)}"' for k, v in attrs)
+
+
+def _raw(node: etree._Element) -> str:
+    """A block of the subset as one line of HTML that reads back to the same subset."""
+    out: list[str] = []
+
+    def walk(el: etree._Element) -> None:
+        tag = _tag(el)
+        if not tag:
+            return
+        out.append(f"<{tag}{_raw_attrs(el, tag)}>")
+        if tag in _VOID:
+            return
+        out.append(_raw_text(el.text or ""))
+        for child in el:
+            walk(child)
+            out.append(_raw_text(child.tail or ""))
+        out.append(f"</{tag}>")
+
+    walk(node)
+    return "".join(out)
+
+
+def _styled(node: etree._Element) -> bool:
+    return bool(node.get("style")) or any(li.get("style") for li in node.iter("li"))
 
 
 def _link_target(url: str) -> str:
@@ -153,11 +221,14 @@ class _Writer:
         while i < len(children):
             node = children[i]
             tag = _tag(node)
-            if tag == "pre":  # one <pre> per code line: consecutive ones are one block
+            if tag == "pre":  # one <pre> per code line: consecutive ones are one block ...
                 lines = []
                 while i < len(children) and _tag(children[i]) == "pre":
-                    lines.append(_pre_text(children[i]).removesuffix("\n"))
+                    text = _pre_text(children[i])
+                    lines.append(text.removesuffix("\n"))
                     i += 1
+                    if text.endswith("\n"):  # ... but Markdown's whole code block ends one
+                        break
                 out.append(_fence("\n".join(lines)))
                 prev = tag
                 continue
@@ -172,12 +243,14 @@ class _Writer:
         return out
 
     def block(self, node: etree._Element, tag: str) -> str | None:
+        if tag in _STYLED_BLOCKS | {"ul", "ol"} and _styled(node):
+            return _raw(node)  # alignment, indent, page break: no Markdown form
         if tag in ("h1", "h2", "h3"):
             text = _Inline().render(node)
             text = _TRAILING_HASHES.sub(lambda m: "\\#" * len(m.group(1)), text)
             return f"{'#' * int(tag[1])} {text}" if text else "#" * int(tag[1])  # stays a heading
         if tag == "p":
-            return _Inline().render(node) or None
+            return _Inline().render(node) or "<span></span>"  # an empty paragraph stays one
         if tag == "blockquote":
             inner = "\n\n".join(_Writer().blocks(node))
             return "\n".join(f"> {line}" if line else ">" for line in inner.split("\n"))
@@ -189,9 +262,10 @@ class _Writer:
             return "---"
         return _Inline().render(node) or None
 
-    def _list(self, node: etree._Element, tag: str, level: int) -> list[str]:
+    def _list(self, node: etree._Element, tag: str, level: int, alt: bool = False) -> list[str]:
+        """``alt``: the other marker ("* ", "1) "), which starts a new list right after one."""
         lines: list[str] = []
-        marker = "1. " if tag == "ol" else "- "
+        marker = ("1) " if alt else "1. ") if tag == "ol" else ("* " if alt else "- ")
         pad = "    " * level
         for li in node:
             if _tag(li) != "li":
@@ -212,11 +286,16 @@ class _Writer:
                 text = task.group(1) + (" " + text if text else "")
             text = text or "<span></span>"  # an empty item stays an item
             lines.append(f"{pad}{marker}{text}")
-            for sub in nested:
-                lines.extend(self._list(sub, _tag(sub), level + 1))
+            prev, alt_sub = "", False
+            for sub in nested:  # two lists of one kind in a row would be read as one
+                alt_sub = _tag(sub) == prev and not alt_sub
+                prev = _tag(sub)
+                lines.extend(self._list(sub, prev, level + 1, alt_sub))
         return lines
 
     def _table(self, node: etree._Element) -> str | None:
+        if not _pipe_table(node):
+            return _raw(node)
         rows = []
         for tr in _rows(node):
             cells = []
@@ -248,6 +327,30 @@ def _rows(table: etree._Element) -> list[etree._Element]:
     return rows
 
 
+def _pipe_table(table: etree._Element) -> bool:
+    """True when a pipe table reads back to ``table``: plain rows of equal length, each cell one
+    plain paragraph (what markdown-it's tables become in the subset)."""
+    if table.attrib or not len(table) or not _no_text(table):
+        return False
+    width = len(table[0])
+    for tr in table:
+        if _tag(tr) != "tr" or tr.attrib or not _no_text(tr):
+            return False
+        if len(tr) != width or not width:
+            return False
+        for td in tr:
+            if _tag(td) != "td" or td.attrib or len(td) != 1 or not _no_text(td):
+                return False
+            if _tag(td[0]) != "p" or td[0].attrib:
+                return False
+    return True
+
+
+def _no_text(node: etree._Element) -> bool:
+    """Only white space among the node's own text (its text and its children's tails)."""
+    return not (node.text or "").strip() and not any((c.tail or "").strip() for c in node)
+
+
 def _cell_lines(td: etree._Element) -> list[str]:
     """The text lines of a table cell (its paragraphs, list items, nested table cells)."""
     lines = []
@@ -269,7 +372,7 @@ def _cell_lines(td: etree._Element) -> list[str]:
 
 def to_markdown(html: str) -> str:
     """The editor's (normalised) HTML subset as Markdown, ending with one newline."""
-    if not html.strip():
+    if not html.strip() or html == "<p></p>":  # the empty document (opening "" gives "<p></p>")
         return ""
     root = lxml.html.fragment_fromstring(html, create_parent="div")
     blocks = _Writer().blocks(root)
