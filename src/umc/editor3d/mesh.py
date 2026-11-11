@@ -42,7 +42,13 @@ class ViewModel:
         return w, d, h
 
     def triangle_buffer(self) -> np.ndarray:
-        """Interleaved float32 (3·F, 6): position xyz + flat face normal xyz, per corner."""
+        """Interleaved float32 (3·F, 6): position xyz + flat face normal xyz, per corner.
+
+        Cached; the viewer builds it (and ``edge_buffer``) on the loading thread, so the paint
+        code only uploads.
+        """
+        if "triangles" in self._cache:
+            return self._cache["triangles"]
         tri = self.vertices[self.faces]  # (F, 3, 3)
         n = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
         length = np.linalg.norm(n, axis=1, keepdims=True)
@@ -50,7 +56,8 @@ class ViewModel:
         out = np.empty((len(self.faces), 3, 6), dtype=np.float32)
         out[:, :, :3] = tri
         out[:, :, 3:] = n[:, None, :]
-        return out.reshape(-1, 6)
+        self._cache["triangles"] = out.reshape(-1, 6)
+        return self._cache["triangles"]
 
     def edge_buffer(self) -> np.ndarray:
         """float32 (2·E, 3): every unique triangle edge once, for the wireframe."""

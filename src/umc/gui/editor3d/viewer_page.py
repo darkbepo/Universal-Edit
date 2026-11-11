@@ -27,6 +27,10 @@ from umc.gui.editor3d.gl_view import ModelGLView
 
 log = logging.getLogger(__name__)
 
+# Loads still running when their page went away: kept referenced until they end, because a
+# QThread destroyed while running aborts the app.
+_ORPHANS: list[tuple[QThread, QObject]] = []
+
 HINT = "Drag to rotate · right-drag or Shift+drag to pan · wheel to zoom · double-click to fit"
 VIEW_BUTTONS = (("iso", "3D"), ("front", "Front"), ("top", "Top"), ("right", "Side"))
 STYLE_BUTTONS = (("shaded", "Shaded"), ("edges", "Edges"), ("wireframe", "Wireframe"))
@@ -44,6 +48,8 @@ class _Loader(QObject):
     def run(self) -> None:
         try:
             model = load_view_model(self.f.path, self.f.ext)
+            model.triangle_buffer()  # heavy for big models: build them here, not while painting
+            model.edge_buffer()
         except ConversionError as exc:
             self.failed.emit(self.f, str(exc))
         except Exception:
@@ -76,6 +82,7 @@ class ViewerPage(QWidget):
         body.setContentsMargins(12, 12, 12, 12)
         body.setSpacing(12)
         self.view = ModelGLView()
+        self.view.gl_failed.connect(self._on_gl_failed)
         self.placeholder = QLabel("", objectName="Muted")
         self.placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.placeholder.setWordWrap(True)
@@ -239,15 +246,23 @@ class ViewerPage(QWidget):
         self.placeholder.setText(text)
         self.center.setCurrentWidget(self.placeholder)
 
+    def _on_gl_failed(self) -> None:
+        """OpenGL failed when the view first appeared (e.g. shaders): say so instead."""
+        if self.center.currentWidget() is self.view:
+            self._show_gl_problem()
+
+    def _show_gl_problem(self) -> None:
+        self._show_placeholder(
+            "The 3D view needs OpenGL, which isn't working on this computer. "
+            "The model's measurements are on the right."
+        )
+        self.message.setText(self.view.failed)
+
     def _show_model(self, model: ViewModel) -> None:
         self.message.setText("")
         self.view.set_model(model)
         if self.view.failed:
-            self._show_placeholder(
-                "The 3D view needs OpenGL, which isn't working on this computer. "
-                "The model's measurements are on the right."
-            )
-            self.message.setText(self.view.failed)
+            self._show_gl_problem()
         else:
             self.center.setCurrentWidget(self.view)
         self._fill_info(model)
@@ -278,6 +293,18 @@ class ViewerPage(QWidget):
 
     def wait_idle(self, ms: int = 30000) -> None:
         """Block until a running load has finished (closing the window, tests)."""
-        if self._job is not None:
-            self._pending = None
-            self._job[0].wait(ms)
+        if self._job is None:
+            return
+        self._pending = None
+        thread, worker = self._job
+        thread.quit()  # ends the thread's event loop as soon as the load returns
+        if not thread.wait(ms):
+            # a long STEP load: let it finish on its own instead of destroying a running thread
+            worker.done.disconnect()
+            worker.failed.disconnect()
+            thread.finished.disconnect()
+            thread.setParent(None)
+            _ORPHANS.append((thread, worker))
+            thread.finished.connect(lambda t=thread, w=worker: _ORPHANS.remove((t, w)))
+            self._job = None
+            self.loading = False

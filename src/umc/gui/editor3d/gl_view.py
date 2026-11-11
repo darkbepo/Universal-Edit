@@ -122,6 +122,7 @@ def _qmatrix(m: np.ndarray) -> QMatrix4x4:
 
 class ModelGLView(QOpenGLWidget):
     camera_changed = Signal()
+    gl_failed = Signal()  # initializeGL couldn't set OpenGL up (``failed`` says why)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -181,6 +182,7 @@ class ModelGLView(QOpenGLWidget):
         except Exception as exc:  # no usable OpenGL on this computer
             log.exception("3D view: OpenGL setup failed")
             self.failed = str(exc) or "OpenGL couldn't start"
+            self.gl_failed.emit()
 
     def _program(self, vs: str, fs: str, attrs: tuple[str, ...]) -> QOpenGLShaderProgram:
         p = QOpenGLShaderProgram(self)

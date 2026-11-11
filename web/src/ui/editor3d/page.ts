@@ -7,7 +7,7 @@ import { VIEW_TARGET } from "../../converters/model3d";
 import type { InputFile } from "../../core/types";
 import { OrbitCamera, FOV, type Vec3 } from "../../editor3d/camera";
 import { describe, gridSpec, type ModelStats, type ViewModel } from "../../editor3d/mesh";
-import type { ConversionClient } from "../../worker/client";
+import { JobCancelled, type ConversionClient } from "../../worker/client";
 
 const h = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> & { class?: string } = {}, ...children: (Node | string)[]) => {
   const el = document.createElement(tag);
@@ -40,6 +40,7 @@ export class ViewerPage {
   showGrid = true;
   failed = "";
   private models = new Map<InputFile, ViewModel | string>(); // string = why it couldn't open
+  private loading = new Map<InputFile, Promise<ViewModel | string>>();
   private renderer: THREE.WebGLRenderer | null = null;
   private scene = new THREE.Scene();
   private cam3 = new THREE.PerspectiveCamera(FOV, 1, 0.1, 1000);
@@ -149,12 +150,19 @@ export class ViewerPage {
       const token = ++this.loadToken;
       this.showPlaceholder(`Opening ${f.name}…`);
       this.info.replaceChildren();
-      try {
-        model = await this.load(f);
-      } catch (e) {
-        model = e instanceof Error && e.message ? e.message : `Couldn't open “${f.name}” as a 3D model.`;
+      let job = this.loading.get(f); // the same file chosen again while it loads: share the load
+      if (!job) {
+        job = this.load(f).then(
+          (m) => {
+            this.models.set(f, m);
+            return m;
+          },
+          // not cached: a cancelled or crashed job is tried again next time
+          (e) => (e instanceof JobCancelled ? "Cancelled." : e instanceof Error && e.message ? e.message : `Couldn't open “${f.name}” as a 3D model.`),
+        ).finally(() => this.loading.delete(f));
+        this.loading.set(f, job);
       }
-      this.models.set(f, model);
+      model = await job;
       if (token !== this.loadToken || this.current !== f) return;
     }
     if (typeof model === "string") {
@@ -336,7 +344,7 @@ export class ViewerPage {
       this.requestRender();
     }, { passive: false });
     window.addEventListener("keydown", (e) => {
-      if (!this.active || (e.target as HTMLElement).closest("input, select, textarea")) return;
+      if (!this.active || e.ctrlKey || e.metaKey || e.altKey || (e.target as HTMLElement).closest("input, select, textarea")) return;
       const moves: Record<string, () => void> = {
         "+": () => this.camera.zoom(0.85), "=": () => this.camera.zoom(0.85), "-": () => this.camera.zoom(1 / 0.85),
         ArrowLeft: () => this.camera.orbit(-15, 0), ArrowRight: () => this.camera.orbit(15, 0),

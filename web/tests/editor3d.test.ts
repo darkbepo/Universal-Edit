@@ -67,6 +67,14 @@ group("hidden viewer converter", () => {
   });
 });
 
+group("hidden viewer converter: no triangles", () => {
+  it("a point cloud is refused in plain words", async () => {
+    const ply = "ply\nformat ascii 1.0\nelement vertex 4\nproperty float x\nproperty float y\nproperty float z\nend_header\n0 0 0\n1 0 0\n0 1 0\n0 0 1\n";
+    const input: InputFile = { file: new File([ply], "dots.ply"), name: "dots.ply", ext: "ply", family: "model" };
+    await expect(model3dViewConverter.run([input], VIEW_TARGET, {}, { progress() {} })).rejects.toThrow(/triangles/);
+  });
+});
+
 group("camera", () => {
   const project = (cam: OrbitCamera, p: Vec3, aspect = 1) => {
     const c = new THREE.PerspectiveCamera(35, aspect, ...cam.clipPlanes());

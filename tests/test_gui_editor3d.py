@@ -112,3 +112,37 @@ def test_grid_lines_cover_the_model():
     assert step == 10
     half = np.abs(np.concatenate([minor, major])).max()
     assert half >= 60 and np.all(minor[:, 2] == 0)
+
+
+def test_close_while_loading_never_hangs_or_crashes(window, models, qtbot, monkeypatch):
+    import threading
+    import time
+
+    import umc.gui.editor3d.viewer_page as vp
+
+    real, release = vp.load_view_model, threading.Event()
+
+    def slow(path, ext):
+        release.wait(10)
+        return real(path, ext)
+
+    monkeypatch.setattr(vp, "load_view_model", slow)
+    window.add_files([str(models[0])])
+    window.edit_mode.click()
+    page = window.viewer3d
+    assert page.loading
+    t = time.monotonic()
+    page.wait_idle(200)  # still loading: gives up quickly and keeps the thread alive
+    assert time.monotonic() - t < 2 and page._job is None and vp._ORPHANS
+    release.set()
+    qtbot.waitUntil(lambda: not vp._ORPHANS, timeout=10000)
+
+
+def test_wait_idle_returns_as_soon_as_the_load_ends(window, models, qtbot):
+    import time
+
+    window.add_files([str(models[0])])
+    window.edit_mode.click()
+    t = time.monotonic()
+    window.viewer3d.wait_idle(5000)
+    assert time.monotonic() - t < 3

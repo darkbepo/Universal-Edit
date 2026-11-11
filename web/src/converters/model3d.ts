@@ -385,7 +385,11 @@ export const model3dViewConverter: Converter = {
     const { meshStats, standOnBed } = await import("../editor3d/mesh");
     const f = files[0];
     const parts = await loadParts(T, f, defaults(modelConverter.options), (m) => ctx.progress(0.2, m));
-    const flat = parts.map((p) => (p.geometry.index ? p.geometry.toNonIndexed() : p.geometry).getAttribute("position").array as ArrayLike<number>);
+    // triangles only: skip point clouds and parts without positions (desktop does the same)
+    const flat = parts
+      .map((p) => (p.geometry.index ? p.geometry.toNonIndexed() : p.geometry).getAttribute("position"))
+      .filter((a) => a && a.count >= 3 && a.count % 3 === 0)
+      .map((a) => a.array as ArrayLike<number>);
     const total = flat.reduce((n, a) => n + a.length, 0);
     const positions = new Float32Array(total);
     const starts: number[] = [];

@@ -44,6 +44,7 @@ export function meshStats(pos: Float32Array, partStarts: number[] = [0]): ModelS
   };
   const starts = [...partStarts, n];
   let watertight = n > 0;
+  const M = 3 * n + 1; // more than the number of distinct corners: min * M + max stays exact
   let volume = 0;
   for (let p = 0; p + 1 < starts.length && watertight; p++) {
     const edges = new Map<number, number>();
@@ -53,7 +54,7 @@ export function meshStats(pos: Float32Array, partStarts: number[] = [0]): ModelS
       const v = [id(k), id(k + 3), id(k + 6)];
       for (let e = 0; e < 3; e++) {
         const a = v[e], b = v[(e + 1) % 3];
-        const key = a < b ? a * 0x200000 + b : b * 0x200000 + a; // < 2M distinct corners stay exact
+        const key = a < b ? a * M + b : b * M + a;
         edges.set(key, (edges.get(key) ?? 0) + 1);
       }
       const [ax, ay, az, bx, by, bz, cx, cy, cz] = pos.subarray(k, k + 9);
