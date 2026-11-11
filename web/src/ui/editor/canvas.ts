@@ -1,4 +1,5 @@
 // The editor canvas: zoom / pan, pointer → tool, a cached composite repainted by dirty rect.
+import { fxMargin } from "../../editor/layerfx";
 import { composite, docBounds, pasteboard, type EditorDoc } from "../../editor/document";
 import { Rect } from "../../editor/geometry";
 import type { Command, History } from "../../editor/history";
@@ -137,6 +138,9 @@ export class EditorCanvas {
       this.cacheCtx.putImageData(new ImageData(composite(doc, area, override, false) as Uint8ClampedArray<ArrayBuffer>, area.width, area.height), 0, 0);
       if (!rect && !this.autoFit) this.clamp(); // not while dragging: the view would jump
     } else {
+      // a change also moves what layer effects draw around it (a shadow, an outline…)
+      const m = Math.max(0, ...doc.layers.map((l) => fxMargin(l.fx)));
+      if (m) rect = new Rect(rect.x0 - m, rect.y0 - m, rect.x1 + m, rect.y1 + m);
       const r = rect.intersect(this.area);
       if (!r.empty) (this.cacheCtx as OffscreenCanvasRenderingContext2D).putImageData(new ImageData(composite(doc, r, override, false) as Uint8ClampedArray<ArrayBuffer>, r.width, r.height), r.x0 - this.area.x0, r.y0 - this.area.y0);
     }

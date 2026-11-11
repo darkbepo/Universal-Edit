@@ -1149,3 +1149,29 @@ test("shapes: each on its own layer, a corner handle reshapes it, Rasterize turn
   await page.getByRole("menu", { name: "Layer actions" }).getByRole("menuitem", { name: /^Rasterize layer/ }).click();
   await expect.poll(box).toBeNull();
 });
+
+test("layer effects: a window adds a drop shadow live, one undo step, with an fx badge", async ({ page }) => {
+  await openEditor(page);
+  const fx = () => page.evaluate(() => {
+    const d = (window.__editor as EditorHook).doc as EditorHook["doc"] & { active: number; layers: { fx?: { shadow: boolean; shadow_distance: number } | null }[] };
+    return d.layers[d.active].fx ?? null;
+  });
+  const undoLabel = () => page.evaluate(() => (window.__editor as EditorHook & { history: { undoLabel: string } }).history.undoLabel);
+  await page.locator(".tool-rail").getByRole("button", { name: /^Drop shadow/ }).click();
+  const win = page.locator("dialog.fx_shadow");
+  await expect(win).toBeVisible();
+  await expect.poll(async () => (await fx())?.shadow).toBe(true); // opening it adds the shadow
+  await expect(page.locator(".layers .fx-badge")).toHaveCount(1);
+  await expect(win.getByLabel("Show drop shadow")).toBeChecked();
+  const distance = win.getByLabel("Distance").first();
+  await distance.fill("30");
+  await distance.dispatchEvent("input");
+  await distance.dispatchEvent("change");
+  await expect.poll(async () => (await fx())?.shadow_distance).toBe(30);
+  expect(await undoLabel()).toBe("Drop shadow");
+  await win.getByRole("button", { name: "Done" }).click();
+  await expect(win).toBeHidden();
+  await page.locator(".editor-top").getByRole("button", { name: /^Undo/ }).click();
+  await expect.poll(fx).toBeNull(); // the whole run was one step
+  await expect(page.locator(".layers .fx-badge")).toHaveCount(0);
+});

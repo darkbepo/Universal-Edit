@@ -14,7 +14,8 @@ export class SettingsForm {
   private groups: { node: HTMLElement; members: Field[] }[] = [];
   private targetId = "";
 
-  constructor(private onChange: () => void) {
+  /** `idPrefix` keeps field ids unique when several forms are on the page at once. */
+  constructor(private onChange: () => void, private idPrefix = "opt") {
     this.el.className = "form";
   }
 
@@ -45,6 +46,12 @@ export class SettingsForm {
     return Object.fromEntries(this.fields.map((f) => [f.spec.name, f.get()]));
   }
 
+  /** Show these values without announcing a change (the fields stay). */
+  setValues(values: Values): void {
+    for (const f of this.fields) if (f.spec.name in values) f.set(values[f.spec.name]);
+    this.updateVisibility();
+  }
+
   hasVisibleFields(): boolean {
     const v = this.values();
     return this.fields.some((f) => visible(f.spec, v, this.targetId));
@@ -65,7 +72,7 @@ export class SettingsForm {
   }
 
   private makeField(spec: OptionSpec, value: Value): Field {
-    const id = `opt-${spec.name}`;
+    const id = `${this.idPrefix}-${spec.name}`;
     const label = document.createElement("label");
     label.className = "lbl";
     label.htmlFor = id;
@@ -78,6 +85,7 @@ export class SettingsForm {
       input.addEventListener("change", this.changed);
       cell.append(input);
       field.get = () => input.checked;
+      field.set = (v) => (input.checked = Boolean(v));
     } else if (spec.kind === "choice") {
       const select = Object.assign(document.createElement("select"), { id });
       const choices = spec.choices ?? [];
@@ -85,6 +93,10 @@ export class SettingsForm {
       select.addEventListener("change", this.changed);
       cell.append(select);
       field.get = () => choices[Number(select.value)]?.[0] ?? spec.default;
+      field.set = (v) => {
+        const i = choices.findIndex(([c]) => c === v);
+        if (i >= 0) select.value = String(i);
+      };
     } else if (spec.kind === "slider") {
       const row = document.createElement("div");
       row.className = "slider-row";
@@ -102,6 +114,10 @@ export class SettingsForm {
       row.append(input, out);
       cell.append(row);
       field.get = () => Number(input.value);
+      field.set = (v) => {
+        input.value = String(v);
+        out.textContent = fmt();
+      };
     } else if (spec.kind === "int" || spec.kind === "float") {
       const input = Object.assign(document.createElement("input"), { type: "number", id, value: String(value) });
       if (spec.min !== undefined) input.min = String(spec.min);
@@ -110,11 +126,13 @@ export class SettingsForm {
       input.addEventListener("input", this.changed);
       cell.append(input);
       field.get = () => Number(input.value || spec.default);
+      field.set = (v) => (input.value = String(v));
     } else if (spec.kind === "color") {
       const input = Object.assign(document.createElement("input"), { type: "color", id, value: String(value) });
       input.addEventListener("input", this.changed);
       cell.append(input);
       field.get = () => input.value;
+      field.set = (v) => (input.value = String(v));
     } else if (spec.kind === "file") {
       const input = Object.assign(document.createElement("input"), { type: "file", id, accept: spec.accept ?? "" });
       input.addEventListener("change", this.changed);

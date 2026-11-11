@@ -1,4 +1,5 @@
 // Tool bar (left), colour swatches, tool settings and the layers list (right).
+import { EFFECTS, type FxKey } from "../../editor/layerfx";
 import RAIL from "../../editor/rail.json";
 import { ICONS as TABLER } from "../icon_data";
 import { defaults, type Values } from "../../core/options";
@@ -292,6 +293,12 @@ const ARROW_DOWN = '<svg viewBox="0 0 10 6" width="10" height="6" aria-hidden="t
 const MASK_THUMB = 26;
 
 /** A small grey picture of the layer's mask (black hides, white shows). */
+/** The layer's effects that are on, as "Drop shadow, Outline" ("" = none). */
+export function fxNames(layer: Layer): string {
+  const fx = layer.fx;
+  return fx ? EFFECTS.filter(([k]) => fx[k]).map(([, label]) => label).join(", ") : "";
+}
+
 function maskThumbnail(layer: Layer): HTMLCanvasElement {
   const c = h("canvas", { width: MASK_THUMB, height: MASK_THUMB, class: "mask-thumb", title: "This layer has a mask: black hides, white shows" });
   const m = layer.mask as Uint8ClampedArray;
@@ -327,6 +334,7 @@ export class LayersPanel {
     private onCommand: (cmd: Command) => void,
     private onActive: () => void,
     private onEditText: (index: number) => void = () => {},
+    private onFx: (key: FxKey) => void = () => {},
   ) {
     const b = (name: string, title: string, fn: () => void) => {
       const btn = h("button", { class: "btn small", title }, name);
@@ -421,6 +429,8 @@ export class LayersPanel {
       };
       const parts: (Node | string)[] = [eye, thumbnail(layer), name];
       if (layer.mask) parts.push(maskThumbnail(layer));
+      const fx = fxNames(layer);
+      if (fx) parts.push(h("span", { class: "fx-badge", title: `Effects: ${fx}` }, "fx"));
       const li = h("li", { tabIndex: 0, ariaLabel: `Layer ${layer.name}` }, ...parts, h("span", { class: "arrows" }, arrow(true), arrow(false)));
       li.dataset.index = String(i);
       const startRename = () => {
@@ -638,11 +648,17 @@ export class LayersPanel {
     if (chosen.some((i) => !doc.layers[i].visible)) items.push([`Show ${word}`, () => this.setVisible(true), true]);
     if (chosen.length === 1 && doc.layers.length > 1) {
       const only = chosen[0];
-      const l = doc.layers[only];
-      if (l.text || l.shape) items.push(["Rasterize layer (plain pixels)", () => this.run((d) => ops.rasterizeLayer(d, only)), true]);
       items.push([ops.isSolo(doc, only) ? "Show all layers" : "Show only this layer (Alt+click eye)", () => this.run((d) => ops.soloLayer(d, only)), true]);
     }
     items.push(["Select all layers", () => this.selectAll(), true]);
+    if (!many) {
+      const l = doc.layers[doc.active];
+      const index = doc.active;
+      items.push(null);
+      if (l.text || l.shape || l.fx) items.push(["Rasterize layer (plain pixels)", () => this.run((d) => ops.rasterizeLayer(d, index)), true]);
+      for (const [key, label] of EFFECTS) items.push([`${label}…${l.fx?.[key] ? "  ✓" : ""}`, () => this.onFx(key), true]);
+      if (l.fx) items.push(["Clear layer effects", () => this.run((d) => ops.clearLayerFx(d, index)), true]);
+    }
     if (!many) {
       // layer mask actions for the one selected layer
       items.push(null);

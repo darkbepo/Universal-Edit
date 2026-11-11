@@ -88,6 +88,7 @@ The browser version's source is in [`web/`](web/README.md).
 | Image editor windows: every tool's options and every feature with settings (adjustments, filters, resize, stickers, feather, shortcuts) open in a window over the picture — drag it anywhere, minimise it back into its icon, keep several open; positions are remembered | ✅ | ✅ |
 | Image editor live text: clicking with the Text tool makes the text layer at once; it is drawn in its real style while you type, can be dragged by its handle while typing, and stays editable text | ✅ | ✅ |
 | Image editor shape layers: each line, arrow, rectangle and ellipse is its own layer with handles on its corners / ends to reshape it any time; Rasterize layer (or merging, rotating, resizing) makes it plain pixels; kept in .ora | ✅ | ✅ |
+| Image editor layer effects: drop shadow, glow, outline and colour overlay on any layer, live and editable in their own windows (fx badge in the layers list); merging or Rasterize layer draws them in; kept in .ora | ✅ | ✅ |
 | Layered projects: save and open OpenRaster `.ora` (GIMP and Krita open it too); `.ora` → any image format | ✅ | ✅ |
 | Files never leave your computer | ✅ | ✅ |
 | No install needed | ❌ | ✅ |

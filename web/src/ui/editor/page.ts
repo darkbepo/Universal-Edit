@@ -10,6 +10,9 @@ import { layerBounds, withProps, type Layer, type RGBA } from "../../editor/laye
 import { ICONS as TABLER } from "../icon_data";
 import { loadLayers, openFiles, type OpenSource } from "../../editor/open";
 import * as ops from "../../editor/ops";
+import { EFFECTS, fxBounds, OPTIONS as FX_OPTIONS, windowValues, withValues, type FxKey } from "../../editor/layerfx";
+import type { Values } from "../../core/options";
+import { SettingsForm } from "../settings";
 import { writeOra } from "../../editor/ora";
 import { addSticker } from "../../editor/stickers";
 import { contentAwareFill } from "../../editor/inpaint";
@@ -147,8 +150,10 @@ export class EditorPage {
       () => {
         this.updateInfo();
         this.previewRefresh?.(); // an open adjustment previews (and applies to) the chosen layer
+        this.syncFx();
       },
       (index) => this.editText(index),
+      (key) => this.openFx(key),
     );
     this.canvas.contextProvider = () => this.context();
     this.canvas.onChanged = () => this.changed();
@@ -351,9 +356,67 @@ export class EditorPage {
     if (this.doc.width !== size[0] || this.doc.height !== size[1]) this.canvas.fit();
   }
 
+  /** Open effect windows: how to show the selected layer's settings again. */
+  private fxWindows = new Map<FxKey, () => void>();
+
+  private syncFx(): void {
+    for (const sync of this.fxWindows.values()) sync();
+  }
+
+  /** A layer effect's window (port of gui/editor/fx_window.py): opening it switches the effect on
+   *  for the selected layer; changes show at once, a run of them is one undo step. */
+  openFx(key: FxKey): void {
+    const doc = this.doc;
+    if (!doc) return;
+    const wkey = `fx_${key}`;
+    if (this.floating.toggle(wkey)) return;
+    const label = (EFFECTS.find(([k]) => k === key) as [FxKey, string, string])[1];
+    const current = () => windowValues(this.doc?.layers[this.doc.active]?.fx, key);
+    const form = new SettingsForm(() => this.tweakFx(key, form.values()), wkey);
+    form.render(FX_OPTIONS[key], "", current());
+    const remove = h("button", { class: "btn", type: "button" }, "Remove");
+    const done = h("button", { class: "primary small", type: "button" }, "Done");
+    const dlg = h("dialog", { class: `editor-dialog fx-window ${wkey}` }, h("h2", {}, label), form.el, h("div", { class: "row" }, h("div", { class: "spacer" }), remove, done));
+    remove.addEventListener("click", () => this.tweakFx(key, { [key]: false }));
+    done.addEventListener("click", () => this.floating.close(wkey));
+    dlg.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        this.floating.close(wkey);
+      }
+      e.stopPropagation(); // never reach the editor's shortcuts
+    });
+    this.fxWindows.set(key, () => {
+      const v = current();
+      const shown = form.values();
+      if (Object.keys(v).some((k) => v[k] !== shown[k])) form.setValues(v);
+    });
+    this.floating.onStateFor(wkey, (state) => {
+      if (state === "closed") {
+        this.fxWindows.delete(key);
+        this.floating.onStateFor(wkey, null);
+      }
+    });
+    this.floating.open(wkey, label, dlg);
+    if (!current()[key]) this.tweakFx(key, { ...form.values(), [key]: true }); // opened to add it
+  }
+
+  private tweakFx(key: FxKey, values: Values): void {
+    const doc = this.doc;
+    if (!doc || !this.history || !doc.layers.length) return;
+    const i = doc.active;
+    const old = doc.layers[i];
+    const label = (EFFECTS.find(([k]) => k === key) as [FxKey, string, string])[1];
+    if (ops.tweakLayerFx(doc, this.history, i, withValues(old.fx, values), label)) {
+      this.canvas.refresh(fxBounds(old).union(fxBounds(doc.layers[i])));
+      this.changed();
+    } else this.syncFx();
+  }
+
   private changed(): void {
     if (!this.doc) return;
     this.previewRefresh?.(); // the picture changed under an open adjustment: preview again
+    this.syncFx(); // an undo may have changed the effects shown in a window
     const size = `${this.doc.width}x${this.doc.height}`;
     if (this.lastSize && size !== this.lastSize) {
       // their width / height fields describe the old size
@@ -655,6 +718,7 @@ export class EditorPage {
     if (!doc) return;
     if (["select_all", "deselect", "invert_selection", "feather"].includes(name)) return this.actions()[name](); // Select menu
     this.commitText();
+    if (name.startsWith("fx_") && EFFECTS.some(([k]) => k === name.slice(3))) return this.openFx(name.slice(3) as FxKey);
     try {
       let cmd: Command | null = null;
       if (name === "resize") {

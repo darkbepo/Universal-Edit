@@ -668,7 +668,25 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
          `before_press`, web `addFiles` / `setDocument` / a capturing pointerdown); focus moving to
          the tool options or the colours doesn't end the typing; live redraws repaint only the
          changed rectangle and the grip moves the layer instead of drawing it again.
-      7. Layer effects: drop shadow, colour overlay, glow, outline (live, "fx" badge, kept in .ora).
+      7. ✅ Layer effects (both apps): `Layer.fx` = a `LayerFx` (`editor/layerfx.py` / `layerfx.ts`, same
+         fields; colours as "#rrggbb"): drop shadow, glow, outline, colour overlay, drawn live by
+         `composite` from what the layer shows (mask applied, before opacity), bottom to top shadow →
+         glow → outline → layer + overlay. `region` / `fxRegion` works on any rectangle (reads
+         `margin` px around it), so partial repaints match the whole; the canvases grow dirty rects
+         by the largest margin. Merges and "Rasterize layer" bake them in (`baked` / `bakedLayer`),
+         transforms / duplicate / text and shape redraws keep them; ORA attribute `umc-fx` (the
+         layer PNG stays its own pixels). Rail group "Effects" (`fx_shadow` …): one window per
+         effect (`gui/editor/fx_window.py`, web `page.openFx`), opening it switches the effect on;
+         a run of changes from one window is one undo step (`ops.tweak_layer_fx` / `tweakLayerFx`);
+         an "fx" badge in the layers list, effect items + "Clear layer effects" in the layer menu.
+         Desktop blur = Pillow GaussianBlur, web = its own 3-box approximation (soft edges differ a
+         little). The web `SettingsForm` got working `set` / `setValues` and an id prefix.
+         Step 6 review: ORA keeps a text / shape recipe only while the pixels still match it (and
+         there's no mask); on opening, a recipe is redrawn if the stored pixels are close (another
+         app's anti-aliasing), else dropped — so shapes saved by one app reshape in the other.
+         Reshaping keeps the mask on the same picture pixels and the handle's grab offset (a click
+         changes nothing); flat rectangles add no layer; the live reshape preview is limited to the
+         pasteboard.
 11. Ideas: installer for the app itself (Inno Setup), presets, batch queue.
 
 ## Handoff — read this first (for the next Claude account)
