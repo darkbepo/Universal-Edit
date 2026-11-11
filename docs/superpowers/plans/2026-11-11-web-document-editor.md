@@ -487,6 +487,31 @@ Found in the Task 4f re-review. The web's own zip reader (`docx-package.ts` `unz
 
 ---
 
+### Task 5b: Reopen a Markdown ZIP saved by the website
+
+Found in Task 5. On the web, a Markdown file with pictures is saved as `stem.zip` holding `stem.md` and `stem_files/N.ext`, because a browser can't write a folder next to a file. The website can't open that ZIP again, so reopening only the `.md` loses its pictures.
+
+**Files:**
+- Modify: `web/src/doceditor/open.ts`, `web/src/doceditor/types.ts` (if needed), `web/src/core/detect.ts` or the edit gate (`editKind`, Task 10), `web/tests/doceditor-open-save.test.ts`
+
+**Rulings:**
+- A single dropped `.zip` counts as an editable document when its central directory holds exactly one `.md` at the root and every other entry is inside `<that stem>_files/`.
+- `openDocument` then opens the `.md` with `resolveImage` reading from the ZIP. The relative paths go through the same safety rules as the normaliser: no `..`, absolute or UNC paths.
+- Use the CRC / zip-bomb-safe reader from `docx-package.ts`.
+- `sourceFormat` is `"md"`, and Save writes the ZIP again under the same name.
+- Any other ZIP is still an archive for the converter, unchanged.
+
+- [ ] **Step 1: Tests:**
+  - a saved MD ZIP reopens with its pictures (images map and html equal the saved content);
+  - a ZIP with two `.md` files, or with other files, is not editable;
+  - a ZIP entry `../x.png` is never read.
+- [ ] **Step 2:** Run — Expected: FAIL.
+- [ ] **Step 3:** Implement.
+- [ ] **Step 4:** Run `npm test` and `tsc` — Expected: PASS.
+- [ ] **Step 5: Commit** `Reopen Markdown ZIPs saved by the website`.
+
+---
+
 ### Task 6: ProseMirror schema and subset conversion
 
 **Files:**
@@ -659,6 +684,7 @@ Found in the Task 4f re-review. The web's own zip reader (`docx-package.ts` `unz
   - `leave asks when dirty` (dialog handler: dismiss keeps the editor);
   - `beforeunload set while dirty`;
   - `images still open the image editor`;
+  - `big table stays responsive` (from the Task 5 review): open a Markdown file with a 20 000-row table in the real browser, then save it as Markdown. Each step finishes within 5 s, and the page stays responsive.
   - `test_cross_app_docx` (skipped without python3 + python-docx). Open `desktop.docx` on the web and compare the visible text, the bold and the table. Then save it from the web, and run `python3 -c` with the desktop `docx_reader.read` on the download. It must show the same html as the web's `__doceditor.html()`.
 - [ ] **Step 3: Run the full verification:**
   - in `web/`: `npx tsc --noEmit`, `npm test`, `npm run e2e` (or the Edge config);
