@@ -12,6 +12,7 @@ import { escAttr, escText, pyRound, pyStrip } from "./pycompat";
 import {
   MAX_FILE_BYTES,
   W_PAGESTYLE,
+  W_PICTURES,
   W_RAWHTML,
   W_WEBPICS,
   type DocImages,
@@ -211,6 +212,8 @@ function isStackOverflow(err: unknown): boolean {
 
 class Normaliser {
   images: DocImages = new Map();
+  /** A relative picture that couldn't be read (W_PICTURES). */
+  lostPictures = false;
   private depth = 0;
 
   constructor(
@@ -247,7 +250,9 @@ class Normaliser {
     const found = this.readRelative(unquote(parsed.path));
     if (found !== null) return this.addImage(found[0], found[1]);
     // Already in canonical form (output of an earlier pass): keep the reference.
-    return CANON_IMG.test(src) ? src : null;
+    if (CANON_IMG.test(src)) return src;
+    this.lostPictures = true; // no reader, missing, outside the folder, or not a picture
+    return null;
   }
 
   private readRelative(rel: string): [Uint8Array, string] | null {
@@ -696,6 +701,7 @@ export function normaliseHtmlReport(
     if (err instanceof TooDeep || isStackOverflow(err)) throw new Error(UNREADABLE);
     throw err;
   }
+  if (norm.lostPictures) warnings.push(W_PICTURES);
   return { html: out.join(""), images: norm.images, warnings };
 }
 

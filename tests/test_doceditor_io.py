@@ -14,6 +14,7 @@ from umc.doceditor.routes import convert_file
 from umc.doceditor.types import (
     W_COMMENTS,
     W_HEADERS,
+    W_PICTURES,
     next_image_name,
     warning_text,
 )
@@ -491,3 +492,22 @@ def test_closing_br_is_a_line_break_like_html5():
         "<p>a</p><p>bc</p>"
     )
 
+
+def test_relative_pictures_that_cant_be_read_are_reported(tmp_path):
+    (tmp_path / "pics").mkdir()
+    (tmp_path / "pics" / "ok.png").write_bytes(PNG_1PX)
+    (tmp_path.parent / "outside.png").write_bytes(PNG_1PX)
+    md = tmp_path / "a.md"
+    md.write_text("![](pics/ok.png)\n", encoding="utf-8")
+    doc = open_document(md)
+    assert doc.images and W_PICTURES not in doc.warnings
+    for target in ("pics/missing.png", "../outside.png"):
+        md.write_text(f"![]({target})\n", encoding="utf-8")
+        doc = open_document(md)
+        assert doc.images == {} and doc.warnings == [W_PICTURES], target
+    page = tmp_path / "a.html"
+    page.write_text('<p>x<img src="gone.png"></p>', encoding="utf-8")
+    assert open_document(page).warnings == [W_PICTURES]
+    # an earlier pass's own reference is kept, so nothing is lost
+    page.write_text('<p>x<img src="img/1.png"></p>', encoding="utf-8")
+    assert open_document(page).warnings == []

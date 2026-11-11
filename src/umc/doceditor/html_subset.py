@@ -35,6 +35,7 @@ from umc.doceditor.html_scan import html5_text
 from umc.doceditor.types import (
     MAX_FILE_BYTES,
     W_PAGESTYLE,
+    W_PICTURES,
     W_RAWHTML,
     W_WEBPICS,
     DocImages,
@@ -340,6 +341,7 @@ class _Normaliser:
         self.base_dir = base_dir.resolve() if base_dir else None
         self.images: DocImages = {}
         self.reserved = reserved
+        self.lost_pictures = False  # a relative picture that couldn't be read (W_PICTURES)
 
     # ----- pictures -----------------------------------------------------
     def _add_image(self, data: bytes, ext: str) -> str:
@@ -368,7 +370,10 @@ class _Normaliser:
             data, ext = found
             return self._add_image(data, ext)
         # Already in canonical form (output of an earlier pass): keep the reference.
-        return src if _CANON_IMG.match(src) else None
+        if _CANON_IMG.match(src):
+            return src
+        self.lost_pictures = True  # missing, outside the folder, or not a picture
+        return None
 
     def _read_relative(self, rel: str) -> tuple[bytes, str] | None:
         if self.base_dir is None or not _is_plain_relative(self.base_dir, rel):
@@ -783,6 +788,8 @@ def normalise_html_report(
         raise ConversionError(_UNREADABLE, details="nesting too deep") from exc
     finally:
         sys.setrecursionlimit(old_limit)
+    if report and norm.lost_pictures:
+        warnings.append(W_PICTURES)
     return "".join(out), norm.images, warnings
 
 

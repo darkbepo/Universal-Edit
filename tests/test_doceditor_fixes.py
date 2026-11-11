@@ -477,5 +477,6 @@ def test_markdown_formats_the_editor_drops_warn(tmp_path, source):
 
 def test_markdown_without_dropped_formats_does_not_warn(tmp_path):
     p = tmp_path / "a.md"
+    (tmp_path / "x.png").write_bytes(PNG_1PX)  # a missing picture would warn (W_PICTURES)
     p.write_text("```\n`not a span`\n#### in code\n```\n\n### Ok \\`tick\\` ![](x.png)\n")
     assert open_document(p).warnings == []

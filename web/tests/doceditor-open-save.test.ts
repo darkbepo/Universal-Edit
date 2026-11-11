@@ -17,6 +17,7 @@ import {
   type OpenedDocument,
   type SaveContent,
   TOO_LARGE,
+  W_PICTURES,
 } from "../src/doceditor/types";
 
 const PNG = Uint8Array.from(
@@ -57,6 +58,13 @@ async function blobBytes(blob: Blob): Promise<Uint8Array> {
 }
 
 describe("openDocument", () => {
+  test("relative pictures the website can't read are reported", async () => {
+    const md = await openDocument(fileOf("![](pics/x.png)\n", "a.md"), noConvert);
+    expect([md.html, md.warnings]).toEqual(["<p></p>", [W_PICTURES]]);
+    const page = await openDocument(fileOf('<p>a<img src="x.png"></p>', "a.html"), noConvert);
+    expect(page.warnings).toEqual([W_PICTURES]);
+  });
+
   test("refuses large files before reading", async () => {
     const arrayBuffer = vi.fn(() => {
       throw new Error("read");

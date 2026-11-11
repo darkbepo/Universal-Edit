@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import vectorsJson from "../../tests/fixtures/doceditor-vectors.json";
 import { describe, expect, test } from "vitest";
-import { W_WEBPICS } from "../src/doceditor/types";
+import { W_PICTURES, W_WEBPICS } from "../src/doceditor/types";
 import { htmlTitle, normaliseHtml, normaliseHtmlReport, textLength } from "../src/doceditor/subset";
 
 interface NormaliseVector {
@@ -265,4 +265,19 @@ test("a huge indent is capped at 20 levels", () => {
     '<p style="margin-left:720pt">x</p>',
   );
   expect(normaliseHtml('<p style="margin-left:1e30pt">x</p>').html).toBe("<p>x</p>");
+});
+
+describe("relative pictures", () => {
+  test("one that can't be read is reported, not dropped silently", () => {
+    const html = '<p>x<img src="pics/a.png"></p>';
+    expect(normaliseHtmlReport(html).warnings).toEqual([W_PICTURES]);
+    const resolved = normaliseHtmlReport(html, { resolveImage: () => PNG });
+    expect([resolved.html, resolved.warnings]).toEqual(['<p>x<img src="img/1.png"></p>', []]);
+    const missing = normaliseHtmlReport(html, { resolveImage: () => null });
+    expect(missing.warnings).toEqual([W_PICTURES]);
+    expect(normaliseHtmlReport('<p><img src="../a.png"></p>', { resolveImage: () => PNG }).warnings).toEqual([W_PICTURES]);
+  });
+  test("an earlier pass's own reference is kept, so nothing is reported", () => {
+    expect(normaliseHtmlReport('<p><img src="img/1.png"></p>').warnings).toEqual([]);
+  });
 });
