@@ -565,6 +565,7 @@ function blockStyle(node: Element): string {
 
 // ----- parsing -----------------------------------------------------------------------------
 
+/** A whole page with nothing but a doctype and comments in it (linear: no regex backtracking). */
 function onlyDoctypeAndComments(html: string): boolean {
   let i = 0;
   for (;;) {

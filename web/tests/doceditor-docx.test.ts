@@ -2,6 +2,7 @@
 import { Deflate, strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import vectorsJson from "../../tests/fixtures/doceditor-vectors.json";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { crc32 } from "../src/doceditor/docx-package";
 import { readDocx } from "../src/doceditor/docx-read";
 import { writeDocx } from "../src/doceditor/docx-write";
 import { normaliseHtml } from "../src/doceditor/subset";
@@ -1535,6 +1536,61 @@ describe("zip bombs", () => {
   });
 });
 
+describe("zip checksums", () => {
+  const MESSAGE = "This Word document could not be opened.";
+  /** Where entry `name`'s central-directory record (and its data) sit in a zip. */
+  function locate(zip: Uint8Array, name: string) {
+    const view = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
+    for (let at = 0; at + 46 <= zip.length; at++) {
+      if (view.getUint32(at, true) !== 0x02014b50) continue;
+      const len = view.getUint16(at + 28, true);
+      if (strFromU8(zip.subarray(at + 46, at + 46 + len)) !== name) continue;
+      const local = view.getUint32(at + 42, true);
+      const start = local + 30 + view.getUint16(local + 26, true) + view.getUint16(local + 28, true);
+      return { cd: at, start, size: view.getUint32(at + 20, true) };
+    }
+    throw new Error(`no ${name}`);
+  }
+  const good = () => vectorDocx({ body: para(run("x")) });
+  const withPicture = () =>
+    writeDocx('<p><img src="img/1.png" width="96"></p>', new Map([["img/1.png", PNG]]), null);
+
+  test("a document the writer made opens again (its checksums are right)", () => {
+    expect(readDocx(withPicture()).html).toContain("<img");
+  });
+
+  test("one flipped byte inside a stored picture is refused", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const zip = withPicture();
+    const { start, size } = locate(zip, "word/media/image1.png");
+    zip[start + Math.floor(size / 2)] ^= 0xff;
+    expect(() => readDocx(zip)).toThrow(MESSAGE);
+    error.mockRestore();
+  });
+
+  test("a wrong checksum on a deflated document.xml is refused", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const zip = good();
+    const { cd } = locate(zip, "word/document.xml");
+    new DataView(zip.buffer).setUint32(cd + 16, 0x12345678, true);
+    expect(() => readDocx(zip)).toThrow(MESSAGE);
+    error.mockRestore();
+  });
+
+  test("one flipped byte inside a deflated document.xml is refused", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const zip = vectorDocx({ body: para(run("hello world ".repeat(200))) });
+    const { start, size } = locate(zip, "word/document.xml");
+    zip[start + Math.floor(size / 2)] ^= 0x01;
+    expect(() => readDocx(zip)).toThrow(MESSAGE);
+    error.mockRestore();
+  });
+
+  test("crc32 matches the standard check value", () => {
+    expect(crc32(strToU8("123456789"))).toBe(0xcbf43926);
+  });
+});
+
 function joined(parts: Uint8Array[]): Uint8Array {
   let n = 0;
   for (const p of parts) n += p.length;
@@ -1548,7 +1604,7 @@ function joined(parts: Uint8Array[]): Uint8Array {
 }
 
 /** A zip of stored entries ([name, data]) and deflated ones ([name, deflated data, the
- * uncompressed size it claims]); CRCs are left 0 (the website doesn't check them). */
+ * uncompressed size it claims]); stored entries get their real CRC, deflated ones 0. */
 function rawZip(entries: ([string, Uint8Array] | [string, Uint8Array, number])[]): Uint8Array {
   const locals: Uint8Array[] = [];
   const central: Uint8Array[] = [];
@@ -1574,6 +1630,9 @@ function rawZip(entries: ([string, Uint8Array] | [string, Uint8Array, number])[]
     cd.v.setUint16(4, 20, true);
     cd.v.setUint16(6, 20, true);
     cd.v.setUint16(10, method, true);
+    const crc = claimed === undefined ? crc32(data) : 0;
+    local.v.setUint32(14, crc, true);
+    cd.v.setUint32(16, crc, true);
     cd.v.setUint32(20, data.length, true);
     cd.v.setUint32(24, size, true);
     cd.v.setUint16(28, fname.length, true);

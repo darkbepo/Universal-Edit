@@ -635,6 +635,63 @@ def test_unpacked_size_up_to_the_limit_opens(tmp_path):
             assert str(err.value) == TOO_LARGE
 
 
+# ----- damaged zips ------------------------------------------------------------------------
+
+
+def _entry(data: bytes, name: str) -> tuple[int, int, int]:
+    """Where ``name``'s central-directory record and its data start, and the data's size."""
+    at = data.find(b"PK")
+    while at >= 0:
+        name_len = int.from_bytes(data[at + 28 : at + 30], "little")
+        if data[at + 46 : at + 46 + name_len] == name.encode():
+            local = int.from_bytes(data[at + 42 : at + 46], "little")
+            skip = int.from_bytes(data[local + 26 : local + 28], "little") + int.from_bytes(
+                data[local + 28 : local + 30], "little"
+            )
+            size = int.from_bytes(data[at + 20 : at + 24], "little")
+            return at, local + 30 + skip, size
+        at = data.find(b"PK", at + 4)
+    raise AssertionError(name)
+
+
+def _damaged_message(tmp_path, data: bytes) -> str:
+    path = tmp_path / "damaged.docx"
+    path.write_bytes(data)
+    with pytest.raises(ConversionError) as err:
+        read(path)
+    return str(err.value)
+
+
+def test_flipped_byte_in_a_stored_picture_is_refused(tmp_path):
+    path = _odd_docx(
+        tmp_path / "pic.docx",
+        _w_para(_w_run("x") + _w_drawing("rIdP")),
+        rels=_png_rel("rIdP", "media/p.png"),
+        files={"word/media/p.png": PNG_1PX},
+        types=_PNG_TYPES,
+    )
+    assert "<img" in read(path).html
+    data = bytearray(path.read_bytes())
+    _, start, size = _entry(bytes(data), "word/media/p.png")
+    data[start + size // 2] ^= 0xFF
+    assert _damaged_message(tmp_path, bytes(data)) == "This Word document could not be opened."
+
+
+def test_wrong_checksum_on_a_deflated_document_xml_is_refused(tmp_path):
+    data = bytearray(docx_package({"body": "<w:p><w:r><w:t>hello</w:t></w:r></w:p>"}))
+    cd, _, _ = _entry(bytes(data), "word/document.xml")
+    data[cd + 16 : cd + 20] = (0x12345678).to_bytes(4, "little")
+    assert _damaged_message(tmp_path, bytes(data)) == "This Word document could not be opened."
+
+
+def test_flipped_byte_in_a_deflated_document_xml_is_refused(tmp_path):
+    body = "<w:p><w:r><w:t>" + "hello world " * 200 + "</w:t></w:r></w:p>"
+    data = bytearray(docx_package({"body": body}))
+    _, start, size = _entry(bytes(data), "word/document.xml")
+    data[start + size // 2] ^= 0x01
+    assert _damaged_message(tmp_path, bytes(data)) == "This Word document could not be opened."
+
+
 def test_rtl_ruby_warning_text():
     assert W_RTL_RUBY == "ruby annotations and right-to-left direction"
 

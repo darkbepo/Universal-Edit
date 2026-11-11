@@ -275,6 +275,7 @@ interface ZipEntry {
   compressedSize: number;
   size: number; // the uncompressed size the central directory declares
   offset: number; // of the local header
+  crc: number; // CRC-32 of the uncompressed bytes
 }
 
 /** The entries of a zip's central directory (ZIP64 included); throws when it has none. */
@@ -307,6 +308,7 @@ function zipEntries(bytes: Uint8Array): ZipEntry[] {
       compressedSize: u32(at + 20),
       size: u32(at + 24),
       offset: u32(at + 42),
+      crc: u32(at + 16),
     };
     // ZIP64: the values written as 0xFFFFFFFF follow in the extra field, in this order
     for (let x = at + 46 + nameLen; x + 4 <= at + 46 + nameLen + extraLen; ) {
@@ -329,29 +331,55 @@ function zipEntries(bytes: Uint8Array): ZipEntry[] {
   return out;
 }
 
+const CRC_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    table[n] = c;
+  }
+  return table;
+})();
+
+/** The running CRC-32 (start at 0) after `data`; feed the chunks in order. */
+function crcUpdate(crc: number, data: Uint8Array): number {
+  let c = ~crc;
+  for (let i = 0; i < data.length; i++) c = CRC_TABLE[(c ^ data[i]) & 0xff] ^ (c >>> 8);
+  return ~c >>> 0;
+}
+
+export const crc32 = (data: Uint8Array): number => crcUpdate(0, data);
+
 // Compressed bytes inflated at a time: at most ~1000 times this comes out before the output
 // is checked against the declared size.
 const INFLATE_STEP = 16 * 1024;
 
 /** One entry's bytes; a deflated entry that inflates past its declared size throws as soon
- * as it does (a lying header), so it costs neither memory nor time. */
+ * as it does (a lying header), so it costs neither memory nor time. The bytes must match the
+ * CRC-32 the zip declares, else it throws (a damaged file). */
 function entryData(bytes: Uint8Array, e: ZipEntry): Uint8Array {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const local = view.getUint16(e.offset + 26, true) + view.getUint16(e.offset + 28, true);
   const start = e.offset + 30 + local;
   const data = bytes.subarray(start, start + e.compressedSize);
-  if (e.method === 0) return data.slice();
+  if (e.method === 0) {
+    if (crc32(data) !== e.crc) throw new Error(`${e.name} fails its checksum`);
+    return data.slice();
+  }
   if (e.method !== 8) throw new Error(`Unknown compression ${e.method} for ${e.name}`);
   const parts: Uint8Array[] = [];
   let length = 0;
+  let crc = 0;
   const inflate = new Inflate((chunk) => {
     parts.push(chunk);
     length += chunk.length;
+    crc = crcUpdate(crc, chunk);
   });
   for (let i = 0; i < data.length || i === 0; i += INFLATE_STEP) {
     inflate.push(data.subarray(i, i + INFLATE_STEP), i + INFLATE_STEP >= data.length);
     if (length > e.size) throw new Error(`${e.name} inflates past its declared size`);
   }
+  if (crc !== e.crc) throw new Error(`${e.name} fails its checksum`);
   const out = new Uint8Array(length);
   let at = 0;
   for (const part of parts) {
