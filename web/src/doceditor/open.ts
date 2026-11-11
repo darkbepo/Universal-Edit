@@ -101,7 +101,8 @@ function markdownZipName(bytes: Uint8Array): string | null {
     return null;
   }
   const roots = names.filter((n) => !n.includes("/"));
-  if (roots.length !== 1 || !/^.+\.md$/i.test(roots[0])) return null;
+  // A backslash is a folder separator to some unzip tools: never in any name.
+  if (roots.length !== 1 || !/^.+\.md$/i.test(roots[0]) || roots[0].includes("\\")) return null;
   const md = roots[0];
   const folder = `${md.slice(0, -3)}_files/`;
   for (const n of names) {

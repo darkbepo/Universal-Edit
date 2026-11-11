@@ -413,6 +413,28 @@ describe("Markdown ZIP saved by the website", () => {
     }
   });
 
+  test("a root .md with a backslash in its name is not editable", () => {
+    expect(isEditableMarkdownZip(zipSync({ "a\\b.md": enc("x") }))).toBe(false);
+    expect(isEditableMarkdownZip(zipSync({ "..\\a.md": enc("x"), "..\\a_files/1.png": PNG }))).toBe(false);
+  });
+
+  test("a %2e%2e link never leaves the pictures folder", async () => {
+    const zip = zipSync({ "a.md": enc("![](a_files/%2e%2e/x.png)\n\n![](a_files/%2E%2E/x.png)\n"), "a_files/1.png": PNG, "x.png": PNG });
+    expect(isEditableMarkdownZip(zip)).toBe(false); // x.png is outside the folder
+    const ok = zipSync({ "a.md": enc("![](a_files/%2e%2e/a_files/1.png)\n"), "a_files/1.png": PNG });
+    const doc = await openDocument(fileOf(ok, "a.zip"), noConvert);
+    expect([...doc.images.keys()]).toEqual([]);
+    expect(doc.warnings).toContain(W_PICTURES);
+  });
+
+  test("a folder entry inside the pictures folder is allowed but never a picture", async () => {
+    const zip = zipSync({ "a.md": enc("![](a_files/sub/)\n\n![](a_files/sub/1.png)\n"), "a_files/sub/": new Uint8Array(), "a_files/sub/1.png": PNG });
+    expect(isEditableMarkdownZip(zip)).toBe(true);
+    const doc = await openDocument(fileOf(zip, "a.zip"), noConvert);
+    expect([...doc.images.keys()]).toEqual(["img/1.png"]);
+    expect(doc.warnings).toContain(W_PICTURES);
+  });
+
   test("an entry outside the pictures folder is never read", async () => {
     const zip = zipSync({
       "a.md": enc("![](../x.png)\n\n![](a_files/../x.png)\n\n![](a_files/1.png)\n"),
