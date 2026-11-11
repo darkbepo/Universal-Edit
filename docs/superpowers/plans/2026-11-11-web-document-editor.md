@@ -325,6 +325,83 @@ On the desktop, opening such a file shows an error instead of the document.
 
 ---
 
+### Task 4e: Desktop — the DOCX reader must not crash on unusual Word files
+
+Found in the Task 4 port (report: `task-4-report.md`, "more lenient" list). The web reader opens these files, but the desktop shows an error or crashes:
+- **A list paragraph with no numbering part:** python-docx `NumberingPart.new()` raises `NotImplementedError`.
+- **A relationship pointing to a missing part** (a picture or header): python-docx refuses to open the file.
+- **Invalid numbers** in `w:sz`, `gridSpan`, `w:numId` / `ilvl` or `wp:extent`: `int()` raises `ValueError`.
+- **Part names differing only in case or percent-encoding** from their relationship target.
+
+**Files:**
+- Modify: `src/umc/doceditor/docx_reader.py`, `tests/test_doceditor_docx.py`
+
+- [ ] **Step 1: Tests** (hand-built DOCX zips, one per case). Each opens without raising, and the HTML equals what `web/src/doceditor/docx-read.ts` produces for the same file. Expected results:
+  - list without a numbering part → a bullet list;
+  - missing picture → `W_PICTURES`, rest kept;
+  - missing header → skipped;
+  - bad numbers → the attribute is ignored;
+  - case or encoding mismatch → the part is found.
+
+  To get the expected HTML, run the web reader on the same bytes in a throwaway vitest (or copy the expectation from the web test of the same case).
+- [ ] **Step 2: Run** — Expected: FAIL (desktop raises).
+- [ ] **Step 3: Implement.**
+  - Guard the numbering lookup (no numbering part = bullet).
+  - Catch missing related parts per relationship.
+  - Parse integers with a safe helper that returns None.
+  - If python-docx itself refuses the package because of a dangling relationship, repair the zip in memory first: drop the dangling relationships and fix the case of part names, then hand it to python-docx.
+- [ ] **Step 4: Run** the full `pytest` and ruff — Expected: PASS.
+- [ ] **Step 5: Commit** `Open unusual Word files instead of failing`.
+
+Also in this task: when the desktop writer can't use the original file as the template, tell the user rather than only logging it. Show the save message "Couldn't keep the original file's layout; it was saved with default styles." — the same text the web shows. Test via `save_document` returning or raising a notice that DocEditorPage displays.
+
+---
+
+### Task 4f: Both apps — keep or warn about Word content the readers drop
+
+Found by the Task 4 review: 28 probe files read identically by both apps, which also showed shared losses. Each item below disappears **without a warning** on both desktop and web, and saving over the original then deletes it:
+- **Table rows or cells wrapped in `w:sdt` / `w:customXml`.** These are repeating-section content controls, common in forms and templates. Both readers only walk direct `w:tr` / `w:tc` children.
+- **Inline `w:dir` / `w:bdo`** (right-to-left text).
+- **`w:ruby`** (the base text is lost).
+- **`mc:AlternateContent` holding runs or paragraphs** (the `mc:Fallback` is never read).
+- **Equations** (`m:oMath` / `m:oMathPara`): "E = mc²" reads as "E =".
+- **`w:altChunk`** (embedded HTML or RTF).
+- **`w:sym`** symbol characters.
+
+**Files:**
+- Modify: `src/umc/doceditor/docx_reader.py`, `web/src/doceditor/docx-read.ts`, `src/umc/doceditor/types.py` + `web/src/doceditor/types.ts` (new warning constant), `tests/test_doceditor_docx.py`, `web/tests/doceditor-docx.test.ts`
+- Also: `scripts/make_doceditor_vectors.py` (add a `docx` section of hand-built XML bodies with expected html/warnings, asserted by both apps)
+
+**Rulings:**
+- **Keep:** read through sdt / customXml at row and cell level; read through `w:dir` / `w:bdo` (keep the text); read the ruby base text (`w:rubyBase`), dropping the annotation; read `mc:Fallback` content, or `mc:Choice` when there is no Fallback.
+- **Keep as text when possible:** `w:sym` → the character for its `w:char` (hex code, Unicode or PUA as is).
+- **Headings in a file with no styles part, or with a pStyle id that isn't defined there:** both readers currently read Heading 1–3 / Title / Quote as plain `<p>` (python-docx's fallback styles have no headings). Recognise Word's built-in style ids directly when the style isn't found:
+  - `Heading1`–`Heading3` → h1–h3, `Heading4`–`Heading9` → h3, `Title` → h1;
+  - `Quote` / `IntenseQuote` → blockquote;
+  - `Code` / `HTMLPreformatted` / `SourceCode` → pre;
+  - `ListBullet*` / `ListNumber*` → lists when numbering is missing.
+
+  Test: a DOCX without styles.xml whose paragraphs use these ids.
+- **Web only, `docx-package.ts` `decodeXml`:** an XML declaration labelled `ucs-2`, `unicode` or `x-user-defined` is mapped by TextDecoder to UTF-16LE or odd bytes, which garbles a part that is really UTF-8. Treat those labels like declared UTF-16 without a BOM (read as UTF-8), with a test.
+- **Can't keep → warn:** equations and altChunk. Add `W_EQUATIONS = "equations and embedded documents"` to both `types.py` and `types.ts`, raised when `m:oMath` / `m:oMathPara` / `w:altChunk` occur. The text around them is kept.
+
+- [ ] **Step 1: Tests (both apps, same inputs):**
+  - an sdt-wrapped row and cell keep their text;
+  - an rtl `w:dir` run keeps its text;
+  - ruby keeps the base text;
+  - AlternateContent uses the Fallback;
+  - `w:sym w:char="F04A"` is kept;
+  - an equation paragraph gives `W_EQUATIONS` and keeps "E =";
+  - altChunk gives `W_EQUATIONS`.
+
+  Add each as a shared `docx` vector so both suites assert the same html and warnings.
+- [ ] **Step 2: Run** — Expected: FAIL in both.
+- [ ] **Step 3: Implement** in both readers.
+- [ ] **Step 4: Run** the full `pytest`, ruff, `npm test`, `tsc` — Expected: PASS.
+- [ ] **Step 5: Commit** `Keep content-control rows, right-to-left text, ruby and fallbacks; warn about equations`.
+
+---
+
 ### Task 5: Markdown, TXT, HTML, ODT/RTF opening and saving
 
 **Files:**
