@@ -122,10 +122,31 @@ class PanelHost(QObject):
         self.panels: dict[str, FloatingPanel] = {}
         self._on_close: dict[str, object] = {}
         self.pinned: set[str] = set()  # kept in the top-right corner until moved by hand
+        self._pending: dict[str, QPoint] = {}  # saved positions waiting for the real canvas size
         parent_widget.installEventFilter(self)
 
+    def claim_keys(self, panel: FloatingPanel) -> None:
+        """Keys typed into a window belong to it: watch every widget in it (again after its
+        content was rebuilt, e.g. the tool options for another tool)."""
+        for w in [panel, *panel.findChildren(QWidget)]:
+            w.removeEventFilter(self)
+            w.installEventFilter(self)
+
     def eventFilter(self, obj, e) -> bool:  # noqa: N802
-        if obj is self.parent_widget and e.type() == QEvent.Type.Resize:
+        t = e.type()
+        if t == QEvent.Type.ShortcutOverride and isinstance(obj, QWidget):
+            # the editor's page-wide shortcuts (Enter = apply, letters = tools, Delete = clear…)
+            # mustn't take keys from a field in a window: Enter there means OK, Esc Cancel
+            if obj is not self.parent_widget:
+                e.accept()
+                return True
+        elif obj is self.parent_widget and t == QEvent.Type.Resize:
+            if self.parent_widget.width() > 100:
+                for key, pos in list(self._pending.items()):
+                    p = self.panels.get(key)
+                    if p is not None:
+                        p.move_to(pos)
+                self._pending.clear()
             for key in self.pinned:
                 self._to_corner(self.panels.get(key))
         return False
@@ -142,6 +163,7 @@ class PanelHost(QObject):
 
         def again() -> None:
             p.adjustSize()
+            self.claim_keys(p)
             if key in self.pinned:
                 self._to_corner(p)
 
@@ -171,11 +193,14 @@ class PanelHost(QObject):
             return self.panels[key]
         panel = FloatingPanel(key, title, content, self, closable)
         self.panels[key] = panel
+        self.claim_keys(panel)
         if on_close is not None:
             self._on_close[key] = on_close
         saved = QSettings().value(_KEY.format(key))
         if isinstance(saved, QPoint):
             panel.move_to(saved)
+            if self.parent_widget.width() <= 100:  # not laid out yet: place it again then
+                self._pending[key] = saved
         elif right:  # the top-right corner of the canvas, following it until moved by hand
             self.pinned.add(key)
             self._to_corner(panel)

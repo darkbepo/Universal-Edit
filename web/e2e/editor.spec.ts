@@ -1045,3 +1045,28 @@ test("windows: the tool options float, follow the tool, and the chosen tool's ic
   await expect(tool).toBeHidden();
   await expect(tool.getByRole("button", { name: "Close" })).toHaveCount(0); // only minimises
 });
+
+test("windows: Enter in a field means OK; Enter on a focused Close button just closes; size windows close when the size changes", async ({ page }) => {
+  await openEditor(page);
+  const size = () => page.evaluate(() => [(window.__editor as EditorHook).doc.width, (window.__editor as EditorHook).doc.height]);
+  const [w, h] = await size();
+  await rail(page, "Quick fix");
+  const quick = page.locator("dialog.quick-fix");
+  await quick.getByRole("button", { name: "Close" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(quick).toHaveCount(0);
+  expect(await page.evaluate(() => (window.__editor as EditorHook & { history: { canUndo: boolean } }).history.canUndo)).toBe(false);
+  await rail(page, "Resize image");
+  const resize = page.locator("dialog.resize");
+  await resize.getByLabel("Width").fill(String(Math.round(w / 2)));
+  await resize.getByLabel("Width").press("Enter");
+  await expect(resize).toHaveCount(0);
+  await expect.poll(size).not.toEqual([w, h]);
+  const smaller = await size();
+  await rail(page, "Canvas size");
+  await expect(page.locator("dialog.canvas-size")).toBeVisible();
+  await page.getByRole("button", { name: "Undo", exact: true }).click(); // the size changes back underneath it
+  await expect.poll(size).toEqual([w, h]);
+  expect(smaller[0]).toBe(Math.round(w / 2));
+  await expect(page.locator("dialog.canvas-size")).toHaveCount(0);
+});

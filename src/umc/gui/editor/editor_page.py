@@ -295,7 +295,7 @@ class EditorPage(QWidget):
         self.layers = LayersPanel()
         self.layers.command.connect(self._push)
         self.layers.edit_text_requested.connect(self.edit_text)
-        self.layers.active_changed.connect(lambda _i: self._update_info())
+        self.layers.active_changed.connect(self._active_layer_changed)
         lay.addWidget(self.layers, 1)
         scroll.setWidget(host)
         return scroll
@@ -464,6 +464,7 @@ class EditorPage(QWidget):
     def set_document(self, doc: Document, sources: list[Path] | None = None) -> None:
         self.panels.close_all(keep=("tool",))  # their settings belong to the old picture
         self.doc = doc
+        self._last_size = (doc.width, doc.height)
         self.history = History(doc)
         self.sources = sources or []
         self._last_save = None
@@ -585,14 +586,25 @@ class EditorPage(QWidget):
         if (self.doc.width, self.doc.height) != size:
             self.canvas.fit()
 
+    def _active_layer_changed(self, _index: int) -> None:
+        self._update_info()
+        self._repreview()  # an open adjustment previews (and applies to) the chosen layer
+
+    def _repreview(self) -> None:
+        owner = self._preview_owner
+        if owner is not None and not owner._parked():
+            owner.changed()
+
     def _on_changed(self) -> None:
         if self.doc is None:
             return
-        owner = self._preview_owner
-        if owner is not None and any(
-            p.content is owner and p.isVisible() for p in self.panels.panels.values()
-        ):
-            owner.changed()  # the picture changed under an open adjustment: preview again
+        size = (self.doc.width, self.doc.height)
+        if size != getattr(self, "_last_size", size):
+            # their width / height fields describe the old size
+            self.panels.close("resize")
+            self.panels.close("canvas_size")
+        self._last_size = size
+        self._repreview()  # the picture changed under an open adjustment: preview again
         if not self.layers.in_sync(self.doc):
             self.layers.refresh(self.doc)
         else:

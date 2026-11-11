@@ -179,7 +179,7 @@ class _AdjustDialog(QDialog):
 
     def update_preview(self) -> None:
         doc = self.page.doc
-        if doc is None:
+        if doc is None or self._parked():  # minimised: no preview until it's back
             return
         self.page._preview_owner = self  # the window changed last shows its preview
         eff = self.effect()
@@ -187,6 +187,15 @@ class _AdjustDialog(QDialog):
             self.page.canvas.set_preview_layer(None, None)
             return
         self.page.canvas.set_preview_layer(doc.active, effects.preview(doc, eff))
+
+    def _parked(self) -> bool:
+        """Inside a floating window that is minimised."""
+        w = self.parentWidget()
+        while w is not None:
+            if w.objectName() == "FloatingPanel":
+                return w.isHidden()
+            w = w.parentWidget()
+        return False
 
     def done(self, result: int) -> None:
         self._timer.stop()

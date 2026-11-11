@@ -63,7 +63,8 @@ function modal<T>(cls: string, title: string, body: HTMLElement[], okLabel: stri
         e.preventDefault();
         finish(null);
       }
-      if (e.key === "Enter" && (e.target as HTMLElement).tagName !== "SELECT") {
+      // Enter = OK, except on a focused button (which presses itself: Close, Reset, Cancel…)
+      if (e.key === "Enter" && !["SELECT", "BUTTON"].includes((e.target as HTMLElement).tagName)) {
         e.preventDefault();
         finish(okLabel);
       }

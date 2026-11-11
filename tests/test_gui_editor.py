@@ -1281,3 +1281,33 @@ def test_a_minimised_adjustment_hides_its_preview_and_closing_cancels(page, qtbo
     assert page.canvas._preview_layer is not None
     page.panels.close("quick_fix")  # ×: like Cancel
     assert page.canvas._preview_layer is None and not page.history.can_undo
+
+
+def test_keys_typed_into_a_window_belong_to_it(page, qtbot):
+    page.run_op("resize")
+    dlg = page.panels.panels["resize"].content
+    dlg.width.setValue(30)
+    dlg.width.setFocus()
+    qtbot.keyClick(dlg.width.lineEdit(), Qt.Key.Key_E)  # not the eraser shortcut
+    assert page.tool.id == "brush"
+    qtbot.keyClick(dlg.width.lineEdit(), Qt.Key.Key_Return)  # Enter = OK, not "apply crop"
+    assert (page.doc.width, page.doc.height) == (30, 20) and "resize" not in page.panels.panels
+
+
+def test_size_windows_close_when_the_picture_changes_size(page):
+    from umc.editor.geometry import Rect
+
+    page.run_op("resize")
+    page.run_op("canvas_size")
+    page.doc.selection = Rect(0, 0, 30, 20)
+    page.run_op("crop_selection")
+    assert "resize" not in page.panels.panels and "canvas_size" not in page.panels.panels
+
+
+def test_a_window_minimised_before_its_preview_shows_stays_parked(page, qtbot):
+    page.run_op("quick_fix")
+    dlg = page.panels.panels["quick_fix"].content
+    dlg.sliders["exposure"].set_value(2.0)  # the preview waits 60 ms…
+    page.panels.minimise("quick_fix")  # …but the window is tucked away first
+    qtbot.wait(150)
+    assert page.canvas._preview_layer is None and page._preview_owner is not dlg

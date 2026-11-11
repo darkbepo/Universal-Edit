@@ -95,6 +95,7 @@ export class EditorPage {
   private floating!: FloatingHost;
   /** Redoes the live preview of the adjustment window that showed it last. */
   private previewRefresh: (() => void) | null = null;
+  private lastSize = "";
   private swatches: Swatches;
   private layers: LayersPanel;
   private message = h("div", { class: "msg" });
@@ -136,7 +137,10 @@ export class EditorPage {
     this.swatches = new Swatches();
     this.layers = new LayersPanel(
       (cmd) => this.push(cmd),
-      () => this.updateInfo(),
+      () => {
+        this.updateInfo();
+        this.previewRefresh?.(); // an open adjustment previews (and applies to) the chosen layer
+      },
       (index) => this.editText(index),
     );
     this.canvas.contextProvider = () => this.context();
@@ -333,6 +337,13 @@ export class EditorPage {
   private changed(): void {
     if (!this.doc) return;
     this.previewRefresh?.(); // the picture changed under an open adjustment: preview again
+    const size = `${this.doc.width}x${this.doc.height}`;
+    if (this.lastSize && size !== this.lastSize) {
+      // their width / height fields describe the old size
+      this.floating.close("resize");
+      this.floating.close("canvas_size");
+    }
+    this.lastSize = size;
     this.layers.refreshActiveThumb();
     this.updateButtons();
     this.updateInfo();

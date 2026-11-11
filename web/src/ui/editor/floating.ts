@@ -37,6 +37,8 @@ export class FloatingHost {
   private perKey = new Map<string, (state: PanelState) => void>();
   /** Kept in the top-right corner until moved by hand (re-placed when the editor resizes). */
   private pinned = new Set<string>();
+  /** Saved positions waiting for the editor to have a real size (it opens hidden). */
+  private pending = new Map<string, [number, number]>();
 
   /** Listen to one window's state (null stops). */
   onStateFor(key: string, fn: ((state: PanelState) => void) | null): void {
@@ -52,6 +54,13 @@ export class FloatingHost {
   constructor(private area: HTMLElement) {
     // also covers the editor becoming visible (its size goes from 0 to real)
     new ResizeObserver(() => {
+      if (area.clientWidth > 100) {
+        for (const [key, pos] of this.pending) {
+          const el = this.panels.get(key)?.el;
+          if (el) this.place(el, pos);
+        }
+        this.pending.clear();
+      }
       for (const key of this.pinned) this.toCorner(key);
     }).observe(area);
   }
@@ -101,7 +110,10 @@ export class FloatingHost {
       /* storage blocked: cascade instead */
     }
     const n = this.panels.size - 1;
-    if (pos) this.place(el, pos);
+    if (pos) {
+      this.place(el, pos);
+      if (this.area.clientWidth <= 100) this.pending.set(key, pos); // place it again once shown
+    }
     else if (opts.right) {
       this.pinned.add(key);
       this.toCorner(key);
