@@ -83,9 +83,9 @@ function trimWith(s: string, isSpace: (c: string) => boolean): string {
   while (end > start && isSpace(s[end - 1])) end--;
   return start === 0 && end === s.length ? s : s.slice(start, end);
 }
-const isPySpace = (c: string) => PY_SPACE.test(c);
+export const isPySpace = (c: string): boolean => PY_SPACE.test(c);
 /** Python's str.strip(). */
-const pyStrip = (s: string) => trimWith(s, isPySpace);
+export const pyStrip = (s: string): string => trimWith(s, isPySpace);
 const isHtmlSpace = (c: string) =>
   c === " " || c === "\t" || c === "\r" || c === "\n" || c === "\f";
 /** Python's `text.strip(" \t\r\n\f")` is not empty. */

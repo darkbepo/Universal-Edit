@@ -1,0 +1,858 @@
+/**
+ * Read a DOCX file into the editor's HTML subset, its pictures and "can't keep" warnings: a
+ * port of the desktop's `src/umc/doceditor/docx_reader.py` (the mirror image of the writer).
+ *
+ * Heading 1-9 / Title -> h1-h3, Quote -> blockquote, Code -> pre, list paragraphs
+ * (`w:numPr`, also through the paragraph style) -> ul / ol, tables -> table (borderless ones
+ * get `style="border:none"`), `w:hyperlink` -> a, direct run properties and the run's
+ * character style -> b / i / u / s / span. The result is passed through `normaliseHtml`.
+ *
+ * Deliberate difference: pictures in a format browsers can't show (TIFF, EMF, …) are left
+ * out with W_PICTURES; the desktop converts them to PNG with Pillow. Needs DOMParser (the
+ * page, not a worker).
+ */
+
+import { CT, NS, RT } from "./docx-template";
+import { pyRound } from "./docx-image";
+import {
+  type Files,
+  type Rel,
+  actualName,
+  contentTypeOf,
+  isW,
+  parseXml,
+  partText,
+  relsFor,
+  resolve,
+  unzipPackage,
+  wAttr,
+} from "./docx-package";
+import { isPySpace, normaliseHtml, pyStrip } from "./subset";
+import {
+  type DocImages,
+  type OpenedDocument,
+  W_COLUMNS,
+  W_COMMENTS,
+  W_FIELDS,
+  W_HEADERS,
+  W_LISTSTYLE,
+  W_NOTES,
+  W_OBJECTS,
+  W_PICTURES,
+  W_TEXTBOX,
+  W_TRACKED,
+  nextImageName,
+} from "./types";
+
+const UNREADABLE = "This Word document could not be opened.";
+const EMU_PER_PX = 9525;
+const NBSP = " ";
+const WPS = "http://schemas.microsoft.com/office/word/2010/wordprocessingShape";
+const VML = "urn:schemas-microsoft-com:vml";
+
+const HEADINGS: Record<string, string> = { Title: "h1" };
+for (let n = 1; n <= 9; n++) HEADINGS[`Heading ${n}`] = `h${Math.min(n, 3)}`;
+const BLOCK_STYLES: Record<string, string> = {
+  ...HEADINGS,
+  Quote: "quote",
+  "Intense Quote": "quote",
+  Code: "pre",
+  "HTML Preformatted": "pre",
+  "Source Code": "pre",
+};
+// python-docx's BabelFish: the names styles.xml uses for these -> the names shown in Word.
+const UI_NAMES: Record<string, string> = { caption: "Caption", footer: "Footer", header: "Header" };
+for (let n = 1; n <= 9; n++) UI_NAMES[`heading ${n}`] = `Heading ${n}`;
+const ALIGN: Record<string, string> = {
+  left: "left",
+  center: "center",
+  right: "right",
+  both: "justify",
+};
+const HIGHLIGHT: Record<string, string> = {
+  yellow: "#ffff00",
+  green: "#00ff00",
+  cyan: "#00ffff",
+  magenta: "#ff00ff",
+  blue: "#0000ff",
+  red: "#ff0000",
+  darkBlue: "#000080",
+  darkCyan: "#008080",
+  darkGreen: "#008000",
+  darkMagenta: "#800080",
+  darkRed: "#800000",
+  darkYellow: "#808000",
+  darkGray: "#808080",
+  lightGray: "#c0c0c0",
+  black: "#000000",
+  white: "#ffffff",
+};
+// The formats a browser shows; anything else is left out (the desktop converts it).
+const IMAGE_EXT: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/jpg": "jpg",
+  "image/gif": "gif",
+  "image/bmp": "bmp",
+  "image/x-ms-bmp": "bmp",
+  "image/webp": "webp",
+};
+const TRACKED = new Set(["ins", "del", "moveFrom", "moveTo"]);
+const TRANSPARENT = new Set([
+  "sdt",
+  "sdtContent",
+  "smartTag",
+  "customXml",
+  "ins",
+  "moveTo",
+  "fldSimple",
+]);
+// Wrappers around block content that are read through (w:del / w:moveFrom are dropped).
+const BLOCK_WRAPPERS = new Set(["sdtContent", "customXml", "ins", "moveTo", "smartTag"]);
+const UNIVERSAL_EMU: Record<string, number> = {
+  mm: 36000,
+  cm: 360000,
+  in: 914400,
+  pt: 12700,
+  pc: 152400,
+  pi: 152400,
+};
+
+interface Fmt {
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+  strike: boolean;
+  family: string | null;
+  size: number | null;
+  color: string | null;
+  background: string | null;
+  key: string; // equal formats have equal keys
+}
+
+/** kind "t" (text), "br" or "img" (value = the <img> HTML). */
+interface Item {
+  kind: "t" | "br" | "img";
+  value: string;
+  fmt: Fmt;
+  link: string | null;
+}
+
+/** Inline content of a paragraph; a page break inside it starts a new segment. */
+interface Segment {
+  items: Item[];
+  pageBreak: boolean;
+  last: string; // the last character so far ("" at the start, "\n" after a break)
+}
+const segment = (): Segment => ({ items: [], pageBreak: false, last: "" });
+
+// ----- small helpers ----------------------------------------------------------------------
+
+/** `table[key]` for the table's own keys only ("constructor" is not a colour). */
+const own = (table: Record<string, string>, key: string): string | undefined =>
+  Object.hasOwn(table, key) ? table[key] : undefined;
+
+/** The first child of `el` that is w:`local` (lxml's `el.find(qn("w:local"))`). */
+function wChild(el: Element | null | undefined, local: string): Element | null {
+  if (!el) return null;
+  for (let c = el.firstElementChild; c !== null; c = c.nextElementSibling) {
+    if (c.namespaceURI === NS.w && c.localName === local) return c;
+  }
+  return null;
+}
+const wVal = (el: Element | null | undefined, local: string): string | null =>
+  wAttr(wChild(el, local), "val");
+const wFirst = (el: Element, local: string, ns: string = NS.w): Element | null =>
+  el.getElementsByTagNameNS(ns, local)[0] ?? null;
+
+/** lxml's `el.text`: the text before the first child node that isn't text. */
+function leadText(el: Element): string {
+  let out = "";
+  for (let n = el.firstChild; n && (n.nodeType === 3 || n.nodeType === 4); n = n.nextSibling) {
+    out += (n as CharacterData).data;
+  }
+  return out;
+}
+
+/** Python's int() of a string, or null where it would raise. */
+function pyInt(value: string | null | undefined): number | null {
+  const s = pyStrip(value ?? "");
+  return /^[+-]?\d+(?:_\d+)*$/.test(s) ? Number.parseInt(s.replaceAll("_", ""), 10) : null;
+}
+
+/** Python's `f"{x:g}"`. */
+function pyG(x: number): string {
+  if (x === 0) return "0";
+  const [mant, e] = x.toExponential(5).split("e");
+  const exp = Number(e);
+  const strip = (s: string) => (s.includes(".") ? s.replace(/0+$/, "").replace(/\.$/, "") : s);
+  if (exp < -4 || exp >= 6) {
+    return `${strip(mant)}e${exp < 0 ? "-" : "+"}${String(Math.abs(exp)).padStart(2, "0")}`;
+  }
+  return strip(x.toFixed(5 - exp));
+}
+
+const escText = (s: string) =>
+  s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+const escAttr = (s: string) => escText(s).replaceAll('"', "&quot;").replaceAll("'", "&#x27;");
+
+/** The first word of `text` (split on Python white space). */
+function firstWord(text: string): string {
+  let i = 0;
+  while (i < text.length && isPySpace(text[i])) i++;
+  let j = i;
+  while (j < text.length && !isPySpace(text[j])) j++;
+  return text.slice(i, j);
+}
+
+function decodeXml(data: Uint8Array): string {
+  let enc = "utf-8";
+  if (data[0] === 0xff && data[1] === 0xfe) enc = "utf-16le";
+  else if (data[0] === 0xfe && data[1] === 0xff) enc = "utf-16be";
+  return new TextDecoder(enc).decode(data); // drops a byte order mark
+}
+
+// ----- the package ------------------------------------------------------------------------
+
+class Ctx {
+  images: DocImages = new Map();
+  warnings: string[] = [];
+  rels: Map<string, Rel>;
+  private styleById = new Map<string, Element>();
+  private defaultParagraph: Element | null = null;
+  private nums = new Map<string, Element>();
+  private abstracts = new Map<string | null, Element>();
+
+  constructor(
+    readonly files: Files,
+    readonly types: Document,
+    readonly docName: string,
+  ) {
+    this.rels = relsFor(files, docName).entries();
+    const styles = this.related(RT.styles);
+    for (const s of styles ? Array.from(styles.documentElement.children) : []) {
+      if (!isW(s, "style")) continue;
+      const id = wAttr(s, "styleId");
+      if (id !== null && !this.styleById.has(id)) this.styleById.set(id, s);
+      const isDefault = ["1", "true", "on"].includes(wAttr(s, "default") ?? "");
+      if (isDefault && wAttr(s, "type") === "paragraph") this.defaultParagraph = s; // the last one
+    }
+    const numbering = this.related(RT.numbering);
+    for (const n of numbering ? Array.from(numbering.documentElement.children) : []) {
+      if (isW(n, "num")) {
+        const id = wAttr(n, "numId");
+        if (id !== null && !this.nums.has(id)) this.nums.set(id, n);
+      } else if (isW(n, "abstractNum")) {
+        const id = wAttr(n, "abstractNumId");
+        if (!this.abstracts.has(id)) this.abstracts.set(id, n);
+      }
+    }
+  }
+
+  warn(text: string): void {
+    if (!this.warnings.includes(text)) this.warnings.push(text);
+  }
+
+  /** The bytes of the part relationship `id` of the document points at (internal only). */
+  partOf(id: string | null): { name: string; data: Uint8Array } | null {
+    const rel = id === null ? undefined : this.rels.get(id);
+    if (!rel || rel.external) return null;
+    const name = actualName(this.files, resolve(this.docName, rel.target));
+    const data = this.files.get(name);
+    return data ? { name, data } : null;
+  }
+
+  xmlOf(id: string | null): Document | null {
+    const part = this.partOf(id);
+    return part ? parseXml(decodeXml(part.data)) : null;
+  }
+
+  private related(type: string): Document | null {
+    for (const rel of this.rels.values()) if (rel.type === type) return this.xmlOf(rel.id);
+    return null;
+  }
+
+  style(id: string | null): Element | null {
+    return id === null ? null : (this.styleById.get(id) ?? null);
+  }
+
+  /** The paragraph's style and the styles it is based on (python-docx's get_by_id). */
+  styleChain(p: Element): Element[] {
+    const id = wVal(wChild(p, "pPr"), "pStyle");
+    let style = id ? this.style(id) : null;
+    if (!style || wAttr(style, "type") !== "paragraph") style = this.defaultParagraph;
+    const chain: Element[] = [];
+    while (style && chain.length < 20) {
+      chain.push(style);
+      const based = wChild(style, "basedOn");
+      style = based ? this.style(wAttr(based, "val")) : null;
+    }
+    return chain;
+  }
+
+  numKind(numId: string, ilvl: string): string {
+    const abstractId = wVal(this.nums.get(numId), "abstractNumId");
+    const abstract = this.abstracts.get(abstractId);
+    if (!abstract) return "ul";
+    const levels = Array.from(abstract.children).filter((c) => isW(c, "lvl"));
+    const lvl = levels.find((x) => wAttr(x, "ilvl") === ilvl) ?? levels[0];
+    const fmt = wVal(lvl, "numFmt");
+    if (fmt !== null && fmt !== "none" && fmt !== "bullet" && fmt !== "decimal") {
+      this.warn(W_LISTSTYLE); // still opened as a numbered list
+    }
+    return fmt === "none" ? "none" : fmt === "bullet" ? "ul" : "ol";
+  }
+}
+
+// ----- styles and lists ------------------------------------------------------------------
+
+const styleName = (style: Element): string | null => {
+  const name = wVal(style, "name");
+  return name === null ? null : (own(UI_NAMES, name) ?? name);
+};
+const numPrOf = (el: Element) => wChild(wChild(el, "pPr"), "numPr");
+
+/** [numId, "ul" | "ol", ilvl] for a list paragraph, else null. */
+function listInfo(ctx: Ctx, p: Element, chain: Element[]): [number, string, number] | null {
+  const sources = [numPrOf(p), ...chain.map(numPrOf)];
+  let numId: string | null = null;
+  let ilvl: string | null = null;
+  for (const s of sources) numId ??= wVal(s, "numId");
+  for (const s of sources) ilvl ??= wVal(s, "ilvl");
+  ilvl ??= "0";
+  if (!numId || numId === "0") return null;
+  const kind = ctx.numKind(numId, ilvl);
+  if (kind === "none") return null;
+  const id = pyInt(numId);
+  const level = pyInt(ilvl);
+  return id === null || level === null ? null : [id, kind, Math.max(level, 0)];
+}
+
+// ----- inline content --------------------------------------------------------------------
+
+/** An on/off run property (null when it isn't set). */
+function flag(rPr: Element | null, name: string): boolean | null {
+  const el = wChild(rPr, name);
+  if (!el) return null;
+  const val = (wAttr(el, "val") ?? "").toLowerCase();
+  if (name === "u") return val !== "none";
+  return val !== "0" && val !== "false" && val !== "off";
+}
+
+function rgb(rPr: Element | null): string | null {
+  const val = wVal(rPr, "color");
+  return val && val.length === 6 && val.toLowerCase() !== "auto" ? `#${val.toLowerCase()}` : null;
+}
+
+/** python-docx's `Font.size` in points, rounded to 2 places (null when unset or unreadable). */
+function fontSize(rPr: Element | null): number | null {
+  const raw = wVal(rPr, "sz");
+  if (raw === null) return null;
+  let emu: number;
+  if (/[mnp]/.test(raw)) {
+    const mult = Object.hasOwn(UNIVERSAL_EMU, raw.slice(-2)) ? UNIVERSAL_EMU[raw.slice(-2)] : 0;
+    const q = Number(pyStrip(raw.slice(0, -2)));
+    if (!mult || !pyStrip(raw.slice(0, -2)) || !Number.isFinite(q)) return null;
+    emu = pyRound(q * mult);
+  } else {
+    const halfPoints = pyInt(raw);
+    if (halfPoints === null) return null;
+    emu = Math.trunc((halfPoints / 2) * 12700);
+  }
+  return Math.round((emu / 12700) * 100) / 100;
+}
+
+/** The rPr of the run's character style and the styles it is based on, nearest first. */
+function charStyleRprs(ctx: Ctx, rPr: Element | null): (Element | null)[] {
+  const out: (Element | null)[] = [];
+  let id = wVal(rPr, "rStyle");
+  while (id && out.length < 20) {
+    const style = ctx.style(id);
+    if (!style || wAttr(style, "type") !== "character") break;
+    out.push(wChild(style, "rPr"));
+    id = wVal(style, "basedOn");
+  }
+  return out;
+}
+
+/** Direct run formatting, falling back to the run's character style chain (never the
+ * paragraph style or document defaults: a saved-over file keeps those itself). */
+function runFmt(ctx: Ctx, r: Element, inHeading: boolean, inLink: boolean): Fmt {
+  const rPr = wChild(r, "rPr");
+  const chain = charStyleRprs(ctx, rPr);
+  const resolved = (name: string, fromStyles = true): boolean => {
+    let value = flag(rPr, name);
+    if (fromStyles) for (const s of chain) value ??= flag(s, name);
+    return Boolean(value);
+  };
+  let color = rgb(rPr);
+  if (color === null && !inLink) {
+    // a link's style colour is how links look anyway
+    for (const s of chain) color ??= rgb(s);
+  }
+  const fill = wAttr(wChild(rPr, "shd"), "fill");
+  let background = own(HIGHLIGHT, wVal(rPr, "highlight") ?? "") ?? null;
+  if (fill && fill.toLowerCase() !== "auto" && fill.toLowerCase() !== "ffffff") {
+    background = `#${fill.toLowerCase()}`;
+  }
+  const fmt = {
+    bold: resolved("b") && !inHeading,
+    italic: resolved("i"),
+    underline: resolved("u", !inLink),
+    strike: resolved("strike"),
+    family: wAttr(wChild(rPr, "rFonts"), "ascii"),
+    size: inHeading ? null : fontSize(rPr),
+    color,
+    background,
+  };
+  return { ...fmt, key: JSON.stringify(fmt) };
+}
+
+function picture(ctx: Ctx, drawing: Element): string | null {
+  const blip = wFirst(drawing, "blip", NS.a);
+  const id = blip?.getAttributeNS(NS.r, "embed") ?? null;
+  if (id === null) return null;
+  const part = ctx.partOf(id);
+  if (!part) {
+    ctx.warn(W_PICTURES);
+    return null;
+  }
+  const type = contentTypeOf(ctx.types, part.name) ?? "";
+  const ext = own(IMAGE_EXT, type);
+  if (ext === undefined) {
+    console.warn(`Picture of type ${type} can't be shown here; left out`);
+    ctx.warn(W_PICTURES);
+    return null;
+  }
+  const name = nextImageName(ctx.images, ext);
+  ctx.images.set(name, part.data);
+  let attrs = ` src="${name}"`;
+  const extent = wFirst(drawing, "extent", NS.wp);
+  if (extent) {
+    for (const [key, attr] of [
+      ["cx", "width"],
+      ["cy", "height"],
+    ]) {
+      const px = pyRound((pyInt(extent.getAttribute(key) || "0") ?? 0) / EMU_PER_PX);
+      if (px > 0) attrs += ` ${attr}="${px}"`;
+    }
+  }
+  return `<img${attrs}>`;
+}
+
+/** Spaces HTML would collapse become no-break spaces: one at the start of a line, or one
+ * after another space (the writer turns them back into ordinary spaces). */
+function keepSpaces(text: string, before: string): string {
+  if (!text.includes(" ")) return text;
+  const out: string[] = [];
+  for (const c of text) {
+    const kept =
+      c === " " && (before === "" || before === "\n" || before === " " || before === NBSP);
+    out.push(kept ? NBSP : c);
+    before = kept || c === NBSP ? " " : c;
+  }
+  return out.join("");
+}
+
+function runItems(ctx: Ctx, r: Element, fmt: Fmt, link: string | null, segs: Segment[]): void {
+  const add = (kind: Item["kind"], value: string) => {
+    const seg = segs[segs.length - 1];
+    seg.items.push({ kind, value, fmt, link });
+    if (kind === "br") seg.last = "\n";
+    else if (kind === "img") seg.last = "￼";
+    else if (value) seg.last = value[value.length - 1];
+  };
+  for (let child = r.firstElementChild; child; child = child.nextElementSibling) {
+    if (child.namespaceURI !== NS.w) continue;
+    const tag = child.localName;
+    if (tag === "t") add("t", keepSpaces(leadText(child), segs[segs.length - 1].last));
+    else if (tag === "tab") add("t", "\t");
+    else if (tag === "noBreakHyphen") add("t", "-");
+    else if (tag === "cr") add("br", "");
+    else if (tag === "br") {
+      if (wAttr(child, "type") === "page") {
+        if (segs[segs.length - 1].items.length) segs.push(segment());
+        segs[segs.length - 1].pageBreak = true;
+      } else add("br", "");
+    } else if (tag === "drawing") {
+      const img = picture(ctx, child);
+      if (img !== null) add("img", img);
+    }
+  }
+}
+
+function inlineNodes(
+  ctx: Ctx,
+  parent: Element,
+  heading: boolean,
+  link: string | null,
+  segs: Segment[],
+): void {
+  for (let node = parent.firstElementChild; node; node = node.nextElementSibling) {
+    if (node.namespaceURI !== NS.w) continue;
+    const tag = node.localName;
+    if (tag === "r") runItems(ctx, node, runFmt(ctx, node, heading, link !== null), link, segs);
+    else if (tag === "hyperlink") {
+      const rel = ctx.rels.get(node.getAttributeNS(NS.r, "id") ?? "");
+      const href = rel?.external ? rel.target : null;
+      inlineNodes(ctx, node, heading, href || link, segs);
+    } else if (TRANSPARENT.has(tag)) {
+      const inner = tag === "sdt" ? wChild(node, "sdtContent") : node;
+      if (inner) inlineNodes(ctx, inner, heading, link, segs);
+    }
+  }
+}
+
+function renderItems(items: Item[], pre: boolean): string {
+  const out: string[] = [];
+  let i = 0;
+  while (i < items.length) {
+    const link = items[i].link;
+    let j = i;
+    while (j < items.length && items[j].link === link) j++;
+    const inner = renderGroup(items, i, j, pre);
+    out.push(link ? `<a href="${escAttr(link)}">${inner}</a>` : inner);
+    i = j;
+  }
+  return out.join("");
+}
+
+function renderGroup(items: Item[], from: number, to: number, pre: boolean): string {
+  const out: string[] = [];
+  let i = from;
+  while (i < to) {
+    const { kind, value, fmt } = items[i];
+    i++;
+    if (kind === "br") out.push(pre ? "\n" : "<br>");
+    else if (kind === "img") out.push(value);
+    else {
+      // merge neighbouring text runs with identical formatting
+      const parts = [value];
+      while (i < to && items[i].kind === "t" && items[i].fmt.key === fmt.key) {
+        parts.push(items[i++].value);
+      }
+      let text = parts.join("");
+      if (pre) text = text.replaceAll(NBSP, " "); // <pre> keeps every space as it is
+      out.push(wrap(escText(text), fmt));
+    }
+  }
+  return out.join("");
+}
+
+function wrap(text: string, fmt: Fmt): string {
+  const style: string[] = [];
+  if (fmt.family) style.push(`font-family:${fmt.family}`);
+  if (fmt.size) style.push(`font-size:${pyG(fmt.size)}pt`);
+  if (fmt.color) style.push(`color:${fmt.color}`);
+  if (fmt.background) style.push(`background-color:${fmt.background}`);
+  let out = style.length ? `<span style="${escAttr(style.join(";"))}">${text}</span>` : text;
+  if (fmt.strike) out = `<s>${out}</s>`;
+  if (fmt.underline) out = `<u>${out}</u>`;
+  if (fmt.italic) out = `<i>${out}</i>`;
+  if (fmt.bold) out = `<b>${out}</b>`;
+  return out;
+}
+
+// ----- blocks ----------------------------------------------------------------------------
+
+function isHr(p: Element): boolean {
+  const val = wAttr(wChild(wChild(wChild(p, "pPr"), "pBdr"), "bottom"), "val");
+  return val !== null && val !== "none" && val !== "nil";
+}
+
+/** A paragraph with no text, picture or break. */
+function isBlank(p: Element): boolean {
+  return !(
+    !isW(p, "p") ||
+    pyStrip(p.textContent ?? "") ||
+    wFirst(p, "drawing") ||
+    wFirst(p, "br") ||
+    isHr(p)
+  );
+}
+
+function paraStyle(p: Element, withIndent: boolean, pageBreak: boolean): string {
+  const pPr = wChild(p, "pPr");
+  const parts: string[] = [];
+  const align = own(ALIGN, wVal(pPr, "jc") ?? "");
+  if (align) parts.push(`text-align:${align}`);
+  const left = wAttr(wChild(pPr, "ind"), "left");
+  if (withIndent && left) {
+    const twips = pyInt(left);
+    const level = twips === null ? 0 : pyRound(twips / 20 / 36);
+    if (level >= 1) parts.push(`margin-left:${36 * level}pt`);
+  }
+  const pbb = wChild(pPr, "pageBreakBefore");
+  const pbbVal = pbb ? wAttr(pbb, "val") : null;
+  if (pageBreak || (pbb && pbbVal !== "0" && pbbVal !== "false" && pbbVal !== "off")) {
+    parts.push("page-break-before:always");
+  }
+  return parts.length ? ` style="${parts.join(";")}"` : "";
+}
+
+const visible = (borders: Element): boolean =>
+  Array.from(borders.children).some((edge) => {
+    const val = wAttr(edge, "val") || "none";
+    return val !== "none" && val !== "nil";
+  });
+
+/** Bordered when any cell has a visible border (LibreOffice writes only those), else by
+ * the table's own borders, else by its table style's (no style and no borders: none). */
+function hasBorders(ctx: Ctx, tbl: Element): boolean {
+  for (const tcBorders of Array.from(tbl.getElementsByTagNameNS(NS.w, "tcBorders"))) {
+    if (visible(tcBorders)) return true;
+  }
+  const tblPr = wChild(tbl, "tblPr");
+  let borders = wChild(tblPr, "tblBorders");
+  if (borders) return visible(borders);
+  let id = wVal(tblPr, "tblStyle");
+  for (let n = 0; n < 20; n++) {
+    const style = id ? ctx.style(id) : null;
+    if (!style) return false;
+    borders = wChild(wChild(style, "tblPr"), "tblBorders");
+    if (borders) return visible(borders);
+    id = wVal(style, "basedOn");
+  }
+  return false;
+}
+
+interface Cell {
+  tc: Element;
+  colspan: number;
+  rowspan: number;
+}
+
+/** Turns the paragraphs and tables of one container (body or table cell) into HTML. */
+class Blocks {
+  private out: string[] = [];
+  private lists: [number, string][] = []; // open lists (numId, tag); the last <li> is open
+  private quote = false;
+
+  constructor(private ctx: Ctx) {}
+
+  run(container: Element): string {
+    const nodes: Element[] = [];
+    this.children(container, nodes);
+    const n = nodes.length;
+    if (n > 1 && isW(nodes[n - 2], "tbl") && isBlank(nodes[n - 1])) {
+      nodes.pop(); // Word needs a paragraph after a final table; it isn't content
+    }
+    for (const node of nodes) {
+      if (isW(node, "tbl")) {
+        this.closeAll();
+        this.out.push(this.table(node));
+      } else this.paragraph(node);
+    }
+    this.closeAll();
+    return this.out.join("");
+  }
+
+  private children(container: Element, into: Element[]): void {
+    for (let node = container.firstElementChild; node; node = node.nextElementSibling) {
+      if (node.namespaceURI !== NS.w) continue;
+      if (node.localName === "sdt") {
+        const inner = wChild(node, "sdtContent");
+        if (inner) this.children(inner, into);
+      } else if (BLOCK_WRAPPERS.has(node.localName)) this.children(node, into);
+      else if (node.localName === "p" || node.localName === "tbl") into.push(node);
+    }
+  }
+
+  private closeLists(keep = 0): void {
+    while (this.lists.length > keep) {
+      this.out.push(`</li></${(this.lists.pop() as [number, string])[1]}>`);
+    }
+  }
+
+  private closeQuote(): void {
+    if (this.quote) {
+      this.out.push("</blockquote>");
+      this.quote = false;
+    }
+  }
+
+  private closeAll(): void {
+    this.closeLists();
+    this.closeQuote();
+  }
+
+  private paragraph(p: Element): void {
+    const chain = this.ctx.styleChain(p);
+    let kind = "p";
+    for (const s of chain) {
+      const name = styleName(s);
+      const block = name === null ? undefined : own(BLOCK_STYLES, name);
+      if (block !== undefined) {
+        kind = block;
+        break;
+      }
+    }
+    const info = kind === "p" ? listInfo(this.ctx, p, chain) : null;
+    const segs = [segment()];
+    inlineNodes(this.ctx, p, kind === "h1" || kind === "h2" || kind === "h3", null, segs);
+    if (kind === "p" && info === null && segs.length === 1 && !segs[0].items.length && isHr(p)) {
+      this.closeAll();
+      this.out.push("<hr>");
+      return;
+    }
+    if (info !== null) {
+      const items: Item[] = [];
+      for (const s of segs) for (const it of s.items) items.push(it);
+      this.listItem(info, p, items);
+      return;
+    }
+    this.closeLists();
+    if (kind === "quote") {
+      if (!this.quote) {
+        this.out.push("<blockquote>");
+        this.quote = true;
+      }
+    } else this.closeQuote();
+    const tag = kind === "quote" ? "p" : kind;
+    for (const seg of segs) {
+      const style = paraStyle(p, true, seg.pageBreak);
+      this.out.push(`<${tag}${style}>${renderItems(seg.items, kind === "pre")}</${tag}>`);
+    }
+  }
+
+  private listItem(info: [number, string, number], p: Element, items: Item[]): void {
+    const [numId, tag] = info;
+    this.closeQuote();
+    const ilvl = Math.min(info[2], this.lists.length);
+    this.closeLists(ilvl + 1);
+    if (this.lists.length === ilvl + 1) {
+      const [openId, openTag] = this.lists[this.lists.length - 1];
+      if (openId === numId && openTag === tag) this.out.push("</li>");
+      else this.closeLists(ilvl);
+    }
+    if (this.lists.length === ilvl) {
+      this.lists.push([numId, tag]);
+      this.out.push(`<${tag}>`);
+    }
+    this.out.push(`<li${paraStyle(p, false, false)}>${renderItems(items, false)}`);
+  }
+
+  private table(tbl: Element): string {
+    const rows: Cell[][] = [];
+    const started = new Map<number, Cell>(); // grid column -> cell a bare vMerge continues
+    for (const tr of Array.from(tbl.children)) {
+      if (!isW(tr, "tr")) continue;
+      const cells: Cell[] = [];
+      let col = 0;
+      for (const tc of Array.from(tr.children)) {
+        if (!isW(tc, "tc")) continue;
+        const tcPr = wChild(tc, "tcPr");
+        const span = pyInt(wVal(tcPr, "gridSpan") || "1") ?? 1;
+        const vm = wChild(tcPr, "vMerge");
+        const open = started.get(col);
+        if (vm && wAttr(vm, "val") !== "restart" && open) open.rowspan++;
+        else {
+          const cell = { tc, colspan: span, rowspan: 1 };
+          cells.push(cell);
+          started.set(col, cell);
+        }
+        col += span;
+      }
+      rows.push(cells);
+    }
+    const out = [hasBorders(this.ctx, tbl) ? "<table>" : '<table style="border:none">'];
+    for (const cells of rows) {
+      out.push("<tr>");
+      for (const cell of cells) {
+        let attrs = "";
+        if (cell.colspan > 1) attrs += ` colspan="${cell.colspan}"`;
+        if (cell.rowspan > 1) attrs += ` rowspan="${cell.rowspan}"`;
+        const inner = new Blocks(this.ctx).run(cell.tc) || "<p></p>";
+        out.push(`<td${attrs}>${inner}</td>`);
+      }
+      out.push("</tr>");
+    }
+    out.push("</table>");
+    return out.join("");
+  }
+}
+
+// ----- warnings --------------------------------------------------------------------------
+
+/** True for a field the editor can't keep (anything but page numbers). */
+function unsupportedField(instr: string): boolean {
+  const word = firstWord(instr).toUpperCase();
+  return word !== "" && word !== "PAGE" && word !== "NUMPAGES";
+}
+
+function collectWarnings(ctx: Ctx, root: Element, body: Element): void {
+  const sections: Element[] = [];
+  for (let node = body.firstElementChild; node; node = node.nextElementSibling) {
+    if (isW(node, "sectPr")) sections.push(node);
+    else if (isW(node, "p")) {
+      const pPr = wChild(node, "pPr");
+      for (const s of pPr ? Array.from(pPr.children) : []) if (isW(s, "sectPr")) sections.push(s);
+    }
+  }
+  for (const sect of sections) {
+    for (const kind of ["headerReference", "footerReference"]) {
+      for (const type of ["default", "first", "even"]) {
+        const refs = Array.from(sect.children);
+        const ref = refs.find((c) => isW(c, kind) && wAttr(c, "type") === type);
+        if (!ref) continue; // linked to the previous section
+        const part = ctx.xmlOf(ref.getAttributeNS(NS.r, "id"));
+        const el = part?.documentElement;
+        if (el && (pyStrip(el.textContent ?? "") || wFirst(el, "drawing"))) ctx.warn(W_HEADERS);
+      }
+    }
+  }
+  const found = new Set<string>();
+  for (const rel of ctx.rels.values()) if (rel.type.endsWith("/comments")) found.add(W_COMMENTS);
+  const stack: Element[] = [root];
+  while (stack.length) {
+    const el = stack.pop() as Element;
+    for (let c = el.lastElementChild; c; c = c.previousElementSibling) stack.push(c);
+    const ns = el.namespaceURI;
+    const tag = el.localName;
+    const box = ns === NS.w ? "txbxContent" : ns === WPS ? "wsp" : ns === VML ? "shape" : null;
+    if (tag === box) found.add(W_TEXTBOX);
+    if (ns !== NS.w) continue;
+    if (tag === "cols" && (pyInt(wAttr(el, "num") || "1") ?? 1) > 1) found.add(W_COLUMNS);
+    else if (TRACKED.has(tag)) found.add(W_TRACKED);
+    else if (tag === "commentReference") found.add(W_COMMENTS);
+    else if (tag === "footnoteReference" || tag === "endnoteReference") found.add(W_NOTES);
+    else if (tag === "fldSimple" || tag === "instrText") {
+      if (unsupportedField(wAttr(el, "instr") || leadText(el))) found.add(W_FIELDS);
+    } else if (tag === "object") found.add(W_OBJECTS);
+  }
+  for (const text of [W_TEXTBOX, W_COLUMNS, W_TRACKED, W_COMMENTS, W_NOTES, W_FIELDS, W_OBJECTS]) {
+    if (found.has(text)) ctx.warn(text);
+  }
+}
+
+/** Read `bytes` (a DOCX) as the editor's HTML subset, its pictures and warnings. */
+export function readDocx(bytes: Uint8Array): OpenedDocument {
+  try {
+    const files = unzipPackage(bytes);
+    const types = parseXml(partText(files, "[Content_Types].xml") ?? "");
+    const main = relsFor(files, "").target(RT.officeDocument);
+    if (main === null) throw new Error("No main document relationship");
+    const docName = actualName(files, resolve("/", main));
+    if (contentTypeOf(types, docName) !== CT.document) throw new Error("Not a Word document");
+    const data = files.get(docName);
+    if (!data) throw new Error(`No part ${docName}`);
+    const root = parseXml(decodeXml(data)).documentElement;
+    const body = wChild(root, "body");
+    if (!body) throw new Error("No document body");
+    const ctx = new Ctx(files, types, docName);
+    const html = new Blocks(ctx).run(body);
+    collectWarnings(ctx, root, body);
+    return {
+      html: normaliseHtml(html).html,
+      images: ctx.images,
+      sourceFormat: "docx",
+      warnings: ctx.warnings,
+      frontMatter: "",
+      title: "",
+      template: bytes,
+    };
+  } catch (err) {
+    console.error("Could not open the file as DOCX", err);
+    throw new Error(UNREADABLE);
+  }
+}

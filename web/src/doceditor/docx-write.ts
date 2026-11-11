@@ -12,14 +12,32 @@
  * DOMParser / XMLSerializer (the page, not a worker).
  */
 
-import { strFromU8, strToU8, unzipSync, zipSync, type Zippable } from "fflate";
+import { strToU8 } from "fflate";
 import { CT, HYPERLINK_STYLE, NS, PARTS, RT, STYLES, XML_HEAD, codeStyle } from "./docx-template";
 import { type ImageInfo, extent, imageInfo, pyRound } from "./docx-image";
+import {
+  type Files,
+  Rels,
+  Xml,
+  actualName,
+  dirOf,
+  isW,
+  parseXml,
+  partKey,
+  partText,
+  reachable,
+  relsOf,
+  resolve,
+  serialise,
+  unzipPackage,
+  wAttr,
+  wKids,
+  zipPackage,
+} from "./docx-package";
 import { normaliseHtml } from "./subset";
 import type { DocImages } from "./types";
 
 const XML_NS = "http://www.w3.org/XML/1998/namespace";
-const XMLNS = "http://www.w3.org/2000/xmlns/";
 const EMU_PER_PX = 9525;
 const NBSP = " ";
 const HEADINGS: Record<string, string> = { h1: "Heading 1", h2: "Heading 2", h3: "Heading 3" };
@@ -47,7 +65,6 @@ const USED_STYLES = [
 ];
 // Schema order of the w:pPr children the writer sets.
 const PPR_ORDER = ["pStyle", "pageBreakBefore", "numPr", "pBdr", "ind", "jc"];
-const FIXED_MTIME = new Date(2000, 0, 1);
 
 interface Fmt {
   bold: boolean;
@@ -89,162 +106,6 @@ function styleDict(node: Element): Record<string, string> {
     if (at >= 0) out[decl.slice(0, at).trim().toLowerCase()] = decl.slice(at + 1).trim();
   }
   return out;
-}
-
-// ----- XML helpers ------------------------------------------------------------------------
-
-function parseXml(text: string): Document {
-  const doc = new DOMParser().parseFromString(text, "application/xml");
-  if (doc.getElementsByTagName("parsererror").length) throw new Error("Not well-formed XML");
-  return doc;
-}
-const serialise = (doc: Document) => XML_HEAD + new XMLSerializer().serializeToString(doc);
-
-/** Creates elements in one part, with the prefixes that part already uses. */
-class Xml {
-  private prefixes = new Map<string, string>();
-  constructor(readonly doc: Document) {}
-
-  private prefix(key: keyof typeof NS): string {
-    let p = this.prefixes.get(key);
-    if (p === undefined) {
-      const root = this.doc.documentElement;
-      const bound = root.lookupPrefix(NS[key]);
-      if (bound) p = bound;
-      else {
-        // a fresh prefix: the template may bind ours to something else
-        p = key;
-        for (let n = 1; root.lookupNamespaceURI(p) !== null; n++) p = `${key}${n}`;
-        root.setAttributeNS(XMLNS, `xmlns:${p}`, NS[key]);
-      }
-      this.prefixes.set(key, p);
-    }
-    return p;
-  }
-
-  /** `el("w:p", {"w:val": "x", cx: "1"})`: prefixed names are in that namespace. */
-  el(name: string, attrs: Record<string, string> = {}, ...children: Element[]): Element {
-    const [key, local] = name.split(":") as [keyof typeof NS, string];
-    const el = this.doc.createElementNS(NS[key], `${this.prefix(key)}:${local}`);
-    for (const [k, val] of Object.entries(attrs)) {
-      const at = k.indexOf(":");
-      if (at < 0) el.setAttribute(k, val);
-      else {
-        const ns = k.slice(0, at) as keyof typeof NS;
-        el.setAttributeNS(NS[ns], `${this.prefix(ns)}:${k.slice(at + 1)}`, val);
-      }
-    }
-    for (const child of children) el.appendChild(child);
-    return el;
-  }
-}
-
-const isW = (node: Node | null, local: string): node is Element =>
-  node?.nodeType === 1 &&
-  (node as Element).namespaceURI === NS.w &&
-  (node as Element).localName === local;
-const wKids = (el: Element, local: string) => Array.from(el.children).filter((c) => isW(c, local));
-const wAttr = (el: Element | undefined | null, name: string) =>
-  el?.getAttributeNS(NS.w, name) ?? null;
-
-// ----- the package ------------------------------------------------------------------------
-
-type Files = Map<string, Uint8Array>;
-
-const dirOf = (name: string) => name.slice(0, name.lastIndexOf("/") + 1);
-const relsOf = (name: string) => `${dirOf(name)}_rels/${name.slice(dirOf(name).length)}.rels`;
-
-function resolve(from: string, target: string): string {
-  let raw = target;
-  try {
-    raw = decodeURIComponent(target);
-  } catch {
-    /* keep it as it is */
-  }
-  const parts = raw.startsWith("/") ? [] : dirOf(from).split("/").filter(Boolean);
-  for (const seg of raw.split("/")) {
-    if (seg === "..") parts.pop();
-    else if (seg && seg !== ".") parts.push(seg);
-  }
-  return parts.join("/");
-}
-
-/** OPC part names are case-insensitive and may be percent-encoded in rels / Overrides. */
-function partKey(name: string): string {
-  let out = name;
-  try {
-    out = decodeURIComponent(name);
-  } catch {
-    /* keep it as it is */
-  }
-  return out.toLowerCase();
-}
-
-/** The zip entry `name` refers to (`name` itself when there is none). */
-function actualName(files: Files, name: string): string {
-  if (files.has(name)) return name;
-  const key = partKey(name);
-  for (const have of files.keys()) if (partKey(have) === key) return have;
-  return name;
-}
-
-/** A part's relationships (`_rels/*.rels`), with python-docx's rId numbering. */
-class Rels {
-  readonly xml: Xml;
-  private ids = new Set<string>();
-  private next = 1;
-  private links = new Map<string, string>();
-  constructor(text: string | null) {
-    this.xml = new Xml(parseXml(text ?? `<Relationships xmlns="${NS.rels}"/>`));
-    for (const r of this.all()) this.ids.add(r.getAttribute("Id") ?? "");
-  }
-  all(): Element[] {
-    return Array.from(this.xml.doc.documentElement.children).filter(
-      (c) => c.localName === "Relationship",
-    );
-  }
-  add(type: string, target: string, external = false): string {
-    if (external && this.links.has(target)) return this.links.get(target) as string;
-    while (this.ids.has(`rId${this.next}`)) this.next++;
-    const id = `rId${this.next}`;
-    this.ids.add(id);
-    const rel = this.xml.doc.createElementNS(NS.rels, "Relationship");
-    rel.setAttribute("Id", id);
-    rel.setAttribute("Type", type);
-    rel.setAttribute("Target", target);
-    if (external) {
-      rel.setAttribute("TargetMode", "External");
-      this.links.set(target, id);
-    }
-    this.xml.doc.documentElement.appendChild(rel);
-    return id;
-  }
-  target(type: string): string | null {
-    const rel = this.all().find((r) => r.getAttribute("Type") === type);
-    return rel?.getAttribute("Target") ?? null;
-  }
-}
-
-/** Every part reachable from the package relationships (python-docx saves only those). */
-function reachable(files: Files): Set<string> {
-  const seen = new Set<string>();
-  const stack = [""];
-  while (stack.length) {
-    const from = stack.pop() as string;
-    const relsName = from ? relsOf(from) : "_rels/.rels";
-    const data = files.get(relsName);
-    if (!data) continue;
-    seen.add(relsName);
-    for (const rel of new Rels(strFromU8(data)).all()) {
-      if (rel.getAttribute("TargetMode") === "External") continue;
-      const name = actualName(files, resolve(from || "/", rel.getAttribute("Target") ?? ""));
-      if (files.has(name) && !seen.has(name)) {
-        seen.add(name);
-        stack.push(name);
-      }
-    }
-  }
-  return seen;
 }
 
 interface Container {
@@ -291,8 +152,7 @@ class Writer {
   }
 
   private text(name: string): string | null {
-    const data = this.files.get(actualName(this.files, name));
-    return data ? strFromU8(data) : null;
+    return partText(this.files, name);
   }
 
   private addPart(name: string, type: string, text: string): void {
@@ -303,11 +163,13 @@ class Writer {
     this.types.documentElement.appendChild(o);
   }
 
-  /** "base.ext", "base2.ext", … (or "base1.ext", … when `numbered`) that isn't taken. */
+  /** "base.ext", "base2.ext", … (or "base1.ext", … when `numbered`) that no part uses, in
+   * any letter case (part names are case-insensitive). */
   private freeName(base: string, ext: string, numbered = false): string {
+    const taken = new Set(Array.from(this.files.keys(), partKey));
     for (let n = 1; ; n++) {
       const name = `${base}${numbered || n > 1 ? n : ""}.${ext}`;
-      if (!this.files.has(name)) return name;
+      if (!taken.has(partKey(name))) return name;
     }
   }
 
@@ -389,10 +251,8 @@ class Writer {
       root.appendChild(copy); // the writer numbers lists itself
       this.stylesChanged = true;
     };
-    /** A new style, with a style id no other style uses ("Code", else "Code1", …). */
-    const parsed = (xml: string) => {
-      const style = parseXml(`<w:styles xmlns:w="${NS.w}">${xml}</w:styles>`).documentElement
-        .firstElementChild as Element;
+    /** `style` with a style id no other style uses ("Code", else "Code1", …). */
+    const freeId = (style: Element) => {
       const taken = new Set(wKids(root, "style").map((s) => wAttr(s, "styleId")));
       const base = wAttr(style, "styleId") ?? "";
       let id = base;
@@ -400,10 +260,14 @@ class Writer {
       style.setAttributeNS(NS.w, "w:styleId", id);
       return style;
     };
+    const parsed = (xml: string) =>
+      freeId(
+        parseXml(`<w:styles xmlns:w="${NS.w}">${xml}</w:styles>`).documentElement
+          .firstElementChild as Element,
+      );
     if (missing.size) {
-      const ids = new Set(wKids(root, "style").map((s) => wAttr(s, "styleId")));
       for (const s of wKids(parseXml(STYLES).documentElement, "style")) {
-        if (missing.has(nameOf(s)) && !ids.has(wAttr(s, "styleId"))) append(s);
+        if (missing.has(nameOf(s))) append(freeId(s)); // referenced by name, so a new id is fine
       }
     }
     const names = new Set(wKids(root, "style").map(nameOf));
@@ -526,12 +390,8 @@ class Writer {
     if (this.stylesChanged) this.files.set(this.stylesName, strToU8(serialise(this.styles)));
     if (this.numberingChanged)
       this.files.set(this.numberingName, strToU8(serialise(this.numbering.doc)));
-    const out: Zippable = { "[Content_Types].xml": strToU8(serialise(this.types)) };
-    for (const [name, data] of this.files) {
-      if (name === "[Content_Types].xml") continue;
-      out[name] = name.includes("/media/") ? [data, { level: 0 }] : data;
-    }
-    return zipSync(out, { level: 6, mtime: FIXED_MTIME });
+    this.files.set("[Content_Types].xml", strToU8(serialise(this.types)));
+    return zipPackage(this.files);
   }
 }
 
@@ -960,7 +820,7 @@ export function writeDocx(
   let writer: Writer | null = null;
   if (template) {
     try {
-      writer = new Writer(new Map(Object.entries(unzipSync(template))), images);
+      writer = new Writer(unzipPackage(template), images);
     } catch (err) {
       // changed, damaged or not a Word file: start from scratch
       console.warn("Can't use the original file as the template; writing a new document", err);
