@@ -398,3 +398,157 @@ def test_non_web_picture_is_converted_to_png(tmp_path):
     assert list(got.images) == ["img/1.png"] and 'src="img/1.png"' in got.html
     assert got.images["img/1.png"].startswith(b"\x89PNG")
     assert W_PICTURES not in got.warnings
+
+
+# ----- unusual packages: opened leniently, like the website does -------------------------------
+
+_NS_W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+_NS_R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+_NS_WP = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
+_NS_A = "http://schemas.openxmlformats.org/drawingml/2006/main"
+_RT = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+_HEAD = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+
+
+def _w_para(inner: str, ppr: str = "") -> str:
+    return f"<w:p>{ppr}{inner}</w:p>"
+
+
+def _w_run(text: str, rpr: str = "") -> str:
+    return f"<w:r>{rpr}<w:t>{text}</w:t></w:r>"
+
+
+def _w_drawing(rid: str, cx: str = "9525", cy: str = "9525") -> str:
+    return (
+        f'<w:r><w:drawing><wp:inline><wp:extent cx="{cx}" cy="{cy}"/>'
+        f'<a:graphic><a:graphicData><a:blip r:embed="{rid}"/></a:graphicData></a:graphic>'
+        "</wp:inline></w:drawing></w:r>"
+    )
+
+
+def _odd_docx(path, body, sect="", rels="", files=None, types=""):
+    """A hand-built DOCX with no numbering part, to which ``rels`` / ``files`` are added."""
+    doc = (
+        f'{_HEAD}<w:document xmlns:w="{_NS_W}" xmlns:r="{_NS_R}" xmlns:wp="{_NS_WP}" '
+        f'xmlns:a="{_NS_A}"><w:body>{body}{sect}</w:body></w:document>'
+    )
+    parts = {
+        "[Content_Types].xml": (
+            f'{_HEAD}<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+            '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.'
+            'relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>'
+            '<Override PartName="/word/document.xml" ContentType="application/vnd.'
+            'openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
+            f"{types}</Types>"
+        ),
+        "_rels/.rels": (
+            f'{_HEAD}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/'
+            f'relationships"><Relationship Id="rId1" Type="{_RT}/officeDocument" '
+            'Target="word/document.xml"/></Relationships>'
+        ),
+        "word/document.xml": doc,
+        "word/_rels/document.xml.rels": (
+            f'{_HEAD}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/'
+            f'relationships">{rels}</Relationships>'
+        ),
+    }
+    for name, data in (files or {}).items():
+        parts[name] = data
+    import zipfile
+
+    with zipfile.ZipFile(path, "w") as z:
+        for name, data in parts.items():
+            z.writestr(name, data)
+    return path
+
+
+_NUM_PR = '<w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr>'
+# What web/src/doceditor/docx-read.ts returns for the same package.
+WEB_BAD_NUMBERS = (
+    "<p>big</p><p>bad id</p><p>bad level</p>"
+    '<p><img src="img/1.png" height="1"></p>'
+    '<table style="border:none"><tr><td><p>c</p></td></tr></table>'
+)
+_PNG_TYPES = '<Default Extension="png" ContentType="image/png"/>'
+
+
+def _png_rel(rid: str, target: str) -> str:
+    return f'<Relationship Id="{rid}" Type="{_RT}/image" Target="{target}"/>'
+
+
+def test_open_list_without_numbering_part(tmp_path):
+    p = _odd_docx(tmp_path / "a.docx", _w_para(_w_run("item"), _NUM_PR))
+    assert read(p).html == "<ul><li>item</li></ul>"
+
+
+def test_open_picture_whose_part_is_missing(tmp_path):
+    p = _odd_docx(
+        tmp_path / "a.docx",
+        _w_para(_w_run("x") + _w_drawing("rIdP")),
+        rels=_png_rel("rIdP", "media/gone.png"),
+        types=_PNG_TYPES,
+    )
+    got = read(p)
+    assert got.html == "<p>x</p>" and got.warnings == [W_PICTURES] and got.images == {}
+
+
+def test_open_header_whose_part_is_missing(tmp_path):
+    p = _odd_docx(
+        tmp_path / "a.docx",
+        _w_para(_w_run("x")),
+        sect='<w:sectPr><w:headerReference w:type="default" r:id="rIdH"/></w:sectPr>',
+        rels=f'<Relationship Id="rIdH" Type="{_RT}/header" Target="header1.xml"/>',
+    )
+    got = read(p)
+    assert got.html == "<p>x</p>" and got.warnings == []
+
+
+def test_open_with_invalid_numbers(tmp_path):
+    body = (
+        _w_para(_w_run("big", '<w:rPr><w:sz w:val="abc"/></w:rPr>'))
+        + _w_para(
+            _w_run("bad id"),
+            '<w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="x"/></w:numPr></w:pPr>',
+        )
+        + _w_para(
+            _w_run("bad level"),
+            '<w:pPr><w:numPr><w:ilvl w:val="y"/><w:numId w:val="1"/></w:numPr></w:pPr>',
+        )
+        + _w_para(_w_drawing("rIdP", cx="wide"))
+        + '<w:tbl><w:tr><w:tc><w:tcPr><w:gridSpan w:val="two"/></w:tcPr>'
+        "<w:p><w:r><w:t>c</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"
+    )
+    p = _odd_docx(
+        tmp_path / "a.docx",
+        body,
+        rels=_png_rel("rIdP", "media/p.png"),
+        files={"word/media/p.png": PNG_1PX},
+        types=_PNG_TYPES,
+    )
+    got = read(p)
+    assert got.html == WEB_BAD_NUMBERS
+
+
+def test_open_part_name_differing_in_case_and_encoding(tmp_path):
+    p = _odd_docx(
+        tmp_path / "a.docx",
+        _w_para(_w_run("x") + _w_drawing("rIdP")),
+        rels=_png_rel("rIdP", "media/MY%20PIC.PNG"),
+        files={"word/media/My Pic.png": PNG_1PX},
+        types=_PNG_TYPES,
+    )
+    got = read(p)
+    assert got.html == '<p>x<img src="img/1.png" width="1" height="1"></p>'
+    assert got.images == {"img/1.png": PNG_1PX}
+    assert got.warnings == []
+
+
+def test_opening_never_changes_the_file(tmp_path):
+    p = _odd_docx(
+        tmp_path / "a.docx",
+        _w_para(_w_drawing("rIdP")),
+        rels=_png_rel("rIdP", "media/gone.png"),
+    )
+    before = p.read_bytes()
+    read(p)
+    assert p.read_bytes() == before

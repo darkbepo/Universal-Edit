@@ -9,11 +9,14 @@ from __future__ import annotations
 
 import html as _html
 import logging
+import posixpath
+import zipfile
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from io import BytesIO
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote
 
 import docx
 from docx.enum.style import WD_STYLE_TYPE
@@ -134,10 +137,28 @@ class _Ctx:
     doc: Any
     images: DocImages = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
+    _numbering: Any = field(default=False, repr=False)
+
+    def numbering(self) -> Any:
+        """The numbering part's XML, or None when the file has none (or it can't be read)."""
+        if self._numbering is False:
+            try:
+                self._numbering = self.doc.part.numbering_part.element
+            except Exception:  # python-docx can't create a missing one (NotImplementedError)
+                self._numbering = None
+        return self._numbering
 
     def warn(self, text: str) -> None:
         if text not in self.warnings:
             self.warnings.append(text)
+
+
+def _int(text: str | None, default: int | None = None) -> int | None:
+    """``int(text)``, or ``default`` when it isn't a whole number (Word files can be odd)."""
+    try:
+        return int(text)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
 
 
 def _val(el: Any, name: str) -> str | None:
@@ -169,15 +190,17 @@ def _list_info(ctx: _Ctx, p: etree._Element, chain: list[Any]) -> tuple[int, str
     ilvl = next((v for v in (_val(s, "w:ilvl") for s in sources) if v is not None), "0")
     if not num_id or num_id == "0":
         return None
-    try:
-        kind = _num_kind(ctx, num_id, ilvl)
-        return None if kind == "none" else (int(num_id), kind, max(int(ilvl), 0))
-    except ValueError:
+    kind = _num_kind(ctx, num_id, ilvl)
+    if kind == "none":
         return None
+    num, level = _int(num_id), _int(ilvl)
+    return None if num is None or level is None else (num, kind, max(level, 0))
 
 
 def _num_kind(ctx: _Ctx, num_id: str, ilvl: str) -> str:
-    numbering = ctx.doc.part.numbering_part.element
+    numbering = ctx.numbering()
+    if numbering is None:  # no numbering part: a list we can't classify is a bullet list
+        return "ul"
     num = next((n for n in numbering.findall(qn("w:num")) if n.get(qn("w:numId")) == num_id), None)
     abstract_id = _val(num, "w:abstractNumId")
     abstract = next(
@@ -231,11 +254,25 @@ def _char_style_rprs(ctx: _Ctx, rpr: Any) -> list[Any]:
     return out
 
 
+def _font_name(run: Run) -> str | None:
+    try:
+        return run.font.name
+    except Exception:
+        return None
+
+
+def _font_size(run: Run) -> float | None:
+    try:
+        size = run.font.size
+    except Exception:  # w:sz isn't a number
+        return None
+    return None if size is None else round(size.pt, 2)
+
+
 def _run_fmt(ctx: _Ctx, r: etree._Element, in_heading: bool, in_link: bool) -> _Fmt:
     """Direct run formatting, falling back to the run's character style chain (never the
     paragraph style or document defaults: a saved-over file keeps those itself)."""
     run = Run(r, None)  # type: ignore[arg-type]
-    font = run.font
     rpr = r.find(qn("w:rPr"))
     chain = _char_style_rprs(ctx, rpr)
 
@@ -260,8 +297,8 @@ def _run_fmt(ctx: _Ctx, r: etree._Element, in_heading: bool, in_link: bool) -> _
         italic=resolved("w:i"),
         underline=resolved("w:u", from_styles=not in_link),
         strike=resolved("w:strike"),
-        family=font.name,
-        size=None if in_heading or font.size is None else round(font.size.pt, 2),
+        family=_font_name(run),
+        size=None if in_heading else _font_size(run),
         color=color,
         background=background,
     )
@@ -295,7 +332,7 @@ def _picture(ctx: _Ctx, drawing: etree._Element) -> str | None:
     extent = drawing.find(f".//{_WP}extent")
     if extent is not None:
         for key, attr in (("cx", "width"), ("cy", "height")):
-            px = round(int(extent.get(key) or 0) / _EMU_PER_PX)
+            px = round(_int(extent.get(key) or "0", 0) / _EMU_PER_PX)
             if px > 0:
                 attrs += f' {attr}="{px}"'
     return f"<img{attrs}>"
@@ -453,10 +490,7 @@ def _para_style(p: etree._Element, with_indent: bool, page_break: bool) -> str:
     ind = ppr.find(qn("w:ind")) if ppr is not None else None
     left = ind.get(qn("w:left")) if ind is not None else None
     if with_indent and left:
-        try:
-            level = round(int(left) / 20 / 36)
-        except ValueError:
-            level = 0
+        level = round(_int(left, 0) / 20 / 36)
         if level >= 1:
             parts.append(f"margin-left:{36 * level}pt")
     pbb = ppr.find(qn("w:pageBreakBefore")) if ppr is not None else None
@@ -589,7 +623,7 @@ class _Blocks:
             col = 0
             for tc in tr.findall(qn("w:tc")):
                 tcpr = tc.find(qn("w:tcPr"))
-                span = int(_val(tcpr, "w:gridSpan") or 1)
+                span = _int(_val(tcpr, "w:gridSpan") or "1", 1)
                 vm = tcpr.find(qn("w:vMerge")) if tcpr is not None else None
                 if vm is not None and vm.get(qn("w:val")) != "restart" and col in started:
                     started[col]["rowspan"] += 1
@@ -631,9 +665,12 @@ def _collect_warnings(ctx: _Ctx) -> None:
             section.first_page_footer,
             section.even_page_footer,
         ):
-            if part.is_linked_to_previous:
+            try:
+                if part.is_linked_to_previous:
+                    continue
+                el = part._element
+            except Exception:  # the header's part is missing from the file
                 continue
-            el = part._element
             if "".join(el.itertext()).strip() or el.find(f".//{_W}drawing") is not None:
                 ctx.warn(W_HEADERS)
     found: set[str] = set()
@@ -645,7 +682,7 @@ def _collect_warnings(ctx: _Ctx) -> None:
             continue
         if tag in (_W + "txbxContent", _WPS + "wsp", _V + "shape"):
             found.add(W_TEXTBOX)
-        elif tag == _W + "cols" and int(el.get(qn("w:num")) or 1) > 1:
+        elif tag == _W + "cols" and _int(el.get(qn("w:num")) or "1", 1) > 1:
             found.add(W_COLUMNS)
         elif tag in _TRACKED:
             found.add(W_TRACKED)
@@ -664,10 +701,83 @@ def _collect_warnings(ctx: _Ctx) -> None:
             ctx.warn(text)
 
 
+_PKG_REL = "{http://schemas.openxmlformats.org/package/2006/relationships}Relationship"
+_PKG_OVERRIDE = "{http://schemas.openxmlformats.org/package/2006/content-types}Override"
+
+
+def _repaired(data: bytes) -> bytes | None:
+    """The package with relationships to missing parts dropped and part names matched the way
+    Word matches them (ignoring case, percent-encoding); None when nothing needed changing."""
+    try:
+        with zipfile.ZipFile(BytesIO(data)) as zin:
+            members = {i.filename: zin.read(i) for i in zin.infolist() if not i.is_dir()}
+    except Exception:
+        return None
+    lookup = {name.lower(): name for name in members}
+
+    def actual(name: str) -> str | None:
+        return name if name in members else lookup.get(unquote(name).lower())
+
+    changed = False
+    for name, blob in list(members.items()):
+        if name == "[Content_Types].xml":
+            tag, attr = _PKG_OVERRIDE, "PartName"
+        elif name.endswith(".rels"):
+            tag, attr = _PKG_REL, "Target"
+        else:
+            continue
+        try:
+            root = etree.fromstring(blob)
+        except etree.XMLSyntaxError:
+            continue
+        source_dir = posixpath.dirname(posixpath.dirname(name))  # word/_rels/x.rels -> word
+        touched = False
+        for el in list(root.iter(tag)):
+            target = el.get(attr) or ""
+            if tag == _PKG_REL and el.get("TargetMode") == "External":
+                continue
+            if target.startswith("/"):
+                full = target.lstrip("/")
+            else:
+                full = posixpath.normpath(posixpath.join(source_dir, target))
+            found = actual(full)
+            if found is None:
+                if tag == _PKG_REL:  # dangling: python-docx would refuse the whole file
+                    root.remove(el)
+                    touched = True
+            elif target != "/" + found:
+                el.set(attr, "/" + found)
+                touched = True
+        if touched:
+            members[name] = etree.tostring(root, xml_declaration=True, encoding="UTF-8")
+            changed = True
+    if not changed:
+        return None
+    out = BytesIO()
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zout:
+        for name, blob in members.items():
+            zout.writestr(name, blob)
+    return out.getvalue()
+
+
+def _open_package(path: Path) -> Any:
+    """``docx.Document`` for ``path``; a package python-docx refuses (a relationship to a part
+    that isn't there, part names written in another case) is repaired in memory first."""
+    data = Path(path).read_bytes()
+    try:
+        return docx.Document(BytesIO(data))
+    except Exception as first:
+        fixed = _repaired(data)
+        if fixed is None:
+            raise
+        log.info("Opening %s after repairing its package (%s)", path, first)
+        return docx.Document(BytesIO(fixed))
+
+
 def read(path: Path) -> OpenedDocument:
     """Read ``path`` (a DOCX) as the editor's HTML subset, its pictures and warnings."""
     try:
-        document = docx.Document(str(path))
+        document = _open_package(path)
     except Exception as exc:
         log.warning("Could not open %s as DOCX: %s", path, exc, exc_info=True)
         raise ConversionError("This Word document could not be opened.") from exc
