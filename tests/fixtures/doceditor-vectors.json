@@ -153,10 +153,10 @@
   },
   {
    "md": "- one\n  - two\n    - three\n- four\n\n1. a\n2. b\n",
-   "html": "<ul><li>one</li><li>two<ul><li>three</li></ul></li><li>four</li></ul><ol><li>a</li><li>b</li></ol>",
+   "html": "<ul><li>one<ul><li>two<ul><li>three</li></ul></li></ul></li><li>four</li></ul><ol><li>a</li><li>b</li></ol>",
    "front_matter": "",
    "warnings": [],
-   "md_out": "- one\n- two\n    - three\n- four\n\n1. a\n1. b\n"
+   "md_out": "- one\n    - two\n        - three\n- four\n\n1. a\n1. b\n"
   },
   {
    "md": "| A | B |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |\n",
@@ -214,6 +214,20 @@
     "inline code, small headings and picture descriptions"
    ],
    "md_out": "### Small\n\nline one<br>line two\n"
+  },
+  {
+   "md": "- a\n  - b\n    - c\n\n1. x\n   - y\n",
+   "html": "<ul><li>a<ul><li>b<ul><li>c</li></ul></li></ul></li></ul><ol><li>x<ul><li>y</li></ul></li></ol>",
+   "front_matter": "",
+   "warnings": [],
+   "md_out": "- a\n    - b\n        - c\n\n1. x\n    - y\n"
+  },
+  {
+   "md": "***bi*** and **_x_** and [a b](<u v>)\n",
+   "html": "<p><i><b>bi</b></i> and <b><i>x</i></b> and <a href=\"u%20v\">a b</a></p>",
+   "front_matter": "",
+   "warnings": [],
+   "md_out": "***bi*** and **_x_** and [a b](u%20v)\n"
   },
   {
    "md": "Café — *Blåbær* 你好\n\n* star\n* list\n",

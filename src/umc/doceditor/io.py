@@ -8,7 +8,7 @@ import tempfile
 import threading
 from pathlib import Path
 
-import markdown
+from markdown_it import MarkdownIt
 
 from umc.core.detect import detect
 from umc.core.errors import ConversionError
@@ -26,9 +26,8 @@ from umc.doceditor.types import (
 from umc.tools.htmlpdf import read_text
 
 EMPTY = "<p></p>"
-MD_EXTENSIONS = ["tables", "fenced_code", "sane_lists"]  # md_writer writes what these read
-# A table with only a header row gets one empty body row from Python-Markdown.
-_LONE_EMPTY_ROW = re.compile(r"</thead>\s*<tbody>\s*<tr>\s*(?:<td></td>\s*)+</tr>\s*</tbody>")
+# The website reads Markdown with the same configuration (GitHub-style CommonMark).
+_MD = MarkdownIt("commonmark", {"html": True}).enable(["table", "strikethrough"])
 NBSP = "\xa0"
 # Fenced code blocks and `code spans`: their text is never Markdown syntax.
 _FENCED = re.compile(r"^ {0,3}(`{3,}|~{3,})[^\n]*\n.*?^ {0,3}\1[^\n]*$", re.M | re.S)
@@ -38,7 +37,7 @@ _FOOTNOTE = re.compile(r"(?<!\\)\[\^")
 _SMALL_HEADING = re.compile(r"^ {0,3}#{4,6}(?:[ \t]|$)", re.M)
 _ALT_TEXT = re.compile(r"(?<!\\)!\[[^\]\n]+\]\(")
 _FRONT_KEY = re.compile(r"^[A-Za-z0-9_-]+\s*:")
-# A line that starts a block of raw HTML (Python-Markdown's block-level tags; not comments).
+# A line that starts a block of raw HTML (CommonMark's block-level tags; not comments).
 _BLOCK_HTML = re.compile(
     r"^ {0,3}</?(?:address|article|aside|blockquote|details|div|dl|fieldset|figcaption|figure"
     r"|footer|form|h[1-6]|header|hgroup|hr|main|menu|nav|ol|p|pre|section|table|ul|canvas|dd"
@@ -46,6 +45,11 @@ _BLOCK_HTML = re.compile(
     r"|video|audio|svg)\b",
     re.I | re.M,
 )
+
+
+def md_to_html(text: str) -> str:
+    """Markdown as HTML the way GitHub reads it (markdown-it, CommonMark + tables + strike)."""
+    return _MD.render(text)
 
 
 def _keep_spaces(line: str) -> str:
@@ -98,8 +102,7 @@ def open_document(path: Path, cancel_event: threading.Event | None = None) -> Op
         doc = read(path)
     elif ext == "md":
         front, text = split_front_matter(read_text(path))
-        body = markdown.markdown(text, extensions=MD_EXTENSIONS)
-        body = _LONE_EMPTY_ROW.sub("</thead>", body)  # added by Python-Markdown, not the file
+        body = md_to_html(text)
         out, images, warnings = normalise_html_report(body, base_dir=path.parent)
         if _has_markdown_extras(text):
             warnings.append(W_MDEXTRA)

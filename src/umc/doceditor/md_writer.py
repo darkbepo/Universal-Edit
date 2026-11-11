@@ -1,9 +1,9 @@
 """Write the editor's HTML subset as Markdown (no Qt).
 
-The output is read back by ``io.open_document`` (Python-Markdown with the ``tables``,
-``fenced_code`` and ``sane_lists`` extensions) to the same subset, so saving a Markdown file
-over itself never changes it. What Markdown has no syntax for is written as inline HTML
-(``<u>``, ``<s>``, ``<br>``, styled ``<span>``), which Python-Markdown passes through.
+The output is read back by ``io.open_document`` (markdown-it: CommonMark with tables and
+strikethrough) to the same subset, so saving a Markdown file over itself never changes it.
+What Markdown has no syntax for is written as inline HTML
+(``<u>``, ``<s>``, ``<br>``, styled ``<span>``), which markdown-it passes through.
 Paragraph alignment, indents and page breaks have no Markdown form and are left out.
 """
 
@@ -17,7 +17,7 @@ import lxml.html
 from lxml import etree
 
 NBSP = "\xa0"
-# Escaped wherever they appear in text (Python-Markdown reads "\\x" back as "x").
+# Escaped wherever they appear in text (CommonMark reads "\\x" back as "x").
 _ALWAYS = {"\\": "\\\\", "`": "\\`", "*": "\\*", "_": "\\_", "[": "\\[", "]": "\\]"}
 _ENTITIES = {"&": "&amp;", "<": "&lt;", ">": "&gt;"}
 # At the start of a line these would start a heading, quote, list, rule or code fence.
@@ -97,6 +97,16 @@ class _Inline:
             if not inner.strip(" "):
                 return inner
             mark = "**" if tag == "b" else "*"
+            parent = node.getparent()
+            if (  # "***x***" is read as <i><b>; "**_x_**" as <b><i>
+                tag == "i"
+                and parent is not None
+                and _tag(parent) == "b"
+                and not parent.text
+                and parent[0] is node
+                and not node.tail
+            ):
+                mark = "_"
             lead = inner[: len(inner) - len(inner.lstrip(" "))]
             trail = inner[len(inner.rstrip(" ")) :]
             return f"{lead}{mark}{inner.strip(' ')}{mark}{trail}"
@@ -111,7 +121,7 @@ class _Inline:
 
 
 def _link_target(url: str) -> str:
-    url = url.replace("<", "%3C").replace(">", "%3E")
+    url = url.replace("<", "%3C").replace(">", "%3E").replace(" ", "%20")  # as markdown-it reads it
     return f"<{url}>" if re.search(r"[\s()]", url) else url
 
 

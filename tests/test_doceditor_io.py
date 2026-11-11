@@ -204,3 +204,21 @@ def test_open_odt_round_trip(tmp_path):
     odt = convert_file(src, "odt", tmp_path / "a.odt")
     d = open_document(odt)
     assert d.source_format == "odt" and "<h1>Title</h1>" in d.html
+
+
+def test_two_space_nested_list(tmp_path):
+    from tests.test_doceditor_fixes import content_of
+    from umc.doceditor.save import save_document
+
+    p = tmp_path / "a.md"
+    p.write_text("- one\n  - two\n    - three\n", encoding="utf-8")
+    want = "<ul><li>one<ul><li>two<ul><li>three</li></ul></li></ul></li></ul>"
+    assert open_document(p).html == want
+    for _ in range(3):
+        save_document(content_of(open_document(p), p), p, "md")
+        assert open_document(p).html == want
+
+
+def test_md_to_html_is_the_shared_configuration():
+    assert io_mod.md_to_html("~~x~~\n").strip() == "<p><s>x</s></p>"
+    assert "<table>" in io_mod.md_to_html("| a |\n|---|\n| 1 |\n")

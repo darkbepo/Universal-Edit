@@ -341,6 +341,11 @@ def _doc_editor_check(d: Path) -> list[Path]:
     with pymupdf.open(pdf_out) as pdf_doc:
         if "Self-test" not in pdf_doc[0].get_text():
             raise RuntimeError("PDF text is missing the heading")
+    md = d / "notes.md"
+    md.write_text("- one\n  - two\n\n| a | b |\n|---|---|\n| 1 | 2 |\n", encoding="utf-8")
+    low = open_document(md).html.lower()
+    if "<ul><li>one<ul><li>two" not in low or "<table" not in low:
+        raise RuntimeError("Markdown (markdown-it) lost the nested list or the table")
     return [docx, pdf_out]
 
 

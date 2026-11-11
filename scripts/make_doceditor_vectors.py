@@ -83,6 +83,8 @@ MARKDOWN = [
     {"md": "A [link](https://example.com/) and an ![alt](https://example.com/x.png)\n"},
     {"md": "Text with `code` and a footnote[^1].\n\n[^1]: note\n"},
     {"md": "#### Small\n\nline one  \nline two\n"},
+    {"md": "- a\n  - b\n    - c\n\n1. x\n   - y\n"},
+    {"md": "***bi*** and **_x_** and [a b](<u v>)\n"},
     {"md": "Café — *Blåbær* 你好\n\n* star\n* list\n"},
 ]
 TXT = [

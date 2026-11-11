@@ -21,6 +21,7 @@ dependencies = [
     "openpyxl>=3.1",
     "mammoth>=1.8",
     "Markdown>=3.6",
+    "markdown-it-py>=3.0",
     "PyYAML>=6.0",
     "trimesh>=4.0",
     "cascadio>=0.1",

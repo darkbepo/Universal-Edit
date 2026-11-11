@@ -635,7 +635,7 @@ def _page(html: str) -> etree._Element | None:
 
 
 def _is_language_class(value: str) -> bool:
-    """Python-Markdown marks fenced code with class="language-x": not the page's styling."""
+    """markdown-it marks fenced code with class="language-x": not the page's styling."""
     return all(c.startswith("language-") for c in value.split())
 
 
