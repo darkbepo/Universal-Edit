@@ -9,34 +9,35 @@ from __future__ import annotations
 
 import html as _html
 import logging
-import posixpath
 import re
-import zipfile
 from collections.abc import Iterator
 from dataclasses import dataclass, field, replace
 from io import BytesIO
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote
 
-import docx
-from docx.enum.style import WD_STYLE_TYPE
 from docx.oxml.ns import qn
 from docx.text.run import Run
 from lxml import etree
 from PIL import Image
 
 from umc.core.errors import ConversionError
+from umc.doceditor.docx_package import open_package
+from umc.doceditor.docx_styles import (
+    list_info,
+    num_pr,
+    style_chain,
+    to_int,
+    undefined_style,
+    w_val,
+)
 from umc.doceditor.html_subset import normalise_html
 from umc.doceditor.types import (
-    MAX_UNPACKED_BYTES,
-    TOO_LARGE,
     W_COLUMNS,
     W_COMMENTS,
     W_EQUATIONS,
     W_FIELDS,
     W_HEADERS,
-    W_LISTSTYLE,
     W_NOTES,
     W_OBJECTS,
     W_PICTURES,
@@ -178,19 +179,6 @@ class _Ctx:
             self.warnings.append(text)
 
 
-def _int(text: str | None, default: int | None = None) -> int | None:
-    """``int(text)``, or ``default`` when it isn't a whole number (Word files can be odd)."""
-    try:
-        return int(text)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        return default
-
-
-def _val(el: Any, name: str) -> str | None:
-    child = el.find(qn(name)) if el is not None else None
-    return child.get(qn("w:val")) if child is not None else None
-
-
 def _alternative(node: etree._Element) -> etree._Element | None:
     """The branch of an ``mc:AlternateContent`` that is read: its Fallback, else its Choice."""
     fallback = node.find(_MC + "Fallback")
@@ -227,70 +215,6 @@ def _symbol(code: str | None) -> str:
     return "" if bad else chr(n)
 
 
-# ----- styles and lists ------------------------------------------------------------------
-
-
-def _style_chain(ctx: _Ctx, p: etree._Element) -> list[Any]:
-    chain: list[Any] = []
-    style = ctx.doc.styles.get_by_id(p.style, WD_STYLE_TYPE.PARAGRAPH)
-    while style is not None and len(chain) < 20:
-        chain.append(style)
-        style = style.base_style
-    return chain
-
-
-def _undefined_style(ctx: _Ctx, p: etree._Element) -> str | None:
-    """The paragraph's style id when the file doesn't define it as a paragraph style."""
-    style_id = p.style
-    if not style_id:
-        return None
-    style = ctx.doc.styles.element.get_by_id(style_id)
-    return style_id if style is None or style.get(qn("w:type")) != "paragraph" else None
-
-
-def _num_pr(el: Any) -> Any:
-    ppr = el.find(qn("w:pPr")) if el is not None else None
-    return ppr.find(qn("w:numPr")) if ppr is not None else None
-
-
-def _list_info(ctx: _Ctx, p: etree._Element, chain: list[Any]) -> tuple[int, str, int] | None:
-    """(numId, "ul" | "ol", ilvl) for a list paragraph, else None."""
-    sources = [_num_pr(p)] + [_num_pr(s.element) for s in chain]
-    num_id = next((v for v in (_val(s, "w:numId") for s in sources) if v is not None), None)
-    ilvl = next((v for v in (_val(s, "w:ilvl") for s in sources) if v is not None), "0")
-    if not num_id or num_id == "0":
-        return None
-    kind = _num_kind(ctx, num_id, ilvl)
-    if kind == "none":
-        return None
-    num, level = _int(num_id), _int(ilvl)
-    return None if num is None or level is None else (num, kind, max(level, 0))
-
-
-def _num_kind(ctx: _Ctx, num_id: str, ilvl: str) -> str:
-    numbering = ctx.numbering()
-    if numbering is None:  # no numbering part: a list we can't classify is a bullet list
-        return "ul"
-    num = next((n for n in numbering.findall(qn("w:num")) if n.get(qn("w:numId")) == num_id), None)
-    abstract_id = _val(num, "w:abstractNumId")
-    abstract = next(
-        (
-            a
-            for a in numbering.findall(qn("w:abstractNum"))
-            if a.get(qn("w:abstractNumId")) == abstract_id
-        ),
-        None,
-    )
-    if abstract is None:
-        return "ul"
-    levels = abstract.findall(qn("w:lvl"))
-    lvl = next((x for x in levels if x.get(qn("w:ilvl")) == ilvl), levels[0] if levels else None)
-    fmt = _val(lvl, "w:numFmt")
-    if fmt not in (None, "none", "bullet", "decimal"):
-        ctx.warn(W_LISTSTYLE)  # still opened as a numbered list
-    return "none" if fmt == "none" else "ul" if fmt == "bullet" else "ol"
-
-
 # ----- inline content --------------------------------------------------------------------
 
 
@@ -306,21 +230,21 @@ def _flag(rpr: Any, name: str) -> bool | None:
 
 
 def _rgb(rpr: Any) -> str | None:
-    val = _val(rpr, "w:color")
+    val = w_val(rpr, "w:color")
     return f"#{val.lower()}" if val and len(val) == 6 and val.lower() != "auto" else None
 
 
 def _char_style_rprs(ctx: _Ctx, rpr: Any) -> list[Any]:
     """The rPr of the run's character style and the styles it is based on, nearest first."""
     out: list[Any] = []
-    style_id = _val(rpr, "w:rStyle")
+    style_id = w_val(rpr, "w:rStyle")
     styles = ctx.doc.styles.element
     while style_id and len(out) < 20:
         style = styles.get_by_id(style_id)
         if style is None or style.get(qn("w:type")) != "character":
             break
         out.append(style.find(qn("w:rPr")))
-        style_id = _val(style, "w:basedOn")
+        style_id = w_val(style, "w:basedOn")
     return out
 
 
@@ -359,7 +283,7 @@ def _run_fmt(ctx: _Ctx, r: etree._Element, in_heading: bool, in_link: bool) -> _
         color = next((c for c in map(_rgb, chain) if c), None)
     shd = rpr.find(qn("w:shd")) if rpr is not None else None
     fill = shd.get(qn("w:fill")) if shd is not None else None
-    background = _HIGHLIGHT.get(_val(rpr, "w:highlight") or "")
+    background = _HIGHLIGHT.get(w_val(rpr, "w:highlight") or "")
     if fill and fill.lower() not in ("auto", "ffffff"):
         background = f"#{fill.lower()}"
     return _Fmt(
@@ -402,7 +326,7 @@ def _picture(ctx: _Ctx, drawing: etree._Element) -> str | None:
     extent = drawing.find(f".//{_WP}extent")
     if extent is not None:
         for key, attr in (("cx", "width"), ("cy", "height")):
-            px = round(_int(extent.get(key) or "0", 0) / _EMU_PER_PX)
+            px = round(to_int(extent.get(key) or "0", 0) / _EMU_PER_PX)
             if px > 0:
                 attrs += f' {attr}="{px}"'
     return f"<img{attrs}>"
@@ -578,13 +502,13 @@ def _is_blank(p: etree._Element) -> bool:
 def _para_style(p: etree._Element, with_indent: bool, page_break: bool) -> str:
     ppr = p.find(qn("w:pPr"))
     parts = []
-    align = _ALIGN.get(_val(ppr, "w:jc") or "")
+    align = _ALIGN.get(w_val(ppr, "w:jc") or "")
     if align:
         parts.append(f"text-align:{align}")
     ind = ppr.find(qn("w:ind")) if ppr is not None else None
     left = ind.get(qn("w:left")) if ind is not None else None
     if with_indent and left:
-        level = round(_int(left, 0) / 20 / 36)
+        level = round(to_int(left, 0) / 20 / 36)
         if level >= 1:
             parts.append(f"margin-left:{36 * level}pt")
     pbb = ppr.find(qn("w:pageBreakBefore")) if ppr is not None else None
@@ -609,7 +533,7 @@ def _has_borders(ctx: _Ctx, tbl: etree._Element) -> bool:
     borders = tbl_pr.find(qn("w:tblBorders")) if tbl_pr is not None else None
     if borders is not None:
         return _visible(borders)
-    style_id = _val(tbl_pr, "w:tblStyle")
+    style_id = w_val(tbl_pr, "w:tblStyle")
     styles = ctx.doc.styles.element
     for _ in range(20):
         style = styles.get_by_id(style_id) if style_id else None
@@ -619,7 +543,7 @@ def _has_borders(ctx: _Ctx, tbl: etree._Element) -> bool:
         borders = style_pr.find(qn("w:tblBorders")) if style_pr is not None else None
         if borders is not None:
             return _visible(borders)
-        style_id = _val(style, "w:basedOn")
+        style_id = w_val(style, "w:basedOn")
     return False
 
 
@@ -674,12 +598,12 @@ class _Blocks:
         self._close_quote()
 
     def _paragraph(self, p: etree._Element) -> None:
-        chain = _style_chain(self.ctx, p)
+        chain = style_chain(self.ctx, p)
         kind = next((_BLOCK_STYLES[s.name] for s in chain if s.name in _BLOCK_STYLES), "p")
-        builtin = _undefined_style(self.ctx, p) if kind == "p" else None
+        builtin = undefined_style(self.ctx, p) if kind == "p" else None
         kind = _BUILTIN_IDS.get(builtin or "", kind)
-        info = _list_info(self.ctx, p, chain) if kind == "p" else None
-        if info is None and builtin and _num_pr(p) is None:
+        info = list_info(self.ctx, p, chain) if kind == "p" else None
+        if info is None and builtin and num_pr(p) is None:
             m = _BUILTIN_LIST.fullmatch(builtin)
             if m:  # ListBullet, ListBullet2 (one level deeper), ..., ListNumber
                 tag = "ul" if m.group(1) == "Bullet" else "ol"
@@ -728,7 +652,7 @@ class _Blocks:
             col = 0
             for tc in _wrapped(tr, _W + "tc"):
                 tcpr = tc.find(qn("w:tcPr"))
-                span = _int(_val(tcpr, "w:gridSpan") or "1", 1)
+                span = to_int(w_val(tcpr, "w:gridSpan") or "1", 1)
                 vm = tcpr.find(qn("w:vMerge")) if tcpr is not None else None
                 if vm is not None and vm.get(qn("w:val")) != "restart" and col in started:
                     started[col]["rowspan"] += 1
@@ -787,7 +711,7 @@ def _collect_warnings(ctx: _Ctx) -> None:
             continue
         if tag in (_W + "txbxContent", _WPS + "wsp", _V + "shape"):
             found.add(W_TEXTBOX)
-        elif tag == _W + "cols" and _int(el.get(qn("w:num")) or "1", 1) > 1:
+        elif tag == _W + "cols" and to_int(el.get(qn("w:num")) or "1", 1) > 1:
             found.add(W_COLUMNS)
         elif tag in _TRACKED:
             found.add(W_TRACKED)
@@ -820,97 +744,10 @@ def _collect_warnings(ctx: _Ctx) -> None:
             ctx.warn(text)
 
 
-_PKG_REL = "{http://schemas.openxmlformats.org/package/2006/relationships}Relationship"
-_PKG_OVERRIDE = "{http://schemas.openxmlformats.org/package/2006/content-types}Override"
-
-
-def _repaired(data: bytes) -> bytes | None:
-    """The package with relationships to missing parts dropped and part names matched the way
-    Word matches them (ignoring case, percent-encoding); None when nothing needed changing."""
-    try:
-        with zipfile.ZipFile(BytesIO(data)) as zin:
-            members = {i.filename: zin.read(i) for i in zin.infolist() if not i.is_dir()}
-    except Exception:
-        return None
-    lookup = {name.lower(): name for name in members}
-
-    def actual(name: str) -> str | None:
-        return name if name in members else lookup.get(unquote(name).lower())
-
-    changed = False
-    for name, blob in list(members.items()):
-        if name == "[Content_Types].xml":
-            tag, attr = _PKG_OVERRIDE, "PartName"
-        elif name.endswith(".rels"):
-            tag, attr = _PKG_REL, "Target"
-        else:
-            continue
-        try:
-            root = etree.fromstring(blob)
-        except etree.XMLSyntaxError:
-            continue
-        source_dir = posixpath.dirname(posixpath.dirname(name))  # word/_rels/x.rels -> word
-        touched = False
-        for el in list(root.iter(tag)):
-            target = el.get(attr) or ""
-            if tag == _PKG_REL and el.get("TargetMode") == "External":
-                continue
-            if target.startswith("/"):
-                full = target.lstrip("/")
-            else:
-                full = posixpath.normpath(posixpath.join(source_dir, target))
-            found = actual(full)
-            if found is None:
-                if tag == _PKG_REL:  # dangling: python-docx would refuse the whole file
-                    root.remove(el)
-                    touched = True
-            elif target != "/" + found:
-                el.set(attr, "/" + found)
-                touched = True
-        if touched:
-            members[name] = etree.tostring(root, xml_declaration=True, encoding="UTF-8")
-            changed = True
-    if not changed:
-        return None
-    out = BytesIO()
-    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zout:
-        for name, blob in members.items():
-            zout.writestr(name, blob)
-    return out.getvalue()
-
-
-def _check_unpacked_size(data: bytes) -> None:
-    """Refuse a package whose parts would unpack to more than MAX_UNPACKED_BYTES (a zip bomb).
-    The sizes are the ones the zip declares: ``zipfile`` never inflates an entry past its
-    declared size (such a part fails its CRC check), so lying headers are bounded too."""
-    try:
-        with zipfile.ZipFile(BytesIO(data)) as z:
-            total = sum(info.file_size for info in z.infolist())
-    except Exception:
-        return  # not a zip: python-docx says so
-    if total > MAX_UNPACKED_BYTES:
-        raise ConversionError(TOO_LARGE, details=f"{total} bytes unpacked")
-
-
-def _open_package(path: Path) -> Any:
-    """``docx.Document`` for ``path``; a package python-docx refuses (a relationship to a part
-    that isn't there, part names written in another case) is repaired in memory first."""
-    data = Path(path).read_bytes()
-    _check_unpacked_size(data)
-    try:
-        return docx.Document(BytesIO(data))
-    except Exception as first:
-        fixed = _repaired(data)
-        if fixed is None:
-            raise
-        log.info("Opening %s after repairing its package (%s)", path, first)
-        return docx.Document(BytesIO(fixed))
-
-
 def read(path: Path) -> OpenedDocument:
     """Read ``path`` (a DOCX) as the editor's HTML subset, its pictures and warnings."""
     try:
-        document = _open_package(path)
+        document = open_package(path)
     except ConversionError:
         raise
     except Exception as exc:

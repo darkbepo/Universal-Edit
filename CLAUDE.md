@@ -242,7 +242,10 @@ src/umc/
   doceditor/             # document editor model — pure Python, no Qt
     types.py             # SaveContent / OpenedDocument, "parts that will be lost" warnings, limits
     html_subset.py       # the small HTML the editor shows and saves (sanitise, picture names)
+    html_scan.py         # pre-parse scan for html_subset (numeric refs, raw text, self-closing tags)
     docx_reader.py, docx_writer.py  # DOCX ↔ that HTML subset (own code, python-docx / XML)
+    docx_package.py      # opening a DOCX: zip-bomb check, in-memory repair (mirrors web docx-package.ts)
+    docx_styles.py       # paragraph styles and list kinds for docx_reader (mirrors web docx-styles.ts)
     routes.py            # other formats go through the document route planner (Pandoc/LibreOffice)
     io.py, save.py       # open_document(path) → OpenedDocument; save_document(content, dest, fmt)
   editor/                # image editor model — pure Python, no Qt
