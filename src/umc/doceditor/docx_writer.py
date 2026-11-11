@@ -14,6 +14,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import re
+from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass, replace
 from io import BytesIO
@@ -535,10 +536,20 @@ def _from_template(template: Path) -> Any:
     return document
 
 
-def write(html: str, images: DocImages, dest: Path, template: Path | None = None) -> Path:
+TEMPLATE_LOST = "Couldn't keep the original file's layout; it was saved with default styles."
+
+
+def write(
+    html: str,
+    images: DocImages,
+    dest: Path,
+    template: Path | None = None,
+    on_warning: Callable[[str], None] | None = None,
+) -> Path:
     """Write ``html`` (the editor's subset) and its ``images`` as a DOCX at ``dest``.
 
-    ``template``: a DOCX whose styles, page setup, headers and footers the result keeps.
+    ``template``: a DOCX whose styles, page setup, headers and footers the result keeps; when it
+    can't be used, ``on_warning`` gets ``TEMPLATE_LOST`` and a new document is written.
     """
     html, _ = normalise_html(html)
     document = None
@@ -549,6 +560,8 @@ def write(html: str, images: DocImages, dest: Path, template: Path | None = None
             log.warning(
                 "Can't use %s as the template; writing a new document", template, exc_info=True
             )
+            if on_warning is not None:
+                on_warning(TEMPLATE_LOST)
     if document is None:
         document = docx.Document()
     _ensure_styles(document)

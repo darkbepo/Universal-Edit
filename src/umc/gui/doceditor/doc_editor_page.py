@@ -95,6 +95,7 @@ class DocEditorPage(QWidget):
         self._pending_tool: tuple[str, str, str, Callable[[], object]] | None = None
         self._save_target: tuple[Path, str] | None = None  # set by Save as / a finished save
         self._saving_target: tuple[Path, str] | None = None
+        self._save_notices: list[str] = []
         self._save_revision = -1
         self._last_save_ok = False
         self._warned = False
@@ -501,9 +502,10 @@ class DocEditorPage(QWidget):
         self._last_save_ok = False
         self._update_buttons()
         self.show_message(f"Saving “{path.name}”…")
+        self._save_notices = notices = []  # filled on the save thread, shown when it is done
         self._start(
             "save",
-            lambda: save_document(content, path, fmt),
+            lambda: save_document(content, path, fmt, on_warning=notices.append),
             f"Couldn't save “{path.name}”. See the log for details.",
             self._saved_ok,
             self._save_failed,
@@ -523,7 +525,7 @@ class DocEditorPage(QWidget):
         doc = self.view.document()
         if doc.revision() == self._save_revision:  # edits made while saving stay unsaved
             doc.setModified(False)
-        self.show_message(f"Saved “{path.name}”.")
+        self.show_message(" ".join([f"Saved “{path.name}”.", *self._save_notices]))
 
     @Slot(str)
     def _save_failed(self, message: str) -> None:

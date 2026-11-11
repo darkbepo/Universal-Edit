@@ -690,7 +690,7 @@ def test_save_as_cancelled(qtbot, page, tmp_path, monkeypatch):
 def test_failed_save_stays_unsaved(qtbot, page, tmp_path, monkeypatch):
     _open(qtbot, page, _txt(tmp_path))
 
-    def boom(content, dest, fmt, cancel_event=None):
+    def boom(content, dest, fmt, cancel_event=None, **kwargs):
         raise ConversionError("Couldn't save “a.txt” — it may be open in another program.")
 
     monkeypatch.setattr(page_mod, "save_document", boom)
@@ -707,7 +707,7 @@ def test_edits_during_save_stay_unsaved(qtbot, page, tmp_path, monkeypatch):
     started, release = threading.Event(), threading.Event()
     real = page_mod.save_document
 
-    def slow(content, dest, fmt, cancel_event=None):
+    def slow(content, dest, fmt, cancel_event=None, **kwargs):
         started.set()
         release.wait(20)
         return real(content, dest, fmt, cancel_event)
@@ -789,7 +789,7 @@ def test_save_tool_missing_retries(qtbot, page, tmp_path, monkeypatch):
     calls = []
     real = page_mod.save_document
 
-    def missing(content, dest, fmt, cancel_event=None):
+    def missing(content, dest, fmt, cancel_event=None, **kwargs):
         calls.append(fmt)
         if len(calls) == 1:
             raise ToolMissingError("Pandoc", "https://example.org/", "save this document")
@@ -893,7 +893,7 @@ def test_drop_during_save_opens_after(qtbot, page, tmp_path, monkeypatch, media)
     started, release = threading.Event(), threading.Event()
     real = page_mod.save_document
 
-    def slow(content, dest, fmt, cancel_event=None):
+    def slow(content, dest, fmt, cancel_event=None, **kwargs):
         started.set()
         release.wait(20)
         return real(content, dest, fmt, cancel_event)
@@ -972,3 +972,24 @@ def test_images_still_open_image_editor(qtbot, window, media):
     assert window.edit_kind() == "image"
     window.enter_edit()
     assert window.stack.currentWidget() is window.editor
+
+
+def test_save_tells_when_the_original_layout_was_lost(qtbot, page, tmp_path):
+    p = write("<p>Hello</p>", {}, tmp_path / "a.docx")
+    _open(qtbot, page, p)
+    p.write_bytes(b"no longer a Word file")  # the template can't be used any more
+    out = tmp_path / "copy.docx"
+    page._start_save(out, "docx")
+    qtbot.waitUntil(lambda: page.message.text().startswith("Saved"), timeout=30000)
+    text = page.message.text()
+    assert "Saved “copy.docx”." in text
+    assert "Couldn't keep the original file's layout; it was saved with default styles." in text
+    assert page.message.objectName() == "Muted"
+
+
+def test_save_with_a_usable_template_has_no_layout_notice(qtbot, page, tmp_path):
+    p = write("<p>Hello</p>", {}, tmp_path / "a.docx")
+    _open(qtbot, page, p)
+    page._start_save(tmp_path / "copy.docx", "docx")
+    qtbot.waitUntil(lambda: page.message.text().startswith("Saved"), timeout=30000)
+    assert page.message.text() == "Saved “copy.docx”."

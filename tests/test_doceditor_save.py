@@ -137,3 +137,24 @@ def test_other_oserror_has_its_own_message(tmp_path):
         save_document(CONTENT, tmp_path / "f" / "a.docx", "docx")
     assert "open in another program" not in str(e.value)
     assert "Couldn't save “a.docx”" in str(e.value)
+
+
+TEMPLATE_LOST = "Couldn't keep the original file's layout; it was saved with default styles."
+
+
+def test_unusable_template_is_reported_and_saving_still_works(tmp_path):
+    bad = tmp_path / "template.docx"
+    bad.write_bytes(b"not a zip")
+    notices: list[str] = []
+    content = SaveContent(CONTENT.html, CONTENT.images, template=bad)
+    out = save_document(content, tmp_path / "a.docx", "docx", on_warning=notices.append)
+    assert notices == [TEMPLATE_LOST]
+    assert read(out).html.startswith("<h1>Hi</h1>")
+
+
+def test_usable_template_gives_no_notice(tmp_path):
+    good = save_document(CONTENT, tmp_path / "t.docx", "docx")
+    notices: list[str] = []
+    content = SaveContent(CONTENT.html, CONTENT.images, template=good)
+    save_document(content, tmp_path / "a.docx", "docx", on_warning=notices.append)
+    assert notices == []

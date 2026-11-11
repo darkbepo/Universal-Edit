@@ -9,6 +9,7 @@ import re
 import shutil
 import tempfile
 import threading
+from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import quote
 
@@ -106,11 +107,12 @@ def _build(
     stem: str,
     cancel_event: threading.Event | None,
     files_name: str = "",
+    on_warning: Callable[[str], None] | None = None,
 ) -> Path:
     """Write the document into ``tmp``; returns the file (md also makes ``tmp/{stem}_files``)."""
     out = tmp / f"{stem}.{fmt}"
     if fmt == "docx":
-        return write(content.html, content.images, out, content.template)
+        return write(content.html, content.images, out, content.template, on_warning)
     if fmt == "html":
         body = _data_uris(content.html, content.images)
         out.write_text(htmlpdf._page(content.title or stem, body), encoding="utf-8", newline="\n")
@@ -142,7 +144,9 @@ def _build(
         page = htmlpdf._page(stem, content.html)
         pdf.layout_html(page, htmlpdf.PAGE_CSS, [tmp], out, htmlpdf.A4, htmlpdf.MARGIN, stem)
         return out
-    docx_path = write(content.html, content.images, tmp / f"{stem}-src.docx", content.template)
+    docx_path = write(
+        content.html, content.images, tmp / f"{stem}-src.docx", content.template, on_warning
+    )
     return convert_file(docx_path, fmt, out, cancel_event)
 
 
@@ -151,8 +155,12 @@ def save_document(
     dest: Path,
     fmt: str,
     cancel_event: threading.Event | None = None,
+    on_warning: Callable[[str], None] | None = None,
 ) -> Path:
-    """Write ``content`` to ``dest`` as ``fmt``; ``dest`` is untouched if anything fails."""
+    """Write ``content`` to ``dest`` as ``fmt``; ``dest`` is untouched if anything fails.
+
+    ``on_warning`` is called with a plain-language notice for anything that still saved but
+    not as asked (the original file couldn't be used as the template)."""
     dest = Path(dest)
     fmt = fmt.lower().lstrip(".")
     saving = dest.with_name(dest.name + ".saving")
@@ -160,7 +168,7 @@ def save_document(
     try:
         with tempfile.TemporaryDirectory(prefix="umc-docedit-") as t:
             tmp = Path(t)
-            built = _build(content, fmt, tmp, dest.stem, cancel_event, files_name)
+            built = _build(content, fmt, tmp, dest.stem, cancel_event, files_name, on_warning)
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(built, saving)
             os.replace(saving, dest)
