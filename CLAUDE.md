@@ -205,6 +205,8 @@ src/umc/
     doceditor/           # document editor view: DocEditorPage (top bar, saving on a QThread),
                          #   text_view (QTextEdit), format_bar, find_bar, formatting (merge/toggle
                          #   helpers), html_export (QTextDocument → HTML subset)
+    editor3d/            # 3D viewer: ViewerPage (top bar, info panel, loads on a QThread), gl_view
+  editor3d/              # 3D viewer model — mesh.py (load + measurements), camera.py (orbit); no Qt
   doceditor/             # document editor model — pure Python, no Qt
     types.py             # SaveContent / OpenedDocument, "parts that will be lost" warnings, limits
     html_subset.py       # the small HTML the editor shows and saves (sanitise, picture names)
@@ -712,6 +714,19 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
       any document format; parts the editor can't keep (headers, comments, …) are listed in a
       notice before they are lost. Self-test step "document editor".
       Not yet: website, PDF editing, headers / footers, comments, tracked changes, zoom.
+   8. ✅ 3D viewer (both apps; first step of the 3D editor): Convert | Edit when every file is a 3D
+      model. Qt-free model `editor3d/` (`mesh.py` = `load_view_model` via the converter's
+      `load_model`, so mm rules match converting; stood on the bed like "Centre on the print bed";
+      size / triangles / parts / watertight / volume rows from `describe`; `camera.py` = Z-up orbit
+      camera, presets `VIEWS`). Web `web/src/editor3d/mesh.ts` / `camera.ts` are line-by-line
+      ports (`tests/test_editor3d.py` ↔ `web/tests/editor3d.test.ts`, same cases). Desktop view
+      `gui/editor3d/gl_view.py`: QOpenGLWidget, GLSL 1.20, no VAOs (runs on GL 2.1 / Mesa /
+      opengl32sw); blending must keep dest alpha (`glBlendFuncSeparate(…, ZERO, ONE)`) or Qt
+      composites the widget with wrong colours; Qt's offscreen platform has no QOpenGLWidget, so
+      `gl_problem()` makes the page show a message (pixel test runs under xvfb + xcb only). Web
+      page `ui/editor3d/page.ts` (three.js WebGL, models read in the worker by the hidden
+      `model3d-view` converter → `mesh.bin` + `info.json`; `window.__viewer3d` with `?e2e`).
+      Next: basic editing for 3D printing (plan in the session handoff / owner's go-ahead).
 11. Ideas: installer for the app itself (Inno Setup), presets, batch queue.
 
 ## Handoff — read this first (for the next Claude account)

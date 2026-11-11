@@ -2,7 +2,7 @@
 // Converter modules only *declare* engines; the heavy WebAssembly loads lazily in the worker.
 import { imageConverter, imagesToPdfConverter } from "../converters/image";
 import { dataConverter } from "../converters/data";
-import { modelConverter } from "../converters/model3d";
+import { model3dViewConverter, modelConverter } from "../converters/model3d";
 import { ocrImageConverter, ocrPdfConverter } from "../converters/ocr";
 import { archiveConverter, packConverter } from "../converters/archive";
 import { fontConverter } from "../converters/fonts";
@@ -45,6 +45,7 @@ export const CONVERTERS: Converter[] = [
   subtitleVideoConverter,
   packConverter,
   bgremoveConverter, // image editor only (no targets)
+  model3dViewConverter, // 3D viewer only (no targets)
 ];
 
 export const converterById = (id: string) => CONVERTERS.find((c) => c.id === id)!;

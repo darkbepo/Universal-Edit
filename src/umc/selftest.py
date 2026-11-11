@@ -265,6 +265,25 @@ def _doc_editor_check(d: Path) -> list[Path]:
     return [docx, pdf_out]
 
 
+def _viewer3d_check(d: Path) -> list[Path]:
+    """3D viewer: load a model for viewing, and the Qt OpenGL modules are packaged."""
+    import importlib
+
+    from umc.editor3d.mesh import load_view_model
+
+    importlib.import_module("PySide6.QtOpenGL")
+    importlib.import_module("PySide6.QtOpenGLWidgets")
+    importlib.import_module("umc.gui.editor3d.viewer_page")
+    d.mkdir(parents=True, exist_ok=True)
+    path = _box_stl(d)
+    m = load_view_model(path, "stl")
+    if [round(v, 3) for v in m.size] != [20, 10, 5] or not m.watertight:
+        raise RuntimeError(f"unexpected model: {m.size}, watertight={m.watertight}")
+    if m.triangle_buffer().shape != (36, 6):
+        raise RuntimeError("bad triangle buffer")
+    return [path]
+
+
 def run(report: Path) -> int:
     from PIL import Image
 
@@ -315,6 +334,7 @@ def run(report: Path) -> int:
             ("editor: layers -> ora -> png/jpg", lambda: _editor_check(d / "editor")),
             ("convert screen icons (QtSvg)", lambda: _icon_check(d / "icons")),
             ("document editor", lambda: _doc_editor_check(d / "doceditor")),
+            ("3D viewer (model + Qt OpenGL)", lambda: _viewer3d_check(d / "viewer3d")),
             ("mp4 -> webm", lambda: _convert([out / "img0 slideshow.mp4"], "webm", out)),
             ("mp4 -> gif", lambda: _convert([out / "img0 slideshow.mp4"], "video:gif", out)),
             ("mp4 -> frames", lambda: _convert([out / "img0 slideshow.mp4"], "frames:png", out)),

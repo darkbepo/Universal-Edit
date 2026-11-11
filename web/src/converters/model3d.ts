@@ -2,7 +2,7 @@
 // Same rules as the desktop app's model3d.py: everything is normalised to millimetres.
 // three.js loaders that need the DOM (3MF, GLB) are replaced by small readers here, because
 // conversions run in a Web Worker.
-import { opt, type Values } from "../core/options";
+import { defaults, opt, type Values } from "../core/options";
 import { ConversionError, type Converter, type InputFile, type OutputFile } from "../core/types";
 import { baseName, uniqueNamer } from "./util";
 
@@ -367,5 +367,42 @@ export const modelConverter: Converter = {
     }
     ctx.progress(1, "Done");
     return out;
+  },
+};
+
+// ------------------------------------------------------------------------- 3D viewer
+
+/** Hidden target: the 3D viewer asks the worker for "mesh.bin" + "info.json" (never offered). */
+export const VIEW_TARGET = { id: "view", label: "3D view", ext: "bin", group: "", converterId: "model3d-view" };
+
+export const model3dViewConverter: Converter = {
+  id: "model3d-view",
+  family: "model",
+  options: [],
+  targets: () => [],
+  async run(files, _target, _o, ctx) {
+    const T = await import("three");
+    const { meshStats, standOnBed } = await import("../editor3d/mesh");
+    const f = files[0];
+    const parts = await loadParts(T, f, defaults(modelConverter.options), (m) => ctx.progress(0.2, m));
+    const flat = parts.map((p) => (p.geometry.index ? p.geometry.toNonIndexed() : p.geometry).getAttribute("position").array as ArrayLike<number>);
+    const total = flat.reduce((n, a) => n + a.length, 0);
+    const positions = new Float32Array(total);
+    const starts: number[] = [];
+    let at = 0;
+    for (const a of flat) {
+      if (!a.length) continue;
+      starts.push(at / 9);
+      positions.set(a, at);
+      at += a.length;
+    }
+    if (!starts.length) throw new ConversionError(`“${f.name}” doesn't contain any triangles to show.`);
+    ctx.progress(0.8, "Measuring…");
+    standOnBed(positions);
+    const stats = meshStats(positions, starts);
+    return [
+      { name: "mesh.bin", data: new Uint8Array(positions.buffer), type: "application/octet-stream" },
+      { name: "info.json", data: new TextEncoder().encode(JSON.stringify(stats)), type: "application/json" },
+    ];
   },
 };

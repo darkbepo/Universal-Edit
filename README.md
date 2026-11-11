@@ -91,6 +91,7 @@ The browser version's source is in [`web/`](web/README.md).
 | Image editor layer effects: drop shadow, glow, outline and colour overlay on any layer, live and editable in their own windows (fx badge in the layers list); merging or Rasterize layer draws them in; kept in .ora | ✅ | ✅ |
 | Layered projects: save and open OpenRaster `.ora` (GIMP and Krita open it too); `.ora` → any image format | ✅ | ✅ |
 | **Document editor**: Convert \| Edit for one DOCX, ODT, RTF, DOC, Markdown, TXT or HTML file · headings, fonts, colours, highlight, lists, tables, pictures, links, page breaks · find & replace · undo · save back or as PDF and every document format | ✅ | 🔜 |
+| **3D viewer**: Convert \| Edit for 3D models (STL, OBJ, 3MF, PLY, GLB, OFF, STEP, IGES) · rotate / pan / zoom, front / top / side / 3D views, shaded / edges / wireframe, print-bed grid · size in mm, triangles, parts, watertight check, volume | ✅ | ✅ (no OFF) |
 | Files never leave your computer | ✅ | ✅ |
 | No install needed | ❌ | ✅ |
 | Save straight into a folder | ✅ | ✅ Chrome/Edge · ❌ Firefox/Safari (zip instead) |

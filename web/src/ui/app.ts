@@ -48,6 +48,7 @@ export function mountApp(root: HTMLElement): void {
   convertMode.setAttribute("aria-pressed", "true");
   editMode.setAttribute("aria-pressed", "false");
   let editor: import("./editor/page").EditorPage | null = null;
+  let viewer: import("./editor3d/page").ViewerPage | null = null;
   let editing = false;
   const topbar = h("header", { class: "topbar" },
     h("div", { class: "brand" }, h("span", { class: "logo" }, icon("transform", 18)), h("h1", {}, "Universal Media Converter")),
@@ -114,6 +115,20 @@ export function mountApp(root: HTMLElement): void {
   // ---------------------------------------------------------------- files
   async function addFiles(list: FileList | File[]) {
     const skipped: string[] = [];
+    if (editing && viewer && !viewer.el.hidden) {
+      // In the 3D viewer new models join the queue and are shown.
+      const added: InputFile[] = [];
+      for (const f of Array.from(list)) {
+        const d = await detect(f);
+        if (d?.family === "model" && !files.some((x) => x.name === d.name && x.file.size === d.file.size)) added.push(d);
+      }
+      if (!added.length) return;
+      files.push(...added);
+      refresh();
+      await viewer.open(files);
+      await viewer.showFile(added[0]);
+      return;
+    }
     if (editing && editor) {
       // In Edit mode new images become layers of the open picture.
       const images: InputFile[] = [];
@@ -170,10 +185,17 @@ export function mountApp(root: HTMLElement): void {
 
   // ---------------------------------------------------------------- Convert | Edit
   const appMain = root.querySelector("main.app") as HTMLElement;
-  const canEdit = () => files.length > 0 && files.every((f) => f.family === "image");
+  const editKind = (): "image" | "model" | null => {
+    if (!files.length) return null;
+    if (files.every((f) => f.family === "image")) return "image";
+    if (files.every((f) => f.family === "model")) return "model";
+    return null;
+  };
+  const canEdit = () => editKind() !== null;
   function showConverter() {
     editing = false;
     editor?.hide();
+    viewer?.hide();
     appMain.hidden = false;
     bar.hidden = false;
     convertMode.setAttribute("aria-pressed", "true");
@@ -181,6 +203,20 @@ export function mountApp(root: HTMLElement): void {
   }
   async function enterEdit() {
     if (editing || busy || !canEdit()) return;
+    if (editKind() === "model") {
+      if (!viewer) {
+        const { mountViewer } = await import("./editor3d/page");
+        viewer = mountViewer(root, { client, onBack: showConverter });
+      }
+      await viewer.open(files);
+      editing = true;
+      appMain.hidden = true;
+      bar.hidden = true;
+      convertMode.setAttribute("aria-pressed", "false");
+      editMode.setAttribute("aria-pressed", "true");
+      viewer.show();
+      return;
+    }
     if (!editor) {
       const { mountEditor } = await import("./editor/page");
       editor = mountEditor(root, { client, onBack: showConverter });
@@ -202,7 +238,7 @@ export function mountApp(root: HTMLElement): void {
   }
   editMode.addEventListener("click", () => void enterEdit());
   convertMode.addEventListener("click", () => {
-    if (editing && editor && !editor.maybeLeave()) return;
+    if (editing && editor && !editor.el.hidden && !editor.maybeLeave()) return;
     showConverter();
   });
 
@@ -221,7 +257,8 @@ export function mountApp(root: HTMLElement): void {
     filesHint.hidden = files.length < 2;
     right.hidden = !has;
     editMode.disabled = !canEdit();
-    editMode.title = canEdit() ? "Open the images in the image editor (each image becomes a layer)" : "Add images to edit them";
+    const kind = editKind();
+    editMode.title = kind === "model" ? "Open the 3D models in the 3D viewer" : kind === "image" ? "Open the images in the image editor (each image becomes a layer)" : "Add images or 3D models to edit them";
     const fams = new Set(files.map((f) => f.family));
     filesLabel.textContent = fams.size === 1
       ? `Queue · ${files.length} ${NOUN[files[0].family][files.length === 1 ? 0 : 1]}`

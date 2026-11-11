@@ -100,7 +100,7 @@ class MainWindow(QMainWindow):
         tl.addStretch(1)
 
         # Convert | Edit — Edit is enabled when the files can be edited: images,
-        # or exactly one editable document
+        # exactly one editable document, or 3D models (the 3D viewer)
         self.mode_bar = QFrame(objectName="ModeBar")
         mb = QHBoxLayout(self.mode_bar)
         mb.setContentsMargins(3, 3, 3, 3)
@@ -120,6 +120,7 @@ class MainWindow(QMainWindow):
         outer.addWidget(top)
         self.editor = None  # EditorPage, created on first use
         self.doc_editor = None  # DocEditorPage, created on first use
+        self.viewer3d = None  # ViewerPage (3D models), created on first use
         self._convert_size = None
 
         # ---------------------------------------------------------- body: two columns
@@ -404,11 +405,14 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------------ Convert | Edit
     def edit_kind(self) -> str | None:
-        """ "image" when every file is an image, "document" for one editable document."""
+        """ "image" when every file is an image, "document" for one editable document,
+        "model" when every file is a 3D model."""
         if not self.files:
             return None
         if all(f.family == MediaFamily.IMAGE for f in self.files):
             return "image"
+        if all(f.family == MediaFamily.MODEL for f in self.files):
+            return "model"
         if (
             len(self.files) == 1
             and self.files[0].family == MediaFamily.DOCUMENT
@@ -429,10 +433,12 @@ class MainWindow(QMainWindow):
         kind = self.edit_kind()
         if kind == "document":
             tip = "Open the document in the document editor"
+        elif kind == "model":
+            tip = "Open the 3D models in the 3D viewer"
         elif kind == "image":
             tip = "Open the images in the image editor (each image becomes a layer)"
         else:
-            tip = "Add images, or one text document, to edit them"
+            tip = "Add images, one text document, or 3D models to edit them"
         self.edit_mode.setToolTip(tip)
 
     def enter_edit(self) -> None:
@@ -455,6 +461,20 @@ class MainWindow(QMainWindow):
             self.edit_mode.setChecked(True)
             self.resize(max(self.width(), 1100), max(self.height(), 720))
             self.doc_editor.view.setFocus()
+            return
+        if kind == "model":
+            if self.viewer3d is None:
+                from umc.gui.editor3d.viewer_page import ViewerPage
+
+                self.viewer3d = ViewerPage()
+                self.viewer3d.back_requested.connect(self.leave_edit)
+                self.stack.addWidget(self.viewer3d)
+            self._convert_size = self.size()
+            self.viewer3d.open_files(list(self.files))
+            self.stack.setCurrentWidget(self.viewer3d)
+            self.edit_mode.setChecked(True)
+            self.resize(max(self.width(), 1100), max(self.height(), 720))
+            self.viewer3d.view.setFocus()
             return
         if self.editor is None:
             from umc.gui.editor.editor_page import EditorPage
@@ -710,10 +730,23 @@ class MainWindow(QMainWindow):
         page = self._current_editor()
         if page is not None and page is self.doc_editor:
             self.doc_editor.drop_paths([Path(p) for p in self._expand(paths)])
+        elif page is not None and page is self.viewer3d:
+            self._drop_models(paths)
         elif page is not None:
             self.editor.add_paths([Path(p) for p in self._expand(paths)])
         elif not self.busy:
             self.add_files(paths)
+
+    def _drop_models(self, paths: list[str]) -> None:
+        """Models dropped on the 3D viewer join the queue and are shown (others are ignored)."""
+        new = [f for f in (detect(p) for p in self._expand(paths)) if f is not None]
+        new = [f for f in new if f.family == MediaFamily.MODEL]
+        new = [f for f in new if all(f.path != x.path for x in self.files)]
+        if not new:
+            return
+        self.add_files([str(f.path) for f in new])
+        self.viewer3d.open_files([f for f in self.files if f.family == MediaFamily.MODEL])
+        self.viewer3d.file_box.setCurrentIndex(self.viewer3d.files.index(new[0]))
 
     def closeEvent(self, event) -> None:  # noqa: N802
         page = self._current_editor()
@@ -722,6 +755,8 @@ class MainWindow(QMainWindow):
             return
         if self.editor is not None:
             self.editor.stop_background_removal()
+        if self.viewer3d is not None:
+            self.viewer3d.wait_idle(5000)
         if self._worker is not None:
             self._worker.cancel()
             if self._thread is not None:
