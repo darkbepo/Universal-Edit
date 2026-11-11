@@ -10,6 +10,7 @@ from __future__ import annotations
 import html as _html
 import logging
 import posixpath
+import re
 import zipfile
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -28,8 +29,11 @@ from PIL import Image
 from umc.core.errors import ConversionError
 from umc.doceditor.html_subset import normalise_html
 from umc.doceditor.types import (
+    MAX_UNPACKED_BYTES,
+    TOO_LARGE,
     W_COLUMNS,
     W_COMMENTS,
+    W_EQUATIONS,
     W_FIELDS,
     W_HEADERS,
     W_LISTSTYLE,
@@ -56,6 +60,19 @@ _BLOCK_STYLES = {
     "HTML Preformatted": "pre",
     "Source Code": "pre",
 }
+# Word's built-in style ids, used when the file doesn't define the paragraph's style (no
+# styles part, or an id that isn't in it).
+_BUILTIN_IDS = {f"Heading{n}": f"h{min(n, 3)}" for n in range(1, 10)} | {
+    "Title": "h1",
+    "Quote": "quote",
+    "IntenseQuote": "quote",
+    "Code": "pre",
+    "HTMLPreformatted": "pre",
+    "SourceCode": "pre",
+}
+_BUILTIN_LIST = re.compile(r"List(Bullet|Number)([2-9]?)")
+_BUILTIN_LIST_IDS = {"Bullet": -1, "Number": -2}  # numIds of their own for these lists
+_HEX = re.compile(r"[0-9A-Fa-f]{1,6}")
 _ALIGN = {"left": "left", "center": "center", "right": "right", "both": "justify"}
 _HIGHLIGHT = {
     "yellow": "#ffff00",
@@ -88,6 +105,8 @@ _W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 _WP = "{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}"
 _WPS = "{http://schemas.microsoft.com/office/word/2010/wordprocessingShape}"
 _V = "{urn:schemas-microsoft-com:vml}"
+_M = "{http://schemas.openxmlformats.org/officeDocument/2006/math}"
+_MC = "{http://schemas.openxmlformats.org/markup-compatibility/2006}"
 _A_BLIP = "{http://schemas.openxmlformats.org/drawingml/2006/main}blip"
 _R_EMBED = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed"
 _R_ID = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
@@ -102,10 +121,13 @@ _TRANSPARENT = {
         "ins",
         "moveTo",
         "fldSimple",
+        "dir",
+        "bdo",
     )
 }
 # Wrappers around block content that are read through (w:del / w:moveFrom are dropped).
 _BLOCK_WRAPPERS = {_W + t for t in ("sdtContent", "customXml", "ins", "moveTo", "smartTag")}
+_EQUATIONS = {_M + "oMath", _M + "oMathPara", _W + "altChunk"}
 
 
 @dataclass(frozen=True)
@@ -166,6 +188,42 @@ def _val(el: Any, name: str) -> str | None:
     return child.get(qn("w:val")) if child is not None else None
 
 
+def _alternative(node: etree._Element) -> etree._Element | None:
+    """The branch of an ``mc:AlternateContent`` that is read: its Fallback, else its Choice."""
+    fallback = node.find(_MC + "Fallback")
+    return fallback if fallback is not None else node.find(_MC + "Choice")
+
+
+def _wrapped(parent: etree._Element, tag: str) -> Iterator[etree._Element]:
+    """The ``tag`` children of ``parent`` (rows of a table, cells of a row), also those inside
+    content controls (``w:sdt``) and custom XML."""
+    for node in parent:
+        if node.tag == tag:
+            yield node
+        elif node.tag == _W + "sdt":
+            inner = node.find(qn("w:sdtContent"))
+            if inner is not None:
+                yield from _wrapped(inner, tag)
+        elif node.tag == _W + "customXml":
+            yield from _wrapped(node, tag)
+
+
+def _symbol(code: str | None) -> str:
+    """The character of a ``w:sym`` (its hex code; a Private Use one is kept as it is), or ""
+    for a code that isn't a character XML can hold."""
+    if not code or not _HEX.fullmatch(code):
+        return ""
+    n = int(code, 16)
+    bad = (
+        n < 0x20
+        or 0xD800 <= n <= 0xDFFF
+        or 0xFDD0 <= n <= 0xFDEF
+        or (n & 0xFFFE) == 0xFFFE
+        or n > 0x10FFFF
+    )
+    return "" if bad else chr(n)
+
+
 # ----- styles and lists ------------------------------------------------------------------
 
 
@@ -176,6 +234,15 @@ def _style_chain(ctx: _Ctx, p: etree._Element) -> list[Any]:
         chain.append(style)
         style = style.base_style
     return chain
+
+
+def _undefined_style(ctx: _Ctx, p: etree._Element) -> str | None:
+    """The paragraph's style id when the file doesn't define it as a paragraph style."""
+    style_id = p.style
+    if not style_id:
+        return None
+    style = ctx.doc.styles.element.get_by_id(style_id)
+    return style_id if style is None or style.get(qn("w:type")) != "paragraph" else None
 
 
 def _num_pr(el: Any) -> Any:
@@ -339,14 +406,30 @@ def _picture(ctx: _Ctx, drawing: etree._Element) -> str | None:
 
 
 def _run_items(
-    ctx: _Ctx, r: etree._Element, fmt: _Fmt, link: str | None, segs: list[_Segment]
+    ctx: _Ctx,
+    r: etree._Element,
+    fmt: _Fmt,
+    link: str | None,
+    segs: list[_Segment],
+    heading: bool,
 ) -> None:
     def add(kind: str, value: str) -> None:
         segs[-1].items.append((kind, value, fmt, link))
 
     for child in r:
         tag = child.tag
-        if tag == _W + "t":
+        if tag == _MC + "AlternateContent":
+            branch = _alternative(child)
+            if branch is not None:
+                _run_items(ctx, branch, fmt, link, segs, heading)
+        elif tag == _W + "ruby":  # the base text; the annotation above it is left out
+            base = child.find(qn("w:rubyBase"))
+            if base is not None:
+                _inline_nodes(ctx, base, heading, link, segs)
+        elif tag == _W + "sym":
+            if char := _symbol(child.get(qn("w:char"))):
+                add("t", _keep_spaces(char, _last_char(segs[-1])))
+        elif tag == _W + "t":
             add("t", _keep_spaces(child.text or "", _last_char(segs[-1])))
         elif tag == _W + "tab":
             add("t", "\t")
@@ -395,15 +478,19 @@ def _inline_nodes(
     for node in parent:
         tag = node.tag
         if tag == _W + "r":
-            _run_items(ctx, node, _run_fmt(ctx, node, heading, link is not None), link, segs)
+            fmt = _run_fmt(ctx, node, heading, link is not None)
+            _run_items(ctx, node, fmt, link, segs, heading)
         elif tag == _W + "hyperlink":
             href = None
             rid = node.get(_R_ID)
             if rid and rid in ctx.doc.part.rels and ctx.doc.part.rels[rid].is_external:
                 href = ctx.doc.part.rels[rid].target_ref
             _inline_nodes(ctx, node, heading, href or link, segs)
-        elif tag in _TRANSPARENT:
-            inner = node.find(qn("w:sdtContent")) if tag == _W + "sdt" else node
+        elif tag in _TRANSPARENT or tag == _MC + "AlternateContent":
+            if tag == _W + "sdt":
+                inner = node.find(qn("w:sdtContent"))
+            else:
+                inner = node if tag in _TRANSPARENT else _alternative(node)
             if inner is not None:
                 _inline_nodes(ctx, inner, heading, link, segs)
 
@@ -559,6 +646,10 @@ class _Blocks:
                     yield from self._children(inner)
             elif node.tag in _BLOCK_WRAPPERS:
                 yield from self._children(node)
+            elif node.tag == _MC + "AlternateContent":
+                branch = _alternative(node)
+                if branch is not None:
+                    yield from self._children(branch)
             elif node.tag in (_W + "p", _W + "tbl"):
                 yield node
 
@@ -578,7 +669,14 @@ class _Blocks:
     def _paragraph(self, p: etree._Element) -> None:
         chain = _style_chain(self.ctx, p)
         kind = next((_BLOCK_STYLES[s.name] for s in chain if s.name in _BLOCK_STYLES), "p")
+        builtin = _undefined_style(self.ctx, p) if kind == "p" else None
+        kind = _BUILTIN_IDS.get(builtin or "", kind)
         info = _list_info(self.ctx, p, chain) if kind == "p" else None
+        if info is None and builtin and _num_pr(p) is None:
+            m = _BUILTIN_LIST.fullmatch(builtin)
+            if m:  # ListBullet, ListBullet2 (one level deeper), ..., ListNumber
+                tag = "ul" if m.group(1) == "Bullet" else "ol"
+                info = (_BUILTIN_LIST_IDS[m.group(1)], tag, int(m.group(2) or "1") - 1)
         segs = [_Segment()]
         _inline_nodes(self.ctx, p, kind in ("h1", "h2", "h3"), None, segs)
         if kind == "p" and info is None and len(segs) == 1 and not segs[0].items and _is_hr(p):
@@ -618,10 +716,10 @@ class _Blocks:
     def _table(self, tbl: etree._Element) -> str:
         rows: list[list[dict[str, Any]]] = []
         started: dict[int, dict[str, Any]] = {}  # grid column -> cell a bare vMerge continues
-        for tr in tbl.findall(qn("w:tr")):
+        for tr in _wrapped(tbl, _W + "tr"):
             cells: list[dict[str, Any]] = []
             col = 0
-            for tc in tr.findall(qn("w:tc")):
+            for tc in _wrapped(tr, _W + "tc"):
                 tcpr = tc.find(qn("w:tcPr"))
                 span = _int(_val(tcpr, "w:gridSpan") or "1", 1)
                 vm = tcpr.find(qn("w:vMerge")) if tcpr is not None else None
@@ -696,7 +794,18 @@ def _collect_warnings(ctx: _Ctx) -> None:
             found.add(W_FIELDS)
         elif tag == _W + "object":
             found.add(W_OBJECTS)
-    for text in (W_TEXTBOX, W_COLUMNS, W_TRACKED, W_COMMENTS, W_NOTES, W_FIELDS, W_OBJECTS):
+        elif tag in _EQUATIONS:
+            found.add(W_EQUATIONS)
+    for text in (
+        W_TEXTBOX,
+        W_COLUMNS,
+        W_TRACKED,
+        W_COMMENTS,
+        W_NOTES,
+        W_FIELDS,
+        W_OBJECTS,
+        W_EQUATIONS,
+    ):
         if text in found:
             ctx.warn(text)
 
@@ -760,10 +869,24 @@ def _repaired(data: bytes) -> bytes | None:
     return out.getvalue()
 
 
+def _check_unpacked_size(data: bytes) -> None:
+    """Refuse a package whose parts would unpack to more than MAX_UNPACKED_BYTES (a zip bomb).
+    The sizes are the ones the zip declares: ``zipfile`` never inflates an entry past its
+    declared size (such a part fails its CRC check), so lying headers are bounded too."""
+    try:
+        with zipfile.ZipFile(BytesIO(data)) as z:
+            total = sum(info.file_size for info in z.infolist())
+    except Exception:
+        return  # not a zip: python-docx says so
+    if total > MAX_UNPACKED_BYTES:
+        raise ConversionError(TOO_LARGE, details=f"{total} bytes unpacked")
+
+
 def _open_package(path: Path) -> Any:
     """``docx.Document`` for ``path``; a package python-docx refuses (a relationship to a part
     that isn't there, part names written in another case) is repaired in memory first."""
     data = Path(path).read_bytes()
+    _check_unpacked_size(data)
     try:
         return docx.Document(BytesIO(data))
     except Exception as first:
@@ -778,6 +901,8 @@ def read(path: Path) -> OpenedDocument:
     """Read ``path`` (a DOCX) as the editor's HTML subset, its pictures and warnings."""
     try:
         document = _open_package(path)
+    except ConversionError:
+        raise
     except Exception as exc:
         log.warning("Could not open %s as DOCX: %s", path, exc, exc_info=True)
         raise ConversionError("This Word document could not be opened.") from exc

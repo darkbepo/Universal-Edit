@@ -25,4 +25,4 @@ def test_vectors_match_desktop():
     on_disk = VECTORS.read_bytes().decode("utf-8").replace(chr(13) + chr(10), chr(10))
     assert on_disk == expected, "run scripts/make_doceditor_vectors.py"
     data = json.loads(expected)
-    assert all(data[k] for k in ("normalise", "markdown", "txt", "cases"))
+    assert all(data[k] for k in ("normalise", "markdown", "txt", "docx", "cases"))

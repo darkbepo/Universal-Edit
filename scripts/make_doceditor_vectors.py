@@ -1,8 +1,8 @@
 """Writes tests/fixtures/doceditor-vectors.json: test vectors made by the desktop document editor.
 
 Both apps assert them (tests/test_doceditor_vectors.py, web/tests/doceditor-vectors.test.ts), so
-the website's HTML normaliser, Markdown/TXT readers and Markdown writer stay identical to the
-desktop's.  Run:  .venv/Scripts/python scripts/make_doceditor_vectors.py
+the website's HTML normaliser, Markdown/TXT/DOCX readers and Markdown writer stay identical to
+the desktop's.  Run:  .venv/Scripts/python scripts/make_doceditor_vectors.py
 """
 
 from __future__ import annotations
@@ -16,7 +16,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(ROOT / "src"), str(ROOT)]
 
-from tests.doceditor_samples import CASES  # noqa: E402
+from tests.doceditor_samples import CASES, DOCX_CASES, docx_package  # noqa: E402
+from umc.doceditor.docx_reader import read as read_docx  # noqa: E402
 from umc.doceditor.html_subset import normalise_html_report  # noqa: E402
 from umc.doceditor.io import open_document  # noqa: E402
 from umc.doceditor.md_writer import to_markdown  # noqa: E402
@@ -183,7 +184,20 @@ def _vectors() -> dict:
             path = base / f"t{n}.txt"
             path.write_bytes(text.encode("utf-8"))
             txt.append({"txt": text, "html": open_document(path).html})
-    return {"normalise": normalise, "markdown": markdown, "txt": txt, "cases": list(CASES)}
+        docx = []
+        for n, case in enumerate(DOCX_CASES):
+            path = base / f"d{n}.docx"
+            path.write_bytes(docx_package(case))
+            doc = read_docx(path)
+            entry = {k: v for k, v in case.items() if k not in ("html", "warnings")}
+            docx.append({**entry, "html": doc.html, "warnings": doc.warnings})
+    return {
+        "normalise": normalise,
+        "markdown": markdown,
+        "txt": txt,
+        "docx": docx,
+        "cases": list(CASES),
+    }
 
 
 def render() -> str:

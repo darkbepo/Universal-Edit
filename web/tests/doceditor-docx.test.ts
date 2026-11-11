@@ -6,8 +6,11 @@ import { readDocx } from "../src/doceditor/docx-read";
 import { writeDocx } from "../src/doceditor/docx-write";
 import { normaliseHtml } from "../src/doceditor/subset";
 import {
+  MAX_UNPACKED_BYTES,
+  TOO_LARGE,
   W_COLUMNS,
   W_COMMENTS,
+  W_EQUATIONS,
   W_FIELDS,
   W_HEADERS,
   W_LISTSTYLE,
@@ -1388,7 +1391,7 @@ describe("template fallback", () => {
 });
 
 describe("reader: a package without styles.xml", () => {
-  test("reads like the desktop (python-docx's default styles have no headings)", () => {
+  test("reads like the desktop (Word's built-in style ids are recognised)", () => {
     const source =
       "<h1>A</h1><h2>B</h2><blockquote><p>q</p></blockquote><pre>c</pre><p>x</p>" +
       "<table><tr><td><p>t</p></td></tr></table>";
@@ -1399,9 +1402,110 @@ describe("reader: a package without styles.xml", () => {
     };
     drop("word/_rels/document.xml.rels", /<Relationship [^>]*\/styles"[^>]*\/>/);
     drop("[Content_Types].xml", /<Override PartName="\/word\/styles.xml"[^>]*\/>/);
-    // the desktop's docx_reader.read() on the same file (scratchpad probe, fix round 1)
+    // the desktop's docx_reader.read() on the same file (scratchpad probe, Task 4f)
     expect(readDocx(zipSync(files)).html).toBe(
-      "<p>A</p><p>B</p><p>q</p><p>c</p><p>x</p><table><tr><td><p>t</p></td></tr></table>",
+      "<h1>A</h1><h2>B</h2><blockquote><p>q</p></blockquote><pre>c</pre><p>x</p>" +
+        "<table><tr><td><p>t</p></td></tr></table>",
     );
   });
+});
+
+// ----- content the readers used to drop (shared "docx" vectors) ---------------------------
+
+interface DocxVector {
+  name: string;
+  body: string;
+  rels?: string;
+  types?: string;
+  parts?: Record<string, string>;
+  html: string;
+  warnings: string[];
+}
+const docxVectors = (vectorsJson as unknown as { docx: DocxVector[] }).docx;
+
+/** The same package as `docx_package()` in tests/doceditor_samples.py. */
+function vectorDocx(v: { body: string; rels?: string; types?: string; parts?: Record<string, string> }) {
+  const ns =
+    `xmlns:w="${W}" xmlns:r="${R}" ` +
+    'xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" ' +
+    'xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"';
+  const head = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+  const files: Record<string, string> = {
+    "[Content_Types].xml":
+      `${head}<Types xmlns="${CT}"><Default Extension="rels" ContentType="application/vnd.` +
+      'openxmlformats-package.relationships+xml"/><Default Extension="xml" ' +
+      'ContentType="application/xml"/><Override PartName="/word/document.xml" ' +
+      'ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.' +
+      `document.main+xml"/>${v.types ?? ""}</Types>`,
+    "_rels/.rels":
+      `${head}<Relationships xmlns="${PKG_RELS}"><Relationship Id="rId1" ` +
+      `Type="${RT}/officeDocument" Target="word/document.xml"/></Relationships>`,
+    "word/document.xml": `${head}<w:document ${ns}><w:body>${v.body}<w:sectPr/></w:body></w:document>`,
+    "word/_rels/document.xml.rels": `${head}<Relationships xmlns="${PKG_RELS}">${v.rels ?? ""}</Relationships>`,
+    ...(v.parts ?? {}),
+  };
+  return zipSync(Object.fromEntries(Object.entries(files).map(([k, s]) => [k, strToU8(s)])));
+}
+
+describe("shared docx vectors", () => {
+  test("cover every case", () => {
+    expect(docxVectors.length).toBe(10);
+    expect(docxVectors.filter((v) => v.warnings.includes(W_EQUATIONS)).length).toBe(2);
+  });
+  test.each(docxVectors.map((v) => [v.name, v] as const))("%s", (_name, v) => {
+    const got = readDocx(vectorDocx(v));
+    expect([got.html, got.warnings]).toEqual([v.html, v.warnings]);
+  });
+});
+
+// ----- zip bombs ----------------------------------------------------------------------------
+
+/** `data` (a zip) with entry `name`'s uncompressed size in the central directory set to `size`. */
+function claimedSize(data: Uint8Array, name: string, size: number): Uint8Array {
+  const out = data.slice();
+  const view = new DataView(out.buffer);
+  for (let at = 0; at + 46 <= out.length; at++) {
+    if (view.getUint32(at, true) !== 0x02014b50) continue;
+    const len = view.getUint16(at + 28, true);
+    if (strFromU8(out.subarray(at + 46, at + 46 + len)) === name) view.setUint32(at + 24, size, true);
+  }
+  return out;
+}
+
+describe("zip bombs", () => {
+  const good = () => vectorDocx({ body: para(run("x")) });
+
+  test("a package that claims to unpack past the limit is refused", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const one = claimedSize(good(), "word/document.xml", MAX_UNPACKED_BYTES + 1);
+    const half = MAX_UNPACKED_BYTES / 2 + 1;
+    const two = claimedSize(claimedSize(good(), "word/document.xml", half), "_rels/.rels", half);
+    for (const data of [one, two]) expect(() => readDocx(data)).toThrow(TOO_LARGE);
+    error.mockRestore();
+  });
+
+  test("an entry that inflates past its declared size is not unpacked further", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const big = vectorDocx({ body: para(run("x".repeat(2_000_000))) });
+    expect(() => readDocx(claimedSize(big, "word/document.xml", 100))).toThrow(
+      "This Word document could not be opened.",
+    );
+    error.mockRestore();
+  });
+
+  test("a normal package opens", () => {
+    expect(readDocx(good()).html).toBe("<p>x</p>");
+  });
+});
+
+describe("XML declarations TextDecoder misreads", () => {
+  test.each(["ucs-2", "unicode", "x-user-defined", "UTF-16"])(
+    "a part declared %s but written as UTF-8 is read as UTF-8",
+    (label) => {
+      const xml = `<?xml version="1.0" encoding="${label}"?><w:document xmlns:w="${W}"><w:body>${para(run("café — 你好"))}<w:sectPr/></w:body></w:document>`;
+      expect(read("", { files: { "word/document.xml": strToU8(xml) } }).html).toBe(
+        "<p>café — 你好</p>",
+      );
+    },
+  );
 });

@@ -6,6 +6,7 @@
 
 import { unzipSync, zipSync, type Zippable } from "fflate";
 import { NS, XML_HEAD } from "./docx-template";
+import { MAX_UNPACKED_BYTES, TOO_LARGE } from "./types";
 
 const XMLNS = "http://www.w3.org/2000/xmlns/";
 const FIXED_MTIME = new Date(2000, 0, 1);
@@ -13,13 +14,16 @@ const CONTENT_TYPES = "[Content_Types].xml";
 
 // ----- XML --------------------------------------------------------------------------------
 
-const UTF16 = /^utf-?16/i;
+// Encodings a declaration can't mean for bytes that start with "<?xml" in ASCII: UTF-16
+// (TextDecoder also gives it for "ucs-2" and "unicode"), "x-user-defined" and "replacement".
+const NOT_ASCII_BASED = new Set(["utf-16le", "utf-16be", "x-user-defined", "replacement"]);
 
 /**
  * The text of an XML part, decoded like an XML parser does: by its byte order mark, else
  * UTF-16 by its first bytes, else by the encoding its declaration names (Latin-1,
- * windows-1252, …), else UTF-8. A part written back is always UTF-8 (`serialise` writes
- * that declaration).
+ * windows-1252, …), else UTF-8. A declared UTF-16 part without a byte order mark (or one of
+ * the labels TextDecoder maps to UTF-16 or to odd bytes) is read as UTF-8. A part written
+ * back is always UTF-8 (`serialise` writes that declaration).
  */
 export function decodeXml(data: Uint8Array): string {
   const decode = (label: string, from = 0) => new TextDecoder(label).decode(data.subarray(from));
@@ -35,12 +39,14 @@ export function decodeXml(data: Uint8Array): string {
     head += String.fromCharCode(data[i]);
   }
   const m = /^<\?xml\s[^?]*encoding\s*=\s*["']([A-Za-z][A-Za-z0-9._:-]*)["']/.exec(head);
-  if (m && !UTF16.test(m[1])) {
+  if (m) {
+    let decoder: TextDecoder | null = null;
     try {
-      return decode(m[1]);
+      decoder = new TextDecoder(m[1]);
     } catch {
       /* a name TextDecoder doesn't know: read it as UTF-8 */
     }
+    if (decoder && !NOT_ASCII_BASED.has(decoder.encoding)) return decoder.decode(data);
   }
   return decode("utf-8");
 }
@@ -263,9 +269,20 @@ export function contentTypeOf(types: Document, name: string): string | null {
   return byExt;
 }
 
-/** The files of a zip (throws when `bytes` isn't one). */
+/**
+ * The files of a zip (throws when `bytes` isn't one). A package whose entries declare more
+ * than MAX_UNPACKED_BYTES unpacked throws TOO_LARGE before anything past the limit is
+ * inflated (a zip bomb); fflate never inflates an entry past its declared size, so lying
+ * headers are bounded too.
+ */
 export function unzipPackage(bytes: Uint8Array): Files {
-  return new Map(Object.entries(unzipSync(bytes)));
+  let total = 0;
+  const filter = (file: { originalSize: number }) => {
+    total += file.originalSize;
+    if (total > MAX_UNPACKED_BYTES) throw new Error(TOO_LARGE);
+    return true;
+  };
+  return new Map(Object.entries(unzipSync(bytes, { filter })));
 }
 
 /** Zip `files`: content types first, pictures stored, fixed dates (same input, same bytes). */

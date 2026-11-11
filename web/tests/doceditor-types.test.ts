@@ -11,7 +11,7 @@ import {
 } from "../src/doceditor/types";
 
 test("warning strings match the desktop", () => {
-  expect(Object.keys(WARNINGS).length).toBe(15);
+  expect(Object.keys(WARNINGS).length).toBe(16);
   for (const [name, value] of Object.entries(WARNINGS)) {
     expect(py).toContain(`${name} = ${JSON.stringify(value)}`);
   }

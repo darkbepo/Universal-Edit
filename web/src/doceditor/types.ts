@@ -6,6 +6,8 @@ export type DocImages = Map<string, Uint8Array>;
 export const WEB_EDITABLE_DOCUMENT_EXTS = ["docx", "odt", "rtf", "md", "txt", "html"];
 export const MAX_FILE_BYTES = 50 * 1024 * 1024;
 export const MAX_CHARS = 2_000_000;
+// A DOCX whose parts would unpack to more than this is refused (zip bombs).
+export const MAX_UNPACKED_BYTES = 500 * 1024 * 1024;
 export const TOO_LARGE = "This document is too large to edit here.";
 
 // Things a document can contain that the editor can't keep (same strings as the desktop).
@@ -24,6 +26,7 @@ export const W_WEBPICS = "pictures from the web";
 export const W_RAWHTML = "embedded HTML the editor doesn't support";
 export const W_MDEXTRA = "footnotes and other Markdown extras";
 export const W_MDFORMAT = "inline code, small headings, picture descriptions, comments and table alignment";
+export const W_EQUATIONS = "equations and embedded documents";
 
 export const WARNINGS: Record<string, string> = {
   W_HEADERS,
@@ -41,6 +44,7 @@ export const WARNINGS: Record<string, string> = {
   W_RAWHTML,
   W_MDEXTRA,
   W_MDFORMAT,
+  W_EQUATIONS,
 };
 
 export interface OpenedDocument {

@@ -13,6 +13,8 @@ EDITABLE_DOCUMENT_EXTS: frozenset[str] = frozenset(
 )
 MAX_FILE_BYTES = 50 * 1024 * 1024
 MAX_CHARS = 2_000_000
+# A DOCX whose parts would unpack to more than this is refused (zip bombs).
+MAX_UNPACKED_BYTES = 500 * 1024 * 1024
 TOO_LARGE = "This document is too large to edit here."
 
 # Things a document can contain that the editor can't keep.
@@ -31,6 +33,7 @@ W_WEBPICS = "pictures from the web"
 W_RAWHTML = "embedded HTML the editor doesn't support"
 W_MDEXTRA = "footnotes and other Markdown extras"
 W_MDFORMAT = "inline code, small headings, picture descriptions, comments and table alignment"
+W_EQUATIONS = "equations and embedded documents"
 
 
 @dataclass

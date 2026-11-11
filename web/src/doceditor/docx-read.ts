@@ -32,8 +32,10 @@ import { normaliseHtml } from "./subset";
 import {
   type DocImages,
   type OpenedDocument,
+  TOO_LARGE,
   W_COLUMNS,
   W_COMMENTS,
+  W_EQUATIONS,
   W_FIELDS,
   W_HEADERS,
   W_LISTSTYLE,
@@ -50,6 +52,8 @@ const EMU_PER_PX = 9525;
 const NBSP = " ";
 const WPS = "http://schemas.microsoft.com/office/word/2010/wordprocessingShape";
 const VML = "urn:schemas-microsoft-com:vml";
+const MATH = "http://schemas.openxmlformats.org/officeDocument/2006/math";
+const MC = "http://schemas.openxmlformats.org/markup-compatibility/2006";
 
 const HEADINGS: Record<string, string> = { Title: "h1" };
 for (let n = 1; n <= 9; n++) HEADINGS[`Heading ${n}`] = `h${Math.min(n, 3)}`;
@@ -61,6 +65,20 @@ const BLOCK_STYLES: Record<string, string> = {
   "HTML Preformatted": "pre",
   "Source Code": "pre",
 };
+// Word's built-in style ids, used when the file doesn't define the paragraph's style (no
+// styles part, or an id that isn't in it).
+const BUILTIN_IDS: Record<string, string> = {
+  Title: "h1",
+  Quote: "quote",
+  IntenseQuote: "quote",
+  Code: "pre",
+  HTMLPreformatted: "pre",
+  SourceCode: "pre",
+};
+for (let n = 1; n <= 9; n++) BUILTIN_IDS[`Heading${n}`] = `h${Math.min(n, 3)}`;
+const BUILTIN_LIST = /^List(Bullet|Number)([2-9]?)$/;
+const BUILTIN_LIST_IDS: Record<string, number> = { Bullet: -1, Number: -2 }; // numIds of their own
+const HEX = /^[0-9A-Fa-f]{1,6}$/;
 // python-docx's BabelFish: the names styles.xml uses for these -> the names shown in Word.
 const UI_NAMES: Record<string, string> = { caption: "Caption", footer: "Footer", header: "Header" };
 for (let n = 1; n <= 9; n++) UI_NAMES[`heading ${n}`] = `Heading ${n}`;
@@ -107,6 +125,8 @@ const TRANSPARENT = new Set([
   "ins",
   "moveTo",
   "fldSimple",
+  "dir",
+  "bdo",
 ]);
 // Wrappers around block content that are read through (w:del / w:moveFrom are dropped).
 const BLOCK_WRAPPERS = new Set(["sdtContent", "customXml", "ins", "moveTo", "smartTag"]);
@@ -165,6 +185,46 @@ const wVal = (el: Element | null | undefined, local: string): string | null =>
   wAttr(wChild(el, local), "val");
 const wFirst = (el: Element, local: string, ns: string = NS.w): Element | null =>
   el.getElementsByTagNameNS(ns, local)[0] ?? null;
+
+const isMc = (el: Element, local: string): boolean =>
+  el.namespaceURI === MC && el.localName === local;
+
+/** The branch of an `mc:AlternateContent` that is read: its Fallback, else its Choice. */
+function alternative(node: Element): Element | null {
+  let choice: Element | null = null;
+  for (let c = node.firstElementChild; c; c = c.nextElementSibling) {
+    if (isMc(c, "Fallback")) return c;
+    if (!choice && isMc(c, "Choice")) choice = c;
+  }
+  return choice;
+}
+
+/** The w:`local` children of `parent` (rows of a table, cells of a row), also those inside
+ * content controls (`w:sdt`) and custom XML. */
+function wrapped(parent: Element, local: string, into: Element[] = []): Element[] {
+  for (let node = parent.firstElementChild; node; node = node.nextElementSibling) {
+    if (isW(node, local)) into.push(node);
+    else if (isW(node, "sdt")) {
+      const inner = wChild(node, "sdtContent");
+      if (inner) wrapped(inner, local, into);
+    } else if (isW(node, "customXml")) wrapped(node, local, into);
+  }
+  return into;
+}
+
+/** The character of a `w:sym` (its hex code; a Private Use one is kept as it is), or "" for a
+ * code that isn't a character XML can hold. */
+function symbol(code: string | null): string {
+  if (!code || !HEX.test(code)) return "";
+  const n = parseInt(code, 16);
+  const bad =
+    n < 0x20 ||
+    (n >= 0xd800 && n <= 0xdfff) ||
+    (n >= 0xfdd0 && n <= 0xfdef) ||
+    (n & 0xfffe) === 0xfffe ||
+    n > 0x10ffff;
+  return bad ? "" : String.fromCodePoint(n);
+}
 
 /** lxml's `el.text`: the text before the first child node that isn't text. */
 function leadText(el: Element): string {
@@ -237,6 +297,14 @@ class Ctx {
 
   style(id: string | null): Element | null {
     return id === null ? null : (this.styleById.get(id) ?? null);
+  }
+
+  /** The paragraph's style id when the file doesn't define it as a paragraph style. */
+  undefinedStyle(p: Element): string | null {
+    const id = wVal(wChild(p, "pPr"), "pStyle");
+    if (!id) return null;
+    const style = this.style(id);
+    return !style || wAttr(style, "type") !== "paragraph" ? id : null;
   }
 
   /** The paragraph's style and the styles it is based on (python-docx's get_by_id). */
@@ -417,7 +485,14 @@ function keepSpaces(text: string, before: string): string {
   return out.join("");
 }
 
-function runItems(ctx: Ctx, r: Element, fmt: Fmt, link: string | null, segs: Segment[]): void {
+function runItems(
+  ctx: Ctx,
+  r: Element,
+  fmt: Fmt,
+  link: string | null,
+  segs: Segment[],
+  heading: boolean,
+): void {
   const add = (kind: Item["kind"], value: string) => {
     const seg = segs[segs.length - 1];
     seg.items.push({ kind, value, fmt, link });
@@ -426,9 +501,21 @@ function runItems(ctx: Ctx, r: Element, fmt: Fmt, link: string | null, segs: Seg
     else if (value) seg.last = value[value.length - 1];
   };
   for (let child = r.firstElementChild; child; child = child.nextElementSibling) {
+    if (isMc(child, "AlternateContent")) {
+      const branch = alternative(child);
+      if (branch) runItems(ctx, branch, fmt, link, segs, heading);
+      continue;
+    }
     if (child.namespaceURI !== NS.w) continue;
     const tag = child.localName;
-    if (tag === "t") add("t", keepSpaces(leadText(child), segs[segs.length - 1].last));
+    if (tag === "ruby") {
+      // the base text; the annotation above it is left out
+      const base = wChild(child, "rubyBase");
+      if (base) inlineNodes(ctx, base, heading, link, segs);
+    } else if (tag === "sym") {
+      const char = symbol(wAttr(child, "char"));
+      if (char) add("t", keepSpaces(char, segs[segs.length - 1].last));
+    } else if (tag === "t") add("t", keepSpaces(leadText(child), segs[segs.length - 1].last));
     else if (tag === "tab") add("t", "\t");
     else if (tag === "noBreakHyphen") add("t", "-");
     else if (tag === "cr") add("br", "");
@@ -452,9 +539,16 @@ function inlineNodes(
   segs: Segment[],
 ): void {
   for (let node = parent.firstElementChild; node; node = node.nextElementSibling) {
+    if (isMc(node, "AlternateContent")) {
+      const branch = alternative(node);
+      if (branch) inlineNodes(ctx, branch, heading, link, segs);
+      continue;
+    }
     if (node.namespaceURI !== NS.w) continue;
     const tag = node.localName;
-    if (tag === "r") runItems(ctx, node, runFmt(ctx, node, heading, link !== null), link, segs);
+    if (tag === "r") {
+      runItems(ctx, node, runFmt(ctx, node, heading, link !== null), link, segs, heading);
+    }
     else if (tag === "hyperlink") {
       const rel = ctx.rels.get(node.getAttributeNS(NS.r, "id") ?? "");
       const href = rel?.external ? rel.target : null;
@@ -612,6 +706,11 @@ class Blocks {
 
   private children(container: Element, into: Element[]): void {
     for (let node = container.firstElementChild; node; node = node.nextElementSibling) {
+      if (isMc(node, "AlternateContent")) {
+        const branch = alternative(node);
+        if (branch) this.children(branch, into);
+        continue;
+      }
       if (node.namespaceURI !== NS.w) continue;
       if (node.localName === "sdt") {
         const inner = wChild(node, "sdtContent");
@@ -650,7 +749,17 @@ class Blocks {
         break;
       }
     }
-    const info = kind === "p" ? listInfo(this.ctx, p, chain) : null;
+    const builtin = kind === "p" ? this.ctx.undefinedStyle(p) : null;
+    if (builtin !== null) kind = own(BUILTIN_IDS, builtin) ?? kind;
+    let info = kind === "p" ? listInfo(this.ctx, p, chain) : null;
+    if (info === null && builtin !== null && numPrOf(p) === null) {
+      // ListBullet, ListBullet2 (one level deeper), ..., ListNumber
+      const m = BUILTIN_LIST.exec(builtin);
+      if (m) {
+        const tag = m[1] === "Bullet" ? "ul" : "ol";
+        info = [BUILTIN_LIST_IDS[m[1]], tag, Number(m[2] || "1") - 1];
+      }
+    }
     const segs = [segment()];
     inlineNodes(this.ctx, p, kind === "h1" || kind === "h2" || kind === "h3", null, segs);
     if (kind === "p" && info === null && segs.length === 1 && !segs[0].items.length && isHr(p)) {
@@ -698,12 +807,10 @@ class Blocks {
   private table(tbl: Element): string {
     const rows: Cell[][] = [];
     const started = new Map<number, Cell>(); // grid column -> cell a bare vMerge continues
-    for (const tr of Array.from(tbl.children)) {
-      if (!isW(tr, "tr")) continue;
+    for (const tr of wrapped(tbl, "tr")) {
       const cells: Cell[] = [];
       let col = 0;
-      for (const tc of Array.from(tr.children)) {
-        if (!isW(tc, "tc")) continue;
+      for (const tc of wrapped(tr, "tc")) {
         const tcPr = wChild(tc, "tcPr");
         const span = pyInt(wVal(tcPr, "gridSpan") || "1") ?? 1;
         const vm = wChild(tcPr, "vMerge");
@@ -774,6 +881,7 @@ function collectWarnings(ctx: Ctx, root: Element, body: Element): void {
     const tag = el.localName;
     const box = ns === NS.w ? "txbxContent" : ns === WPS ? "wsp" : ns === VML ? "shape" : null;
     if (tag === box) found.add(W_TEXTBOX);
+    if (ns === MATH && (tag === "oMath" || tag === "oMathPara")) found.add(W_EQUATIONS);
     if (ns !== NS.w) continue;
     if (tag === "cols" && (pyInt(wAttr(el, "num") || "1") ?? 1) > 1) found.add(W_COLUMNS);
     else if (TRACKED.has(tag)) found.add(W_TRACKED);
@@ -782,8 +890,10 @@ function collectWarnings(ctx: Ctx, root: Element, body: Element): void {
     else if (tag === "fldSimple" || tag === "instrText") {
       if (unsupportedField(wAttr(el, "instr") || leadText(el))) found.add(W_FIELDS);
     } else if (tag === "object") found.add(W_OBJECTS);
+    else if (tag === "altChunk") found.add(W_EQUATIONS);
   }
-  for (const text of [W_TEXTBOX, W_COLUMNS, W_TRACKED, W_COMMENTS, W_NOTES, W_FIELDS, W_OBJECTS]) {
+  const order = [W_TEXTBOX, W_COLUMNS, W_TRACKED, W_COMMENTS, W_NOTES, W_FIELDS, W_OBJECTS];
+  for (const text of [...order, W_EQUATIONS]) {
     if (found.has(text)) ctx.warn(text);
   }
 }
@@ -816,6 +926,6 @@ export function readDocx(bytes: Uint8Array): OpenedDocument {
     };
   } catch (err) {
     console.error("Could not open the file as DOCX", err);
-    throw new Error(UNREADABLE);
+    throw new Error(err instanceof Error && err.message === TOO_LARGE ? TOO_LARGE : UNREADABLE);
   }
 }

@@ -8,13 +8,16 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
-from tests.doceditor_samples import CASES, PNG_1PX
+from tests.doceditor_samples import CASES, DOCX_CASES, PNG_1PX, docx_package
 from umc.core.errors import ConversionError
 from umc.doceditor.docx_reader import read
 from umc.doceditor.docx_writer import write
 from umc.doceditor.html_subset import normalise_html
 from umc.doceditor.types import (
+    MAX_UNPACKED_BYTES,
+    TOO_LARGE,
     W_COMMENTS,
+    W_EQUATIONS,
     W_FIELDS,
     W_HEADERS,
     W_NOTES,
@@ -552,3 +555,67 @@ def test_opening_never_changes_the_file(tmp_path):
     before = p.read_bytes()
     read(p)
     assert p.read_bytes() == before
+
+
+# ----- content the readers used to drop (shared "docx" vectors) ----------------------------
+
+
+@pytest.mark.parametrize("case", DOCX_CASES, ids=[c["name"] for c in DOCX_CASES])
+def test_shared_docx_case(tmp_path, case):
+    path = tmp_path / "case.docx"
+    path.write_bytes(docx_package(case))
+    got = read(path)
+    assert (got.html, got.warnings) == (case["html"], case["warnings"])
+
+
+def test_equations_warning_text():
+    assert W_EQUATIONS == "equations and embedded documents"
+
+
+# ----- zip bombs ---------------------------------------------------------------------------
+
+
+def _claimed_size(data: bytes, name: str, size: int) -> bytes:
+    """``data`` (a zip) with entry ``name``'s uncompressed size in the central directory set to
+    ``size``."""
+    out = bytearray(data)
+    at = out.find(b"PK\x01\x02")
+    while at >= 0:
+        name_len = int.from_bytes(out[at + 28 : at + 30], "little")
+        if out[at + 46 : at + 46 + name_len] == name.encode():
+            out[at + 24 : at + 28] = size.to_bytes(4, "little")
+        at = out.find(b"PK\x01\x02", at + 4)
+    return bytes(out)
+
+
+def test_unpacked_size_over_the_limit_is_refused(tmp_path):
+    good = docx_package({"body": "<w:p><w:r><w:t>x</w:t></w:r></w:p>"})
+    one = _claimed_size(good, "word/document.xml", MAX_UNPACKED_BYTES + 1)
+    two = _claimed_size(
+        _claimed_size(good, "word/document.xml", MAX_UNPACKED_BYTES // 2 + 1),
+        "_rels/.rels",
+        MAX_UNPACKED_BYTES // 2 + 1,
+    )
+    for n, data in enumerate((one, two)):
+        path = tmp_path / f"{n}.docx"
+        path.write_bytes(data)
+        with pytest.raises(ConversionError) as err:
+            read(path)
+        assert str(err.value) == TOO_LARGE
+
+
+def test_entry_that_inflates_past_its_size_is_not_unpacked(tmp_path):
+    """A lying header: decompression stops at the declared size, so the part is unreadable."""
+    filler = "<w:p><w:r><w:t>" + "x" * 2_000_000 + "</w:t></w:r></w:p>"
+    data = _claimed_size(docx_package({"body": filler}), "word/document.xml", 100)
+    path = tmp_path / "lying.docx"
+    path.write_bytes(data)
+    with pytest.raises(ConversionError) as err:
+        read(path)
+    assert str(err.value) == "This Word document could not be opened."
+
+
+def test_unpacked_size_at_the_limit_opens(tmp_path):
+    path = tmp_path / "ok.docx"
+    path.write_bytes(docx_package({"body": "<w:p><w:r><w:t>ok</w:t></w:r></w:p>"}))
+    assert read(path).html == "<p>ok</p>"

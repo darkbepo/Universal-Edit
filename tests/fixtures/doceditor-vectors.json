@@ -474,6 +474,82 @@
    "html": "<p>Blåbær — 你好</p><p>Windows line ends</p>"
   }
  ],
+ "docx": [
+  {
+   "name": "rows in content controls and custom XML",
+   "body": "<w:tbl><w:tr><w:tc><w:p><w:r><w:t xml:space=\"preserve\">A</w:t></w:r></w:p></w:tc></w:tr><w:sdt><w:sdtPr/><w:sdtContent><w:tr><w:tc><w:p><w:r><w:t xml:space=\"preserve\">B</w:t></w:r></w:p></w:tc></w:tr></w:sdtContent></w:sdt><w:customXml w:element=\"x\"><w:tr><w:tc><w:p><w:r><w:t xml:space=\"preserve\">C</w:t></w:r></w:p></w:tc></w:tr></w:customXml></w:tbl>",
+   "html": "<table style=\"border:none\"><tr><td><p>A</p></td></tr><tr><td><p>B</p></td></tr><tr><td><p>C</p></td></tr></table>",
+   "warnings": []
+  },
+  {
+   "name": "cells in content controls and custom XML",
+   "body": "<w:tbl><w:tr><w:tc><w:p><w:r><w:t xml:space=\"preserve\">A</w:t></w:r></w:p></w:tc><w:sdt><w:sdtContent><w:tc><w:p><w:r><w:t xml:space=\"preserve\">B</w:t></w:r></w:p></w:tc></w:sdtContent></w:sdt><w:customXml w:element=\"x\"><w:tc><w:p><w:r><w:t xml:space=\"preserve\">C</w:t></w:r></w:p></w:tc></w:customXml></w:tr></w:tbl>",
+   "html": "<table style=\"border:none\"><tr><td><p>A</p></td><td><p>B</p></td><td><p>C</p></td></tr></table>",
+   "warnings": []
+  },
+  {
+   "name": "right-to-left runs",
+   "body": "<w:p><w:dir w:val=\"rtl\"><w:r><w:t xml:space=\"preserve\">שלום </w:t></w:r></w:dir><w:bdo w:val=\"rtl\"><w:r><w:t xml:space=\"preserve\">abc</w:t></w:r></w:bdo></w:p>",
+   "html": "<p>שלום abc</p>",
+   "warnings": []
+  },
+  {
+   "name": "ruby keeps the base text",
+   "body": "<w:p><w:r><w:ruby><w:rubyPr/><w:rt><w:r><w:t xml:space=\"preserve\">kan</w:t></w:r></w:rt><w:rubyBase><w:r><w:t xml:space=\"preserve\">漢</w:t></w:r></w:rubyBase></w:ruby></w:r><w:r><w:t xml:space=\"preserve\">字</w:t></w:r></w:p>",
+   "html": "<p>漢字</p>",
+   "warnings": []
+  },
+  {
+   "name": "alternate content uses the fallback, else the choice",
+   "body": "<mc:AlternateContent><mc:Choice Requires=\"w14\"><w:p><w:r><w:t xml:space=\"preserve\">block choice</w:t></w:r></w:p></mc:Choice><mc:Fallback><w:p><w:r><w:t xml:space=\"preserve\">block fallback</w:t></w:r></w:p></mc:Fallback></mc:AlternateContent><w:p><mc:AlternateContent><mc:Choice Requires=\"w14\"><w:r><w:t xml:space=\"preserve\">inline choice</w:t></w:r></mc:Choice><mc:Fallback><w:r><w:t xml:space=\"preserve\">inline fallback</w:t></w:r></mc:Fallback></mc:AlternateContent></w:p><w:p><w:r><mc:AlternateContent><mc:Choice Requires=\"w14\"><w:t>run choice</w:t></mc:Choice><mc:Fallback><w:t>run fallback</w:t></mc:Fallback></mc:AlternateContent></w:r></w:p><w:p><mc:AlternateContent><mc:Choice Requires=\"w14\"><w:r><w:t xml:space=\"preserve\">only choice</w:t></w:r></mc:Choice></mc:AlternateContent></w:p>",
+   "html": "<p>block fallback</p><p>inline fallback</p><p>run fallback</p><p>only choice</p>",
+   "warnings": []
+  },
+  {
+   "name": "symbols",
+   "body": "<w:p><w:r><w:t>a</w:t><w:sym w:font=\"Wingdings\" w:char=\"F04A\"/><w:t>b</w:t><w:sym w:char=\"263a\"/><w:sym w:char=\"0x41\"/><w:sym w:char=\"D800\"/><w:sym w:char=\"9\"/><w:sym w:char=\"110000\"/><w:sym/></w:r></w:p>",
+   "html": "<p>ab☺</p>",
+   "warnings": []
+  },
+  {
+   "name": "an equation keeps the text around it",
+   "body": "<w:p><w:r><w:t xml:space=\"preserve\">E = </w:t></w:r><m:oMath><m:r><m:t>mc2</m:t></m:r></m:oMath></w:p><w:p><m:oMathPara><m:oMath><m:r><m:t>x</m:t></m:r></m:oMath></m:oMathPara></w:p><w:p><w:r><w:t xml:space=\"preserve\">after</w:t></w:r></w:p>",
+   "html": "<p>E =</p><p></p><p>after</p>",
+   "warnings": [
+    "equations and embedded documents"
+   ]
+  },
+  {
+   "name": "an embedded HTML document",
+   "body": "<w:p><w:r><w:t xml:space=\"preserve\">before</w:t></w:r></w:p><w:altChunk r:id=\"rIdAlt\"/><w:p><w:r><w:t xml:space=\"preserve\">after</w:t></w:r></w:p>",
+   "rels": "<Relationship Id=\"rIdAlt\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/aFChunk\" Target=\"chunk.html\"/>",
+   "types": "<Default Extension=\"html\" ContentType=\"text/html\"/>",
+   "parts": {
+    "word/chunk.html": "<html><body><p>chunk</p></body></html>"
+   },
+   "html": "<p>before</p><p>after</p>",
+   "warnings": [
+    "equations and embedded documents"
+   ]
+  },
+  {
+   "name": "Word's built-in style ids without a styles part",
+   "body": "<w:p><w:pPr><w:pStyle w:val=\"Heading1\"/></w:pPr><w:r><w:t xml:space=\"preserve\">s0</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"Heading2\"/></w:pPr><w:r><w:t xml:space=\"preserve\">s1</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"Heading3\"/></w:pPr><w:r><w:t xml:space=\"preserve\">s2</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"Heading4\"/></w:pPr><w:r><w:t xml:space=\"preserve\">s3</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"Heading9\"/></w:pPr><w:r><w:t xml:space=\"preserve\">s4</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"Title\"/></w:pPr><w:r><w:t xml:space=\"preserve\">s5</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"Quote\"/></w:pPr><w:r><w:t xml:space=\"preserve\">s6</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"IntenseQuote\"/></w:pPr><w:r><w:t xml:space=\"preserve\">s7</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"Code\"/></w:pPr><w:r><w:t xml:space=\"preserve\">s8</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"HTMLPreformatted\"/></w:pPr><w:r><w:t xml:space=\"preserve\">s9</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"SourceCode\"/></w:pPr><w:r><w:t xml:space=\"preserve\">s10</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"ListBullet\"/></w:pPr><w:r><w:t xml:space=\"preserve\">s11</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"ListBullet2\"/></w:pPr><w:r><w:t xml:space=\"preserve\">s12</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"ListNumber\"/></w:pPr><w:r><w:t xml:space=\"preserve\">s13</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"Fancy\"/></w:pPr><w:r><w:t xml:space=\"preserve\">s14</w:t></w:r></w:p>",
+   "html": "<h1>s0</h1><h2>s1</h2><h3>s2</h3><h3>s3</h3><h3>s4</h3><h1>s5</h1><blockquote><p>s6</p><p>s7</p></blockquote><pre>s8</pre><pre>s9</pre><pre>s10</pre><ul><li>s11<ul><li>s12</li></ul></li></ul><ol><li>s13</li></ol><p>s14</p>",
+   "warnings": []
+  },
+  {
+   "name": "a style the file defines wins over the built-in id",
+   "body": "<w:p><w:pPr><w:pStyle w:val=\"Heading1\"/></w:pPr><w:r><w:t xml:space=\"preserve\">a</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"Heading2\"/></w:pPr><w:r><w:t xml:space=\"preserve\">b</w:t></w:r></w:p>",
+   "rels": "<Relationship Id=\"rIdS\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles\" Target=\"styles.xml\"/>",
+   "types": "<Override PartName=\"/word/styles.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml\"/>",
+   "parts": {
+    "word/styles.xml": "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><w:styles xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:style w:type=\"paragraph\" w:styleId=\"Heading1\"><w:name w:val=\"My Body\"/></w:style><w:style w:type=\"character\" w:styleId=\"Heading2\"><w:name w:val=\"Loud\"/></w:style></w:styles>"
+   },
+   "html": "<p>a</p><h2>b</h2>",
+   "warnings": []
+  }
+ ],
  "cases": [
   "<h1>T</h1><h2>U</h2><h3>V</h3>",
   "<p style=\"text-align:justify\">a <b>b</b> <i>c</i> <u>d</u> <s>e</s></p>",
