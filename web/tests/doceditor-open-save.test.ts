@@ -189,6 +189,13 @@ describe("mdToHtml reads like the desktop's markdown-it-py", () => {
     ["\x0ba\x0b", "<p>a</p>\n"],
     ["# 　T　", "<h1>T</h1>\n"],
     ["a <b\x1cx=1> c", "<p>a <b\x1cx=1> c</p>\n"],
+    // block HTML starts the way Python's \s reads it
+    ["<div\x1cx>\n*a*\n", "<div\x1cx>\n*a*\n"],
+    ["<div\x85>\n*b*\n", "<div\x85>\n*b*\n"],
+    ["<div﻿>\n*c*\n", "<p>&lt;div﻿&gt;\n<em>c</em></p>\n"],
+    ["<span a=1\x1c>\n*d*\n", "<span a=1\x1c>\n*d*\n"],
+    ["<span﻿>\n*e*\n", "<p>&lt;span﻿&gt;\n<em>e</em></p>\n"],
+    ["<pre\x1c>\n*f*\n", "<pre\x1c>\n*f*\n"],
   ])("%j", (md, html) => {
     expect(mdToHtml(md)).toBe(html);
   });

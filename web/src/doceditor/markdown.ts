@@ -89,6 +89,66 @@ MD.inline.ruler.at("html_inline", (state, silent) => {
   return true;
 });
 
+// Block HTML the way markdown-it-py starts it: the same rule, but with Python's \s (U+001C-1F
+// and U+0085 are spaces there, U+FEFF isn't) and its list of block tag names.
+const BLOCK_NAMES =
+  "address article aside base basefont blockquote body caption center col colgroup dd details " +
+  "dialog dir div dl dt fieldset figcaption figure footer form frame frameset h1 h2 h3 h4 h5 h6 " +
+  "head header hr html iframe legend li link main menu menuitem nav noframes ol optgroup option " +
+  "p param search section summary table tbody td tfoot th thead title tr track ul";
+const HTML_SEQUENCES: [RegExp, RegExp, boolean][] = [
+  [
+    new RegExp(`^<(script|pre|style|textarea)(?=(${W}|>|$))`, "i"),
+    /<\/(script|pre|style|textarea)>/i,
+    true,
+  ],
+  [/^<!--/, /-->/, true],
+  [/^<\?/, /\?>/, true],
+  [/^<![A-Za-z]/, />/, true],
+  [/^<!\[CDATA\[/, /\]\]>/, true],
+  [
+    new RegExp(`^</?(${BLOCK_NAMES.split(" ").join("|")})(?=(${W}|/?>|$))`, "i"),
+    /^$/,
+    true,
+  ],
+  [new RegExp(`^(?:${OPEN_TAG}|${CLOSE_TAG})${W}*$`), /^$/, false],
+];
+MD.block.ruler.at(
+  "html_block",
+  (state, startLine, endLine, silent) => {
+    let pos = state.bMarks[startLine] + state.tShift[startLine];
+    let max = state.eMarks[startLine];
+    if (state.sCount[startLine] - state.blkIndent >= 4) return false;
+    if (!state.md.options.html || state.src[pos] !== "<") return false;
+    let lineText = state.src.slice(pos, max);
+    const seq = HTML_SEQUENCES.find(([start]) => start.test(lineText));
+    if (!seq) return false;
+    if (silent) return seq[2];
+    let nextLine = startLine + 1;
+    const endsOnBlankLine = seq[1].test("");
+    if (!seq[1].test(lineText)) {
+      for (; nextLine < endLine; nextLine++) {
+        if (state.sCount[nextLine] < state.blkIndent && (endsOnBlankLine || !state.isEmpty(nextLine))) {
+          break;
+        }
+        pos = state.bMarks[nextLine] + state.tShift[nextLine];
+        max = state.eMarks[nextLine];
+        lineText = state.src.slice(pos, max);
+        if (seq[1].test(lineText)) {
+          if (lineText.length !== 0) nextLine++;
+          break;
+        }
+      }
+    }
+    state.line = nextLine;
+    const token = state.push("html_block", "", 0);
+    token.map = [startLine, nextLine];
+    token.content = state.getLines(startLine, nextLine, state.blkIndent, true);
+    return true;
+  },
+  { alt: ["paragraph", "reference", "blockquote"] },
+);
+
 // Backslash escapes the way markdown-it-py reads them: "\ " keeps the space with the backslash
 // (markdown-it 15 leaves it to the text, so "\   ⏎" lost a space before the line break).
 const ESCAPABLE = new Set("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~");
