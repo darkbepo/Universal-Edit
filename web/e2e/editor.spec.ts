@@ -29,7 +29,11 @@ async function openEditor(page: Page, files = [fx("img0.png"), fx("img1.png")]) 
   await page.getByRole("button", { name: "Edit", exact: true }).click();
   await expect(page.locator(".editor")).toBeVisible();
   await expect.poll(() => page.evaluate(() => window.__editor?.doc.layers.length ?? 0)).toBe(files.length);
+  // the tool options float over the picture: tuck them away so strokes reach it
+  await page.evaluate(() => (window.__editor as unknown as { floating: { minimise(k: string): void } }).floating.minimise("tool"));
 }
+
+const showToolOptions = (page: Page) => page.evaluate(() => (window.__editor as unknown as { floating: { restore(k: string): void } }).floating.restore("tool"));
 
 async function at(page: Page, x: number, y: number) {
   return page.evaluate(([ix, iy]) => (window.__editor as EditorHook).imageToPage(ix, iy), [x, y]);
@@ -745,7 +749,9 @@ test("background blur asks for a subject, then blurs around it", async ({ page }
 test("text: box style, click the text again to edit it, layer menu Edit text…", async ({ page }) => {
   await openEditor(page);
   await page.keyboard.press("t");
+  await showToolOptions(page);
   await page.locator(".tool-settings").getByLabel("Box behind (back colour)").check();
+  await page.locator(".tool-options").getByRole("button", { name: /^Minimise/ }).click(); // out of the way
   const p = await at(page, 20, 20);
   await page.mouse.click(p.x, p.y);
   await page.locator("textarea.text-box").fill("Hello");
@@ -986,4 +992,56 @@ test("tool rail: the rotate list toggles on its button, Esc closes only the list
   await expect(page.locator(".crop-bar")).toBeVisible(); // the crop is still there
   await page.locator(".tool-rail").getByRole("button", { name: "Move", exact: true }).click();
   expect(await page.evaluate(() => document.activeElement?.classList.contains("view"))).toBe(true);
+});
+
+// ------------------------------------------------------------------ floating windows
+
+test("windows: several open at once, the icon minimises and restores, dragged and remembered, × cancels", async ({ page }) => {
+  await openEditor(page);
+  const r = page.locator(".tool-rail");
+  const quick = page.locator("dialog.quick-fix");
+  const blur = page.locator("dialog.blur");
+  await rail(page, "Quick fix");
+  await rail(page, "Blur");
+  await expect(quick).toBeVisible();
+  await expect(blur).toBeVisible(); // both at once, and the picture stays usable behind them
+  await expect(r.getByRole("button", { name: /^Blur/ })).toHaveAttribute("data-panel", "open");
+  await rail(page, "Blur"); // again: minimised into its icon
+  await expect(blur).toBeHidden();
+  await expect(r.getByRole("button", { name: /^Blur/ })).toHaveAttribute("data-panel", "minimised");
+  await rail(page, "Blur"); // and back
+  await expect(blur).toBeVisible();
+  // drag the Quick fix window by its title bar
+  const bar = quick.locator(".panel-title");
+  const b = (await bar.boundingBox())!;
+  await page.mouse.move(b.x + 40, b.y + b.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(b.x + 140, b.y + b.height / 2 + 60, { steps: 5 });
+  await page.mouse.up();
+  const moved = (await quick.boundingBox())!;
+  expect(Math.round(moved.x - (b.x - 1))).toBeGreaterThan(80);
+  // × closes it like Cancel: no preview left, nothing applied
+  await quick.getByRole("button", { name: "Close" }).click();
+  await expect(quick).toHaveCount(0);
+  await blur.getByRole("button", { name: "Close" }).click(); // its own preview goes too
+  expect(await page.evaluate(() => (window.__editor as EditorHook & { previewing(): boolean }).previewing())).toBe(false);
+  await rail(page, "Quick fix"); // opens where it was left
+  const again = (await page.locator("dialog.quick-fix").boundingBox())!;
+  expect(Math.abs(again.x - moved.x)).toBeLessThan(3);
+  expect(Math.abs(again.y - moved.y)).toBeLessThan(3);
+  await page.locator("dialog.quick-fix").press("Escape");
+  await expect(page.locator("dialog.quick-fix")).toHaveCount(0);
+});
+
+test("windows: the tool options float, follow the tool, and the chosen tool's icon minimises them", async ({ page }) => {
+  await openEditor(page);
+  const tool = page.locator(".tool-options");
+  await expect(tool).toBeHidden(); // openEditor tucked it away
+  await page.locator(".tool-rail").getByRole("button", { name: "Eraser", exact: true }).click(); // another tool: back
+  await expect(tool).toBeVisible();
+  await expect(tool.locator(".panel-title-text")).toHaveText("Eraser");
+  await expect(page.locator(".editor-side .tool-settings")).toHaveCount(0); // the side holds only colours and layers
+  await page.locator(".tool-rail").getByRole("button", { name: "Eraser", exact: true }).click(); // the chosen tool again
+  await expect(tool).toBeHidden();
+  await expect(tool.getByRole("button", { name: "Close" })).toHaveCount(0); // only minimises
 });

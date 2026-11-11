@@ -120,6 +120,15 @@ class ToolRail(QScrollArea):
         if remember:
             QSettings().setValue(_KEY, narrow)
 
+    def set_panel_state(self, key: str, state: str) -> None:
+        """Mark an icon whose window is open ("open") or minimised into it ("minimised")."""
+        b = self.buttons.get(key)
+        if b is None:
+            return
+        b.setProperty("panel", state)
+        b.style().unpolish(b)
+        b.style().polish(b)
+
     def select(self, tool_id: str) -> None:
         self.buttons[tool_id].setChecked(True)
 

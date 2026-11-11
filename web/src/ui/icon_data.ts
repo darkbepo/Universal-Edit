@@ -73,6 +73,7 @@ export const ICONS = {
   "sticker": "<path d=\"M20 12l-2 .5a6 6 0 0 1 -6.5 -6.5l.5 -2l8 8\" /><path d=\"M20 12a8 8 0 1 1 -8 -8\" />",
   "typography": "<path d=\"M4 20l3 0\" /><path d=\"M14 20l7 0\" /><path d=\"M6.9 15l6.9 0\" /><path d=\"M10.2 6.3l5.8 13.7\" /><path d=\"M5 20l6 -16l2 0l7 16\" />",
   "wand": "<path d=\"M6 21l15 -15l-3 -3l-15 15l3 3\" /><path d=\"M15 6l3 3\" /><path d=\"M9 3a2 2 0 0 0 2 2a2 2 0 0 0 -2 2a2 2 0 0 0 -2 -2a2 2 0 0 0 2 -2\" /><path d=\"M19 13a2 2 0 0 0 2 2a2 2 0 0 0 -2 2a2 2 0 0 0 -2 -2a2 2 0 0 0 2 -2\" />",
+  "minus": "<path d=\"M5 12l14 0\" />",
 } as const;
 
 export type IconName = keyof typeof ICONS;

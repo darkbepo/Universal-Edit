@@ -179,6 +179,9 @@ class _AdjustDialog(QDialog):
 
     def update_preview(self) -> None:
         doc = self.page.doc
+        if doc is None:
+            return
+        self.page._preview_owner = self  # the window changed last shows its preview
         eff = self.effect()
         if doc is None or eff.identity:
             self.page.canvas.set_preview_layer(None, None)
@@ -187,7 +190,9 @@ class _AdjustDialog(QDialog):
 
     def done(self, result: int) -> None:
         self._timer.stop()
-        self.page.canvas.set_preview_layer(None, None)
+        if self.page._preview_owner in (self, None):
+            self.page.canvas.set_preview_layer(None, None)
+            self.page._preview_owner = None
         super().done(result)
 
 

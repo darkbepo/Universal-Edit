@@ -85,6 +85,7 @@ The browser version's source is in [`web/`](web/README.md).
 | Image editor: show only one layer (Alt+click its eye, or the layer menu; again to show all), colour-picker magnifier while the button is held, the mask brush adds a mask by itself | ✅ | ✅ |
 | Image editor: move a selection by dragging inside it (or with the arrow keys) — the outline moves, the picture stays | ✅ | ✅ |
 | Image editor tool rail: every tool and action grouped (Select, Move & crop, Paint, Retouch, Shapes & text, Adjust, Filters, Image) with names shown, or narrowed to icons only (remembered) | ✅ | ✅ |
+| Image editor windows: every tool's options and every feature with settings (adjustments, filters, resize, stickers, feather, shortcuts) open in a window over the picture — drag it anywhere, minimise it back into its icon, keep several open; positions are remembered | ✅ | ✅ |
 | Layered projects: save and open OpenRaster `.ora` (GIMP and Krita open it too); `.ora` → any image format | ✅ | ✅ |
 | Files never leave your computer | ✅ | ✅ |
 | No install needed | ❌ | ✅ |

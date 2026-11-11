@@ -58,8 +58,10 @@ from umc.gui.editor.dialogs import (
     SharpenDialog,
     ShortcutsDialog,
     StickersDialog,
+    _AdjustDialog,
     tool_groups,
 )
+from umc.gui.editor.floating import PanelHost
 from umc.gui.editor.layers_panel import LayersPanel
 from umc.gui.editor.shortcuts import SHORTCUTS
 from umc.gui.editor.side_panel import ColorSwatches, ToolSettings
@@ -201,7 +203,7 @@ class EditorPage(QWidget):
         middle.setContentsMargins(0, 0, 0, 0)
         middle.setSpacing(0)
         self.tool_bar = ToolRail()
-        self.tool_bar.tool_selected.connect(self.select_tool)
+        self.tool_bar.tool_selected.connect(self._rail_tool)
         self.tool_bar.action_triggered.connect(self.rail_action)
         middle.addWidget(self.tool_bar)
 
@@ -219,6 +221,14 @@ class EditorPage(QWidget):
         self.crop_bar.cancelled.connect(self._bar_cancel)
         self.canvas.bar = self.crop_bar
         middle.addWidget(self.canvas, 1)
+        # every rail icon with settings opens a window floating over the canvas
+        self.panels = PanelHost(self.canvas)
+        self._preview_owner = None  # the adjustment window whose live preview is showing
+        self.panels.state_changed.connect(self._panel_state)
+        self.tool_settings = ToolSettings()
+        self.tool_settings.changed.connect(self.canvas.update)
+        self.tool_settings.setMinimumWidth(250)
+        self.tool_settings.title.hide()  # the window's title already names the tool
         middle.addWidget(self._build_side())
         root.addLayout(middle, 1)
 
@@ -233,6 +243,7 @@ class EditorPage(QWidget):
         root.addWidget(status)
 
         self._install_shortcuts()
+        self.panels.open("tool", "Tool options", self.tool_settings, closable=False, right=True)
         self.select_tool("brush")
         self._update_buttons()
 
@@ -278,9 +289,6 @@ class EditorPage(QWidget):
         lay = QVBoxLayout(host)
         lay.setContentsMargins(14, 12, 14, 12)
         lay.setSpacing(10)
-        self.tool_settings = ToolSettings()
-        self.tool_settings.changed.connect(self.canvas.update)
-        lay.addWidget(self.tool_settings)
         lay.addWidget(QLabel("COLOURS", objectName="Section"))
         self.swatches = ColorSwatches()
         lay.addWidget(self.swatches)
@@ -357,7 +365,7 @@ class EditorPage(QWidget):
             sc((letter,), lambda ids=[t.id for t in group]: self._cycle_tool(ids))
 
     def show_shortcuts(self) -> None:
-        ShortcutsDialog(TOOLS, self).exec()
+        self._window("shortcuts", "Keyboard shortcuts", lambda: ShortcutsDialog(TOOLS, self))
 
     def _delete(self) -> None:
         """Delete: the selected layers when the layers list has focus, else the selected area."""
@@ -454,6 +462,7 @@ class EditorPage(QWidget):
         return True
 
     def set_document(self, doc: Document, sources: list[Path] | None = None) -> None:
+        self.panels.close_all(keep=("tool",))  # their settings belong to the old picture
         self.doc = doc
         self.history = History(doc)
         self.sources = sources or []
@@ -497,10 +506,51 @@ class EditorPage(QWidget):
         self.canvas.set_tool(self.tool)
         self.tool_bar.select(tool_id)
         self.tool_settings.show_tool(self.tool)
+        if "tool" in self.panels.panels:
+            self.panels.panels["tool"].set_title(self.tool.label)
+            self.panels.fit("tool")
         if tool_id == "crop":
             self.show_message(CROP_HINT)
         elif self.message.text() == CROP_HINT:
             self.show_message("")
+
+    def _rail_tool(self, tool_id: str) -> None:
+        """A tool clicked on the rail: choose it and show its options; clicking the chosen tool
+        again minimises its options window (and brings it back)."""
+        if self.tool is not None and tool_id == self.tool.id:
+            self.panels.toggle("tool")
+        else:
+            self.select_tool(tool_id)
+            self.panels.restore("tool")
+        self.canvas.setFocus()
+
+    def _panel_state(self, key: str, state: str) -> None:
+        self.tool_bar.set_panel_state(key, state)
+        panel = self.panels.panels.get(key)
+        dlg = panel.content if panel is not None else None
+        if isinstance(dlg, _AdjustDialog):
+            if state == "minimised" and self._preview_owner is dlg:
+                self.canvas.set_preview_layer(None, None)  # parked: no preview
+            elif state == "open":
+                dlg.changed()
+
+    def _window(self, key: str, title: str, make, on_accept=None) -> None:
+        """Open the window for ``key`` (``make()`` builds its content), or minimise / bring
+        back the one already open. ``on_accept`` runs when its OK button is pressed."""
+        if self.panels.toggle(key):
+            return
+        dlg = make()
+        if on_accept is not None:
+            dlg.accepted.connect(lambda: self._guarded(on_accept, dlg))
+        self.panels.open(key, title, dlg)
+
+    def _guarded(self, fn, dlg) -> None:
+        if self.doc is None:
+            return
+        try:
+            self._push(fn(dlg))
+        except ConversionError as exc:
+            self.show_message(str(exc), error=True)
 
     def _cycle_tool(self, ids: list[str]) -> None:
         """The first tool of the group, or the next one if a tool of it is already chosen."""
@@ -518,9 +568,12 @@ class EditorPage(QWidget):
         if self.doc is None or self.doc.selection is None:
             self.show_message("Select an area first.")
             return
-        dlg = FeatherDialog(self)
-        if dlg.exec():
-            self._push(selection.feather(self.doc, dlg.radius.value()))
+        self._window(
+            "feather",
+            "Feather selection",
+            lambda: FeatherDialog(self),
+            lambda d: selection.feather(self.doc, d.radius.value()),
+        )
 
     # ------------------------------------------------------------ changes
     def _push(self, cmd) -> None:
@@ -535,6 +588,11 @@ class EditorPage(QWidget):
     def _on_changed(self) -> None:
         if self.doc is None:
             return
+        owner = self._preview_owner
+        if owner is not None and any(
+            p.content is owner and p.isVisible() for p in self.panels.panels.values()
+        ):
+            owner.changed()  # the picture changed under an open adjustment: preview again
         if not self.layers.in_sync(self.doc):
             self.layers.refresh(self.doc)
         else:
@@ -593,13 +651,21 @@ class EditorPage(QWidget):
         cmd = None
         try:
             if name == "resize":
-                dlg = ResizeDialog(doc, self)
-                if dlg.exec():
-                    cmd = ops.resize_image(doc, *dlg.result_values())
-            elif name == "canvas_size":
-                dlg = CanvasSizeDialog(doc, self)
-                if dlg.exec():
-                    cmd = ops.canvas_size(doc, *dlg.result_values())
+                self._window(
+                    name,
+                    "Resize image",
+                    lambda: ResizeDialog(self.doc, self),
+                    lambda d: ops.resize_image(self.doc, *d.result_values()),
+                )
+                return
+            if name == "canvas_size":
+                self._window(
+                    name,
+                    "Canvas size",
+                    lambda: CanvasSizeDialog(self.doc, self),
+                    lambda d: ops.canvas_size(self.doc, *d.result_values()),
+                )
+                return
             elif name == "crop_selection":
                 if doc.selection is None:
                     self.show_message("Select an area first (rectangle select, M).")
@@ -620,20 +686,31 @@ class EditorPage(QWidget):
                 finally:
                     QApplication.restoreOverrideCursor()
             elif name == "stickers":
-                dlg = StickersDialog(self)
-                if dlg.exec() and dlg.chosen():
-                    cmd = ops.add_sticker(
-                        doc,
-                        dlg.chosen(),
-                        dlg.size.value(),
-                        self.view_center(),
-                        self.swatches.primary,
-                        self.swatches.secondary,
-                    )
+                self._window(
+                    name,
+                    "Stickers",
+                    lambda: StickersDialog(self),
+                    lambda d: (
+                        ops.add_sticker(
+                            self.doc,
+                            d.chosen(),
+                            d.size.value(),
+                            self.view_center(),
+                            self.swatches.primary,
+                            self.swatches.secondary,
+                        )
+                        if d.chosen()
+                        else None
+                    ),
+                )
+                return
             elif name in ADJUST_DIALOGS:
-                dlg = ADJUST_DIALOGS[name][0](self)
-                if dlg.exec():
-                    self.apply_effect(dlg.effect(), ADJUST_DIALOGS[name][1])
+                cls, label = ADJUST_DIALOGS[name]
+
+                def apply(d, label=label):
+                    self.apply_effect(d.effect(), label)
+
+                self._window(name, cls.title, lambda: cls(self), apply)
                 return
             else:
                 layer_only = name.startswith("layer_")

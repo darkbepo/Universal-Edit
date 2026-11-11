@@ -629,8 +629,22 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
          `ToolRail` in `ui/editor/panels.ts` (localStorage `umc-rail-narrow`; below 900 px it
          becomes an icon row). Names shown by default, the chevron narrows to icons. The top bar's
          Image / Select / Adjust / Filters menus and the Stickers button are gone; e2e uses `rail()`.
-      4. Floating windows: every icon opens a movable, minimisable window (several at once,
-         positions remembered); no modal dialogs; layers side stays only layers.
+      4. ✅ Floating windows (both apps): `gui/editor/floating.py` (`PanelHost` / `FloatingPanel`,
+         children of the canvas) and `web/src/ui/editor/floating.ts` (`FloatingHost`, the dialog
+         element shown with `show()` inside `.canvas-host`). Title bar drags (kept inside the
+         editor), — minimises into the rail icon (`set_panel_state` / `setPanelState` marks it
+         "open" / "minimised"), × closes like Cancel; clicking the icon again toggles. Several
+         open at once; positions in QSettings `editor/panel/<key>` / localStorage `umc-panel-<key>`.
+         The old dialogs are embedded unchanged: desktop `QDialog`s become plain child widgets
+         (`page._window(key, title, make, on_accept)`, OK = `accepted`), web `modal()` hands its
+         <dialog> to the host (`setFloatingHost`; keys = the dialog class, `-` → `_`, = rail ids);
+         Save options, "unsaved changes?" and the model download question stay modal. Live
+         previews: the window changed last owns the preview (`page._preview_owner` /
+         `previewRefresh`), a minimised one parks it, a picture change re-previews it. The tool
+         options are a window too ("tool", only minimises, pinned to the canvas's top-right
+         corner until dragged, title = the tool); clicking the chosen tool's icon toggles it. The
+         right side holds only colours and layers. e2e `openEditor` minimises the tool window
+         (it covers the picture); `showToolOptions()` brings it back.
       5. Live text layers (a layer at once, movable while typing, editable until rasterised).
       6. Shape layers (rectangle / ellipse / line / arrow keep handles until rasterised / merged).
       7. Layer effects: drop shadow, colour overlay, glow, outline (live, "fx" badge, kept in .ora).

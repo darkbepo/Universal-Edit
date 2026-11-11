@@ -9,20 +9,47 @@ import type { RGBA } from "../../editor/layer";
 import type { Rasterizer } from "../../editor/raster";
 import { renderSticker, STICKERS } from "../../editor/stickers";
 import { SettingsForm } from "../settings";
+import type { FloatingHost } from "./floating";
 import { h } from "./panels";
 
-function modal<T>(cls: string, title: string, body: HTMLElement[], okLabel: string, read: () => T, extra: HTMLButtonElement[] = []): Promise<{ value: T; button: string } | null> {
+/** Where the editor's windows float (set by the page). Without it windows are modal. */
+let floatingHost: FloatingHost | null = null;
+export function setFloatingHost(host: FloatingHost | null): void {
+  floatingHost = host;
+}
+
+/** The window key of a dialog class ("adjust quick-fix" → "quick_fix"), as the rail ids. */
+const windowKey = (cls: string) => (cls.split(" ").pop() as string).replace(/-/g, "_");
+
+/** A window for `cls` is already open (or minimised): bring it back / tuck it away instead. */
+function toggleExisting(cls: string): boolean {
+  return !!floatingHost && floatingHost.toggle(windowKey(cls));
+}
+
+interface WindowHooks {
+  onMinimise?: () => void;
+  onRestore?: () => void;
+}
+
+function modal<T>(cls: string, title: string, body: HTMLElement[], okLabel: string, read: () => T, extra: HTMLButtonElement[] = [], floating = true, hooks: WindowHooks = {}): Promise<{ value: T; button: string } | null> {
+  if (floating && toggleExisting(cls)) return Promise.resolve(null);
   return new Promise((resolve) => {
     const ok = h("button", { class: "primary small", type: "button" }, okLabel);
     const cancel = h("button", { class: "btn", type: "button" }, "Cancel");
     const dlg = h("dialog", { class: `editor-dialog ${cls}` }, h("h2", {}, title), ...body, h("div", { class: "row" }, h("div", { class: "spacer" }), cancel, ...extra, ok));
     let done = false;
+    const host = floating ? floatingHost : null;
+    const key = windowKey(cls);
     const finish = (button: string | null) => {
       if (done) return;
       done = true;
-      dlg.close();
-      dlg.remove();
-      resolve(button ? { value: read(), button } : null);
+      const value = button ? read() : null;
+      if (host) host.close(key);
+      else {
+        dlg.close();
+        dlg.remove();
+      }
+      resolve(button ? { value: value as T, button } : null);
     };
     ok.addEventListener("click", () => finish(okLabel));
     for (const b of extra) b.addEventListener("click", () => finish(b.textContent ?? ""));
@@ -32,6 +59,10 @@ function modal<T>(cls: string, title: string, body: HTMLElement[], okLabel: stri
       finish(null);
     });
     dlg.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && host) {
+        e.preventDefault();
+        finish(null);
+      }
       if (e.key === "Enter" && (e.target as HTMLElement).tagName !== "SELECT") {
         e.preventDefault();
         finish(okLabel);
@@ -39,6 +70,17 @@ function modal<T>(cls: string, title: string, body: HTMLElement[], okLabel: stri
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") e.preventDefault(); // not the browser's "Save page"
       e.stopPropagation(); // never reach the editor's shortcuts
     });
+    if (host) {
+      const unhook = () => host.onStateFor(key, null);
+      host.onStateFor(key, (state) => {
+        if (state === "minimised") hooks.onMinimise?.();
+        else if (state === "open") hooks.onRestore?.();
+        else unhook();
+      });
+      host.open(key, title, dlg, { onClose: () => finish(null) });
+      (dlg.querySelector("input, select, button:not(.panel-button)") as HTMLElement | null)?.focus();
+      return;
+    }
     document.body.append(dlg);
     dlg.showModal();
   });
@@ -94,6 +136,9 @@ export async function canvasSizeDialog(doc: EditorDoc): Promise<[number, number,
 export interface AdjustHost {
   region: { data: Uint8ClampedArray; width: number; height: number } | null;
   preview(e: Effect | null): void;
+  /** The page remembers which window's preview is showing (to redo it when the picture changes). */
+  own?(refresh: (() => void) | null): void;
+  owns?(refresh: () => void): boolean;
 }
 
 const CHANNEL_LABELS: [Channel, string][] = [["rgb", "All colours"], ["r", "Red"], ["g", "Green"], ["b", "Blue"]];
@@ -101,13 +146,16 @@ const cssVar = (name: string) => getComputedStyle(document.documentElement).getP
 
 /** A modal with live preview, "Hold to see the original" and Reset; resolves to the settings. */
 async function effectModal(cls: string, title: string, host: AdjustHost, body: (changed: () => void) => { els: HTMLElement[]; read: () => Effect; reset: () => void }): Promise<Effect | null> {
+  if (toggleExisting(`adjust ${cls}`)) return null;
   let timer = 0;
   let holding = false;
+  let parked = false; // minimised: no preview
   const changed = () => {
     clearTimeout(timer);
     timer = window.setTimeout(() => {
-      if (!holding) {
+      if (!holding && !parked) {
         const e = built.read();
+        host.own?.(changed); // the window changed last shows its preview
         host.preview(e.identity ? null : e);
       }
     }, 60);
@@ -127,9 +175,19 @@ async function effectModal(cls: string, title: string, host: AdjustHost, body: (
     built.reset();
     changed();
   });
-  const r = await modal(`adjust ${cls}`, title, [...built.els, h("div", { class: "row" }, hold, h("div", { class: "spacer" }), reset)], "Apply", built.read);
+  const r = await modal(`adjust ${cls}`, title, [...built.els, h("div", { class: "row" }, hold, h("div", { class: "spacer" }), reset)], "Apply", built.read, [], true, {
+    onMinimise: () => {
+      parked = true;
+      if (host.owns?.(changed) ?? true) host.preview(null);
+    },
+    onRestore: () => {
+      parked = false;
+      changed();
+    },
+  });
   clearTimeout(timer);
-  host.preview(null);
+  if (host.owns?.(changed) ?? true) host.preview(null);
+  host.own?.(null);
   return r && !r.value.identity ? r.value : null;
 }
 
@@ -637,6 +695,7 @@ export async function saveDialog(defaultName: string, formats: [string, string][
     "Save",
     () => ({ name: name.value.trim() || defaultName, format: format.value, values: form.values() }),
     extra,
+    false, // part of saving: stays a modal window
   );
   if (!r) return null;
   return { ...r.value, toFile: r.button !== "Save" };
@@ -644,6 +703,7 @@ export async function saveDialog(defaultName: string, formats: [string, string][
 
 /** The "?" window: every keyboard shortcut, grouped. */
 export function shortcutsDialog(tools: { shortcut: string; label: string }[]): Promise<void> {
+  if (toggleExisting("shortcuts")) return Promise.resolve();
   return import("./shortcuts").then(({ shortcutRows }) => new Promise<void>((resolve) => {
     const cols = h("div", { class: "shortcut-cols" });
     for (const [group, rows] of shortcutRows(tools)) {
@@ -653,9 +713,13 @@ export function shortcutsDialog(tools: { shortcut: string; label: string }[]): P
     }
     const close = h("button", { class: "btn", type: "button" }, "Close");
     const dlg = h("dialog", { class: "editor-dialog shortcuts-dialog", ariaLabel: "Keyboard shortcuts" }, h("h2", {}, "Keyboard shortcuts"), cols, h("div", { class: "row" }, h("div", { class: "spacer" }), close));
+    const host = floatingHost;
     const finish = () => {
-      dlg.close();
-      dlg.remove();
+      if (host) host.close("shortcuts");
+      else {
+        dlg.close();
+        dlg.remove();
+      }
       resolve();
     };
     close.addEventListener("click", finish);
@@ -663,9 +727,15 @@ export function shortcutsDialog(tools: { shortcut: string; label: string }[]): P
       e.preventDefault();
       finish();
     });
-    dlg.addEventListener("keydown", (e) => e.stopPropagation()); // never reach the editor's shortcuts
-    document.body.append(dlg);
-    dlg.showModal();
+    dlg.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && host) finish();
+      e.stopPropagation(); // never reach the editor's shortcuts
+    });
+    if (host) host.open("shortcuts", "Keyboard shortcuts", dlg, { onClose: () => resolve() });
+    else {
+      document.body.append(dlg);
+      dlg.showModal();
+    }
     close.focus();
   }));
 }

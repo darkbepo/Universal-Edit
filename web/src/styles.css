@@ -415,3 +415,18 @@ body.no-select { user-select: none; -webkit-user-select: none; }
   .tool-rail.narrow .rail-group { margin: 0 4px; border-top: none; border-left: 1px solid var(--border); align-self: stretch; }
   .editor-side { border-left: none; border-top: 1px solid var(--border); }
 }
+
+/* ---------- floating windows (editor): over the picture, movable, minimised into their icon */
+.editor-dialog.floating, .tool-options.floating { position: absolute; inset: auto; margin: 0; padding: 0 0 14px; min-width: 240px; max-width: min(460px, calc(100% - 16px)); max-height: calc(100% - 16px); overflow: auto; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 10px 28px rgba(0,0,0,.18); z-index: 10; }
+.editor-dialog.floating > :not(.panel-title) { margin-left: 16px; margin-right: 16px; }
+.floating[hidden] { display: none; }
+.panel-title { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 2px; padding: 5px 5px 5px 12px; margin-bottom: 8px; background: var(--surface-alt); border-bottom: 1px solid var(--border); border-radius: 12px 12px 0 0; cursor: grab; user-select: none; -webkit-user-select: none; touch-action: none; }
+.panel-title.dragging { cursor: grabbing; }
+.panel-title-text { flex: 1; font-weight: 600; font-size: 13px; }
+.panel-button { display: grid; place-items: center; width: 24px; height: 24px; background: none; border: none; border-radius: 6px; color: var(--muted); cursor: pointer; }
+.panel-button:hover { background: var(--accent-soft); color: var(--text); }
+.tool-options.floating { width: 280px; padding-bottom: 10px; }
+.tool-options .tool-settings { padding: 0 14px; }
+.tool-options .tool-settings > :first-child { display: none; } /* the window's title already names the tool */
+.rail-item[data-panel="open"] { background: var(--accent-soft); }
+.rail-item[data-panel="minimised"] { border-style: dashed; border-color: var(--accent); }

@@ -14,6 +14,7 @@ import { addSticker } from "../../editor/stickers";
 import { contentAwareFill } from "../../editor/inpaint";
 import { MASK_TARGET } from "../../converters/bgremove";
 import { CloneStampTool } from "../../editor/tools/paint";
+import { FloatingHost } from "./floating";
 import { canvasPng, canvasRasterizer, decodeBlob, type Decoded } from "../../editor/raster";
 import type { Tool, ToolContext } from "../../editor/tools/base";
 import { makeTools } from "../../editor/tools/index";
@@ -24,7 +25,7 @@ import * as effects from "../../editor/effects";
 import type { Effect } from "../../editor/effects";
 import * as clipboard from "../../editor/clipboard";
 import { EditorCanvas } from "./canvas";
-import { backgroundBlurDialog, blurDialog, canvasSizeDialog, featherDialog, curvesDialog, stickersDialog, levelsDialog, looksDialog, quickFixDialog, resizeDialog, saveDialog, sharpenDialog, shortcutsDialog, type AdjustHost } from "./dialogs";
+import { backgroundBlurDialog, blurDialog, canvasSizeDialog, featherDialog, curvesDialog, stickersDialog, setFloatingHost, levelsDialog, looksDialog, quickFixDialog, resizeDialog, saveDialog, sharpenDialog, shortcutsDialog, type AdjustHost } from "./dialogs";
 import { CropBar, type BarMode } from "./cropbar";
 import { h, LayersPanel, Swatches, ToolRail, ToolSettings } from "./panels";
 import { SHORTCUTS, shortcutFor, toolGroups } from "./shortcuts";
@@ -90,6 +91,10 @@ export class EditorPage {
   tool: Tool = this.tools[0];
   private toolBar: ToolRail;
   private settings: ToolSettings;
+  /** The editor's floating windows (tool options, adjustments, resize…). */
+  private floating!: FloatingHost;
+  /** Redoes the live preview of the adjustment window that showed it last. */
+  private previewRefresh: (() => void) | null = null;
   private swatches: Swatches;
   private layers: LayersPanel;
   private message = h("div", { class: "msg" });
@@ -117,7 +122,12 @@ export class EditorPage {
     this.toolBar = new ToolRail(
       this.tools,
       (id) => {
-        this.selectTool(id);
+        // the chosen tool again: tuck its options away / bring them back; another: show them
+        if (id === this.tool.id) this.floating.toggle("tool");
+        else {
+          this.selectTool(id);
+          this.floating.restore("tool");
+        }
         this.canvas.view.focus(); // so Space pans and arrows nudge straight away
       },
       (id) => void this.railAction(id),
@@ -161,11 +171,16 @@ export class EditorPage {
     this.cropBar = new CropBar((mode) => this.barApply(mode), (mode) => this.barCancel(mode));
     this.canvas.el.append(this.cropBar.el);
     this.canvas.bar = this.cropBar;
-    const side = h("div", { class: "editor-side" }, this.settings.el, h("div", { class: "section" }, "Colours"), this.swatches.el, this.layers.el);
+    // the right side holds only colours and layers; tool options float over the picture
+    const side = h("div", { class: "editor-side" }, h("div", { class: "section" }, "Colours"), this.swatches.el, this.layers.el);
     this.el = h("div", { class: "editor", hidden: true },
       top,
       h("div", { class: "editor-body" }, this.toolBar.el, this.canvas.el, side),
       h("div", { class: "editor-status" }, this.message, this.info));
+    this.floating = new FloatingHost(this.canvas.el);
+    this.floating.onState = (key, state) => this.toolBar.setPanelState(key, state);
+    setFloatingHost(this.floating);
+    this.floating.open("tool", "Tool options", h("div", { class: "tool-options" }, this.settings.el), { closable: false, right: true });
     this.selectTool("brush");
     this.updateButtons();
     window.addEventListener("keydown", (e) => this.key(e));
@@ -278,6 +293,7 @@ export class EditorPage {
   }
 
   private setDocument(doc: EditorDoc): void {
+    this.floating.closeAll(["tool"]); // their settings belong to the old picture
     this.doc = doc;
     this.history = new History(doc);
     this.canvas.setDocument(doc, this.history);
@@ -301,6 +317,7 @@ export class EditorPage {
     this.canvas.setTool(tool);
     this.toolBar.select(id);
     this.settings.show(tool);
+    this.floating?.setTitle("tool", tool.label);
     if (id === "crop") this.showMessage(CROP_HINT);
     else if (this.message.textContent === CROP_HINT) this.showMessage("");
   }
@@ -315,6 +332,7 @@ export class EditorPage {
 
   private changed(): void {
     if (!this.doc) return;
+    this.previewRefresh?.(); // the picture changed under an open adjustment: preview again
     this.layers.refreshActiveThumb();
     this.updateButtons();
     this.updateInfo();
@@ -635,9 +653,14 @@ export class EditorPage {
         const host: AdjustHost = {
           region: effects.regionData(doc),
           preview: (e) => this.canvas.setPreviewLayer(doc.active, e ? effects.preview(doc, e) : null),
+          own: (refresh) => {
+            if (refresh) this.previewRefresh = mine = refresh;
+            else if (this.previewRefresh === mine) this.previewRefresh = null;
+          },
+          owns: (refresh) => this.previewRefresh === refresh,
         };
+        let mine: (() => void) | null = null;
         const e = await dialog(host);
-        this.canvas.setPreviewLayer(null, null);
         if (e && this.doc === doc) cmd = effects.applyToDocument(doc, e, label);
       } else {
         const layerOnly = name.startsWith("layer_");
@@ -843,6 +866,10 @@ export class EditorPage {
       },
       get history() {
         return page.history;
+      },
+      /** The floating windows (tests tuck the tool options away so strokes reach the picture). */
+      get floating() {
+        return page.floating;
       },
       get toolId() {
         return page.tool.id;

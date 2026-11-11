@@ -564,3 +564,38 @@ QToolButton#RailToggle {
     border: none;
     padding: 2px;
 }
+QToolButton#RailButton[panel="open"] {
+    background: @accent_soft;
+}
+QToolButton#RailButton[panel="minimised"] {
+    border: 1px dashed @accent;
+}
+
+/* ---------- floating windows (editor) */
+QFrame#FloatingPanel {
+    background: @surface;
+    border: 1px solid @border;
+    border-radius: 10px;
+}
+QFrame#FloatingPanel QDialog, QWidget#PanelBody {
+    background: transparent;
+}
+QFrame#PanelTitle {
+    background: @surface_alt;
+    border-top-left-radius: 10px;
+    border-top-right-radius: 10px;
+    border-bottom: 1px solid @border;
+}
+QLabel#PanelTitleText {
+    font-weight: 600;
+    font-size: 12px;
+}
+QToolButton#PanelButton {
+    background: transparent;
+    border: none;
+    padding: 3px;
+    border-radius: 6px;
+}
+QToolButton#PanelButton:hover {
+    background: @accent_soft;
+}

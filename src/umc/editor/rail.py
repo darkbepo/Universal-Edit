@@ -114,7 +114,7 @@ MENUS: dict[str, list] = {
 }
 
 ICON_NAMES = sorted(
-    {it[3] for g in RAIL for it in g["items"]} | {"chevrons-left", "chevrons-right"}
+    {it[3] for g in RAIL for it in g["items"]} | {"chevrons-left", "chevrons-right", "minus"}
 )
 
 

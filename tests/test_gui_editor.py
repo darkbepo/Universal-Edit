@@ -30,6 +30,16 @@ def canvas(qtbot):
     return c, doc, h
 
 
+def _accept_window(page, key, fill=None):
+    """Open the floating window for ``key``, let ``fill`` set it up, and press its OK."""
+    page.run_op(key)
+    dlg = page.panels.panels[key].content
+    if fill is not None:
+        fill(dlg)
+    dlg.accept()
+    assert key not in page.panels.panels  # OK closes it
+
+
 def test_canvas_stroke_pushes_history(canvas, qtbot):
     c, doc, h = canvas
     p = c.image_to_widget(50, 50)
@@ -217,7 +227,6 @@ def test_quick_fix_preview_cancel_restores(page, qtbot):
 
 
 def test_quick_fix_apply_is_one_undo_step(page, qtbot, monkeypatch):
-    from umc.gui.editor.dialogs import QuickFixDialog
 
     def ok(self):
         self.sliders["exposure"].set_value(1.0)
@@ -225,8 +234,7 @@ def test_quick_fix_apply_is_one_undo_step(page, qtbot, monkeypatch):
         self.auto.setChecked(True)
         return 1
 
-    monkeypatch.setattr(QuickFixDialog, "exec", ok)
-    page.run_op("quick_fix")
+    _accept_window(page, "quick_fix", ok)
     assert page.history.undo_label == "Quick fix"
     r, g, b, _ = page.doc.active_layer.image.getpixel((5, 5))
     assert r == g == b  # saturation −100 → grey
@@ -683,11 +691,9 @@ def test_shortcut_table_has_no_clashes_and_help_lists_everything(page, qtbot, mo
     assert {s.label for s in SHORTCUTS} <= labels and "Move" in labels
     tool_keys = [k for k, _ in rows["Tools"]]
     assert tool_keys.count("U") == 1
-    opened = []
-    monkeypatch.setattr(dialogs.ShortcutsDialog, "exec", lambda self: opened.append(self.rows))
     page.canvas.setFocus()
     qtbot.keyClick(page.canvas, Qt.Key.Key_F1)
-    assert opened
+    assert isinstance(page.panels.panels["shortcuts"].content, dialogs.ShortcutsDialog)
 
 
 def test_ctrl_alt_shortcuts_leave_text_fields_alone(page, qtbot):
@@ -740,14 +746,12 @@ def test_levels_dialog_fields_markers_and_channels(page, qtbot):
 
 
 def test_levels_auto_and_apply(page, monkeypatch):
-    from umc.gui.editor.dialogs import LevelsDialog
 
     def ok(self):
         self.auto_button.click()
         return 1
 
-    monkeypatch.setattr(LevelsDialog, "exec", ok)
-    page.run_op("levels")
+    _accept_window(page, "levels", ok)
     # one flat colour: nothing to stretch → no change, no undo step
     assert not page.history.can_undo
 
@@ -784,7 +788,6 @@ def test_curves_editor_add_move_remove(page, qtbot):
 
 def test_curves_apply_to_selection(page, monkeypatch):
     from umc.editor.geometry import Rect
-    from umc.gui.editor.dialogs import CurvesDialog
 
     page.doc.selection = Rect(0, 0, 10, 10)
 
@@ -793,9 +796,8 @@ def test_curves_apply_to_selection(page, monkeypatch):
         self.add_point(0, 100)
         return 1
 
-    monkeypatch.setattr(CurvesDialog, "exec", ok)
     before = page.doc.active_layer.image.getpixel((20, 20))
-    page.run_op("curves")
+    _accept_window(page, "curves", ok)
     assert page.history.undo_label == "Curves"
     assert page.doc.active_layer.image.getpixel((20, 20)) == before  # outside the selection
     assert before[0] == 0 and page.doc.active_layer.image.getpixel((5, 5))[0] == 100
@@ -846,7 +848,7 @@ def test_levels_fields_show_what_is_applied_and_auto_uses_the_channel(page, qtbo
 
 
 def test_blur_and_sharpen_dialogs_preview_and_apply(page, qtbot, monkeypatch):
-    from umc.gui.editor.dialogs import BlurDialog, SharpenDialog
+    from umc.gui.editor.dialogs import BlurDialog
 
     dlg = BlurDialog(page)
     qtbot.addWidget(dlg)
@@ -861,11 +863,9 @@ def test_blur_and_sharpen_dialogs_preview_and_apply(page, qtbot, monkeypatch):
         self.radius.set_value(3)
         return 1
 
-    monkeypatch.setattr(BlurDialog, "exec", ok)
-    page.run_op("blur")
+    _accept_window(page, "blur", ok)
     assert page.history.undo_label == "Blur"
-    monkeypatch.setattr(SharpenDialog, "exec", lambda self: 1)
-    page.run_op("sharpen")
+    _accept_window(page, "sharpen")
     assert page.history.undo_label == "Sharpen"
 
 
@@ -889,8 +889,7 @@ def test_looks_dialog_tiles_choose_and_strength(page, qtbot, monkeypatch):
         self.choose("bw")
         return 1
 
-    monkeypatch.setattr(LooksDialog, "exec", ok)
-    page.run_op("looks")
+    _accept_window(page, "looks", ok)
     r, g, b, _ = page.doc.active_layer.image.getpixel((5, 5))
     assert r == g == b and page.history.undo_label == "Look"
 
@@ -958,15 +957,14 @@ def test_polygon_lasso_double_click_and_enter_finish(page, qtbot):
 
 def test_select_menu_invert_and_feather(page, qtbot, monkeypatch):
     from umc.editor.geometry import Rect
-    from umc.gui.editor.dialogs import FeatherDialog
 
     page.select_tool("select")
     _canvas_drag(qtbot, page, (0, 0), (20, 40))
     page.canvas.setFocus()
     qtbot.keyClick(page.canvas, Qt.Key.Key_I, CTRL | SHIFT)
     assert page.doc.selection == Rect(20, 0, 60, 40)
-    monkeypatch.setattr(FeatherDialog, "exec", lambda self: 1)
     qtbot.keyClick(page.canvas, Qt.Key.Key_F6, SHIFT)
+    page.panels.panels["feather"].content.accept()
     assert page.doc.selection_mask is not None and page.history.undo_label == "Feather selection"
 
 
@@ -1016,13 +1014,11 @@ def test_g_cycles_fill_and_gradient_and_gradient_paints(page, qtbot):
 
 def test_background_blur_needs_a_selection_then_applies(page, monkeypatch):
     from umc.editor.geometry import Rect
-    from umc.gui.editor.dialogs import BackgroundBlurDialog
 
     page.run_op("background_blur")
     assert "Select the subject first" in page.message.text() and not page.history.can_undo
     page.doc.selection = Rect(0, 0, 10, 10)
-    monkeypatch.setattr(BackgroundBlurDialog, "exec", lambda self: 1)
-    page.run_op("background_blur")
+    _accept_window(page, "background_blur")
     assert page.history.undo_label == "Background blur"
     assert page.doc.selection == Rect(0, 0, 10, 10)
 
@@ -1107,9 +1103,8 @@ def test_stickers_dialog_adds_a_layer(page, qtbot, monkeypatch):
         self.size.setValue(30)
         return 1
 
-    monkeypatch.setattr(StickersDialog, "exec", ok)
     n = len(page.doc.layers)
-    page.run_op("stickers")
+    _accept_window(page, "stickers", ok)
     assert len(page.doc.layers) == n + 1
     assert page.doc.active_layer.image.size == (30, 30)
 
@@ -1225,3 +1220,64 @@ def test_the_rail_never_takes_focus_from_the_canvas(page, qtbot):
     qtbot.mouseClick(rail._labels[0], Qt.MouseButton.LeftButton)
     qtbot.mouseClick(rail.viewport(), Qt.MouseButton.LeftButton)
     assert page.tool.id == "move" and page.focusWidget() is page.canvas
+
+
+# ------------------------------------------------------------------ floating windows
+
+
+def test_rail_icons_open_minimise_and_bring_back_windows(page, qtbot):
+    from PySide6.QtCore import QPoint
+
+    rail, host = page.tool_bar, page.panels
+    qtbot.mouseClick(rail.buttons["quick_fix"], Qt.MouseButton.LeftButton)
+    qtbot.mouseClick(rail.buttons["blur"], Qt.MouseButton.LeftButton)
+    assert host.state("quick_fix") == "open" and host.state("blur") == "open"  # several at once
+    assert rail.buttons["blur"].property("panel") == "open"
+    qtbot.mouseClick(rail.buttons["blur"], Qt.MouseButton.LeftButton)  # again: minimise
+    assert host.state("blur") == "minimised"
+    assert rail.buttons["blur"].property("panel") == "minimised"
+    qtbot.mouseClick(rail.buttons["blur"], Qt.MouseButton.LeftButton)  # and back
+    assert host.state("blur") == "open"
+    panel = host.panels["blur"]
+    panel.move_to(QPoint(120, 90))
+    panel.remember()
+    host.close("blur")
+    assert host.state("blur") == "closed" and rail.buttons["blur"].property("panel") == "closed"
+    qtbot.mouseClick(rail.buttons["blur"], Qt.MouseButton.LeftButton)
+    assert host.panels["blur"].pos() == QPoint(120, 90)  # where it was left
+    host.panels["blur"].move_to(QPoint(-500, 99999))
+    p = host.panels["blur"].pos()
+    assert p.x() >= 0 and p.y() < page.canvas.height()  # kept inside the editor
+
+
+def test_tool_options_float_and_follow_the_tool(page, qtbot):
+    host, rail = page.panels, page.tool_bar
+    tool_panel = host.panels["tool"]
+    assert tool_panel.isVisible() and page.tool_settings.window() is page.window()
+    assert page.tool_settings.parentWidget() is not None
+    assert tool_panel.title_bar.label.text() == "Brush"
+    qtbot.mouseClick(rail.buttons["eraser"], Qt.MouseButton.LeftButton)
+    assert tool_panel.title_bar.label.text() == "Eraser"
+    qtbot.mouseClick(rail.buttons["eraser"], Qt.MouseButton.LeftButton)  # the chosen tool again
+    assert host.state("tool") == "minimised"
+    qtbot.mouseClick(rail.buttons["brush"], Qt.MouseButton.LeftButton)  # another tool: back
+    assert host.state("tool") == "open" and tool_panel.title_bar.label.text() == "Brush"
+    host.close("tool")  # can't be closed, only minimised
+    assert host.panels["tool"] is tool_panel and host.state("tool") == "minimised"
+    host.close_all()
+    assert host.panels["tool"] is tool_panel
+
+
+def test_a_minimised_adjustment_hides_its_preview_and_closing_cancels(page, qtbot):
+    page.run_op("quick_fix")
+    dlg = page.panels.panels["quick_fix"].content
+    dlg.sliders["exposure"].set_value(2.0)
+    dlg.update_preview()
+    assert page.canvas._preview_layer is not None
+    page.panels.minimise("quick_fix")
+    assert page.canvas._preview_layer is None
+    page.panels.restore("quick_fix")
+    dlg.update_preview()
+    assert page.canvas._preview_layer is not None
+    page.panels.close("quick_fix")  # ×: like Cancel
+    assert page.canvas._preview_layer is None and not page.history.can_undo

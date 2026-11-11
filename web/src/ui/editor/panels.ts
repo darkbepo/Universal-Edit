@@ -149,6 +149,12 @@ export class ToolRail {
   select(id: string): void {
     for (const [tid, b] of this.buttons) if (b.classList.contains("tool")) b.setAttribute("aria-pressed", String(tid === id));
   }
+
+  /** Mark an icon whose window is open or minimised into it. */
+  setPanelState(key: string, state: "open" | "minimised" | "closed"): void {
+    const b = this.buttons.get(key);
+    if (b) b.dataset.panel = state;
+  }
 }
 
 // ------------------------------------------------------------------ colours
