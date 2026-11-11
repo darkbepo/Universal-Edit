@@ -331,6 +331,10 @@ function zipEntries(bytes: Uint8Array): ZipEntry[] {
   return out;
 }
 
+/** The entry names of a zip's central directory only (nothing is inflated); throws when
+ * `bytes` isn't a zip. */
+export const zipEntryNames = (bytes: Uint8Array): string[] => zipEntries(bytes).map((e) => e.name);
+
 const CRC_TABLE = (() => {
   const table = new Uint32Array(256);
   for (let n = 0; n < 256; n++) {

@@ -4,6 +4,7 @@
  */
 
 import { canonicalExt } from "../core/detect";
+import { unzipPackage, zipEntryNames } from "./docx-package";
 import { readDocx } from "./docx-read";
 import { hasDroppedFormats, hasMarkdownExtras, mdToHtml, splitFrontMatter } from "./markdown";
 import { escAttr, pyStrip } from "./pycompat";
@@ -85,14 +86,62 @@ function opened(html: string, sourceFormat: string, extra: Partial<OpenedDocumen
   };
 }
 
+const hasDotDot = (name: string) => name.split("/").some((part) => part === "..");
+
+/**
+ * The Markdown file name inside `bytes` when it is a Markdown ZIP the website saved: exactly
+ * one `.md` at the root and every other entry inside `<that stem>_files/` (no `..`, no
+ * backslashes, no absolute paths). Reads the central directory only. Otherwise null.
+ */
+function markdownZipName(bytes: Uint8Array): string | null {
+  let names: string[];
+  try {
+    names = zipEntryNames(bytes);
+  } catch {
+    return null;
+  }
+  const roots = names.filter((n) => !n.includes("/"));
+  if (roots.length !== 1 || !/^.+\.md$/i.test(roots[0])) return null;
+  const md = roots[0];
+  const folder = `${md.slice(0, -3)}_files/`;
+  for (const n of names) {
+    if (n === md) continue;
+    if (!n.startsWith(folder) || n.includes("\\") || hasDotDot(n)) return null;
+  }
+  return md;
+}
+
+/** True when `bytes` is a Markdown ZIP saved by the website (see `markdownZipName`): the
+ * Edit switch treats such a dropped `.zip` as one editable document. */
+export const isEditableMarkdownZip = (bytes: Uint8Array): boolean => markdownZipName(bytes) !== null;
+
+/** Open a Markdown ZIP: the `.md`, its pictures read from `<stem>_files/` in the ZIP. */
+function openMarkdownZip(bytes: Uint8Array, md: string): OpenedDocument {
+  const files = unzipPackage(bytes);
+  const folder = `${md.slice(0, -3)}_files/`;
+  const [front, text] = splitFrontMatter(decodeText(files.get(md) ?? new Uint8Array()));
+  // Only exact names inside the folder are ever looked up.
+  const resolveImage = (rel: string) =>
+    rel.startsWith(folder) && !hasDotDot(rel) ? (files.get(rel) ?? null) : null;
+  const { html, images, warnings } = normaliseHtmlReport(mdToHtml(text), { resolveImage });
+  if (hasMarkdownExtras(text)) warnings.push(W_MDEXTRA);
+  if (hasDroppedFormats(text)) warnings.push(W_MDFORMAT);
+  return opened(html, "md", { images, warnings, frontMatter: front });
+}
+
 /** Open `file` for editing; ODT / RTF go through DOCX with `convert`. */
 export async function openDocument(file: File, convert: Convert): Promise<OpenedDocument> {
   if (file.size > MAX_FILE_BYTES) throw new Error(TOO_LARGE); // before reading anything
   const ext = canonicalExt(file.name);
-  if (!WEB_EDITABLE_DOCUMENT_EXTS.includes(ext)) throw new Error(CANT_EDIT);
+  const isZip = ext === "zip";
+  if (!isZip && !WEB_EDITABLE_DOCUMENT_EXTS.includes(ext)) throw new Error(CANT_EDIT);
   const bytes = new Uint8Array(await file.arrayBuffer());
   let doc: OpenedDocument;
-  if (ext === "docx") {
+  if (isZip) {
+    const md = markdownZipName(bytes);
+    if (md === null) throw new Error(CANT_EDIT);
+    doc = openMarkdownZip(bytes, md);
+  } else if (ext === "docx") {
     doc = readDocx(bytes);
   } else if (ext === "md") {
     const [front, text] = splitFrontMatter(decodeText(bytes));

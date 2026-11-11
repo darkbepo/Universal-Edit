@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { strFromU8, unzipSync } from "fflate";
+import { strFromU8, unzipSync, zipSync } from "fflate";
 import { describe, expect, test, vi } from "vitest";
 import { writeDocx } from "../src/doceditor/docx-write";
 import {
@@ -9,7 +9,8 @@ import {
   splitFrontMatter,
 } from "../src/doceditor/markdown";
 import { toMarkdown } from "../src/doceditor/md-writer";
-import { type Convert, decodeText, openDocument } from "../src/doceditor/open";
+import { normaliseHtmlReport } from "../src/doceditor/subset";
+import { CANT_EDIT, type Convert, decodeText, isEditableMarkdownZip, openDocument } from "../src/doceditor/open";
 import { SAVE_FORMATS, saveDocument } from "../src/doceditor/save";
 import {
   MAX_CHARS,
@@ -342,5 +343,74 @@ describe("round trips", () => {
       expect(doc.frontMatter).toBe(first.frontMatter);
       expect(doc.title).toBe(first.title);
     }
+  });
+});
+
+describe("Markdown ZIP saved by the website", () => {
+  const enc = (t: string) => new TextEncoder().encode(t);
+  const base = { frontMatter: "", title: "", template: null, plainText: "" } as unknown as SaveContent;
+
+  async function savedZip(stem: string): Promise<{ bytes: Uint8Array; content: SaveContent }> {
+    const content = {
+      ...base,
+      html: '<p>Hi</p><p><img src="img/1.png"></p><p><img src="img/2.png" width="5"></p>',
+      images: new Map([
+        ["img/1.png", PNG],
+        ["img/2.png", PNG.slice().reverse()],
+      ]),
+    } as SaveContent;
+    const out = await saveDocument(content, "md", stem, noConvert);
+    expect(out.name).toBe(`${stem}.zip`);
+    return { bytes: new Uint8Array(await out.blob.arrayBuffer()), content };
+  }
+
+  test("reopens with its pictures", async () => {
+    for (const stem of ["a", "my doc", "Æbler å"]) {
+      const { bytes, content } = await savedZip(stem);
+      expect(isEditableMarkdownZip(bytes)).toBe(true);
+      const doc = await openDocument(fileOf(bytes, `${stem}.zip`), noConvert);
+      expect(doc.sourceFormat).toBe("md");
+      expect(doc.warnings).not.toContain(W_PICTURES);
+      expect([...doc.images.keys()]).toEqual(["img/1.png", "img/2.png"]);
+      expect(doc.images.get("img/1.png")).toEqual(PNG);
+      expect(doc.images.get("img/2.png")).toEqual(PNG.slice().reverse());
+      expect(doc.html).toBe(normaliseHtmlReport(content.html).html);
+    }
+  });
+
+  test("a ZIP with two .md files or other files is not editable", async () => {
+    const png = PNG;
+    const ok = { "a.md": enc("x"), "a_files/1.png": png };
+    expect(isEditableMarkdownZip(zipSync(ok))).toBe(true);
+    expect(isEditableMarkdownZip(zipSync({ ...ok, "b.md": enc("y") }))).toBe(false);
+    expect(isEditableMarkdownZip(zipSync({ ...ok, "notes.txt": enc("y") }))).toBe(false);
+    expect(isEditableMarkdownZip(zipSync({ ...ok, "other_files/1.png": png }))).toBe(false);
+    expect(isEditableMarkdownZip(zipSync({ "d/a.md": enc("x") }))).toBe(false);
+    expect(isEditableMarkdownZip(zipSync({ "a_files/1.png": png }))).toBe(false);
+    expect(isEditableMarkdownZip(zipSync({ "a.md": enc("x"), "a_files/../x.png": png }))).toBe(false);
+    expect(isEditableMarkdownZip(enc("not a zip"))).toBe(false);
+    await expect(openDocument(fileOf(zipSync({ "a.md": enc("x"), "b.md": enc("y") }), "a.zip"), noConvert)).rejects.toThrow(
+      CANT_EDIT,
+    );
+  });
+
+  test("an entry outside the pictures folder is never read", async () => {
+    const zip = zipSync({
+      "a.md": enc("![](../x.png)\n\n![](a_files/../x.png)\n\n![](a_files/1.png)\n"),
+      "a_files/1.png": PNG,
+    });
+    expect(isEditableMarkdownZip(zip)).toBe(true);
+    const doc = await openDocument(fileOf(zip, "a.zip"), noConvert);
+    expect([...doc.images.keys()]).toEqual(["img/1.png"]);
+    expect(doc.warnings).toContain(W_PICTURES);
+  });
+
+  test("saving a reopened ZIP without pictures writes plain Markdown", async () => {
+    const { bytes } = await savedZip("a");
+    const doc = await openDocument(fileOf(bytes, "a.zip"), noConvert);
+    const out = await saveDocument({ ...doc, html: "<p>x</p>", images: new Map() } as unknown as SaveContent, "md", "a", noConvert);
+    expect(out.name).toBe("a.md");
+    const again = await saveDocument(doc as unknown as SaveContent, "md", "a", noConvert);
+    expect(again.name).toBe("a.zip");
   });
 });
