@@ -521,6 +521,9 @@ Found by the Task 5 re-review's README round trip, from the scratchpad scripts `
 - Also: `scripts/make_doceditor_vectors.py` (add each case as a markdown vector)
 - Also, small: `web/src/engines/mupdf.ts` `htmlToPdf` takes an option to skip its own table CSS when the caller supplies page styles. The document editor's PDF save uses it, so table cells get the desktop's 3pt 6pt padding and 6pt margin.
 
+- Also from the Task 5b review:
+  - **Duplicate picture (both apps):** a picture referenced twice becomes two pictures (`img/1.png`, `img/2.png`) on the first reopen, so the first save changes the document. Identical bytes should reuse one name.
+  - **Web hardening (`open.ts`):** a root `.md` whose name contains a backslash makes the zip non-editable. Add tests for a `%2e%2e` link and a folder entry inside `stem_files/`.
 - [ ] **Step 1:** For each of the 8 files, diff the HTML of open #1 against open #2 in both apps. Reduce each difference to a minimal Markdown input and write it down in the report. Expected: a handful of distinct causes.
 - [ ] **Step 2:** Add each minimal input as a markdown vector. Its expected `md_out` must re-read to exactly the original HTML, which is the fix target. Test: open → save → reopen HTML equals the first open, for every vector and for all 23 READMEs (the round-trip script, run in both apps).
 - [ ] **Step 3:** Fix it in the writer and/or reader of both apps, keeping them byte-identical.
@@ -663,6 +666,7 @@ Found by the Task 5 re-review's README round trip, from the scratchpad scripts `
 
 **Interfaces:**
 - Consumes: `mountDocEditor` (Task 9), `WEB_EDITABLE_DOCUMENT_EXTS`.
+- A single `.zip` counts as a document when `isEditableMarkdownZip(bytes)` (from `doceditor/open.ts`, Task 5b) is true, so a Markdown ZIP saved by the website can be edited again.
 - Produces: `editKind(): "image" | "document" | null` in app.ts. `canEdit()` = `editKind() !== null`. The tooltip texts are in Global Constraints.
 
 - [ ] **Step 1: Implement.**
