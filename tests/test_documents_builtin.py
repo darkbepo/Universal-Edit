@@ -99,3 +99,40 @@ def test_heading_ids_for_links(tmp_path):
     assert '<h1 id="usage">Usage</h1>' in html_out
     assert '<h2 id="usage-1">Usage</h2>' in html_out
     assert '<h3 id="q-a-why">' in html_out
+
+
+def _ids(tmp_path, md):
+    from umc.tools import htmlpdf
+
+    src = tmp_path / "t.md"
+    src.write_text(md, encoding="utf-8")
+    return htmlpdf.markdown_to_html(src, tmp_path / "t.html").read_text(encoding="utf-8")
+
+
+def test_heading_ids_never_collide(tmp_path):
+    for md in ("# Usage\n\n## Usage\n\n## usage-1\n", "# usage-1\n\n## Usage\n\n## Usage\n"):
+        ids = re.findall(r' id="([^"]+)"', _ids(tmp_path, md))
+        assert len(ids) == 3 and len(set(ids)) == 3, ids
+
+
+def test_link_targets_the_real_usage_1_heading(tmp_path):
+    out = _ids(tmp_path, "# Usage\n\n## usage-1\n\n## Usage\n\n[x](#usage-1)\n")
+    assert '<h2 id="usage-1">usage-1</h2>' in out
+    assert '<h2 id="usage-2">Usage</h2>' in out
+
+
+def test_toc_marker_becomes_nested_links(tmp_path):
+    out = _ids(tmp_path, "[TOC]\n\n# One\n\n## Sub\n\n# Two\n")
+    assert "[TOC]" not in out
+    toc = out.split("</div>")[0]
+    assert '<a href="#one">One</a>' in toc and '<a href="#two">Two</a>' in toc
+    assert re.search(r'<a href="#one">One</a>\s*<ul><li><a href="#sub">Sub</a></li></ul></li>', toc)
+
+
+def test_raw_html_headings_get_or_keep_ids(tmp_path):
+    out = _ids(
+        tmp_path, '<h2 class="x">Plain</h2>\n\n<h2 id="mine" class="y">Mine</h2>\n\n# Mine\n'
+    )
+    assert re.search(r'<h2 class="x" id="plain">Plain</h2>', out)
+    assert 'id="mine" class="y"' in out
+    assert '<h1 id="mine-1">Mine</h1>' in out

@@ -57,23 +57,59 @@ def docx_to_html(src: Path, dest: Path) -> Path:
     return dest
 
 
-_HEADING = re.compile(r"<h([1-6])>(.*?)</h\1>", re.S)
+_HEADING = re.compile(r"<h([1-6])((?:\s[^>]*)?)>(.*?)</h\1>", re.S)
+_ID_ATTR = re.compile(r"""\sid\s*=\s*(["'])(.*?)\1""", re.S)
+_TOC_MARKER = re.compile(r"<p>\[TOC\]</p>")
 
 
 def _add_heading_ids(body: str) -> str:
-    """id="…" on every heading (text lowercased, non-word runs → "-", duplicates "-1", "-2"),
-    so in-document links like [see](#usage) work in the PDF."""
-    seen: dict[str, int] = {}
+    """id="…" on every heading (text lowercased, non-word runs → "-", a taken id gets "-1",
+    "-2"…), so in-document links like [see](#usage) work in the PDF. Headings that already
+    carry an id (raw HTML) keep it. A paragraph that is exactly [TOC] becomes a nested list of
+    links to the headings."""
+    used = {m.group(2) for h in _HEADING.finditer(body) if (m := _ID_ATTR.search(h.group(2)))}
+    entries: list[tuple[int, str, str]] = []  # (level, id, heading text)
 
     def add(m: re.Match) -> str:
-        text = html.unescape(re.sub(r"<[^>]+>", "", m.group(2)))
-        base = re.sub(r"\W+", "-", text.lower()).strip("-") or "section"
-        n = seen.get(base)
-        seen[base] = 0 if n is None else n + 1
-        slug = base if n is None else f"{base}-{n + 1}"
-        return f'<h{m.group(1)} id="{slug}">{m.group(2)}</h{m.group(1)}>'
+        level, attrs, inner = int(m.group(1)), m.group(2), m.group(3)
+        found = _ID_ATTR.search(attrs)
+        text = re.sub(r"<[^>]+>", "", inner)
+        if found:
+            slug = found.group(2)
+        else:
+            base = re.sub(r"\W+", "-", html.unescape(text).lower()).strip("-") or "section"
+            slug, n = base, 0
+            while slug in used:
+                n += 1
+                slug = f"{base}-{n}"
+            used.add(slug)
+            attrs += f' id="{slug}"'
+        entries.append((level, slug, text))
+        return f"<h{level}{attrs}>{inner}</h{level}>"
 
-    return _HEADING.sub(add, body)
+    body = _HEADING.sub(add, body)
+    if entries and _TOC_MARKER.search(body):
+        body = _TOC_MARKER.sub(lambda _m: _toc_html(entries), body)
+    return body
+
+
+def _toc_html(entries: list[tuple[int, str, str]]) -> str:
+    """Nested <ul> of links, one level deeper per heading level."""
+    out: list[str] = []
+    stack: list[int] = []  # heading levels of the open <ul>s
+    for level, slug, text in entries:
+        if stack and level <= stack[-1]:
+            out.append("</li>")
+            while len(stack) > 1 and level < stack[-1]:
+                out.append("</ul></li>")
+                stack.pop()
+            stack[-1] = level
+        else:
+            out.append("<ul>")
+            stack.append(level)
+        out.append(f'<li><a href="#{slug}">{text}</a>')
+    out.append("</li>" + "</ul></li>" * (len(stack) - 1) + "</ul>")
+    return '<div class="toc">' + "".join(out) + "</div>"
 
 
 def markdown_to_html(src: Path, dest: Path) -> Path:
