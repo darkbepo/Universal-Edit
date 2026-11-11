@@ -247,6 +247,35 @@
    ]
   },
   {
+   "group": "Effects",
+   "items": [
+    {
+     "kind": "action",
+     "id": "fx_shadow",
+     "label": "Drop shadow…",
+     "icon": "shadow"
+    },
+    {
+     "kind": "action",
+     "id": "fx_glow",
+     "label": "Glow…",
+     "icon": "sun-high"
+    },
+    {
+     "kind": "action",
+     "id": "fx_outline",
+     "label": "Outline…",
+     "icon": "border-outer"
+    },
+    {
+     "kind": "action",
+     "id": "fx_overlay",
+     "label": "Colour overlay…",
+     "icon": "color-swatch"
+    }
+   ]
+  },
+  {
    "group": "Image",
    "items": [
     {

@@ -238,6 +238,18 @@ class SettingsPanel(QWidget):
     def values(self) -> dict[str, Any]:
         return {name: f.get() for name, f in self._fields.items()}
 
+    def set_values(self, values: dict[str, Any]) -> None:
+        """Show these values without announcing a change (the form keeps its fields)."""
+        self._building = True
+        try:
+            for name, v in values.items():
+                if name in self._fields:
+                    with contextlib.suppress(TypeError, ValueError):
+                        self._fields[name].set(v)
+        finally:
+            self._building = False
+        self._update_visibility()
+
     def has_visible_fields(self) -> bool:
         vals = self.values()
         return any(f.spec.visible(vals, self._target_id) for f in self._fields.values())

@@ -39,7 +39,7 @@ from PySide6.QtWidgets import (
 )
 
 from umc.core.errors import ConversionError
-from umc.editor import clipboard, effects, inpaint, ops, selection
+from umc.editor import clipboard, effects, inpaint, layerfx, ops, selection
 from umc.editor.document import Document, check_size
 from umc.editor.history import History
 from umc.editor.io import load_layers, open_files
@@ -78,6 +78,7 @@ from umc.gui.editor.dialogs import (
     tool_groups,
 )
 from umc.gui.editor.floating import PanelHost
+from umc.gui.editor.fx_window import FxWindow
 from umc.gui.editor.layers_panel import LayersPanel
 from umc.gui.editor.shortcuts import SHORTCUTS
 from umc.gui.editor.side_panel import ColorSwatches, ToolSettings
@@ -367,6 +368,7 @@ class EditorPage(QWidget):
         self.layers = LayersPanel()
         self.layers.command.connect(self._push)
         self.layers.edit_text_requested.connect(self.edit_text)
+        self.layers.fx_requested.connect(lambda key: self.run_op(f"fx_{key}"))
         self.layers.active_changed.connect(self._active_layer_changed)
         lay.addWidget(self.layers, 1)
         scroll.setWidget(host)
@@ -668,6 +670,24 @@ class EditorPage(QWidget):
     def _active_layer_changed(self, _index: int) -> None:
         self._update_info()
         self._repreview()  # an open adjustment previews (and applies to) the chosen layer
+        self._sync_fx_windows()
+
+    def tweak_fx(self, key: str, values: dict) -> None:
+        """An effect window changed: the selected layer's effects, live, one undo step a run."""
+        doc = self.doc
+        if doc is None or not doc.layers or self.history is None:
+            return
+        i = doc.active
+        old = doc.layers[i]
+        fx = layerfx.with_values(old.fx, values)
+        if ops.tweak_layer_fx(doc, self.history, i, fx, layerfx.LABELS[key]):
+            self.canvas.refresh(layerfx.bounds(old).union(layerfx.bounds(doc.layers[i])))
+            self.canvas.changed.emit()
+
+    def _sync_fx_windows(self) -> None:
+        for key, panel in self.panels.panels.items():
+            if key.startswith("fx_") and isinstance(panel.content, FxWindow):
+                panel.content.sync()
 
     def _repreview(self) -> None:
         owner = self._preview_owner
@@ -684,6 +704,7 @@ class EditorPage(QWidget):
             self.panels.close("canvas_size")
         self._last_size = size
         self._repreview()  # the picture changed under an open adjustment: preview again
+        self._sync_fx_windows()  # an undo may have changed the effects shown in a window
         if not self.layers.in_sync(self.doc):
             self.layers.refresh(self.doc)
         else:
@@ -796,6 +817,10 @@ class EditorPage(QWidget):
                         else None
                     ),
                 )
+                return
+            elif name.startswith("fx_") and name[3:] in layerfx.LABELS:
+                key = name[3:]
+                self._window(name, layerfx.LABELS[key], lambda: FxWindow(self, key))
                 return
             elif name in ADJUST_DIALOGS:
                 cls, label = ADJUST_DIALOGS[name]

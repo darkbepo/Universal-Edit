@@ -87,6 +87,15 @@ RAIL: list[dict] = [
         ],
     },
     {
+        "group": "Effects",
+        "items": [
+            (_A, "fx_shadow", "Drop shadow…", "shadow"),
+            (_A, "fx_glow", "Glow…", "sun-high"),
+            (_A, "fx_outline", "Outline…", "border-outer"),
+            (_A, "fx_overlay", "Colour overlay…", "color-swatch"),
+        ],
+    },
+    {
         "group": "Image",
         "items": [
             (_A, "resize", "Resize image…", "resize"),

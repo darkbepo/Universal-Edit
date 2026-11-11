@@ -10,6 +10,7 @@ from PySide6.QtCore import QPoint, QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QBrush, QColor, QImage, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import QWidget
 
+from umc.editor import layerfx
 from umc.editor.document import Document
 from umc.editor.geometry import Rect
 from umc.editor.history import History
@@ -127,6 +128,10 @@ class EditorCanvas(QWidget):
             if rect is None:  # not while dragging: the view would jump under the mouse
                 self._clamp()
         else:
+            # a change also moves what layer effects draw around it (a shadow, an outline…)
+            m = max((layerfx.margin(la.fx) for la in self.doc.layers if la.fx), default=0)
+            if m:
+                rect = Rect(rect.x0 - m, rect.y0 - m, rect.x1 + m, rect.y1 + m)
             rect = rect.intersect(self._view)
             if not rect.empty:
                 part = pil_to_qimage(self.doc.composite(rect, override=override, clip=False))

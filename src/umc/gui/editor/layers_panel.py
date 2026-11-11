@@ -39,14 +39,26 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from umc.editor import ops
+from umc.editor import layerfx, ops
 from umc.editor.document import Document
 from umc.gui import theme
 from umc.gui.editor.canvas import pil_to_qimage
 
 THUMB = 40
 MASK_THUMB = 26
+
+
+def fx_names(layer) -> str:
+    """The layer's effects that are on, as "Drop shadow, Outline" ("" = none)."""
+    fx = layer.fx
+    if fx is None:
+        return ""
+    return ", ".join(label for key, label, _icon in layerfx.EFFECTS if getattr(fx, key))
+
+
 MASK_ROLE = Qt.ItemDataRole.UserRole + 1  # a QPixmap of the layer's mask, if it has one
+FX_ROLE = Qt.ItemDataRole.UserRole + 2  # the names of the layer's effects ("" = none)
+FX_W = 22  # width of the "fx" badge
 ARROW_W = 22  # width of the up / down arrow column at the right of each row
 
 
@@ -91,15 +103,35 @@ class LayerDelegate(QStyledItemDelegate):
         style = widget.style() if widget is not None else QApplication.style()
         text_rect = style.subElementRect(QStyle.SubElement.SE_ItemViewItemText, opt, widget)
         mask = index.data(MASK_ROLE)
-        extra = MASK_THUMB + 6 if mask is not None else 0
+        fx = bool(index.data(FX_ROLE))
+        extra = (MASK_THUMB + 6 if mask is not None else 0) + (FX_W + 4 if fx else 0)
         width = max(10, text_rect.width() - ARROW_W - 6 - extra)
         opt.text = opt.fontMetrics.elidedText(opt.text, Qt.TextElideMode.ElideRight, width)
         style.drawControl(QStyle.ControlElement.CE_ItemViewItem, opt, painter, widget)
+        r = option.rect
+        x = r.right() - ARROW_W - 6
         if mask is not None:  # the layer mask, left of the arrows
-            r = option.rect
-            x = r.right() - ARROW_W - 6 - MASK_THUMB
+            x -= MASK_THUMB
             painter.drawPixmap(x, r.center().y() - MASK_THUMB // 2, mask)
+            x -= 4
+        if fx:  # a small "fx" badge: the layer has effects
+            self._paint_fx(painter, QRect(x - FX_W, r.center().y() - 8, FX_W, 16))
         self._paint_arrows(painter, option.rect, index.row())
+
+    def _paint_fx(self, painter: QPainter, box: QRect) -> None:
+        pal = theme.palette()
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(QColor(pal["border"]))
+        painter.setBrush(QColor(pal["surface_alt"]))
+        painter.drawRoundedRect(box, 4, 4)
+        font = painter.font()
+        font.setItalic(True)
+        font.setPointSizeF(max(6.0, font.pointSizeF() * 0.85))
+        painter.setFont(font)
+        painter.setPen(QColor(pal["text"]))
+        painter.drawText(box, Qt.AlignmentFlag.AlignCenter, "fx")
+        painter.restore()
 
     def _paint_arrows(self, painter: QPainter, rect: QRect, row: int) -> None:
         pal = theme.palette()
@@ -227,6 +259,7 @@ class LayersPanel(QWidget):
     command = Signal(object)  # a Command produced by ops.* (already applied)
     active_changed = Signal(int)
     edit_text_requested = Signal(int)  # layer index
+    fx_requested = Signal(str)  # an effect's window: "shadow", "glow", "outline", "overlay"
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -306,6 +339,8 @@ class LayersPanel(QWidget):
                 return False
             if (item.data(MASK_ROLE) is None) != (layer.mask is None):  # mask added / removed
                 return False
+            if (item.data(FX_ROLE) or "") != fx_names(layer):
+                return False
         return (
             self.list.currentRow() == self._index_to_row(doc.active)
             and self.selected_rows() == {self._index_to_row(i) for i in doc.selected_indices}
@@ -319,9 +354,15 @@ class LayersPanel(QWidget):
             self.list.clear()
             for layer in reversed(doc.layers):
                 item = QListWidgetItem(thumbnail(layer.image), layer.name)
+                tips = []
                 if layer.mask is not None:
                     item.setData(MASK_ROLE, mask_thumbnail(layer.mask))
-                    item.setToolTip("This layer has a mask: black hides, white shows")
+                    tips.append("This layer has a mask: black hides, white shows")
+                if fx_names(layer):
+                    item.setData(FX_ROLE, fx_names(layer))
+                    tips.append(f"Effects: {fx_names(layer)}")
+                if tips:
+                    item.setToolTip("\n".join(tips))
                 item.setFlags(
                     Qt.ItemFlag.ItemIsEnabled
                     | Qt.ItemFlag.ItemIsSelectable
@@ -480,11 +521,24 @@ class LayersPanel(QWidget):
             if doc.layers[doc.active].text is not None:
                 i = doc.active
                 menu.addAction("Edit text…", lambda: self.edit_text_requested.emit(i))
-            if doc.layers[doc.active].text is not None or doc.layers[doc.active].shape is not None:
+            active = doc.layers[doc.active]
+            if active.text is not None or active.shape is not None or active.fx is not None:
                 i = doc.active
                 menu.addAction(
                     "Rasterize layer (plain pixels)",
                     lambda: self._run(lambda d: ops.rasterize_layer(d, i)),
+                )
+            effects = menu.addMenu("Layer effects")
+            for key, label, _icon in layerfx.EFFECTS:
+                on = active.fx is not None and getattr(active.fx, key)
+                effects.addAction(
+                    f"{label}…" + ("  ✓" if on else ""),
+                    lambda k=key: self.fx_requested.emit(k),
+                )
+            if active.fx is not None:
+                effects.addSeparator()
+                effects.addAction(
+                    "Clear layer effects", lambda: self._run(lambda d: ops.clear_layer_fx(d))
                 )
         if any(doc.layers[i].visible for i in chosen):
             menu.addAction(f"Hide {word}", lambda: self.set_visible(False))

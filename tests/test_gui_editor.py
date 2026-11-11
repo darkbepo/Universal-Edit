@@ -1457,3 +1457,41 @@ def test_duplicating_a_shape_layer_keeps_it_editable(page, qtbot):
     page._push(ops.duplicate_layers(page.doc, [page.doc.active]))
     assert page.doc.active_layer.shape is not None
     assert all(la.shape is not None for la in [la.copy() for la in page.doc.layers[-2:]])
+
+
+def test_effect_windows_add_change_and_remove_an_effect(page, qtbot):
+    from umc.gui.editor.fx_window import FxWindow
+
+    page.show()
+    n = len(page.history._undo)
+    page.rail_action("fx_outline")
+    win = page.panels.panels["fx_outline"].content
+    assert isinstance(win, FxWindow)
+    layer = page.doc.active_layer
+    assert layer.fx is not None and layer.fx.outline  # opening it adds the effect
+    win.form.set_values({"outline_width": 9})
+    win._changed()
+    win.form.set_values({"outline_width": 12})
+    win._changed()
+    assert page.doc.active_layer.fx.outline_width == 12
+    assert len(page.history._undo) == n + 1  # one undo step for the whole run
+    row = page.layers.list.item(page.layers._index_to_row(page.doc.active))
+    from umc.gui.editor.layers_panel import FX_ROLE
+
+    assert row.data(FX_ROLE) == "Outline"  # the "fx" badge
+    page.canvas.undo()
+    assert page.doc.active_layer.fx is None
+    assert win.form.values()["outline"] is False  # the window follows the undo
+    win._remove()
+    assert page.doc.active_layer.fx is None
+    win.accept()
+    assert "fx_outline" not in page.panels.panels
+
+
+def test_effects_in_the_layer_menu(page, qtbot):
+    page.run_op("fx_glow")
+    menu = page.layers.build_menu(page.layers._index_to_row(page.doc.active))
+    sub = next(a.menu() for a in menu.actions() if a.text() == "Layer effects")
+    texts = [a.text() for a in sub.actions()]
+    assert "Glow…  ✓" in texts and "Clear layer effects" in texts
+    assert any(a.text().startswith("Rasterize") for a in menu.actions())
