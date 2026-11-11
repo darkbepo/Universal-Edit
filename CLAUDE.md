@@ -681,6 +681,13 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
          an "fx" badge in the layers list, effect items + "Clear layer effects" in the layer menu.
          Desktop blur = Pillow GaussianBlur, web = its own 3-box approximation (soft edges differ a
          little). The web `SettingsForm` got working `set` / `setValues` and an id prefix.
+         Step 7 review: whole-layer renders are cached (`_whole` / `whole`, last 4, keyed by a
+         checksum of the pixels + mask + fx, so in-place strokes are noticed) and used when a
+         repaint covers ≥ ¼ of the layer; desktop dilation uses OpenCV. An effect switched off keeps
+         its settings (fx = None only when all back to defaults); file values are clamped to the
+         window ranges (`LIMITS`); a run that ends where it started drops its redo
+         (`History.drop_redo` / `dropRedo`). ORA marks checked recipes `umc-checked="1"`; recipes
+         without it (files from before) keep the file's pixels as they are.
          Step 6 review: ORA keeps a text / shape recipe only while the pixels still match it (and
          there's no mask); on opening, a recipe is redrawn if the stored pixels are close (another
          app's anti-aliasing), else dropped — so shapes saved by one app reshape in the other.

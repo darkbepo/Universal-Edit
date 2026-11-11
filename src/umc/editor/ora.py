@@ -21,6 +21,9 @@ MIMETYPE = b"image/openraster"
 
 TEXT_ATTR = "umc-text"  # JSON of tools.text.TextSpec
 SHAPE_ATTR = "umc-shape"  # JSON of tools.shapes.ShapeSpec
+# set when the recipe was checked against the pixels on saving (older files never were: their
+# recipe may sit on a painted-over layer, so it is kept as it is and the pixels win)
+CHECKED_ATTR = "umc-checked"
 FX_ATTR = "umc-fx"  # JSON of layerfx.LayerFx (other programs show the layer without its effects)
 
 
@@ -152,6 +155,7 @@ def write_ora(doc: Document, path: Path) -> None:
             # our own extra: how a text layer was made, so it stays editable (others ignore it)
             **({TEXT_ATTR: json.dumps(layer.text.to_dict())} if keep and layer.text else {}),
             **({SHAPE_ATTR: json.dumps(layer.shape.to_dict())} if keep and layer.shape else {}),
+            **({CHECKED_ATTR: "1"} if keep else {}),
             **({FX_ATTR: json.dumps(layer.fx.to_dict())} if layer.fx is not None else {}),
         )
         files.append((src, _png(layer.pixels())))  # ORA has no masks: bake them in
@@ -213,7 +217,8 @@ def read_ora(path: Path) -> Document:
                     shape=_shape_spec(el.get(SHAPE_ATTR)),
                     fx=_layer_fx(el.get(FX_ATTR)),
                 )
-                if layer.text is not None or layer.shape is not None:
+                checked = el.get(CHECKED_ATTR) == "1"
+                if checked and (layer.text is not None or layer.shape is not None):
                     layer = _from_recipe(layer, (width, height))
                 if el.get("selected") == "true":
                     active = layer

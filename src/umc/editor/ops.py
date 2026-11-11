@@ -580,8 +580,10 @@ def rasterize_layer(doc: Document, index: int | None = None) -> Command | None:
 
 def set_layer_fx(doc: Document, index: int, fx, label: str = "Layer effects") -> Command | None:
     """Give layer ``index`` these effects (``layerfx.LayerFx``; None or all off = none)."""
+    from umc.editor.layerfx import LayerFx
+
     layer = doc.layers[index]
-    fx = fx if fx is not None and fx.any() else None
+    fx = None if fx == LayerFx() else fx  # all defaults and off = no effects
     if fx == layer.fx:
         return None
     return _replace(doc, index, label, replace(layer, fx=fx))
@@ -602,7 +604,9 @@ def tweak_layer_fx(doc: Document, history, index: int, fx, label: str) -> bool:
         history.undo()
     cmd = set_layer_fx(doc, index, fx, label)
     if cmd is None:
-        return same_run  # back where the run started: the undone step was the whole change
+        if same_run:
+            history.drop_redo()  # back where the run started: no step to redo either
+        return same_run
     cmd.fx_run = ((index, label), doc.layers[index])
     history.push(cmd)
     return True

@@ -279,6 +279,11 @@ export class History {
     this.doc.dirty = this.saved !== this.position;
   }
 
+  /** Forget what redo would bring back (a change that was taken back for good). */
+  dropRedo(): void {
+    this.redoStack = [];
+  }
+
   push(cmd: Command | null | undefined): void {
     if (!cmd) return;
     this.redoStack = [];

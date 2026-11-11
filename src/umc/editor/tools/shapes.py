@@ -134,6 +134,7 @@ class _ShapeTool(Tool):
                 # reshape it instead of drawing a new one; the handle keeps its offset to the
                 # pointer, so a click without a drag changes nothing
                 self._grab = (hit, layer, doc.active, (hx - x, hy - y))
+                self._grab_at = (x, y)
                 return None
         self._start = self._end = (x, y)
         return None
@@ -158,8 +159,8 @@ class _ShapeTool(Tool):
             doc.layers = list(doc.layers)
             doc.layers[index] = old  # the live preview goes; the undoable change comes
             pts = self._reshaped(old, hit, x + ox, y + oy)
-            if pts == canvas_points(old):
-                return None
+            if (x, y) == self._grab_at or pts == canvas_points(old):
+                return None  # a click on the handle: nothing changes
             new = shape_layer(old.name, replace(old.shape, points=pts), old)
             if new is None:
                 return None

@@ -5,7 +5,7 @@ import { checkSize, docBounds, EditorError, type EditorDoc } from "./document";
 import { fullMask } from "./selection";
 import { Rect } from "./geometry";
 import { DocStateCommand, LayerListCommand, type Command, type History } from "./history";
-import { anyFx, bakedLayer, sameFx, type LayerFx } from "./layerfx";
+import { bakedLayer, NO_FX, sameFx, type LayerFx } from "./layerfx";
 import { copyLayer, cropData, layerBounds, layerPixels, makeLayer, solidMask, withProps, type Layer } from "./layer";
 import { overPixel } from "./tools/base";
 
@@ -511,7 +511,7 @@ export function rasterizeLayer(doc: EditorDoc, index = doc.active): Command | nu
 /** Give layer `index` these effects (null or all off = none). */
 export function setLayerFx(doc: EditorDoc, index: number, fx: LayerFx | null, label = "Layer effects"): Command | null {
   const l = doc.layers[index];
-  const next = anyFx(fx) ? fx : null;
+  const next = !fx || sameFx(fx, NO_FX) ? null : fx; // all defaults and off = no effects
   if (sameFx(next, l.fx)) return null;
   return replace(doc, index, label, withProps(l, { fx: next }));
 }
@@ -529,7 +529,10 @@ export function tweakLayerFx(doc: EditorDoc, history: History, index: number, fx
   const sameRun = !!run && run[0] === index && run[1] === label && doc.layers[index] === run[2];
   if (sameRun) history.undo();
   const cmd = setLayerFx(doc, index, fx, label) as (Command & { fxRun?: [number, string, Layer] }) | null;
-  if (!cmd) return sameRun;
+  if (!cmd) {
+    if (sameRun) history.dropRedo(); // back where the run started: no step to redo either
+    return sameRun;
+  }
   cmd.fxRun = [index, label, doc.layers[index]];
   history.push(cmd);
   return true;

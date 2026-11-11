@@ -402,6 +402,7 @@ export class EditorPage {
   }
 
   private tweakFx(key: FxKey, values: Values): void {
+    this.commitText(); // text being typed becomes its layer first
     const doc = this.doc;
     if (!doc || !this.history || !doc.layers.length) return;
     const i = doc.active;

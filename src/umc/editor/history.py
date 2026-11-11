@@ -284,12 +284,16 @@ class History:
         self._saved = self.position if position is None else position
         self._sync_dirty()
 
-    def push(self, cmd: Command | None) -> None:
-        if cmd is None:
-            return
+    def drop_redo(self) -> None:
+        """Forget what redo would bring back (a change that was taken back for good)."""
         for old in self._redo:
             self._tokens.pop(id(old), None)
         self._redo.clear()
+
+    def push(self, cmd: Command | None) -> None:
+        if cmd is None:
+            return
+        self.drop_redo()
         self._undo.append(cmd)
         self._tokens[id(cmd)] = self._next_token
         self._next_token += 1

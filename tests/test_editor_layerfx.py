@@ -166,3 +166,68 @@ def test_ora_keeps_the_effects(tmp_path) -> None:
     assert LayerFx.from_dict({"glow": True, "glow_size": "7", "junk": 1, "glow_color": "bad"}) == (
         LayerFx(glow=True, glow_size=7)
     )
+
+
+def test_an_effect_switched_off_keeps_its_settings() -> None:
+    doc = _doc()
+    history = History(doc)
+    ops.tweak_layer_fx(doc, history, 1, LayerFx(shadow=True, shadow_distance=50), "Drop shadow")
+    off = layerfx.with_values(doc.layers[1].fx, {"shadow": False})
+    assert off is not None and off.shadow_distance == 50  # remembered while off
+    ops.tweak_layer_fx(doc, history, 1, off, "Drop shadow")
+    assert layerfx.window_values(doc.layers[1].fx, "shadow")["shadow_distance"] == 50
+    assert doc.composite().tobytes() == _doc().composite().tobytes()  # but nothing is drawn
+
+
+def test_a_run_back_to_its_start_leaves_nothing_to_redo() -> None:
+    doc = _doc()
+    history = History(doc)
+    ops.tweak_layer_fx(doc, history, 1, LayerFx(glow=True), "Glow")
+    ops.tweak_layer_fx(doc, history, 1, None, "Glow")
+    assert doc.layers[1].fx is None and not history.can_redo
+
+
+def test_files_cannot_ask_for_huge_effects() -> None:
+    fx = LayerFx.from_dict({"outline": True, "outline_width": 10_000_000, "shadow_blur": -5})
+    assert fx.outline_width == 50 and fx.shadow_blur == 0
+
+
+def test_a_full_repaint_reuses_the_render_and_notices_strokes() -> None:
+    doc = _doc(LayerFx(outline=True, outline_color="#ff0000", outline_width=2))
+    first = doc.composite()
+    doc.layers[1].image.putpixel((0, 0), (0, 0, 255, 255))  # painted in place
+    second = doc.composite()
+    assert second.getpixel((20, 20)) == (0, 0, 255, 255) and first.tobytes() != second.tobytes()
+
+
+def test_older_files_keep_their_pixels(tmp_path) -> None:
+    import zipfile
+
+    from umc.editor.ora import read_ora
+    from umc.editor.tools.base import ToolContext
+    from umc.editor.tools.shapes import RectTool
+
+    doc = Document.new(60, 60)
+    t = RectTool()
+    ctx = ToolContext((255, 0, 0, 255), (255, 255, 255, 255), t.options_cls())
+    t.press(doc, 10, 10, ctx)
+    t.move(doc, 40, 40, ctx)
+    ops_cmd = t.release(doc, 40, 40, ctx)
+    assert ops_cmd is not None
+    doc.active_layer.image.putpixel((10, 10), (0, 255, 0, 100))  # a small retouch
+    path = tmp_path / "old.ora"
+    write_ora(doc, path)
+    with zipfile.ZipFile(path) as z:
+        files = {n: z.read(n) for n in z.namelist()}
+    import json
+
+    spec = json.dumps(doc.active_layer.shape.to_dict()).replace('"', "&quot;")
+    name = doc.active_layer.name
+    files["stack.xml"] = files["stack.xml"].replace(  # what main wrote: the recipe, unchecked
+        f'name="{name}"'.encode(), f'name="{name}" umc-shape="{spec}"'.encode()
+    )
+    with zipfile.ZipFile(path, "w") as z:
+        for n, data in files.items():
+            z.writestr(n, data)
+    back = read_ora(path).layers[-1]
+    assert back.image.getpixel((10, 10)) == (0, 255, 0, 100)  # the retouch is still there

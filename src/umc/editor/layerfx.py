@@ -18,7 +18,7 @@ from dataclasses import asdict, dataclass, fields, replace
 import numpy as np
 from PIL import Image, ImageFilter
 
-from umc.core.options import opt
+from umc.core.options import opt, option_specs
 from umc.editor.geometry import Rect
 
 # id, label (window title / undo step), icon (Tabler) — in the order the rail lists them
@@ -70,6 +70,9 @@ class LayerFx:
                 clean[k] = bool(v) if kind == "bool" else int(v) if kind == "int" else _hex(str(v))
             except (TypeError, ValueError):
                 continue
+            if kind == "int":  # a damaged file must not ask for a million-pixel outline
+                lo, hi = LIMITS[k]
+                clean[k] = max(lo, min(hi, clean[k]))
         return cls(**clean)
 
 
@@ -146,10 +149,20 @@ def window_values(fx: LayerFx | None, key: str) -> dict:
 
 
 def with_values(fx: LayerFx | None, values: dict) -> LayerFx | None:
-    """``fx`` with a window's ``values`` set; None when no effect is left on."""
+    """``fx`` with a window's ``values`` set. An effect switched off keeps its settings (so
+    ticking "Show" again brings them back); None only when everything is back to the defaults."""
     names = {f.name for f in fields(LayerFx)}
     new = replace(fx or LayerFx(), **{k: v for k, v in values.items() if k in names})
-    return new if new.any() else None
+    return None if new == LayerFx() else new
+
+
+# (min, max) of every number, from the settings windows; files are clamped to these
+LIMITS = {
+    spec.name: (spec.min, spec.max)
+    for cls in OPTIONS.values()
+    for spec in option_specs(cls)
+    if spec.kind == "slider"
+}
 
 
 # ---------------------------------------------------------------- drawing
@@ -207,6 +220,17 @@ def _shift(plane: np.ndarray, dx: int, dy: int) -> np.ndarray:
 def dilate(alpha: np.ndarray, width: int) -> np.ndarray:
     """Grow the shape by ``width`` px: one-pixel steps alternating a cross and a square, which
     makes a near-round (octagonal) outline. Soft edges stay soft (max of neighbours)."""
+    try:
+        import cv2
+    except ImportError:  # the slower numpy steps below
+        cv2 = None
+    if cv2 is not None and width > 0:
+        cross = cv2.getStructuringElement(cv2.MORPH_CROSS, (3, 3))
+        square = np.ones((3, 3), np.uint8)
+        out = np.ascontiguousarray(alpha, dtype=np.float32)
+        for step in range(width):
+            out = cv2.dilate(out, square if step % 2 else cross, borderValue=0)
+        return out
     out = alpha
     for step in range(width):
         grown = out.copy()
@@ -259,6 +283,36 @@ def render(pixels: Image.Image, fx: LayerFx | None) -> Image.Image:
     return Image.fromarray(np.clip(out + 0.5, 0, 255).astype(np.uint8), "RGBA")
 
 
+# The last few whole-layer renders: repaints of the whole picture (moving the layer, renaming or
+# hiding another one…) reuse them. Keyed by the pixels' checksum, so strokes painted into the
+# layer in place (and undo patches) are noticed.
+_CACHE: list[tuple[tuple, Image.Image]] = []
+_CACHE_SIZE = 4
+
+
+def _checksum(img: Image.Image | None) -> int | None:
+    import zlib
+
+    return None if img is None else zlib.crc32(img.tobytes())
+
+
+def _whole(layer) -> Image.Image:
+    """The whole layer with its effects, padded by ``margin`` on every side (cached)."""
+    from umc.editor.layer import Layer
+
+    key = (layer.image.size, _checksum(layer.image), _checksum(layer.mask), layer.fx)
+    for k, img in _CACHE:
+        if k == key:
+            return img
+    m = margin(layer.fx)
+    padded = Image.new("RGBA", (layer.image.width + 2 * m, layer.image.height + 2 * m))
+    padded.paste(Layer.pixels(layer), (m, m))
+    img = render(padded, layer.fx)
+    _CACHE.append((key, img))
+    del _CACHE[:-_CACHE_SIZE]
+    return img
+
+
 def region(layer, rect: Rect, image: Image.Image | None = None) -> Image.Image:
     """What ``layer`` shows inside canvas ``rect`` (mask and effects, not its opacity), as an
     image of ``rect``'s size. ``image`` replaces the layer's pixels (live previews)."""
@@ -268,6 +322,11 @@ def region(layer, rect: Rect, image: Image.Image | None = None) -> Image.Image:
     if src_layer.mask is not None and src_layer.mask.size != src_layer.image.size:
         src_layer = replace(src_layer, mask=None)  # a stale mask (preview of another size)
     m = margin(layer.fx)
+    whole = bounds(src_layer)
+    if rect.width * rect.height * 4 >= whole.width * whole.height:
+        # a big part of it (a full repaint): draw the whole layer once and reuse it
+        x, y = rect.x0 - whole.x0, rect.y0 - whole.y0
+        return _whole(src_layer).crop((x, y, x + rect.width, y + rect.height))
     need = Rect(rect.x0 - m, rect.y0 - m, rect.x1 + m, rect.y1 + m)
     part = need.intersect(src_layer.bounds)
     padded = Image.new("RGBA", (need.width, need.height))

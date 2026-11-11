@@ -49,8 +49,9 @@ export const EFFECTS: [FxKey, string, string][] = [
 
 export const anyFx = (fx: LayerFx | null | undefined): fx is LayerFx => !!fx && (fx.shadow || fx.glow || fx.outline || fx.overlay);
 
+/** The same settings (null = none; an all-off LayerFx still remembers its settings). */
 export function sameFx(a: LayerFx | null | undefined, b: LayerFx | null | undefined): boolean {
-  if (!anyFx(a) || !anyFx(b)) return !anyFx(a) && !anyFx(b);
+  if (!a || !b) return !a && !b;
   return (Object.keys(NO_FX) as (keyof LayerFx)[]).every((k) => a[k] === b[k]);
 }
 
@@ -66,11 +67,13 @@ export function fxFromDict(d: unknown): LayerFx | null {
     if (typeof def === "boolean") out[k] = !!v;
     else if (typeof def === "number") {
       const n = Math.trunc(Number(v));
-      if (Number.isFinite(n)) out[k] = n;
+      // clamped to the windows' ranges: a damaged file must not ask for a million-pixel outline
+      const spec = Object.values(OPTIONS).flat().find((s) => s.name === k);
+      if (Number.isFinite(n)) out[k] = Math.max(spec?.min ?? n, Math.min(spec?.max ?? n, n));
     } else if (typeof v === "string" && HEX.test(v.trim().toLowerCase())) out[k] = v.trim().toLowerCase();
   }
   const fx = out as unknown as LayerFx;
-  return anyFx(fx) ? fx : null;
+  return sameFx(fx, NO_FX) ? null : fx;
 }
 
 // ---------------------------------------------------------------- settings windows
@@ -116,7 +119,8 @@ export function withValues(fx: LayerFx | null | undefined, values: Values): Laye
   const out: Record<string, unknown> = { ...(fx ?? NO_FX) };
   for (const k of Object.keys(NO_FX)) if (k in values) out[k] = values[k];
   const next = out as unknown as LayerFx;
-  return anyFx(next) ? next : null;
+  // an effect switched off keeps its settings; null only when everything is back to the defaults
+  return sameFx(next, NO_FX) ? null : next;
 }
 
 // ---------------------------------------------------------------- drawing
@@ -224,30 +228,37 @@ function shift(plane: Float32Array, w: number, h: number, dx: number, dy: number
   return out;
 }
 
+/** Max of each pixel and its left / right (horizontal) or up / down neighbours. */
+function max3(src: Float32Array, w: number, h: number, horizontal: boolean): Float32Array {
+  const out = new Float32Array(src.length);
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      let m = src[i];
+      if (horizontal) {
+        if (x > 0 && src[i - 1] > m) m = src[i - 1];
+        if (x < w - 1 && src[i + 1] > m) m = src[i + 1];
+      } else {
+        if (y > 0 && src[i - w] > m) m = src[i - w];
+        if (y < h - 1 && src[i + w] > m) m = src[i + w];
+      }
+      out[i] = m;
+    }
+  return out;
+}
+
 /** Grow the shape by `width` px: one-pixel steps alternating a cross and a square (a near-round
  *  outline); soft edges stay soft. Same as layerfx.dilate. */
 export function dilate(plane: Float32Array, w: number, h: number, width: number): Float32Array {
   let cur = plane;
   for (let step = 0; step < width; step++) {
-    const next = new Float32Array(cur);
-    const diag = step % 2 === 1;
-    for (let y = 0; y < h; y++)
-      for (let x = 0; x < w; x++) {
-        let m = next[y * w + x];
-        for (let oy = -1; oy <= 1; oy++) {
-          const yy = y + oy;
-          if (yy < 0 || yy >= h) continue;
-          for (let ox = -1; ox <= 1; ox++) {
-            if ((ox === 0 && oy === 0) || (!diag && ox !== 0 && oy !== 0)) continue;
-            const xx = x + ox;
-            if (xx < 0 || xx >= w) continue;
-            const v = cur[yy * w + xx];
-            if (v > m) m = v;
-          }
-        }
-        next[y * w + x] = m;
-      }
-    cur = next;
+    const across = max3(cur, w, h, true);
+    if (step % 2 === 1) cur = max3(across, w, h, false); // square = rows, then columns
+    else {
+      const down = max3(cur, w, h, false); // cross = the larger of the two
+      for (let i = 0; i < down.length; i++) if (across[i] > down[i]) down[i] = across[i];
+      cur = down;
+    }
   }
   return cur;
 }
@@ -301,9 +312,52 @@ export function renderFx(data: Uint8ClampedArray, w: number, h: number, fx: Laye
   return res;
 }
 
+// The last few whole-layer renders: repaints of the whole picture (moving the layer, renaming
+// or hiding another one…) reuse them. Keyed by a checksum of the pixels, so strokes painted into
+// the layer in place (and undo patches) are noticed.
+const cache: { key: string; data: Uint8ClampedArray }[] = [];
+const CACHE_SIZE = 4;
+
+function checksum(a: Uint8ClampedArray | null | undefined): number {
+  if (!a) return -1;
+  let h = 0x811c9dc5;
+  if (a.byteOffset % 4 === 0 && a.length % 4 === 0) {
+    const words = new Uint32Array(a.buffer, a.byteOffset, a.length / 4);
+    for (let i = 0; i < words.length; i++) h = Math.imul(h ^ words[i], 16777619);
+  } else for (let i = 0; i < a.length; i++) h = Math.imul(h ^ a[i], 16777619);
+  return h >>> 0;
+}
+
+/** The whole layer with its effects, padded by fxMargin on every side (cached). */
+function whole(layer: Layer, data: Uint8ClampedArray, mask: Uint8ClampedArray | null): Uint8ClampedArray {
+  const key = `${layer.width}x${layer.height}:${checksum(data)}:${checksum(mask)}:${JSON.stringify(layer.fx)}`;
+  const hit = cache.find((c) => c.key === key);
+  if (hit) return hit.data;
+  const b = fxBounds(layer);
+  const out = fxRegionDirect({ ...layer, data, mask }, b);
+  cache.push({ key, data: out });
+  if (cache.length > CACHE_SIZE) cache.shift();
+  return out;
+}
+
 /** What `layer` shows inside canvas `rect` (mask and effects, not its opacity), as RGBA of
  *  rect's size. `data` replaces the layer's pixels (live previews). */
 export function fxRegion(layer: Layer, rect: Rect, data: Uint8ClampedArray = layer.data): Uint8ClampedArray {
+  const b = fxBounds(layer);
+  if (rect.width * rect.height * 4 < b.width * b.height) return fxRegionDirect(layer, rect, data);
+  // a big part of it (a full repaint): draw the whole layer once and reuse it
+  const mask = layer.mask && layer.mask.length === data.length ? layer.mask : null;
+  const all = whole(layer, data, mask);
+  const out = new Uint8ClampedArray(rect.width * rect.height * 4);
+  const part = rect.intersect(b);
+  for (let y = part.y0; y < part.y1; y++) {
+    const start = ((y - b.y0) * b.width + (part.x0 - b.x0)) * 4;
+    out.set(all.subarray(start, start + part.width * 4), ((y - rect.y0) * rect.width + (part.x0 - rect.x0)) * 4);
+  }
+  return out;
+}
+
+function fxRegionDirect(layer: Layer, rect: Rect, data: Uint8ClampedArray = layer.data): Uint8ClampedArray {
   const m = fxMargin(layer.fx);
   const need = new Rect(rect.x0 - m, rect.y0 - m, rect.x1 + m, rect.y1 + m);
   const nw = need.width, nh = need.height;

@@ -674,6 +674,7 @@ class EditorPage(QWidget):
 
     def tweak_fx(self, key: str, values: dict) -> None:
         """An effect window changed: the selected layer's effects, live, one undo step a run."""
+        self._commit_first()  # text being typed becomes its layer first
         doc = self.doc
         if doc is None or not doc.layers or self.history is None:
             return

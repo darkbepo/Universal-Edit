@@ -102,7 +102,7 @@ abstract class ShapeTool extends Tool {
   /** A tool needs something first (the canvas shows it in the status line). */
   notice: string | null = null;
   /** The shape layer being reshaped: which handle, the layer as it was, and where it sits. */
-  private grab: { hit: number; old: Layer; index: number; ox: number; oy: number } | null = null;
+  private grab: { hit: number; old: Layer; index: number; ox: number; oy: number; at: [number, number] } | null = null;
 
   override press(doc: EditorDoc, x: number, y: number, ctx?: ToolContext): Rect | null {
     this.canvas = [doc.width, doc.height];
@@ -116,7 +116,7 @@ abstract class ShapeTool extends Tool {
         // reshape it instead of drawing a new one; the handle keeps its offset to the pointer,
         // so a click without a drag changes nothing
         const [hx, hy] = handlePoints(layer)[hit];
-        this.grab = { hit, old: layer, index: doc.active, ox: hx - x, oy: hy - y };
+        this.grab = { hit, old: layer, index: doc.active, ox: hx - x, oy: hy - y, at: [x, y] };
         return null;
       }
     }
@@ -137,12 +137,12 @@ abstract class ShapeTool extends Tool {
 
   override release(doc: EditorDoc, x: number, y: number, ctx: ToolContext): Command | null {
     if (this.grab) {
-      const { hit, old, index, ox, oy } = this.grab;
+      const { hit, old, index, ox, oy, at } = this.grab;
       this.grab = null;
       doc.layers = [...doc.layers];
       doc.layers[index] = old; // the live preview goes; the undoable change comes
       const pts = reshaped(old, hit, x + ox, y + oy);
-      if (pts.every((v, i) => v === canvasPoints(old)[i])) return null;
+      if ((x === at[0] && y === at[1]) || pts.every((v, i) => v === canvasPoints(old)[i])) return null; // a click: nothing changes
       const fresh = shapeLayer(this.raster, old.name, { ...(old.shape as ShapeSpec), points: pts }, old);
       return fresh ? ops.replaceLayer(doc, index, "Edit shape", fresh) : null;
     }

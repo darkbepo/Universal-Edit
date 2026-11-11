@@ -152,3 +152,37 @@ describe("layer effects", () => {
   });
 });
 
+
+describe("layer effects: review fixes", () => {
+  it("an effect switched off keeps its settings", () => {
+    const d = doc();
+    const h = new History(d);
+    ops.tweakLayerFx(d, h, 1, fx({ shadow: true, shadow_distance: 50 }), "Drop shadow");
+    const off = withValues(d.layers[1].fx, { shadow: false });
+    expect(off?.shadow_distance).toBe(50);
+    ops.tweakLayerFx(d, h, 1, off, "Drop shadow");
+    expect(windowValues(d.layers[1].fx, "shadow").shadow_distance).toBe(50);
+    expect(composite(d)).toEqual(composite(doc()));
+  });
+
+  it("a run back to its start leaves nothing to redo", () => {
+    const d = doc();
+    const h = new History(d);
+    ops.tweakLayerFx(d, h, 1, fx({ glow: true }), "Glow");
+    ops.tweakLayerFx(d, h, 1, null, "Glow");
+    expect(d.layers[1].fx ?? null).toBeNull();
+    expect(h.canRedo).toBe(false);
+  });
+
+  it("files can't ask for huge effects", () => {
+    const f = fxFromDict({ outline: true, outline_width: 10_000_000, shadow_blur: -5 });
+    expect([f?.outline_width, f?.shadow_blur]).toEqual([50, 0]);
+  });
+
+  it("a full repaint reuses the render and notices strokes", () => {
+    const d = doc(fx({ outline: true, outline_color: "#ff0000", outline_width: 2 }));
+    composite(d);
+    d.layers[1].data.set([0, 0, 255, 255], 0); // painted in place
+    expect(px(composite(d), 20, 20)).toEqual([0, 0, 255, 255]);
+  });
+});
