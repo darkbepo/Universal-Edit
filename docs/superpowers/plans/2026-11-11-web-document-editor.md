@@ -512,6 +512,23 @@ Found in Task 5. On the web, a Markdown file with pictures is saved as `stem.zip
 
 ---
 
+### Task 5c: The first save must not change a Markdown file's meaning (both apps)
+
+Found by the Task 5 re-review's README round trip, from the scratchpad scripts `desk.py`, `web.test.ts` and `cmp.py`. For 8 of 23 real READMEs (r01, r02, r05, r10, r12, r13, r14, r16), the document's HTML after open → save → reopen differs from the first open, in **both** apps. It only settles after the second save. Saving over a README therefore changes it, even though the user edited nothing.
+
+**Files:**
+- Modify: `src/umc/doceditor/md_writer.py` + `web/src/doceditor/md-writer.ts`, and/or the normalisers / readers in both apps, depending on the cause
+- Also: `scripts/make_doceditor_vectors.py` (add each case as a markdown vector)
+- Also, small: `web/src/engines/mupdf.ts` `htmlToPdf` takes an option to skip its own table CSS when the caller supplies page styles. The document editor's PDF save uses it, so table cells get the desktop's 3pt 6pt padding and 6pt margin.
+
+- [ ] **Step 1:** For each of the 8 files, diff the HTML of open #1 against open #2 in both apps. Reduce each difference to a minimal Markdown input and write it down in the report. Expected: a handful of distinct causes.
+- [ ] **Step 2:** Add each minimal input as a markdown vector. Its expected `md_out` must re-read to exactly the original HTML, which is the fix target. Test: open → save → reopen HTML equals the first open, for every vector and for all 23 READMEs (the round-trip script, run in both apps).
+- [ ] **Step 3:** Fix it in the writer and/or reader of both apps, keeping them byte-identical.
+- [ ] **Step 4:** Run the full suites in both apps — Expected: PASS. The 23-file round trip is stable from the first save on.
+- [ ] **Step 5: Commit** `Keep Markdown files unchanged on the first save`.
+
+---
+
 ### Task 6: ProseMirror schema and subset conversion
 
 **Files:**
