@@ -37,7 +37,7 @@ async function runRoute(
   dst: string,
   stem: string,
   ctx: RunContext,
-  o: { toc?: boolean; keepMedia?: boolean; paper?: { size: [number, number]; landscape: boolean; marginMm: number } },
+  o: { toc?: boolean; keepMedia?: boolean; pageStyles?: boolean; paper?: { size: [number, number]; landscape: boolean; marginMm: number } },
 ): Promise<{ bytes: Uint8Array; media: Record<string, Uint8Array> }> {
   const route = plan(input.ext, dst);
   if (!route) throw new ConversionError(`Can't convert ${input.ext.toUpperCase()} to ${dst.toUpperCase()} in the browser.`);
@@ -74,7 +74,7 @@ async function runRoute(
     const paper = o.paper ?? { size: mu.PAPER_MM.a4, landscape: false, marginMm: 0 };
     let out: Uint8Array;
     if (edge.src === "html" && edge.dst === "pdf") {
-      out = mu.htmlToPdf(mupdf, new TextDecoder().decode(cur.bytes), paper);
+      out = mu.htmlToPdf(mupdf, new TextDecoder().decode(cur.bytes), paper, { pageStyles: o.pageStyles });
     } else if (edge.src === "txt" && edge.dst === "pdf") {
       out = mu.htmlToPdf(mupdf, mu.textToHtml(cur.bytes, stem), { ...paper, marginMm: paper.marginMm || 20 });
     } else {
@@ -166,7 +166,8 @@ export const documentConverter: Converter = {
 
       const landscape = o.orientation === "landscape";
       const paper = PAPER(o) ? { size: mu.PAPER_MM[String(o.paper)], landscape, marginMm: Number(o.margin_mm) } : undefined;
-      const { bytes, media } = await runRoute(step, dst, stem, sub, { toc: Boolean(o.toc), keepMedia: true, paper });
+      // page_styles (not a setting; the document editor's PDF save): the page brings its own table CSS
+      const { bytes, media } = await runRoute(step, dst, stem, sub, { toc: Boolean(o.toc), keepMedia: true, paper, pageStyles: Boolean(o.page_styles) });
       out.push({ name: unique(`${stem}.${dst}`), data: bytes, type: DOC_MIME[dst] ?? "application/octet-stream" });
       for (const [path, data] of Object.entries(media)) out.push({ name: path, data, type: "application/octet-stream" });
     }

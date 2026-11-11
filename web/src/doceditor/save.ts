@@ -45,7 +45,8 @@ const MD_LINK = new RegExp(`((?<!\\\\)\\]\\()(img/${NAME}+)((?:[${PY_WS}]+"[^"]*
 const MD_IMG = new RegExp(`(<img src=")(img/${NAME}+)(")`, "gu"); // sized pictures (raw HTML)
 
 // The desktop lays a saved PDF out on A4 portrait with 56 pt margins (htmlpdf.A4 / MARGIN) and
-// these body styles (htmlpdf.PAGE_CSS); the doc:pdf converter's paper options do the same here.
+// these body styles (htmlpdf.PAGE_CSS); the doc:pdf converter's paper options do the same here,
+// and page_styles keeps its own table CSS from overriding these.
 const PAGE_CSS = `
 body { font-family: sans-serif; font-size: 11pt; line-height: 1.4; }
 h1 { font-size: 20pt; } h2 { font-size: 16pt; } h3 { font-size: 13pt; }
@@ -57,7 +58,7 @@ pre, code { font-family: monospace; font-size: 9.5pt; }
 pre { white-space: pre-wrap; }
 blockquote { margin-left: 18pt; color: #444; }
 `;
-const PDF_OPTIONS = { paper: "a4", orientation: "portrait", margin_mm: (56 * 25.4) / 72 };
+const PDF_OPTIONS = { paper: "a4", orientation: "portrait", margin_mm: (56 * 25.4) / 72, page_styles: true };
 
 /** The standalone web page the desktop writes (`htmlpdf._page`); `css` goes into its head. */
 export function htmlPage(title: string, body: string, css = ""): string {

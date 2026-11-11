@@ -299,7 +299,7 @@ describe("saveDocument", () => {
     await saveDocument(base, "pdf", "a", convert);
     const [bytes, , , name, options] = convert.mock.calls[0];
     expect(name).toBe("a.html");
-    expect(options).toEqual({ paper: "a4", orientation: "portrait", margin_mm: (56 * 25.4) / 72 });
+    expect(options).toEqual({ paper: "a4", orientation: "portrait", margin_mm: (56 * 25.4) / 72, page_styles: true });
     const page = new TextDecoder().decode(bytes);
     expect(page).toContain("<style>");
     expect(page).toContain("body { font-family: sans-serif; font-size: 11pt; line-height: 1.4; }");

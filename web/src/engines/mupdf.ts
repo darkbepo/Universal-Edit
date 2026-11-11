@@ -94,18 +94,26 @@ export const savePdf = (pdf: import("mupdf").PDFDocument) =>
 
 // MuPDF's HTML engine: Pandoc's default stylesheet makes tables `display: block` (for scrolling
 // in browsers), which breaks MuPDF's table layout — restore real tables and give them borders.
-const PRINT_CSS =
-  "table{display:table!important;border-collapse:collapse;margin:1em 0}th,td{border:1px solid #999;padding:3px 8px}" +
-  "img{max-width:100%}pre{white-space:pre-wrap}";
+const TABLE_CSS =
+  "table{display:table!important;border-collapse:collapse;margin:1em 0}th,td{border:1px solid #999;padding:3px 8px}";
+const PRINT_CSS = "img{max-width:100%}pre{white-space:pre-wrap}";
+
+/** The CSS added to a page before layout. `pageStyles`: the page brings its own table styles
+ * (the document editor's PDF save), so ours would only override them. */
+export function printCss(marginMm: number, opts: { pageStyles?: boolean } = {}): string {
+  let css = (opts.pageStyles ? "" : TABLE_CSS) + PRINT_CSS;
+  if (marginMm > 0) css += `body{margin:${marginMm}mm!important;padding:0!important;max-width:none!important}`;
+  return css;
+}
 
 /** Lay out an HTML document onto pages and return a PDF. */
 export function htmlToPdf(
   mupdf: MuPDF,
   html: string,
   paper: { size: [number, number]; landscape: boolean; marginMm: number },
+  opts: { pageStyles?: boolean } = {},
 ): Uint8Array {
-  let css = PRINT_CSS;
-  if (paper.marginMm > 0) css += `body{margin:${paper.marginMm}mm!important;padding:0!important;max-width:none!important}`;
+  const css = printCss(paper.marginMm, opts);
   const withCss = html.includes("</head>")
     ? html.replace("</head>", `<style>${css}</style></head>`)
     : `<!DOCTYPE html><html><head><meta charset="utf-8"><style>${css}</style></head><body>${html}</body></html>`;
