@@ -410,6 +410,23 @@ Found by the Task 4 review: 28 probe files read identically by both apps, which 
 
 ---
 
+### Task 4g: Split the oversized document-editor modules (both apps, behaviour unchanged)
+
+Four files have grown past the size the project keeps modules at: `subset.ts` 1227 lines, `docx-read.ts` 931, `html_subset.py` 927 and `docx_reader.py` 913. Following the Task 4f review, move code without changing it. The shared vectors and the existing tests are the safety net, so every one stays green with **no expectation changed**.
+- **Pre-parse scanner, web:** `subset.ts` → new `web/src/doceditor/subset-scan.ts` (`TAG_START`, `tagEnd`, `nextTag`, `html5Refs`, `libxmlLike`, `P_MARK`, `keepCarriageReturns` and related helpers).
+- **Pre-parse scanner, desktop:** `html_subset.py` → new `src/umc/doceditor/html_scan.py` (`_html5_text`, `_tag_end`, `_num_refs`, the special-tag tables).
+- **DOCX package opening, desktop:** `docx_reader.py` → new `src/umc/doceditor/docx_package.py` (`_repaired`, `_check_unpacked_size`, `_open_package`), mirroring the web's `docx-package.ts`.
+- **Style and list helpers, web:** `docx-read.ts` → new `web/src/doceditor/docx-styles.ts` (`BUILTIN_*`, `undefinedStyle`, `listInfo`).
+
+Each resulting file must be under ~800 lines. Update `CLAUDE.md`'s architecture lines for the new modules.
+
+- [ ] **Step 1:** Run the full `pytest` and `npm test` and record their counts (baseline).
+- [ ] **Step 2:** Move the code. Imports are updated; no logic changes.
+- [ ] **Step 3:** Run both suites again. Expected: the same counts, all passing, and `git diff --stat` shows only moves and imports. Also run `ruff` and `tsc`.
+- [ ] **Step 4: Commit** `Split the document editor's largest modules`.
+
+---
+
 ### Task 5: Markdown, TXT, HTML, ODT/RTF opening and saving
 
 **Files:**
