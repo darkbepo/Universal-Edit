@@ -390,6 +390,7 @@ Found by the Task 4 review: 28 probe files read identically by both apps, which 
   - the raw-text and `<pre` pre-scans in both normalisers react to a tag name written inside an attribute value (`<a title="<xmp>">`) — make them skip quoted attribute values.
 
   Each becomes a shared normalise vector.
+- **Zip-bomb guard (both apps, from the Task 4e review):** neither reader caps the unpacked size of a DOCX; the file-size limit is only on the compressed bytes. Sum the zip entries' declared uncompressed sizes before reading, and stop decompressing past the limit, which also catches lying headers. Refuse above 500 MB with `TOO_LARGE`. Test with a small zip whose entry claims or inflates to more than the limit.
 - **Can't keep → warn:** equations and altChunk. Add `W_EQUATIONS = "equations and embedded documents"` to both `types.py` and `types.ts`, raised when `m:oMath` / `m:oMathPara` / `w:altChunk` occur. The text around them is kept.
 
 - [ ] **Step 1: Tests (both apps, same inputs):**
