@@ -58,6 +58,7 @@ class EditorCanvas(QWidget):
     nudge_requested = Signal(int, int)  # arrow keys with the Move tool
     tool_notice = Signal(str)  # a tool needs something first (e.g. a clone source)
     view_changed = Signal()  # zoomed or panned (things placed over the picture follow)
+    before_press = None  # called first on every mouse press (set by the page)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -469,6 +470,14 @@ class EditorCanvas(QWidget):
 
     def _paint_tool_outline(self, p: QPainter) -> None:
         """The shape a selection tool is drawing (before the mouse is let go); the clone source."""
+        handles = getattr(self.tool, "handles", None)
+        if handles is not None and self.doc is not None and self._pressed is None:
+            p.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+            for hx, hy in handles(self.doc):  # a shape layer's corners / ends
+                c = self.image_to_widget(hx, hy)
+                p.setPen(QPen(QColor(0, 0, 0, 200), 1))
+                p.setBrush(QColor("white"))
+                p.drawRect(QRectF(c.x() - 4, c.y() - 4, 8, 8))
         marker = getattr(self.tool, "marker", None)
         if marker is not None and self._mouse is not None:
             pt = marker(*self.widget_to_image(self._mouse))
@@ -519,6 +528,8 @@ class EditorCanvas(QWidget):
         return ctx
 
     def mousePressEvent(self, e) -> None:  # noqa: N802
+        if self.before_press is not None:
+            self.before_press()  # e.g. finish text being typed before anything else changes
         if self.doc is None or self._pressed is not None:
             return
         pos = e.position()

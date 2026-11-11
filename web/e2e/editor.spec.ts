@@ -1104,3 +1104,48 @@ test("text: a layer from the first click, shown live while typing, movable by it
   await page.keyboard.press("Control+z"); // the whole typing is one step
   await expect.poll(layers).toBe(n);
 });
+
+test("text: the style controls can be used while typing; a click elsewhere finishes", async ({ page }) => {
+  await openEditor(page);
+  const top = () => page.evaluate(() => {
+    const d = (window.__editor as EditorHook).doc as EditorHook["doc"] & { layers: { text?: { text: string; bold: boolean } | null }[] };
+    return d.layers[d.layers.length - 1].text ?? null;
+  });
+  await page.keyboard.press("t");
+  const p = await at(page, 20, 20);
+  await page.mouse.click(p.x, p.y);
+  await page.locator("textarea.text-box").pressSequentially("Hi");
+  await showToolOptions(page);
+  await page.locator(".tool-settings").getByLabel("Bold").check(); // takes the focus…
+  await expect(page.locator("textarea.text-box")).toHaveCount(1); // …but the typing goes on
+  await expect.poll(async () => (await top())?.bold).toBe(true); // and the text follows
+  await page.locator(".tool-rail").getByRole("button", { name: "Brush", exact: true }).click();
+  await expect(page.locator("textarea.text-box")).toHaveCount(0);
+  expect(await top()).toMatchObject({ text: "Hi", bold: true });
+});
+
+// ------------------------------------------------------------------ shape layers
+
+test("shapes: each on its own layer, a corner handle reshapes it, Rasterize turns it into pixels", async ({ page }) => {
+  await openEditor(page);
+  const layers = () => page.evaluate(() => (window.__editor as EditorHook).doc.layers.length);
+  const box = () => page.evaluate(() => {
+    const d = (window.__editor as EditorHook).doc as EditorHook["doc"] & { active: number; layers: { x: number; y: number; shape?: { points: number[] } | null }[] };
+    const l = d.layers[d.active];
+    return l.shape ? l.shape.points.map((v, i) => Math.round(v + (i % 2 ? l.y : l.x))) : null;
+  });
+  const undoLabel = () => page.evaluate(() => (window.__editor as EditorHook & { history: { undoLabel: string } }).history.undoLabel);
+  const n = await layers();
+  await page.locator(".tool-rail").getByRole("button", { name: "Rectangle", exact: true }).click();
+  await page.evaluate(() => (window.__editor as unknown as { floating: { minimise(k: string): void } }).floating.minimise("tool"));
+  await drag(page, [10, 10], [60, 40]);
+  await expect.poll(layers).toBe(n + 1);
+  expect(await box()).toEqual([10, 10, 60, 40]);
+  await drag(page, [60, 40], [90, 70]); // the bottom-right handle
+  await expect.poll(box).toEqual([10, 10, 90, 70]);
+  expect(await layers()).toBe(n + 1);
+  expect(await undoLabel()).toBe("Edit shape");
+  await page.locator(".layers li").first().click({ button: "right" });
+  await page.getByRole("menu", { name: "Layer actions" }).getByRole("menuitem", { name: /^Rasterize layer/ }).click();
+  await expect.poll(box).toBeNull();
+});

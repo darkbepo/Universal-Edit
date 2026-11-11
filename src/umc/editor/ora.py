@@ -20,6 +20,7 @@ MIMETYPE = b"image/openraster"
 
 
 TEXT_ATTR = "umc-text"  # JSON of tools.text.TextSpec
+SHAPE_ATTR = "umc-shape"  # JSON of tools.shapes.ShapeSpec
 
 
 def _text_spec(raw: str | None):
@@ -30,6 +31,18 @@ def _text_spec(raw: str | None):
     try:
         d = json.loads(raw)
         return TextSpec.from_dict(d) if isinstance(d, dict) else None
+    except (ValueError, TypeError):
+        return None  # a damaged or newer attribute: keep the pixels, lose the editing
+
+
+def _shape_spec(raw: str | None):
+    if not raw:
+        return None
+    from umc.editor.tools.shapes import ShapeSpec
+
+    try:
+        d = json.loads(raw)
+        return ShapeSpec.from_dict(d) if isinstance(d, dict) else None
     except (ValueError, TypeError):
         return None  # a damaged or newer attribute: keep the pixels, lose the editing
 
@@ -59,6 +72,7 @@ def write_ora(doc: Document, path: Path) -> None:
             **({"selected": "true"} if doc.layers.index(layer) == doc.active else {}),
             # our own extra: how a text layer was made, so it stays editable (others ignore it)
             **({TEXT_ATTR: json.dumps(layer.text.to_dict())} if layer.text is not None else {}),
+            **({SHAPE_ATTR: json.dumps(layer.shape.to_dict())} if layer.shape is not None else {}),
         )
         files.append((src, _png(layer.pixels())))  # ORA has no masks: bake them in
     merged = doc.composite()
@@ -116,6 +130,7 @@ def read_ora(path: Path) -> Document:
                     opacity=max(0.0, min(1.0, float(el.get("opacity", "1")))),
                     visible=el.get("visibility", "visible") != "hidden",
                     text=_text_spec(el.get(TEXT_ATTR)),
+                    shape=_shape_spec(el.get(SHAPE_ATTR)),
                 )
                 if el.get("selected") == "true":
                     active = layer

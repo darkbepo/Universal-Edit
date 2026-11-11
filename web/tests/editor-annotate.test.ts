@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { defaults, type Values } from "../src/core/options";
-import { newDoc, type EditorDoc } from "../src/editor/document";
+import { composite, newDoc, type EditorDoc } from "../src/editor/document";
+import { Rect } from "../src/editor/geometry";
 import { History } from "../src/editor/history";
 import { makeLayer, solid, type RGBA } from "../src/editor/layer";
 import { addSticker, renderSticker, STICKERS, stickerItems } from "../src/editor/stickers";
@@ -13,6 +14,7 @@ const px = (doc: EditorDoc, x: number, y: number, i = doc.active) => {
   const l = doc.layers[i];
   return Array.from(l.data.subarray((y * l.width + x) * 4, (y * l.width + x) * 4 + 4));
 };
+const cpx = (d: EditorDoc, x: number, y: number) => Array.from(composite(d, new Rect(x, y, x + 1, y + 1)));
 const ctx = (tool: Tool, options: Values = {}, color: RGBA = [255, 0, 0, 255]): ToolContext => ({
   primary: color,
   secondary: [255, 255, 255, 255],
@@ -75,13 +77,13 @@ describe("arrow and highlighter", () => {
     const doc = white(120, 80);
     const t = new ArrowTool(stubRaster);
     stroke(t, doc, [[10, 40], [100, 40]], ctx(t, { width: 4 }));
-    expect(px(doc, 50, 40).slice(0, 3)).toEqual([255, 0, 0]);
-    expect(px(doc, 88, 45).slice(0, 3)).toEqual([255, 0, 0]);
-    expect(px(doc, 50, 45).slice(0, 3)).toEqual([255, 255, 255]);
-    expect(px(doc, 22, 45).slice(0, 3)).toEqual([255, 255, 255]);
+    expect(cpx(doc, 50, 40).slice(0, 3)).toEqual([255, 0, 0]);
+    expect(cpx(doc, 88, 45).slice(0, 3)).toEqual([255, 0, 0]);
+    expect(cpx(doc, 50, 45).slice(0, 3)).toEqual([255, 255, 255]);
+    expect(cpx(doc, 22, 45).slice(0, 3)).toEqual([255, 255, 255]);
     const doc2 = white(120, 80);
     stroke(t, doc2, [[10, 40], [100, 40]], ctx(t, { width: 4, heads: "both" }));
-    expect(px(doc2, 22, 45).slice(0, 3)).toEqual([255, 0, 0]);
+    expect(cpx(doc2, 22, 45).slice(0, 3)).toEqual([255, 0, 0]);
   });
 
   it("highlights see-through, without building up", () => {

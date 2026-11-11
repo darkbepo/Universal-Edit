@@ -58,11 +58,11 @@ def _moved(
 ):
     """``layer`` moved and/or with its pixels changed by ``op`` (applied to the mask too, so a
     layer mask follows crops, resizes, rotations and flips)."""
-    mask, text = layer.mask, layer.text
+    mask, text, shape = layer.mask, layer.text, layer.shape
     if op is not None:
         image = op(layer.image)
         mask = None if mask is None else op(mask)
-        text = None  # rotated / resized text is just pixels now
+        text = shape = None  # rotated / resized text and shapes are just pixels now
     elif image is not None and mask is not None and mask.size != image.size:
         mask = None  # a replaced image that the old mask doesn't fit
     return replace(
@@ -72,6 +72,7 @@ def _moved(
         y=layer.y if y is None else y,
         mask=mask,
         text=text,
+        shape=shape,
     )
 
 
@@ -561,3 +562,12 @@ def mask_from(doc: Document, mask: Image.Image, label: str = "Remove background"
         raise ValueError("mask size doesn't match the layer")
     new = mask if layer.mask is None else ImageChops.multiply(layer.mask, mask)
     return _replace(doc, doc.active, label, replace(layer, mask=new))
+
+
+def rasterize_layer(doc: Document, index: int | None = None) -> Command | None:
+    """Turn a text or shape layer into plain pixels (it can't be edited as text / shape then)."""
+    i = doc.active if index is None else index
+    layer = doc.layers[i]
+    if layer.text is None and layer.shape is None:
+        return None
+    return _replace(doc, i, "Rasterize layer", replace(layer, text=None, shape=None))

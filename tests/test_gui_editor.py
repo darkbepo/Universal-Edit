@@ -1360,3 +1360,76 @@ def test_editing_text_updates_live_and_can_move_it(page, qtbot):
     assert page.doc.layers[i].text.text == "Hello there" and page.history.undo_label == "Edit text"
     page.canvas.undo()
     assert page.doc.layers[i].text.text == "Hello"
+
+
+def test_shape_handles_drawn_and_dragged_on_the_canvas(page, qtbot):
+    from umc.editor.tools.shapes import canvas_points
+
+    page.select_tool("rect")
+    c = page.canvas
+    n = len(page.doc.layers)
+    _canvas_drag(qtbot, page, (5, 5), (20, 15))
+    assert len(page.doc.layers) == n + 1 and page.doc.active_layer.shape is not None
+    c.grab()  # paints its handles without errors
+    _canvas_drag(qtbot, page, (20, 15), (30, 25))  # the bottom-right handle
+    assert [round(v) for v in canvas_points(page.doc.active_layer)] == [5, 5, 30, 25]
+    assert len(page.doc.layers) == n + 1 and page.history.undo_label == "Edit shape"
+    actions = {a.text(): a for a in page.layers.build_menu(page.doc.active).actions() if a.text()}
+    actions["Rasterize layer (plain pixels)"].trigger()
+    assert page.doc.active_layer.shape is None
+
+
+def test_changes_made_while_typing_finish_the_text_first(page, qtbot, tmp_path):
+    from PIL import Image
+
+    page.select_tool("text")
+    c = page.canvas
+    n = len(page.doc.layers)
+
+    def type_hi():
+        qtbot.mouseClick(c, Qt.MouseButton.LeftButton, pos=c.image_to_widget(5, 5))
+        page.text_box.setPlainText("Hi")
+
+    type_hi()
+    page.rail_action("rotate_right")  # a rail button (it never takes the focus)
+    assert page.text_box is None and (page.doc.width, page.doc.height) == (40, 60)
+    assert all(la.image.size[0] <= 60 for la in page.doc.layers)
+    page.canvas.undo()
+    page.canvas.undo()
+    assert len(page.doc.layers) == n and all(la.text is None for la in page.doc.layers)
+
+    page.select_tool("text")
+    type_hi()
+    extra = tmp_path / "extra.png"
+    Image.new("RGB", (10, 10), "green").save(extra)
+    page.add_paths([extra])  # a file dropped while typing
+    assert len(page.doc.layers) == n + 2
+    page.canvas.undo()
+    page.canvas.undo()
+    assert len(page.doc.layers) == n and all(la.text is None for la in page.doc.layers)
+
+
+def test_an_empty_commit_leaves_the_list_in_step(page, qtbot):
+    page.select_tool("text")
+    c = page.canvas
+    n = len(page.doc.layers)
+    qtbot.mouseClick(c, Qt.MouseButton.LeftButton, pos=c.image_to_widget(5, 5))
+    page.text_box.setPlainText("abc")
+    page.text_box.setPlainText("")
+    page.commit_text()
+    assert len(page.doc.layers) == n and page.layers.list.count() == n
+    assert page.layers.in_sync(page.doc)
+
+
+def test_style_controls_take_the_focus_without_ending_the_typing(page, qtbot):
+    page.select_tool("text")
+    c = page.canvas
+    qtbot.mouseClick(c, Qt.MouseButton.LeftButton, pos=c.image_to_widget(5, 5))
+    page.text_box.setPlainText("Hi")
+    page.tool_settings.font_box.setFocus()  # the font list, in the tool options window
+    qtbot.wait(20)
+    assert page.text_box is not None  # still typing
+    page.tool_settings.set_values(page.tools["text"], {"size": 30})
+    assert page.doc.active_layer.text.size == 30  # the text follows
+    qtbot.mouseClick(page.tool_bar.buttons["brush"], Qt.MouseButton.LeftButton)
+    assert page.text_box is None and page.doc.active_layer.text.text == "Hi"  # done

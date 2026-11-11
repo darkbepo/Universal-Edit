@@ -18,6 +18,8 @@ export interface Layer {
   readonly mask?: Uint8ClampedArray | null;
   /** How a text layer was made (tools/text.ts TextSpec), so it can be edited again. */
   readonly text?: unknown;
+  /** How a shape layer was made (tools/shapes.ts ShapeSpec, points relative to x / y). */
+  readonly shape?: unknown;
 }
 
 /** Test hook: the largest crop made (in pixels) — lets tests prove strokes don't copy whole layers. */

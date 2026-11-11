@@ -654,7 +654,20 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
          drags the anchor. Committing restores the document (`_end_live_text` / `endLiveText`) and
          pushes the usual add / edit command — one undo step; `edit_text_layer(…, anchor)` moves it.
          The box follows zoom / pan (desktop `canvas.view_changed`).
-      6. Shape layers (rectangle / ellipse / line / arrow keep handles until rasterised / merged).
+      6. ✅ Shape layers (both apps): every line / arrow / rectangle / ellipse goes on a new layer
+         (`ops.add_layers` / `addLayers`) carrying a `ShapeSpec` on `Layer.shape` (kind, points
+         relative to the layer's x / y, colours, width, mode, heads, opacity; same fields in both
+         apps; ORA attribute `umc-shape`). `shape_layer` / `shapeLayer` draws it (whole shape, no
+         canvas clamp); `handles()` on the shape tools gives the corners / ends the canvas draws;
+         a press on one reshapes (live, then one "Edit shape" step). A shape painted over
+         (`shape_painted_over` / `shapePaintedOver` re-renders and compares) refuses with a notice.
+         Transforms drop the spec like text (`_moved(op=…)`, web `shape: null`); layer menu
+         "Rasterize layer" (`ops.rasterize_layer` / `rasterizeLayer`) does it for text and shapes.
+         Shapes no longer follow the selection (they're layers).
+         Step 5 review: every entry point commits text being typed first (`_commit_first`, canvas
+         `before_press`, web `addFiles` / `setDocument` / a capturing pointerdown); focus moving to
+         the tool options or the colours doesn't end the typing; live redraws repaint only the
+         changed rectangle and the grip moves the layer instead of drawing it again.
       7. Layer effects: drop shadow, colour overlay, glow, outline (live, "fx" badge, kept in .ora).
 11. Ideas: installer for the app itself (Inno Setup), presets, batch queue.
 

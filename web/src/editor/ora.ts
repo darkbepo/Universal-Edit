@@ -64,7 +64,7 @@ export async function writeOra(doc: EditorDoc, png: PngCodec): Promise<Uint8Arra
     const src = `data/layer${i}.png`;
     files[src] = [await png.encode(layerPixels(l), l.width, l.height), { level: 0 }]; // ORA has no masks: baked in
     entries.push(
-      `<layer name="${esc(l.name)}" src="${src}" x="${l.x}" y="${l.y}" opacity="${l.opacity.toFixed(4)}" visibility="${l.visible ? "visible" : "hidden"}"${i === doc.active ? ' selected="true"' : ""}${l.text ? ` umc-text="${esc(JSON.stringify(l.text))}"` : ""}/>`, // our extra: keeps text editable
+      `<layer name="${esc(l.name)}" src="${src}" x="${l.x}" y="${l.y}" opacity="${l.opacity.toFixed(4)}" visibility="${l.visible ? "visible" : "hidden"}"${i === doc.active ? ' selected="true"' : ""}${l.text ? ` umc-text="${esc(JSON.stringify(l.text))}"` : ""}${l.shape ? ` umc-shape="${esc(JSON.stringify(l.shape))}"` : ""}/>`, // our extra: keeps text editable
     );
   }
   const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<image version="0.0.3" w="${doc.width}" h="${doc.height}"><stack>${entries.join("")}</stack></image>`;
@@ -83,6 +83,18 @@ function attrs(tag: string): Record<string, string> {
 }
 
 /** A text layer's recipe saved by either app (JSON of TextSpec); null if absent or damaged. */
+/** A shape layer's recipe saved by either app (JSON of ShapeSpec); null if absent or damaged. */
+function parseShape(raw: string | undefined): unknown {
+  if (!raw) return null;
+  try {
+    const t = JSON.parse(raw);
+    const ok = t && typeof t === "object" && typeof t.kind === "string" && Array.isArray(t.points) && t.points.length === 4;
+    return ok ? { color: [0, 0, 0, 255], fill: [255, 255, 255, 255], width: 4, mode: "outline", heads: "end", opacity: 100, ...t } : null;
+  } catch {
+    return null; // keep the pixels, lose the editing
+  }
+}
+
 function parseText(raw: string | undefined): unknown {
   if (!raw) return null;
   try {
@@ -121,6 +133,7 @@ export async function readOra(bytes: Uint8Array, png: PngCodec, name = "file"): 
       opacity: Math.max(0, Math.min(1, a.opacity === undefined ? 1 : +a.opacity || 0)),
       visible: a.visibility !== "hidden",
       text: parseText(a["umc-text"]),
+      shape: parseShape(a["umc-shape"]),
     });
     if (a.selected === "true") active = layer;
     layers.push(layer);

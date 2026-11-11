@@ -201,24 +201,24 @@ from umc.editor.tools.text import add_text_layer, render_text  # noqa: E402
 def test_rect_outline_vs_filled():
     doc = Document.new(40, 40)
     run_stroke(RectTool(), doc, [(5, 5), (35, 35)], ctx(ShapeOptions(width=2, mode="outline")))
-    img = doc.active_layer.image
+    img = doc.composite()
     assert img.getpixel((20, 20))[3] == 0 and img.getpixel((5, 20))[3] > 200
     doc2 = Document.new(40, 40)
     run_stroke(RectTool(), doc2, [(5, 5), (35, 35)], ctx(ShapeOptions(mode="filled")))
-    assert doc2.active_layer.image.getpixel((20, 20)) == (255, 255, 255, 255)
+    assert doc2.composite().getpixel((20, 20)) == (255, 255, 255, 255)
 
 
 def test_ellipse_filled_centre_not_corner():
     doc = Document.new(40, 40)
     run_stroke(EllipseTool(), doc, [(0, 0), (40, 40)], ctx(ShapeOptions(mode="both")))
-    img = doc.active_layer.image
+    img = doc.composite()
     assert img.getpixel((20, 20)) == (255, 255, 255, 255) and img.getpixel((1, 1))[3] == 0
 
 
 def test_line_shift_snaps():
     doc = Document.new(50, 50)
     run_stroke(LineTool(), doc, [(10, 10), (40, 12)], ctx(LineOptions(width=3), shift=True))
-    img = doc.active_layer.image
+    img = doc.composite()
     assert img.getpixel((39, 10))[3] > 200 and img.getpixel((39, 13))[3] == 0
 
 
@@ -228,12 +228,12 @@ def test_shape_preview_then_commit_undo():
     tool.press(doc, 5, 5, c)
     tool.move(doc, 30, 30, c)
     prev = tool.preview(doc)
-    assert prev is not None and doc.active_layer.image.getpixel((15, 15))[3] == 0
+    assert prev is not None and doc.composite().getpixel((15, 15))[3] == 0
     h = _History(doc)
     h.push(tool.release(doc, 30, 30, c))
-    assert tool.preview(doc) is None and doc.active_layer.image.getpixel((15, 15))[3] == 255
+    assert tool.preview(doc) is None and doc.composite().getpixel((15, 15))[3] == 255
     h.undo()
-    assert doc.active_layer.image.getpixel((15, 15))[3] == 0
+    assert doc.composite().getpixel((15, 15))[3] == 0
 
 
 def test_select_and_clear():

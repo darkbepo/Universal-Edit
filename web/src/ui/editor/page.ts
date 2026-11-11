@@ -6,7 +6,7 @@ import { converterById } from "../../core/registry";
 import type { InputFile } from "../../core/types";
 import { checkSize, composite, EditorError, selectedIndices, type EditorDoc } from "../../editor/document";
 import { History, type Command } from "../../editor/history";
-import type { Layer, RGBA } from "../../editor/layer";
+import { layerBounds, withProps, type Layer, type RGBA } from "../../editor/layer";
 import { ICONS as TABLER } from "../icon_data";
 import { loadLayers, openFiles, type OpenSource } from "../../editor/open";
 import * as ops from "../../editor/ops";
@@ -188,6 +188,14 @@ export class EditorPage {
       top,
       h("div", { class: "editor-body" }, this.toolBar.el, this.canvas.el, side),
       h("div", { class: "editor-status" }, this.message, this.info));
+    document.addEventListener(
+      "pointerdown",
+      (e) => {
+        const t = e.target as HTMLElement;
+        if (this.textBox && !t.closest(".text-box, .text-grip, .tool-options, .editor-side .swatches, .swatch")) this.commitText();
+      },
+      true,
+    );
     this.floating = new FloatingHost(this.canvas.el);
     this.floating.onState = (key, state) => this.toolBar.setPanelState(key, state);
     setFloatingHost(this.floating);
@@ -288,6 +296,7 @@ export class EditorPage {
   }
 
   async addFiles(files: InputFile[]): Promise<void> {
+    this.commitText(); // a drop doesn't blur the typing box: finish the text first
     if (!this.doc) {
       await this.open(files);
       return;
@@ -304,6 +313,7 @@ export class EditorPage {
   }
 
   private setDocument(doc: EditorDoc): void {
+    this.commitText();
     this.floating.closeAll(["tool"]); // their settings belong to the old picture
     this.doc = doc;
     this.history = new History(doc);
@@ -739,7 +749,12 @@ export class EditorPage {
     });
     if (editing !== null && this.doc) box.value = (this.doc.layers[editing].text as TextSpec).text;
     box.addEventListener("input", () => this.updateLiveText());
-    box.addEventListener("blur", () => this.commitText());
+    box.addEventListener("blur", (e) => {
+      // the size, font, bold… controls and the colours may take the focus: the text follows them
+      const to = e.relatedTarget as HTMLElement | null;
+      if (to && to.closest(".tool-options, .editor-side .swatches, .swatch")) return;
+      this.commitText();
+    });
     const grip = h("button", { type: "button", class: "text-grip", title: "Drag to move the text", ariaLabel: "Move the text" });
     grip.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${(TABLER as Record<string, string>)["arrows-move"]}</svg>`;
     let last: [number, number] | null = null;
@@ -753,7 +768,12 @@ export class EditorPage {
       const z = this.canvas.zoom;
       this.textAnchor = [this.textAnchor[0] + (e.clientX - last[0]) / z, this.textAnchor[1] + (e.clientY - last[1]) / z];
       last = [e.clientX, e.clientY];
-      this.updateLiveText();
+      // moved, not drawn again (a stand-in or a watermark has nothing to move)
+      const live = this.liveText;
+      const cur = live && this.doc ? this.doc.layers[live.index] : null;
+      const spec = cur?.text as TextSpec | null | undefined;
+      if (cur && spec && !spec.watermark) this.showLive(withProps(cur, { x: Math.floor(this.textAnchor[0]) - spec.ox, y: Math.floor(this.textAnchor[1]) - spec.oy }));
+      else this.placeTextBox();
     });
     for (const ev of ["pointerup", "pointercancel"]) grip.addEventListener(ev, () => (last = null));
     this.textBox = box;
@@ -769,11 +789,18 @@ export class EditorPage {
     const box = this.textBox;
     if (!live || !box || !this.doc) return;
     const spec = this.specFromSettings(box.value, live.old);
-    const layer = liveTextLayer(this.doc, canvasRasterizer, spec, this.textAnchor[0], this.textAnchor[1], live.old);
+    this.showLive(liveTextLayer(this.doc, canvasRasterizer, spec, this.textAnchor[0], this.textAnchor[1], live.old));
+  }
+
+  /** Put the live text layer in place and repaint only what changed. */
+  private showLive(layer: Layer): void {
+    const live = this.liveText;
+    if (!live || !this.doc) return;
+    const before = this.doc.layers[live.index];
     this.doc.layers = [...this.doc.layers];
     this.doc.layers[live.index] = layer;
     this.placeTextBox();
-    this.canvas.refresh();
+    this.canvas.refresh(layerBounds(before).union(layerBounds(layer)));
     this.layers.render(this.doc);
   }
 

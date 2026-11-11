@@ -485,6 +485,19 @@ export class EditorCanvas {
 
   /** The shape a selection tool is drawing (before the pointer is let go). */
   private paintToolOutline(): void {
+    const handles = (this.tool as unknown as { handles?: (d: EditorDoc) => [number, number][] } | null)?.handles;
+    if (handles && this.doc && !this.dragging) {
+      const ctx = this.ctx;
+      for (const [hx, hy] of handles.call(this.tool, this.doc)) {
+        // a shape layer's corners / ends
+        const c = this.imageToWidget(hx, hy);
+        ctx.fillStyle = "#fff";
+        ctx.strokeStyle = "rgba(0,0,0,0.8)";
+        ctx.lineWidth = 1;
+        ctx.fillRect(Math.round(c.x) - 4, Math.round(c.y) - 4, 8, 8);
+        ctx.strokeRect(Math.round(c.x) - 3.5, Math.round(c.y) - 3.5, 7, 7);
+      }
+    }
     const marker = (this.tool as unknown as { marker?: (x: number, y: number) => [number, number] | null } | null)?.marker;
     if (marker && this.mouse) {
       const pt = marker.call(this.tool, ...this.widgetToImage(this.mouse.x, this.mouse.y));

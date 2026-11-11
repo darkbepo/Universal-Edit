@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import threading
 from dataclasses import asdict, replace
 from pathlib import Path
@@ -16,6 +17,7 @@ from PySide6.QtCore import (
     QRectF,
     Qt,
     QThread,
+    QTimer,
     Signal,
     Slot,
 )
@@ -208,8 +210,20 @@ class TextBox(QPlainTextEdit):
             return
         super().keyPressEvent(e)
 
+    keep_focus_in = None  # (widget) -> bool: style controls that may take focus while typing
+
     def focusOutEvent(self, e) -> None:  # noqa: N802
         super().focusOutEvent(e)
+        QTimer.singleShot(0, self._after_focus_out)  # Qt has moved the focus by then
+
+    def _after_focus_out(self) -> None:
+        if self.hasFocus():
+            return
+        w = QApplication.focusWidget()
+        if w is None or w.window() is not self.window():
+            return  # another window (the colour picker) or the app in the background: keep typing
+        if self.keep_focus_in is not None and self.keep_focus_in(w):
+            return  # the size, font, bold… controls or the colours: the text follows them live
         self.committed.emit()
 
     def paintEvent(self, e) -> None:  # noqa: N802
@@ -266,6 +280,7 @@ class EditorPage(QWidget):
         self.canvas.color_picked.connect(lambda c, b: self.swatches.set_color(c, b))
         self.canvas.zoom_changed.connect(lambda _z: self._update_info())
         self.canvas.view_changed.connect(self._place_text_box)  # the typing box follows
+        self.canvas.before_press = self._commit_first  # painting etc. never meets the stand-in
         self.canvas.cursor_moved.connect(lambda x, y: self._update_info((x, y)))
         self.canvas.text_requested.connect(self._open_text_box)
         self.canvas.nudge_requested.connect(self._nudge)
@@ -374,7 +389,11 @@ class EditorPage(QWidget):
                     s = QShortcut(QKeySequence(k), owner)
                     s.setContext(context)
                     s.activated.connect(
-                        lambda f=fn: (self.canvas.cancel_gesture(corners=False), f())
+                        lambda f=fn: (
+                            self._commit_first(),
+                            self.canvas.cancel_gesture(corners=False),
+                            f(),
+                        )
                     )
 
         def with_doc(fn):
@@ -518,6 +537,7 @@ class EditorPage(QWidget):
         return True
 
     def set_document(self, doc: Document, sources: list[Path] | None = None) -> None:
+        self._commit_first()
         self.panels.close_all(keep=("tool",))  # their settings belong to the old picture
         self.doc = doc
         self._last_size = (doc.width, doc.height)
@@ -534,6 +554,7 @@ class EditorPage(QWidget):
         self._update_info()
 
     def add_paths(self, paths: list[Path]) -> None:
+        self._commit_first()
         """Dropped images become new layers above the selected one."""
         if self.doc is None:
             self.open_paths(paths)
@@ -592,6 +613,7 @@ class EditorPage(QWidget):
                 dlg.changed()
 
     def _window(self, key: str, title: str, make, on_accept=None) -> None:
+        self._commit_first()
         """Open the window for ``key`` (``make()`` builds its content), or minimise / bring
         back the one already open. ``on_accept`` runs when its OK button is pressed."""
         if self.panels.toggle(key):
@@ -697,6 +719,7 @@ class EditorPage(QWidget):
 
     # ------------------------------------------------------------ operations
     def rail_action(self, name: str) -> None:
+        self._commit_first()
         """An action button in the tool rail (the Select group's ones aren't run_op ops)."""
         if self.doc is None:
             return
@@ -713,6 +736,7 @@ class EditorPage(QWidget):
         self.canvas.setFocus()
 
     def run_op(self, name: str) -> None:
+        self._commit_first()
         doc = self.doc
         if doc is None:
             return
@@ -878,6 +902,7 @@ class EditorPage(QWidget):
             " selection-background-color: rgba(91, 94, 240, 90); }"
         )
         box.committed.connect(self.commit_text)
+        box.keep_focus_in = self._is_text_style_control
         if editing is not None:
             box.setPlainText(doc.layers[editing].text.text)
         box.textChanged.connect(self._update_live_text)
@@ -889,6 +914,18 @@ class EditorPage(QWidget):
         grip.show()
         box.setFocus()
         self._update_live_text()
+
+    def _is_text_style_control(self, w: QWidget) -> bool:
+        tool_panel = self.panels.panels.get("tool")
+        return any(
+            c is not None and (c is w or c.isAncestorOf(w)) for c in (tool_panel, self.swatches)
+        )
+
+    def _commit_first(self) -> None:
+        """Finish the text being typed before another change (its stand-in layer must not end up
+        in that change, and the change must survive the stand-in being swapped out)."""
+        if self.text_box is not None and not self._committing:
+            self.commit_text()
 
     def _place_text_box(self) -> None:
         """Keep the typing box (font scaled to the zoom) and its grip on the text's place."""
@@ -910,7 +947,17 @@ class EditorPage(QWidget):
         x, y = self._text_anchor
         z = self.canvas.zoom
         self._text_anchor = (x + dx / z, y + dy / z)
-        self._update_live_text()
+        live = getattr(self, "_live", None)
+        if live is None or self.doc is None:
+            return
+        layer = self.doc.layers[live["index"]]
+        spec = layer.text
+        if spec is None or spec.watermark:
+            self._place_text_box()  # nothing drawn yet (or a watermark, which covers it all)
+            return
+        nx = math.floor(self._text_anchor[0]) - spec.ox
+        ny = math.floor(self._text_anchor[1]) - spec.oy
+        self._show_live(replace(layer, x=nx, y=ny))  # moved, not drawn again
 
     def _update_live_text(self) -> None:
         """Draw the text being typed into its layer, in its real style (no undo step yet)."""
@@ -919,11 +966,20 @@ class EditorPage(QWidget):
             return
         spec = self._spec_from_settings(box.toPlainText(), live["old"])
         layer = live_text_layer(self.doc, spec, *self._text_anchor, old=live["old"])
+        self._show_live(layer)
+
+    def _show_live(self, layer) -> None:
+        """Put the live text layer in place and repaint only what changed."""
+        live = self._live
+        before = self.doc.layers[live["index"]]
         self.doc.layers = list(self.doc.layers)
         self.doc.layers[live["index"]] = layer
         self._place_text_box()
-        self.canvas.refresh()
-        self.layers.refresh(self.doc)
+        self.canvas.refresh(before.bounds.union(layer.bounds))
+        if self.layers.in_sync(self.doc):
+            self.layers.refresh_thumbnails()
+        else:
+            self.layers.refresh(self.doc)
 
     def _end_live_text(self) -> None:
         """Put the document back as it was before typing (the real change is pushed next)."""
@@ -1010,7 +1066,12 @@ class EditorPage(QWidget):
                 return
             opts = self.tool_settings.options_for(self.tools["text"])
             x, y = self._text_anchor
-            self._push(self._text_command(text, x, y, opts))
+            cmd = self._text_command(text, x, y, opts)
+            if cmd is not None:
+                self._push(cmd)
+            else:  # nothing typed / nothing changed: show the document as it is again
+                self.canvas.refresh()
+                self.layers.refresh(self.doc)
             self.canvas.setFocus()
         finally:
             self._committing = False
@@ -1075,6 +1136,7 @@ class EditorPage(QWidget):
 
     # ------------------------------------------------------------ background removal
     def remove_background(self) -> None:
+        self._commit_first()
         """Hide the background of the selected layer with a layer mask (the pixels are kept)."""
         from umc.tools import bgremove
 

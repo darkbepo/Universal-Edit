@@ -22,6 +22,8 @@ class Layer:
     mask: Image.Image | None = None
     # How a text layer was made (tools.text.TextSpec), so it can be edited again; None otherwise.
     text: Any = None
+    # How a shape layer was made (tools.shapes.ShapeSpec, points relative to x / y); None otherwise.
+    shape: Any = None
 
     def __post_init__(self) -> None:
         if self.image.mode != "RGBA":

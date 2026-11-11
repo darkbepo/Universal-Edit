@@ -76,7 +76,7 @@ def test_arrow_draws_line_and_head():
     doc = _doc()
     t = ArrowTool()
     _stroke(t, doc, [(10, 40), (100, 40)], _ctx(t, width=4))
-    px = doc.layers[0].image
+    px = doc.composite()
     assert px.getpixel((50, 40))[:3] == (255, 0, 0)  # the shaft
     assert px.getpixel((88, 45))[:3] == (255, 0, 0)  # the head is wider than the shaft
     assert px.getpixel((50, 46))[:3] == (255, 255, 255)
@@ -87,7 +87,7 @@ def test_arrow_with_two_heads():
     doc = _doc()
     t = ArrowTool()
     _stroke(t, doc, [(10, 40), (100, 40)], _ctx(t, width=4, heads="both"))
-    assert doc.layers[0].image.getpixel((22, 45))[:3] == (255, 0, 0)
+    assert doc.composite().getpixel((22, 45))[:3] == (255, 0, 0)
 
 
 def test_highlighter_is_see_through_and_does_not_build_up():
@@ -96,3 +96,86 @@ def test_highlighter_is_see_through_and_does_not_build_up():
     _stroke(t, doc, [(10, 20), (90, 20), (10, 20), (90, 20)], _ctx(t, color=(255, 255, 0, 255)))
     a = doc.layers[0].image.getpixel((50, 20))[3]
     assert 90 <= a <= 115  # 40 %, once
+
+
+# ------------------------------------------------------------------ shape layers
+
+
+def test_each_shape_is_its_own_layer_with_its_spec():
+    from umc.editor.tools.shapes import RectTool, canvas_points
+
+    doc = _doc()
+    h = History(doc)
+    t = RectTool()
+    h.push(_stroke(t, doc, [(10, 10), (40, 30)], _ctx(t, width=2, mode="both")))
+    assert len(doc.layers) == 2 and doc.active == 1
+    la = doc.active_layer
+    assert la.shape.kind == "rect" and la.shape.mode == "both"
+    assert canvas_points(la) == (10, 10, 40, 30)
+    assert doc.layers[0].image.getpixel((20, 20)) == (255, 255, 255, 255)  # the photo untouched
+    h.undo()
+    assert len(doc.layers) == 1
+
+
+def test_dragging_a_corner_reshapes_and_is_one_undo_step():
+    from umc.editor.tools.shapes import EllipseTool, canvas_points
+
+    doc = _doc()
+    h = History(doc)
+    t = EllipseTool()
+    h.push(_stroke(t, doc, [(10, 10), (40, 30)], _ctx(t)))
+    assert t.handles(doc)[2] == (40, 30)
+    c = _ctx(t)
+    t.press(doc, 40, 30, c)  # the bottom-right handle
+    t.move(doc, 60, 50, c)
+    assert canvas_points(doc.active_layer) == (10, 10, 60, 50)  # shown while dragging
+    h.push(t.release(doc, 60, 50, c))
+    assert canvas_points(doc.active_layer) == (10, 10, 60, 50) and h.undo_label == "Edit shape"
+    assert len(doc.layers) == 2  # reshaped, not a new layer
+    h.undo()
+    assert canvas_points(doc.active_layer) == (10, 10, 40, 30)
+
+
+def test_moving_a_shape_layer_keeps_its_handles_on_it():
+    from umc.editor import ops
+    from umc.editor.tools.shapes import LineTool
+
+    doc = _doc()
+    t = LineTool()
+    _stroke(t, doc, [(10, 10), (50, 20)], _ctx(t))
+    ops.nudge_layers(doc, [doc.active], 5, 7)
+    assert t.handles(doc) == [(15, 17), (55, 27)]
+
+
+def test_painted_shapes_and_transforms_become_pixels():
+    from umc.editor import ops
+    from umc.editor.tools.shapes import RectTool, shape_painted_over
+
+    doc = _doc()
+    t = RectTool()
+    _stroke(t, doc, [(10, 10), (40, 30)], _ctx(t))
+    assert not shape_painted_over(doc.active_layer)
+    doc.active_layer.image.putpixel((0, 0), (1, 2, 3, 255))
+    assert shape_painted_over(doc.active_layer)
+    t.press(doc, 10, 10, _ctx(t))  # on a handle: refused, it's pixels now
+    assert t.notice and "painted on" in t.notice
+    h = History(doc)
+    h.push(ops.rasterize_layer(doc))
+    assert doc.active_layer.shape is None and h.undo_label == "Rasterize layer"
+    _stroke(t, doc, [(60, 10), (90, 30)], _ctx(t))
+    ops.rotate(doc, 90, layer_only=True)
+    assert doc.active_layer.shape is None
+
+
+def test_shape_layers_stay_editable_through_an_ora_file(tmp_path):
+    from umc.editor.ora import read_ora, write_ora
+    from umc.editor.tools.shapes import ArrowTool, canvas_points
+
+    doc = _doc()
+    t = ArrowTool()
+    _stroke(t, doc, [(10, 40), (100, 40)], _ctx(t, width=5, heads="both"))
+    write_ora(doc, tmp_path / "s.ora")
+    back = read_ora(tmp_path / "s.ora")
+    la = back.layers[1]
+    assert la.shape.kind == "arrow" and la.shape.heads == "both" and la.shape.width == 5
+    assert canvas_points(la) == (10, 40, 100, 40)

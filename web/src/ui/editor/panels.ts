@@ -638,6 +638,8 @@ export class LayersPanel {
     if (chosen.some((i) => !doc.layers[i].visible)) items.push([`Show ${word}`, () => this.setVisible(true), true]);
     if (chosen.length === 1 && doc.layers.length > 1) {
       const only = chosen[0];
+      const l = doc.layers[only];
+      if (l.text || l.shape) items.push(["Rasterize layer (plain pixels)", () => this.run((d) => ops.rasterizeLayer(d, only)), true]);
       items.push([ops.isSolo(doc, only) ? "Show all layers" : "Show only this layer (Alt+click eye)", () => this.run((d) => ops.soloLayer(d, only)), true]);
     }
     items.push(["Select all layers", () => this.selectAll(), true]);

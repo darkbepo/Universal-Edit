@@ -1,12 +1,31 @@
-// Line, rectangle and ellipse: previewed while dragging, drawn on release (port of tools/shapes.py).
+// Line, arrow, rectangle and ellipse (port of tools/shapes.py): previewed while dragging; each
+// becomes its own layer that remembers its geometry and style (ShapeSpec on Layer.shape), so its
+// corners / ends can be dragged again until the layer is rasterised, merged or transformed.
 // The browser's 2D canvas rasterises (anti-aliased) through the injected Rasterizer.
 import { opt } from "../../core/options";
 import type { EditorDoc } from "../document";
 import { Rect } from "../geometry";
-import { PatchCommand, type Command } from "../history";
-import { cropData } from "../layer";
+import type { Command } from "../history";
+import { layerBounds, makeLayer, withProps, type Layer, type RGBA } from "../layer";
+import * as ops from "../ops";
 import type { DrawItem, Rasterizer } from "../raster";
-import { clipRect, colorOf, overPixel, restrict, Tool, type Preview, type ToolContext } from "./base";
+import { colorOf, Tool, type Preview, type ToolContext } from "./base";
+
+/** Screen pixels: how close to a corner / end counts as grabbing it. */
+export const HANDLE = 8;
+
+/** Everything needed to draw a shape layer again (same fields as ShapeSpec in shapes.py).
+ *  `points` (x0, y0, x1, y1) are relative to the layer's x / y while stored on a layer. */
+export interface ShapeSpec {
+  kind: "line" | "arrow" | "rect" | "ellipse";
+  points: [number, number, number, number];
+  color: RGBA;
+  fill: RGBA;
+  width: number;
+  mode: "outline" | "filled" | "both";
+  heads: "end" | "both";
+  opacity: number;
+}
 
 const lineOptions = [
   opt.slider("width", "Width", 4, 1, 200, { unit: "px" }),
@@ -41,11 +60,16 @@ abstract class ShapeTool extends Tool {
   }
 
   private render(ctx: ToolContext): Preview | null {
-    const pts = this.points(ctx);
+    return this.drawPoints(this.points(ctx), ctx, this.canvas);
+  }
+
+  /** The shape through `pts` (canvas coordinates). With `canvas` the preview is limited to it
+   *  (plus the stroke); a layer keeps the whole shape. */
+  drawPoints(pts: [number, number, number, number], ctx: ToolContext, canvas?: [number, number]): Preview | null {
     const pad = this.pad(ctx);
     const b = Rect.fromPoints(...pts);
-    const [cw, ch] = this.canvas;
-    const box = new Rect(b.x0 - pad, b.y0 - pad, b.x1 + pad, b.y1 + pad).intersect(new Rect(-pad, -pad, cw + pad, ch + pad));
+    let box = new Rect(b.x0 - pad, b.y0 - pad, b.x1 + pad, b.y1 + pad);
+    if (canvas) box = box.intersect(new Rect(-pad, -pad, canvas[0] + pad, canvas[1] + pad));
     if (box.empty) return null;
     const data = this.draw(box, pts, ctx);
     const op = Number(ctx.options.opacity) / 100;
@@ -73,15 +97,31 @@ abstract class ShapeTool extends Tool {
     return o ? new Rect(o.x, o.y, o.x + o.width, o.y + o.height) : null;
   }
 
-  override press(doc: EditorDoc, x: number, y: number, _ctx?: ToolContext): Rect | null {
+  /** A tool needs something first (the canvas shows it in the status line). */
+  notice: string | null = null;
+  /** The shape layer being reshaped: which handle, the layer as it was, and where it sits. */
+  private grab: { hit: number; old: Layer; index: number } | null = null;
+
+  override press(doc: EditorDoc, x: number, y: number, ctx?: ToolContext): Rect | null {
     this.canvas = [doc.width, doc.height];
+    this.overlay = null;
+    this.grab = null;
+    const hit = this.handleAt(doc, x, y, ctx?.zoom ?? 1);
+    if (hit !== null) {
+      const layer = doc.layers[doc.active];
+      if (shapePaintedOver(this.raster, layer)) this.notice = "This shape was painted on, so it's pixels now (its handles are off).";
+      else {
+        this.grab = { hit, old: layer, index: doc.active }; // reshape it instead of drawing a new one
+        return null;
+      }
+    }
     this.start = [x, y];
     this.end = [x, y];
-    this.overlay = null;
     return null;
   }
 
-  override move(_doc: EditorDoc, x: number, y: number, ctx: ToolContext): Rect | null {
+  override move(doc: EditorDoc, x: number, y: number, ctx: ToolContext): Rect | null {
+    if (this.grab) return this.reshape(doc, x, y);
     if (!this.start) return null;
     const old = this.overlayRect();
     this.end = [x, y];
@@ -91,31 +131,78 @@ abstract class ShapeTool extends Tool {
   }
 
   override release(doc: EditorDoc, x: number, y: number, ctx: ToolContext): Command | null {
+    if (this.grab) {
+      this.reshape(doc, x, y);
+      const { old, index } = this.grab;
+      this.grab = null;
+      const fresh = doc.layers[index];
+      doc.layers = [...doc.layers];
+      doc.layers[index] = old; // the live preview goes; the undoable change comes
+      return fresh === old ? null : ops.replaceLayer(doc, index, "Edit shape", fresh);
+    }
     if (!this.start) return null;
     this.end = [x, y];
     const moved = Math.hypot(x - this.start[0], y - this.start[1]) >= 1;
-    const o = moved ? this.render(ctx) : null;
+    const pts = this.points(ctx);
     this.start = null;
     this.overlay = null;
-    if (!o) return null;
-    const layer = doc.layers[doc.active];
-    const target = new Rect(o.x, o.y, o.x + o.width, o.y + o.height).offset(-layer.x, -layer.y);
-    const region = target.intersect(clipRect(doc, layer));
-    if (region.empty) return null;
-    const before = cropData(layer.data, layer.width, region);
-    for (let y = region.y0; y < region.y1; y++)
-      for (let xx = region.x0; xx < region.x1; xx++) {
-        overPixel(layer.data, (y * layer.width + xx) * 4, o.data, ((y - target.y0) * o.width + (xx - target.x0)) * 4);
-      }
-    restrict(doc, layer, region, before); // shaped / soft selections
-    return PatchCommand.fromRegion(this.label, doc, doc.active, region, before);
+    if (!moved) return null;
+    const layer = shapeLayer(this.raster, ops.uniqueName(doc, this.label), specFrom(this.shapeKind(), pts, ctx));
+    return layer ? ops.addLayers(doc, [layer], this.label) : null;
   }
 
-  override cancel(_doc?: EditorDoc): Rect | null {
+  override cancel(doc?: EditorDoc): Rect | null {
     const old = this.overlayRect();
+    if (this.grab && doc) {
+      const { old: layer, index } = this.grab;
+      this.grab = null;
+      const dirty = layerBounds(doc.layers[index]).union(layerBounds(layer));
+      doc.layers = [...doc.layers];
+      doc.layers[index] = layer;
+      return dirty;
+    }
     this.start = null;
     this.overlay = null;
     return old;
+  }
+
+  /** "line" | "arrow" | "rect" | "ellipse" — what ShapeSpec.kind this tool makes. */
+  protected shapeKind(): ShapeSpec["kind"] {
+    return this.id as ShapeSpec["kind"];
+  }
+
+  /** The corners / ends of the active layer's shape (canvas coordinates), drawn by the canvas
+   *  while this tool is chosen; dragging one reshapes the layer. */
+  handles(doc: EditorDoc): [number, number][] {
+    const l = doc.layers[doc.active];
+    return l && l.shape && l.visible ? handlePoints(l) : [];
+  }
+
+  private handleAt(doc: EditorDoc, x: number, y: number, zoom: number): number | null {
+    const r = HANDLE / Math.max(zoom, 1e-6);
+    const hs = this.handles(doc);
+    for (let i = 0; i < hs.length; i++) if (Math.abs(hs[i][0] - x) <= r && Math.abs(hs[i][1] - y) <= r) return i;
+    return null;
+  }
+
+  private reshape(doc: EditorDoc, x: number, y: number): Rect | null {
+    const { hit, old, index } = this.grab as { hit: number; old: Layer; index: number };
+    const spec = old.shape as ShapeSpec;
+    const pts = canvasPoints(old);
+    if (spec.kind === "line" || spec.kind === "arrow") {
+      pts[2 * hit] = x;
+      pts[2 * hit + 1] = y;
+    } else {
+      // corners 0 1 2 3 = top-left, top-right, bottom-right, bottom-left of (x0 y0 x1 y1)
+      pts[hit === 0 || hit === 3 ? 0 : 2] = x;
+      pts[hit === 0 || hit === 1 ? 1 : 3] = y;
+    }
+    const fresh = shapeLayer(this.raster, old.name, { ...spec, points: pts }, old);
+    if (!fresh) return null;
+    const cur = doc.layers[index];
+    doc.layers = [...doc.layers];
+    doc.layers[index] = fresh;
+    return layerBounds(cur).union(layerBounds(fresh));
   }
 
   override preview(_doc?: EditorDoc): Preview | null {
@@ -199,4 +286,73 @@ export class ArrowTool extends LineTool {
     items.push({ line: [[sx, sy], [ex, ey]], stroke: color, width: w });
     return this.raster.draw(box, items);
   }
+}
+
+// ------------------------------------------------------------------ shape layers
+
+/** The shape a tool just drew (canvas points) with its settings and colours. */
+export function specFrom(kind: ShapeSpec["kind"], pts: [number, number, number, number], ctx: ToolContext): ShapeSpec {
+  const o = ctx.options;
+  const line = kind === "line" || kind === "arrow";
+  return {
+    kind,
+    points: [...pts] as [number, number, number, number],
+    color: [...(line ? colorOf(ctx) : ctx.primary)] as RGBA,
+    fill: [...ctx.secondary] as RGBA,
+    width: Number(o.width),
+    mode: ((o.mode as string) ?? "outline") as ShapeSpec["mode"],
+    heads: ((o.heads as string) ?? "end") as ShapeSpec["heads"],
+    opacity: Number(o.opacity ?? 100),
+  };
+}
+
+function toolFor(raster: Rasterizer, kind: ShapeSpec["kind"]): ShapeTool {
+  return kind === "line" ? new LineTool(raster) : kind === "arrow" ? new ArrowTool(raster) : kind === "rect" ? new RectTool(raster) : new EllipseTool(raster);
+}
+
+/** (pixels, x, y) of a shape whose points are in canvas coordinates. */
+export function renderShape(raster: Rasterizer, spec: ShapeSpec): Preview | null {
+  const ctx: ToolContext = {
+    primary: spec.color,
+    secondary: spec.fill,
+    options: { width: spec.width, mode: spec.mode, heads: spec.heads, opacity: spec.opacity },
+    shift: false,
+    button: "left",
+    font: "",
+  };
+  return toolFor(raster, spec.kind).drawPoints(spec.points, ctx);
+}
+
+/** A layer holding the shape (`spec` in canvas coordinates). Redrawing `old` keeps what the user
+ *  set on it: visibility, opacity and its mask when the size still fits. */
+export function shapeLayer(raster: Rasterizer, name: string, spec: ShapeSpec, old: Layer | null = null): Layer | null {
+  const d = renderShape(raster, spec);
+  if (!d) return null;
+  const p = spec.points;
+  const local: ShapeSpec = { ...spec, points: [p[0] - d.x, p[1] - d.y, p[2] - d.x, p[3] - d.y] };
+  const layer = makeLayer(name, d.width, d.height, new Uint8ClampedArray(d.data), { x: d.x, y: d.y, shape: local });
+  if (!old) return layer;
+  const keepMask = !!old.mask && old.width === d.width && old.height === d.height;
+  return withProps(layer, { opacity: old.opacity, visible: old.visible, mask: keepMask ? old.mask : null });
+}
+
+export function canvasPoints(layer: Layer): [number, number, number, number] {
+  const p = (layer.shape as ShapeSpec).points;
+  return [p[0] + layer.x, p[1] + layer.y, p[2] + layer.x, p[3] + layer.y];
+}
+
+export function handlePoints(layer: Layer): [number, number][] {
+  const [x0, y0, x1, y1] = canvasPoints(layer);
+  const kind = (layer.shape as ShapeSpec).kind;
+  return kind === "line" || kind === "arrow" ? [[x0, y0], [x1, y1]] : [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+}
+
+/** True when a shape layer was changed with other tools since it was drawn (reshaping draws it
+ *  again, so those changes would go). Same as shape_painted_over in shapes.py. */
+export function shapePaintedOver(raster: Rasterizer, layer: Layer): boolean {
+  if (!layer.shape) return false;
+  const d = renderShape(raster, { ...(layer.shape as ShapeSpec), points: canvasPoints(layer) });
+  if (!d || d.width !== layer.width || d.height !== layer.height) return true;
+  for (let i = 0; i < d.data.length; i++) if (d.data[i] !== layer.data[i]) return true;
+  return false;
 }

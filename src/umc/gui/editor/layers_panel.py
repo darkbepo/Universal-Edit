@@ -480,6 +480,12 @@ class LayersPanel(QWidget):
             if doc.layers[doc.active].text is not None:
                 i = doc.active
                 menu.addAction("Edit text…", lambda: self.edit_text_requested.emit(i))
+            if doc.layers[doc.active].text is not None or doc.layers[doc.active].shape is not None:
+                i = doc.active
+                menu.addAction(
+                    "Rasterize layer (plain pixels)",
+                    lambda: self._run(lambda d: ops.rasterize_layer(d, i)),
+                )
         if any(doc.layers[i].visible for i in chosen):
             menu.addAction(f"Hide {word}", lambda: self.set_visible(False))
         if any(not doc.layers[i].visible for i in chosen):

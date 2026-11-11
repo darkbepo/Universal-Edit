@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { defaults, type Values } from "../src/core/options";
-import { newDoc, type EditorDoc } from "../src/editor/document";
+import { composite, newDoc, type EditorDoc } from "../src/editor/document";
 import { Rect } from "../src/editor/geometry";
 import { History, type Command } from "../src/editor/history";
 import { makeLayer, solid, type RGBA } from "../src/editor/layer";
@@ -15,6 +15,8 @@ const lpx = (doc: EditorDoc, x: number, y: number, i = doc.active) => {
   const l = doc.layers[i];
   return Array.from(l.data.subarray((y * l.width + x) * 4, (y * l.width + x) * 4 + 4));
 };
+/** A pixel of the combined picture (shapes are on layers of their own). */
+const cpx = (doc: EditorDoc, x: number, y: number) => Array.from(composite(doc, new Rect(x, y, x + 1, y + 1)));
 const ctx = (tool: Tool, options: Values = {}, color: RGBA = [255, 0, 0, 255], extra: Partial<ToolContext> = {}): ToolContext => ({
   primary: color,
   secondary: [255, 255, 255, 255],
@@ -116,27 +118,27 @@ describe("shapes", () => {
     const doc = newDoc(40, 40);
     const t = new RectTool(stubRaster);
     stroke(t, doc, [[5, 5], [35, 35]], ctx(t, { width: 2, mode: "outline" }));
-    expect(lpx(doc, 20, 20)[3]).toBe(0);
-    expect(lpx(doc, 5, 20)[3]).toBeGreaterThan(200);
+    expect(cpx(doc, 20, 20)[3]).toBe(0);
+    expect(cpx(doc, 5, 20)[3]).toBeGreaterThan(200);
     const doc2 = newDoc(40, 40);
     stroke(t, doc2, [[5, 5], [35, 35]], ctx(t, { mode: "filled" }));
-    expect(lpx(doc2, 20, 20)).toEqual([255, 255, 255, 255]);
+    expect(cpx(doc2, 20, 20)).toEqual([255, 255, 255, 255]);
   });
 
   it("draws a filled ellipse that misses the corners", () => {
     const doc = newDoc(40, 40);
     const t = new EllipseTool(stubRaster);
     stroke(t, doc, [[0, 0], [40, 40]], ctx(t, { mode: "both" }));
-    expect(lpx(doc, 20, 20)).toEqual([255, 255, 255, 255]);
-    expect(lpx(doc, 1, 1)[3]).toBe(0);
+    expect(cpx(doc, 20, 20)).toEqual([255, 255, 255, 255]);
+    expect(cpx(doc, 1, 1)[3]).toBe(0);
   });
 
   it("snaps lines to 45° with shift", () => {
     const doc = newDoc(50, 50);
     const t = new LineTool(stubRaster);
     stroke(t, doc, [[10, 10], [40, 12]], ctx(t, { width: 3 }, undefined, { shift: true }));
-    expect(lpx(doc, 39, 10)[3]).toBeGreaterThan(200);
-    expect(lpx(doc, 39, 13)[3]).toBe(0);
+    expect(cpx(doc, 39, 10)[3]).toBeGreaterThan(200);
+    expect(cpx(doc, 39, 13)[3]).toBe(0);
   });
 
   it("previews while dragging and commits on release", () => {
@@ -146,13 +148,13 @@ describe("shapes", () => {
     t.press(doc, 5, 5, c);
     t.move(doc, 30, 30, c);
     expect(t.preview(doc)).not.toBeNull();
-    expect(lpx(doc, 15, 15)[3]).toBe(0);
+    expect(cpx(doc, 15, 15)[3]).toBe(0);
     const h = new History(doc);
     h.push(t.release(doc, 30, 30, c));
     expect(t.preview(doc)).toBeNull();
-    expect(lpx(doc, 15, 15)[3]).toBe(255);
+    expect(cpx(doc, 15, 15)[3]).toBe(255);
     h.undo();
-    expect(lpx(doc, 15, 15)[3]).toBe(0);
+    expect(cpx(doc, 15, 15)[3]).toBe(0);
   });
 
   it("keeps the preview bounded on a big canvas", () => {
@@ -164,14 +166,14 @@ describe("shapes", () => {
     const p = t.preview(doc);
     expect(p !== null && p.width <= 4020 && p.height <= 3020).toBe(true);
     t.release(doc, 5000, 4000, c);
-    expect(lpx(doc, 0, 1500)[3]).toBe(0);
+    expect(cpx(doc, 0, 1500)[3]).toBe(0);
   });
 
   it("applies the shape opacity", () => {
     const doc = newDoc(20, 20);
     const t = new RectTool(stubRaster);
     stroke(t, doc, [[0, 0], [20, 20]], ctx(t, { mode: "filled", opacity: 50 }));
-    const a = lpx(doc, 10, 10)[3];
+    const a = cpx(doc, 10, 10)[3];
     expect(a >= 120 && a <= 135).toBe(true);
   });
 });
