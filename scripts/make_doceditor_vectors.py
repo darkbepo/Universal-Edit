@@ -179,6 +179,11 @@ MARKDOWN = [
     },
     # code in a raw table that starts with an empty line keeps it
     {"md": "<table><tr><td><pre>&#10;x&#10;&#10;y</pre></td></tr></table>\n"},
+    # raw HTML the editor drops warns wherever it is (quote, list, inline); its own forms don't
+    {"md": "> <details>x</details>\n"},
+    {"md": "- <video src=x>\n"},
+    {"md": "Press <kbd>Ctrl</kbd> now\n"},
+    {"md": '> <p align="center">c</p>\n\n- <span style="color:red">r</span> <b>b</b>\n'},
     # a new marker starts a new nested list: two in a row stay two
     {"md": "- a\n    - b\n    * e\n\n1. x\n    1. y\n    1) z\n    1. w\n"},
     # links markdown-it would rewrite (spaces, non-ASCII, entities) keep their exact address

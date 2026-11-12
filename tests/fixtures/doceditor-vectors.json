@@ -523,6 +523,41 @@
    "md_out": "<table><tr><td><pre>&#10;x&#10;&#10;y</pre></td></tr></table>\n"
   },
   {
+   "md": "> <details>x</details>\n",
+   "html": "<blockquote><p>x</p></blockquote>",
+   "front_matter": "",
+   "warnings": [
+    "footnotes and other Markdown extras"
+   ],
+   "md_out": "> x\n"
+  },
+  {
+   "md": "- <video src=x>\n",
+   "html": "<ul><li></li></ul>",
+   "front_matter": "",
+   "warnings": [
+    "embedded HTML the editor doesn't support",
+    "footnotes and other Markdown extras"
+   ],
+   "md_out": "- <span></span>\n"
+  },
+  {
+   "md": "Press <kbd>Ctrl</kbd> now\n",
+   "html": "<p>Press Ctrl now</p>",
+   "front_matter": "",
+   "warnings": [
+    "footnotes and other Markdown extras"
+   ],
+   "md_out": "Press Ctrl now\n"
+  },
+  {
+   "md": "> <p align=\"center\">c</p>\n\n- <span style=\"color:red\">r</span> <b>b</b>\n",
+   "html": "<blockquote><p style=\"text-align:center\">c</p></blockquote><ul><li><span style=\"color:#ff0000\">r</span> <b>b</b></li></ul>",
+   "front_matter": "",
+   "warnings": [],
+   "md_out": "> <p align=\"center\">c</p>\n\n- <span style=\"color:#ff0000\">r</span> **b**\n"
+  },
+  {
    "md": "- a\n    - b\n    * e\n\n1. x\n    1. y\n    1) z\n    1. w\n",
    "html": "<ul><li>a<ul><li>b</li></ul><ul><li>e</li></ul></li></ul><ol><li>x<ol><li>y</li></ol><ol><li>z</li></ol><ol><li>w</li></ol></li></ol>",
    "front_matter": "",

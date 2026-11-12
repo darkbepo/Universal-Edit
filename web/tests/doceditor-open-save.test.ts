@@ -168,7 +168,11 @@ describe("markdown warnings", () => {
     expect(hasMarkdownExtras("```\n<div>\n[^1]\n```\n")).toBe(false);
     expect(hasMarkdownExtras("`[^1]` and \\[^2]\n")).toBe(false);
     expect(hasMarkdownExtras("<div>x</div>\n")).toBe(true);
-    expect(hasMarkdownExtras("<divx>\n")).toBe(false);
+    // any raw tag the editor doesn't keep counts, wherever it is; its own forms don't
+    expect(hasMarkdownExtras("<divx>\n")).toBe(true);
+    expect(hasMarkdownExtras("> <details>x</details>\n")).toBe(true);
+    expect(hasMarkdownExtras("- <video src=x>\n")).toBe(true);
+    expect(hasMarkdownExtras('> <p align="center">c</p>\n\n- <b>b</b>\n')).toBe(false);
   });
   test("small headings, picture descriptions, comments and alignment", () => {
     expect(hasDroppedFormats("#### four\n")).toBe(true);

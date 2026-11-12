@@ -343,14 +343,6 @@ function codeSpans(text: string, remove: boolean): string | null {
 }
 
 const FOOTNOTE = /(?<!\\)\[\^/;
-// Python's \b after a tag name: the next character is not a (Unicode) word character.
-const BLOCK_HTML = new RegExp(
-  "(?<![^\\n]) {0,3}</?(?:address|article|aside|blockquote|details|div|dl|fieldset|figcaption" +
-    "|figure|footer|form|h[1-6]|header|hgroup|hr|main|menu|nav|ol|p|pre|section|table|ul|canvas" +
-    "|dd|dt|iframe|li|math|noscript|object|script|style|summary|tbody|td|tfoot|th|thead|tr" +
-    "|video|audio|svg)(?![\\p{L}\\p{N}_])",
-  "iu",
-);
 const SMALL_HEADING = /(?<![^\n]) {0,3}#{4,6}(?:[ \t]|(?![^\n]))/;
 const WS = new RegExp(`[${PY_WS}]`);
 
@@ -392,35 +384,31 @@ function hasAlignRow(text: string): boolean {
   return false;
 }
 
-// Tags raw HTML blocks may use without losing anything (what md-writer writes, and synonyms).
+// Tags raw HTML may use without losing anything (what md-writer writes, and synonyms).
 const KEPT_TAGS = new Set(
   "p h1 h2 h3 ul ol li table thead tbody tfoot tr td th pre code br b strong i em u s del strike a img span".split(" "),
 );
 const ANY_TAG = /<\/?([A-Za-z][A-Za-z0-9-]*)/g;
-const BLANK_LINE = /\n[ \t]*\r?(?:\n|$)/g;
-const BLOCK_HTML_ALL = new RegExp(BLOCK_HTML.source, "giu");
 
-/** A block of raw HTML (from its first line up to a blank line) with a tag the editor doesn't
- * keep; the writer's own blocks (alignment, indent, tables) use only kept tags. */
-function dropsBlockHtml(text: string): boolean {
-  let pos = 0;
-  for (;;) {
-    BLOCK_HTML_ALL.lastIndex = pos;
-    const m = BLOCK_HTML_ALL.exec(text);
-    if (!m) return false;
-    BLANK_LINE.lastIndex = m.index;
-    const blank = BLANK_LINE.exec(text);
-    const stop = blank ? blank.index : text.length;
-    const block = text.slice(m.index, stop);
-    for (const t of block.matchAll(ANY_TAG)) if (!KEPT_TAGS.has(t[1].toLowerCase())) return true;
-    pos = Math.max(stop, m.index + m[0].length);
+/** Raw HTML anywhere (blocks and inline, also in quotes and lists: markdown-it's html_block /
+ * html_inline tokens) with a tag the editor doesn't keep; the writer's own forms (alignment,
+ * indent, tables) use only kept tags. */
+function dropsRawHtml(text: string): boolean {
+  const stack = MD.parse(text, {});
+  while (stack.length) {
+    const token = stack.pop()!;
+    if (token.type === "html_block" || token.type === "html_inline") {
+      for (const t of token.content.matchAll(ANY_TAG)) if (!KEPT_TAGS.has(t[1].toLowerCase())) return true;
+    }
+    if (token.children) stack.push(...token.children);
   }
+  return false;
 }
 
-/** Footnotes or block-level raw HTML the editor drops, outside code (W_MDEXTRA). */
+/** Footnotes outside code, or raw HTML the editor drops (W_MDEXTRA). */
 export function hasMarkdownExtras(text: string): boolean {
-  text = codeSpans(stripFences(text), true) as string;
-  return FOOTNOTE.test(text) || dropsBlockHtml(text);
+  const plain = codeSpans(stripFences(text), true) as string;
+  return FOOTNOTE.test(plain) || dropsRawHtml(text);
 }
 
 /** Inline code, level 4-6 headings, picture descriptions, comments or table alignment,

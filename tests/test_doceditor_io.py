@@ -305,6 +305,22 @@ def test_our_own_raw_html_gives_no_extras_warning(tmp_path, html):
     assert doc.html == html and doc.warnings == []
 
 
+@pytest.mark.parametrize(
+    ("md", "warns"),
+    [
+        ("> <details>x</details>\n", True),
+        ("- <video src=x>\n", True),
+        ("Press <kbd>Ctrl</kbd> now\n", True),
+        ('> <p align="center">c</p>\n', False),
+        ('- <span style="color:red">r</span> <b>b</b>\n', False),
+    ],
+)
+def test_raw_html_anywhere_warns_only_when_dropped(tmp_path, md, warns):
+    p = tmp_path / "a.md"
+    p.write_text(md, encoding="utf-8")
+    assert (W_MDEXTRA in open_document(p).warnings) is warns
+
+
 def test_raw_html_the_editor_drops_still_warns(tmp_path):
     p = tmp_path / "a.md"
     p.write_text("<details><summary>s</summary>\nx\n</details>\n\n<p>ok</p>\n", encoding="utf-8")

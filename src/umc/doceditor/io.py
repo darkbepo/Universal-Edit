@@ -41,15 +41,7 @@ _ALT_TEXT = re.compile(r"(?<!\\)!\[[^\]\n]+\]\(")
 _COMMENT = re.compile(r"<!--(?!\s*-->).*?-->", re.S)
 _ALIGN_ROW = re.compile(r"^(?=[ \t|:-]*\|)(?=[ \t|-]*:)[ \t|:-]*-[ \t|:-]*\r?$", re.M)
 _FRONT_KEY = re.compile(r"^[A-Za-z0-9_-]+\s*:")
-# A line that starts a block of raw HTML (CommonMark's block-level tags; not comments).
-_BLOCK_HTML = re.compile(
-    r"^ {0,3}</?(?:address|article|aside|blockquote|details|div|dl|fieldset|figcaption|figure"
-    r"|footer|form|h[1-6]|header|hgroup|hr|main|menu|nav|ol|p|pre|section|table|ul|canvas|dd"
-    r"|dt|iframe|li|math|noscript|object|script|style|summary|tbody|td|tfoot|th|thead|tr"
-    r"|video|audio|svg)\b",
-    re.I | re.M,
-)
-# Tags raw HTML blocks may use without losing anything (what md_writer writes, and synonyms).
+# Tags raw HTML may use without losing anything (what md_writer writes, and synonyms).
 _KEPT_TAGS = frozenset(
     [
         "p",
@@ -83,7 +75,6 @@ _KEPT_TAGS = frozenset(
     ]
 )
 _ANY_TAG = re.compile(r"</?([A-Za-z][A-Za-z0-9-]*)")
-_BLANK_LINE = re.compile(r"\n[ \t]*\r?(?:\n|$)")
 
 
 def md_to_html(text: str) -> str:
@@ -111,25 +102,25 @@ def split_front_matter(text: str) -> tuple[str, str]:
     return "", text
 
 
-def _drops_block_html(text: str) -> bool:
-    """A block of raw HTML (from its first line up to a blank line) with a tag the editor
-    doesn't keep; the writer's own blocks (alignment, indent, tables) use only kept tags."""
-    pos = 0
-    while (m := _BLOCK_HTML.search(text, pos)) is not None:
-        blank = _BLANK_LINE.search(text, m.start())
-        stop = blank.start() if blank else len(text)
-        if any(
-            t.group(1).lower() not in _KEPT_TAGS for t in _ANY_TAG.finditer(text, m.start(), stop)
+def _drops_raw_html(text: str) -> bool:
+    """Raw HTML anywhere (blocks and inline, also in quotes and lists: markdown-it's
+    html_block / html_inline tokens) with a tag the editor doesn't keep; the writer's own
+    forms (alignment, indent, tables) use only kept tags."""
+    stack = list(_MD.parse(text))
+    while stack:
+        token = stack.pop()
+        if token.type in ("html_block", "html_inline") and any(
+            name.lower() not in _KEPT_TAGS for name in _ANY_TAG.findall(token.content)
         ):
             return True
-        pos = max(stop, m.end())
+        stack.extend(token.children or ())
     return False
 
 
 def _has_markdown_extras(text: str) -> bool:
-    """Footnotes or block-level raw HTML the editor drops, outside code."""
-    text = _CODE_SPAN.sub("", _FENCED.sub("", text))
-    return _FOOTNOTE.search(text) is not None or _drops_block_html(text)
+    """Footnotes outside code, or raw HTML the editor drops."""
+    plain = _CODE_SPAN.sub("", _FENCED.sub("", text))
+    return _FOOTNOTE.search(plain) is not None or _drops_raw_html(text)
 
 
 def _has_dropped_formats(text: str) -> bool:
