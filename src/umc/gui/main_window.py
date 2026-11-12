@@ -40,6 +40,7 @@ from umc.core.job import ConversionJob, file_fractions
 from umc.core.registry import MixedInputError, Target, targets_for
 from umc.doceditor.types import EDITABLE_DOCUMENT_EXTS
 from umc.gui import branding, icons, theme
+from umc.gui.properties.panel import PropertiesPanel
 from umc.gui.tool_dialog import ToolMissingDialog
 from umc.gui.widgets.drop_zone import DropZone
 from umc.gui.widgets.editor_hub import EditorHub, NewPictureDialog
@@ -119,16 +120,18 @@ class MainWindow(QMainWindow):
         tl.setColumnStretch(0, 1)
         tl.setColumnStretch(2, 1)
 
-        # Convert | Edit — Edit is enabled when the files can be edited: images,
-        # exactly one editable document, or 3D models (the 3D viewer)
+        # Convert | Edit | Properties — Edit is enabled when the files can be edited: images,
+        # exactly one editable document, or 3D models (the 3D viewer); Properties for any files
         self.mode_bar = QFrame(objectName="ModeBar")
         mb = QHBoxLayout(self.mode_bar)
         mb.setContentsMargins(3, 3, 3, 3)
         mb.setSpacing(2)
         self.convert_mode = QPushButton("Convert", objectName="Segment")
         self.edit_mode = QPushButton("Edit", objectName="Segment")
+        self.properties_mode = QPushButton("Properties", objectName="Segment")
+        self.properties_mode.setToolTip("See the details of the files")
         self._mode_group = QButtonGroup(self)
-        for b in (self.convert_mode, self.edit_mode):
+        for b in (self.convert_mode, self.edit_mode, self.properties_mode):
             b.setCheckable(True)
             b.setCursor(Qt.CursorShape.PointingHandCursor)
             self._mode_group.addButton(b)
@@ -136,6 +139,8 @@ class MainWindow(QMainWindow):
         self.convert_mode.setChecked(True)
         self.convert_mode.clicked.connect(self.leave_edit)
         self.edit_mode.clicked.connect(self.enter_edit)
+        self.properties_mode.clicked.connect(self.enter_properties)
+        self.mode = "convert"  # on the converter screen: "convert" or "properties"
         right = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
         tl.addWidget(self.mode_bar, 0, 2, right)
         outer.addWidget(top)
@@ -223,9 +228,11 @@ class MainWindow(QMainWindow):
         self.tabs.reset_clicked.connect(self.reset_settings)
         self.empty_hint = QLabel("Add files to see what they can become.", objectName="EmptyHint")
         self.empty_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.properties_panel = PropertiesPanel()
         self.right = QStackedWidget(objectName="RightColumn")
         self.right.addWidget(self.empty_hint)
         self.right.addWidget(self.tabs)
+        self.right.addWidget(self.properties_panel)
         self._columns.addWidget(self.right, 1)
         outer.addWidget(body, 1)
 
@@ -323,6 +330,7 @@ class MainWindow(QMainWindow):
         self.logo.setPixmap(branding.logo_pixmap(30, self.devicePixelRatioF()))
         self.drop.retint()
         self.hub.retint()
+        self.properties_panel.retint()
         self.settings_button.setIcon(icons.icon("settings", pal["muted"], 20))
         self.picker.retint()
         self.tabs.retint()
@@ -423,8 +431,14 @@ class MainWindow(QMainWindow):
         self.edit_mode.setEnabled(self.edit_available())
         self._update_edit_tooltip()
         # No files yet: the drop zone gets the whole window.
+        if not has_files and self.mode == "properties":
+            self._set_mode("convert", refresh=False)
         self.right.setVisible(has_files)
-        self.right.setCurrentWidget(self.tabs if targets else self.empty_hint)
+        if self.mode == "properties":
+            self.right.setCurrentWidget(self.properties_panel)
+            self.properties_panel.set_files(self.files)
+        else:
+            self.right.setCurrentWidget(self.tabs if targets else self.empty_hint)
         self._apply_left_width()
         keep = self.target.id if self.target else self.settings.value("last_target", "", str)
         self.picker.set_targets(targets, keep_id=keep)
@@ -581,17 +595,36 @@ class MainWindow(QMainWindow):
         return True
 
     def leave_edit(self) -> None:
+        """The Convert switch (or an editor's back button): back to converting."""
+        if self._leave_editor():
+            self._set_mode("convert")
+
+    def _leave_editor(self) -> bool:
+        """Back on the converter screen (asks an editor with unsaved changes first)."""
         page = self._current_editor()
         if page is None:
-            self.convert_mode.setChecked(True)
-            return
+            return True
         if not page.maybe_leave():
             self.edit_mode.setChecked(True)
-            return
+            return False
         self.stack.setCurrentIndex(0)
-        self.convert_mode.setChecked(True)
         if self._convert_size is not None:
             self.resize(self._convert_size)
+        return True
+
+    def enter_properties(self) -> None:
+        """The Properties switch: details of the added files in the right column."""
+        if not self.files or self.busy:
+            (self.edit_mode if self._current_editor() else self.convert_mode).setChecked(True)
+            return
+        if self._leave_editor():
+            self._set_mode("properties")
+
+    def _set_mode(self, mode: str, refresh: bool = True) -> None:
+        self.mode = mode
+        (self.properties_mode if mode == "properties" else self.convert_mode).setChecked(True)
+        if refresh:
+            self._refresh()
 
     def on_target_changed(self, target: Target | None) -> None:
         self.target = target
@@ -710,12 +743,21 @@ class MainWindow(QMainWindow):
             if self.busy
             else QAbstractItemView.DragDropMode.InternalMove
         )
+        self.properties_mode.setEnabled(bool(self.files) and not self.busy)
+        props = self.mode == "properties"
+        self.convert_button.setVisible(not props)
+        self.dest_button.setVisible(not props)
+        if props:
+            self.progress.setVisible(False)
         if not self.busy and not self.last_outputs and self.status.objectName() == "Muted":
             self._set_status(self._idle_status())
 
     def _idle_status(self) -> str:
         if not self.files:
             return "Add files to get started."
+        if self.mode == "properties":
+            n = len(self.files)
+            return "" if n == 1 else f"{n} files · choose one at the top to see its details"
         if self.target is None:
             return "Choose an output format."
         fams = {f.family for f in self.files}
@@ -843,6 +885,7 @@ class MainWindow(QMainWindow):
             self.editor.stop_background_removal()
         if self.viewer3d is not None:
             self.viewer3d.wait_idle(5000)
+        self.properties_panel.shutdown()
         if self._worker is not None:
             self._worker.cancel()
             if self._thread is not None:

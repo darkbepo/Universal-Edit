@@ -10,6 +10,7 @@ import type { InputFile, OutputFile, Target } from "../core/types";
 import { ConversionClient, JobCancelled } from "../worker/client";
 import { editorHub, newPictureDialog } from "./hub";
 import { groupIcon, icon } from "./icons";
+import { PropertiesPane } from "./properties";
 import { fmtSize, Queue } from "./queue";
 import { SettingsForm } from "./settings";
 
@@ -45,9 +46,12 @@ export function mountApp(root: HTMLElement): void {
   // "Convert mode" as its accessible name, so it never collides with the Convert action button.
   const convertMode = h("button", { class: "seg", type: "button", ariaLabel: "Convert mode" }, "Convert");
   const editMode = h("button", { class: "seg", type: "button" }, "Edit");
-  const modeBar = h("div", { class: "mode", role: "group", ariaLabel: "Mode" }, convertMode, editMode);
+  const propertiesMode = h("button", { class: "seg", type: "button", title: "See the details of the files" }, "Properties");
+  const modeBar = h("div", { class: "mode", role: "group", ariaLabel: "Mode" }, convertMode, editMode, propertiesMode);
   convertMode.setAttribute("aria-pressed", "true");
   editMode.setAttribute("aria-pressed", "false");
+  propertiesMode.setAttribute("aria-pressed", "false");
+  let mode: "convert" | "properties" = "convert"; // on the converter page
   let editor: import("./editor/page").EditorPage | null = null;
   let viewer: import("./editor3d/page").ViewerPage | null = null;
   let editing = false;
@@ -103,7 +107,8 @@ export function mountApp(root: HTMLElement): void {
   const settingsPane = h("section", { class: "pane settings-pane", hidden: true, ariaLabel: "Settings" },
     h("div", { class: "pane-head" }, h("span", { class: "pane-icon" }, icon("settings", 18)), settingsTitle, h("div", { class: "spacer" }), resetBtn),
     h("div", { class: "pane-body" }, form.el));
-  const right = h("div", { class: "right", hidden: true }, strip, convertPane, settingsPane);
+  const properties = new PropertiesPane(client);
+  const right = h("div", { class: "right", hidden: true }, strip, convertPane, settingsPane, properties.el);
 
   const workspace = h("div", { class: "workspace empty" }, left, right);
 
@@ -202,8 +207,40 @@ export function mountApp(root: HTMLElement): void {
     viewer?.hide();
     appMain.hidden = false;
     bar.hidden = false;
-    convertMode.setAttribute("aria-pressed", "true");
+    setMode("convert");
+  }
+  /** Convert or Properties, on the converter page. */
+  function setMode(next: "convert" | "properties") {
+    mode = next;
+    convertMode.setAttribute("aria-pressed", String(next === "convert"));
     editMode.setAttribute("aria-pressed", "false");
+    propertiesMode.setAttribute("aria-pressed", String(next === "properties"));
+    applyMode();
+  }
+  // In Properties mode the Convert to / Settings panes are hidden by CSS (.properties-mode), so
+  // they keep which of them was open.
+  function applyMode() {
+    const props = mode === "properties";
+    right.classList.toggle("properties-mode", props);
+    properties.el.hidden = !props;
+    convertBtn.hidden = props;
+    if (props) {
+      progress.hidden = true;
+      properties.setFiles(files);
+    }
+    updateButtons();
+  }
+  function enterProperties() {
+    if (busy || !files.length) return;
+    if (editing) {
+      if (editor && !editor.el.hidden && !editor.maybeLeave()) return;
+      editing = false;
+      editor?.hide();
+      viewer?.hide();
+      appMain.hidden = false;
+      bar.hidden = false;
+    }
+    setMode("properties");
   }
   // One mount each, even when a second click comes while the page's code is still loading.
   let viewerP: Promise<import("./editor3d/page").ViewerPage> | null = null;
@@ -219,6 +256,7 @@ export function mountApp(root: HTMLElement): void {
     bar.hidden = true;
     convertMode.setAttribute("aria-pressed", "false");
     editMode.setAttribute("aria-pressed", "true");
+    propertiesMode.setAttribute("aria-pressed", "false");
     page.show();
   }
   async function enterEdit() {
@@ -268,6 +306,7 @@ export function mountApp(root: HTMLElement): void {
     }
   }
   editMode.addEventListener("click", () => void enterEdit());
+  propertiesMode.addEventListener("click", () => enterProperties());
   convertMode.addEventListener("click", () => {
     if (editing && editor && !editor.el.hidden && !editor.maybeLeave()) return;
     showConverter();
@@ -302,6 +341,10 @@ export function mountApp(root: HTMLElement): void {
     note.hidden = !text;
     right.classList.toggle("no-targets", !targets.length);
     renderTargets(targets);
+    if (mode === "properties") {
+      if (has) applyMode();
+      else setMode("convert");
+    }
   }
 
   function renderTargets(targets: Target[]) {
@@ -418,7 +461,10 @@ export function mountApp(root: HTMLElement): void {
     workspace.classList.toggle("busy", busy);
     zipBtn.hidden = busy || outputs.length < 2;
     folderBtn.hidden = busy || !outputs.length || !("showDirectoryPicker" in window);
-    if (!busy && !sticky) {
+    propertiesMode.disabled = busy || !files.length;
+    if (mode === "properties" && !busy) {
+      setStatus(files.length > 1 ? `${files.length} files · choose one at the top to see its details` : "");
+    } else if (!busy && !sticky) {
       if (!files.length) setStatus("Add files to get started.");
       else if (!target) setStatus("Choose an output format.");
       else {

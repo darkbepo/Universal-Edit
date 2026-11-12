@@ -483,3 +483,15 @@ body.no-select { user-select: none; -webkit-user-select: none; }
   .viewer3d-body { grid-template-columns: 1fr; grid-template-rows: minmax(320px, 1fr) auto; }
   .viewer3d-side { border-left: 0; border-top: 1px solid var(--border); }
 }
+
+/* ---------------------------------------------------------------- Properties */
+.right.properties-mode > :not(.properties-pane) { display: none !important; }
+.properties-pane .prop-file { max-width: 260px; font: inherit; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+.prop-status { margin: 0 4px 10px; }
+.prop-cards { columns: 340px; column-gap: 10px; }
+.prop-card { break-inside: avoid; margin: 0 0 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 14px; padding: 10px 14px 12px; }
+.prop-card h3 { font-size: 13px; font-weight: 600; margin: 0 0 6px; }
+.prop-card dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 14px; margin: 0; }
+.prop-card dt { color: var(--muted); }
+.prop-card dd { margin: 0; overflow-wrap: anywhere; user-select: text; }
+.prop-card dd.wide { grid-column: 1 / -1; }

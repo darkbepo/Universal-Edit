@@ -86,6 +86,7 @@ def _warm_up() -> None:
 class ViewerWindow(QMainWindow):
     convert_requested = Signal(object)  # Path
     edit_requested = Signal(object)  # Path
+    properties_requested = Signal(object)  # Path
 
     def __init__(self) -> None:
         super().__init__()
@@ -139,16 +140,20 @@ class ViewerWindow(QMainWindow):
         self.name_label = QLabel(objectName="CardTitle")
         self.detail_label = QLabel(objectName="Muted")
         self.detail_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.properties_button = QPushButton("Properties", objectName="Secondary")
+        self.properties_button.setToolTip("See this file's details")
         self.convert_button = QPushButton("Convert", objectName="Secondary")
         self.convert_button.setToolTip("Open this file in the converter")
         self.edit_button = QPushButton("Edit", objectName="Primary")
-        for b in (self.convert_button, self.edit_button):
+        for b in (self.properties_button, self.convert_button, self.edit_button):
             b.setCursor(Qt.CursorShape.PointingHandCursor)
             b.setMinimumWidth(110)
         self.convert_button.clicked.connect(self._convert)
+        self.properties_button.clicked.connect(self._properties)
         self.edit_button.clicked.connect(self._edit)
         bl.addWidget(self.name_label)
         bl.addWidget(self.detail_label, 1)
+        bl.addWidget(self.properties_button)
         bl.addWidget(self.convert_button)
         bl.addWidget(self.edit_button)
         outer.addWidget(bar)
@@ -428,6 +433,10 @@ class ViewerWindow(QMainWindow):
     def _convert(self) -> None:
         if self.current is not None:
             self.convert_requested.emit(self.current.path)
+
+    def _properties(self) -> None:
+        if self.current is not None:
+            self.properties_requested.emit(self.current.path)
 
     def _edit(self) -> None:
         if self.current is not None and self.edit_button.isEnabled():

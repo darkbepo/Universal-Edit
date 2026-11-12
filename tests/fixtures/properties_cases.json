@@ -1,0 +1,1059 @@
+[
+ {
+  "name": "photo",
+  "facts": {
+   "file": {
+    "name": "IMG_0042.jpg",
+    "type": "JPG image",
+    "size": 2412345,
+    "modified": "2026-11-12 14:05",
+    "folder": "C:\\Pictures"
+   },
+   "picture": {
+    "width": 4032,
+    "height": 3024,
+    "kind": "colour",
+    "alpha": false,
+    "frames": 1,
+    "dpi": [
+     72,
+     72
+    ],
+    "orientation": 6,
+    "make": "Canon",
+    "model": "Canon EOS R6",
+    "lens": "RF 50mm F1.8 STM",
+    "taken": "2026-11-12 14:03",
+    "exposure": 0.008333333333333333,
+    "fnumber": 1.8,
+    "iso": 200,
+    "focal": 50,
+    "flash": 16,
+    "description": "Harbour at dusk",
+    "artist": "Ada Lovelace",
+    "copyright": "CC BY 4.0",
+    "lat": 55.6676,
+    "lon": 12.5699,
+    "altitude": 12.4
+   }
+  },
+  "sections": [
+   {
+    "title": "File",
+    "rows": [
+     [
+      "Name",
+      "IMG_0042.jpg"
+     ],
+     [
+      "Type",
+      "JPG image"
+     ],
+     [
+      "Size",
+      "2.30 MB (2,412,345 bytes)"
+     ],
+     [
+      "Modified",
+      "2026-11-12 14:05"
+     ],
+     [
+      "Folder",
+      "C:\\Pictures"
+     ]
+    ]
+   },
+   {
+    "title": "Picture",
+    "rows": [
+     [
+      "Dimensions",
+      "4,032 × 3,024 px"
+     ],
+     [
+      "Megapixels",
+      "12.2 MP"
+     ],
+     [
+      "Colour",
+      "Colour"
+     ],
+     [
+      "Resolution",
+      "72 dpi"
+     ],
+     [
+      "Orientation",
+      "Turned 90° right"
+     ]
+    ]
+   },
+   {
+    "title": "Camera",
+    "rows": [
+     [
+      "Camera",
+      "Canon EOS R6"
+     ],
+     [
+      "Lens",
+      "RF 50mm F1.8 STM"
+     ],
+     [
+      "Taken",
+      "2026-11-12 14:03"
+     ],
+     [
+      "Exposure",
+      "1/120 s"
+     ],
+     [
+      "Aperture",
+      "f/1.8"
+     ],
+     [
+      "ISO",
+      "200"
+     ],
+     [
+      "Focal length",
+      "50 mm"
+     ],
+     [
+      "Flash",
+      "Didn't fire"
+     ]
+    ]
+   },
+   {
+    "title": "Details",
+    "rows": [
+     [
+      "Description",
+      "Harbour at dusk"
+     ],
+     [
+      "Author",
+      "Ada Lovelace"
+     ],
+     [
+      "Copyright",
+      "CC BY 4.0"
+     ]
+    ]
+   },
+   {
+    "title": "Location",
+    "rows": [
+     [
+      "Coordinates",
+      "55.66760, 12.56990"
+     ],
+     [
+      "Altitude",
+      "12 m"
+     ]
+    ]
+   }
+  ]
+ },
+ {
+  "name": "animated-transparent",
+  "facts": {
+   "file": {
+    "name": "a.gif",
+    "type": "GIF image",
+    "size": 900
+   },
+   "picture": {
+    "width": 64,
+    "height": 64,
+    "kind": "colour",
+    "alpha": true,
+    "frames": 3,
+    "dpi": [
+     300,
+     150
+    ]
+   }
+  },
+  "sections": [
+   {
+    "title": "File",
+    "rows": [
+     [
+      "Name",
+      "a.gif"
+     ],
+     [
+      "Type",
+      "GIF image"
+     ],
+     [
+      "Size",
+      "900 bytes"
+     ]
+    ]
+   },
+   {
+    "title": "Picture",
+    "rows": [
+     [
+      "Dimensions",
+      "64 × 64 px"
+     ],
+     [
+      "Colour",
+      "Colour, with transparency"
+     ],
+     [
+      "Frames",
+      "3 (animated)"
+     ],
+     [
+      "Resolution",
+      "300 × 150 dpi"
+     ]
+    ]
+   }
+  ]
+ },
+ {
+  "name": "grey-mirrored",
+  "facts": {
+   "file": {
+    "name": "g.png",
+    "type": "PNG image"
+   },
+   "picture": {
+    "width": 2000,
+    "height": 1000,
+    "kind": "greyscale",
+    "orientation": 2,
+    "make": "NIKON CORPORATION",
+    "model": "NIKON D750"
+   }
+  },
+  "sections": [
+   {
+    "title": "File",
+    "rows": [
+     [
+      "Name",
+      "g.png"
+     ],
+     [
+      "Type",
+      "PNG image"
+     ]
+    ]
+   },
+   {
+    "title": "Picture",
+    "rows": [
+     [
+      "Dimensions",
+      "2,000 × 1,000 px"
+     ],
+     [
+      "Megapixels",
+      "2 MP"
+     ],
+     [
+      "Colour",
+      "Greyscale"
+     ],
+     [
+      "Orientation",
+      "Mirrored"
+     ]
+    ]
+   },
+   {
+    "title": "Camera",
+    "rows": [
+     [
+      "Camera",
+      "NIKON D750"
+     ]
+    ]
+   }
+  ]
+ },
+ {
+  "name": "video",
+  "facts": {
+   "file": {
+    "name": "clip.mp4",
+    "type": "MP4 video",
+    "size": 32746
+   },
+   "media": {
+    "duration": 125.4,
+    "size": 32746000,
+    "video": {
+     "codec": "avc",
+     "width": 1920,
+     "height": 1080,
+     "fps": 29.97002997,
+     "rotation": 90
+    },
+    "audio": [
+     {
+      "codec": "aac",
+      "channels": 2,
+      "sample_rate": 48000,
+      "language": "eng"
+     },
+     {
+      "codec": "ac3",
+      "channels": 6,
+      "sample_rate": 48000,
+      "language": "dan"
+     }
+    ],
+    "subtitles": [
+     {
+      "language": "eng"
+     },
+     {
+      "language": "und"
+     }
+    ],
+    "tags": {
+     "title": "Holiday"
+    },
+    "recorded": "2026-07-01 12:00",
+    "lat": 55.6761,
+    "lon": 12.5683
+   }
+  },
+  "sections": [
+   {
+    "title": "File",
+    "rows": [
+     [
+      "Name",
+      "clip.mp4"
+     ],
+     [
+      "Type",
+      "MP4 video"
+     ],
+     [
+      "Size",
+      "32.0 KB (32,746 bytes)"
+     ]
+    ]
+   },
+   {
+    "title": "Video",
+    "rows": [
+     [
+      "Length",
+      "2:05"
+     ],
+     [
+      "Dimensions",
+      "1,920 × 1,080 px"
+     ],
+     [
+      "Frame rate",
+      "29.97 fps"
+     ],
+     [
+      "Codec",
+      "H.264"
+     ],
+     [
+      "Rotation",
+      "90°"
+     ],
+     [
+      "Bit rate",
+      "2.1 Mbit/s"
+     ],
+     [
+      "Recorded",
+      "2026-07-01 12:00"
+     ]
+    ]
+   },
+   {
+    "title": "Audio track 1",
+    "rows": [
+     [
+      "Codec",
+      "AAC"
+     ],
+     [
+      "Channels",
+      "Stereo"
+     ],
+     [
+      "Sample rate",
+      "48 kHz"
+     ],
+     [
+      "Language",
+      "eng"
+     ]
+    ]
+   },
+   {
+    "title": "Audio track 2",
+    "rows": [
+     [
+      "Codec",
+      "Dolby Digital (AC-3)"
+     ],
+     [
+      "Channels",
+      "5.1 surround"
+     ],
+     [
+      "Sample rate",
+      "48 kHz"
+     ],
+     [
+      "Language",
+      "dan"
+     ]
+    ]
+   },
+   {
+    "title": "Subtitles",
+    "rows": [
+     [
+      "Tracks",
+      "2"
+     ],
+     [
+      "Languages",
+      "eng"
+     ]
+    ]
+   },
+   {
+    "title": "Tags",
+    "rows": [
+     [
+      "Title",
+      "Holiday"
+     ]
+    ]
+   },
+   {
+    "title": "Location",
+    "rows": [
+     [
+      "Coordinates",
+      "55.67610, 12.56830"
+     ]
+    ]
+   }
+  ]
+ },
+ {
+  "name": "song",
+  "facts": {
+   "file": {
+    "name": "song.mp3",
+    "type": "MP3 audio",
+    "size": 4800000
+   },
+   "media": {
+    "duration": 200,
+    "size": 4800000,
+    "audio": [
+     {
+      "codec": "mp3",
+      "channels": 2,
+      "sample_rate": 44100,
+      "language": "und"
+     }
+    ],
+    "subtitles": [],
+    "tags": {
+     "title": "Song",
+     "artist": "Band",
+     "album": "LP",
+     "album_artist": "Band",
+     "track": "3/12",
+     "disc": "1/2",
+     "date": "2019-05-01",
+     "genre": "Rock",
+     "composer": null,
+     "comment": "  "
+    },
+    "cover": true
+   }
+  },
+  "sections": [
+   {
+    "title": "File",
+    "rows": [
+     [
+      "Name",
+      "song.mp3"
+     ],
+     [
+      "Type",
+      "MP3 audio"
+     ],
+     [
+      "Size",
+      "4.58 MB (4,800,000 bytes)"
+     ]
+    ]
+   },
+   {
+    "title": "Audio",
+    "rows": [
+     [
+      "Length",
+      "3:20"
+     ],
+     [
+      "Bit rate",
+      "192 kbit/s"
+     ],
+     [
+      "Codec",
+      "MP3"
+     ],
+     [
+      "Channels",
+      "Stereo"
+     ],
+     [
+      "Sample rate",
+      "44.1 kHz"
+     ]
+    ]
+   },
+   {
+    "title": "Tags",
+    "rows": [
+     [
+      "Title",
+      "Song"
+     ],
+     [
+      "Artist",
+      "Band"
+     ],
+     [
+      "Album",
+      "LP"
+     ],
+     [
+      "Album artist",
+      "Band"
+     ],
+     [
+      "Track",
+      "3/12"
+     ],
+     [
+      "Disc",
+      "1/2"
+     ],
+     [
+      "Year",
+      "2019"
+     ],
+     [
+      "Genre",
+      "Rock"
+     ],
+     [
+      "Cover picture",
+      "Yes"
+     ]
+    ]
+   }
+  ]
+ },
+ {
+  "name": "pcm",
+  "facts": {
+   "file": {
+    "name": "t.wav",
+    "type": "WAV audio"
+   },
+   "media": {
+    "duration": 3,
+    "size": 0,
+    "audio": [
+     {
+      "codec": "pcm_s16le",
+      "channels": 1,
+      "sample_rate": 22050
+     }
+    ],
+    "tags": {
+     "date": "Spring"
+    }
+   }
+  },
+  "sections": [
+   {
+    "title": "File",
+    "rows": [
+     [
+      "Name",
+      "t.wav"
+     ],
+     [
+      "Type",
+      "WAV audio"
+     ]
+    ]
+   },
+   {
+    "title": "Audio",
+    "rows": [
+     [
+      "Length",
+      "3 s"
+     ],
+     [
+      "Codec",
+      "PCM (uncompressed)"
+     ],
+     [
+      "Channels",
+      "Mono"
+     ],
+     [
+      "Sample rate",
+      "22.1 kHz"
+     ]
+    ]
+   },
+   {
+    "title": "Tags",
+    "rows": [
+     [
+      "Year",
+      "Spring"
+     ]
+    ]
+   }
+  ]
+ },
+ {
+  "name": "pdf",
+  "facts": {
+   "file": {
+    "name": "r.pdf",
+    "type": "PDF document"
+   },
+   "document": {
+    "pages": 12,
+    "page_size": [
+     595.28,
+     841.89
+    ],
+    "pdf_version": "PDF 1.7",
+    "encrypted": true,
+    "title": "Report",
+    "author": "Ada",
+    "subject": "Q3",
+    "keywords": "a, b",
+    "application": "Microsoft Word",
+    "created": "2026-11-01 09:00",
+    "modified": "2026-11-02 10:30"
+   }
+  },
+  "sections": [
+   {
+    "title": "File",
+    "rows": [
+     [
+      "Name",
+      "r.pdf"
+     ],
+     [
+      "Type",
+      "PDF document"
+     ]
+    ]
+   },
+   {
+    "title": "Document",
+    "rows": [
+     [
+      "Pages",
+      "12"
+     ],
+     [
+      "Page size",
+      "A4 (210 × 297 mm)"
+     ],
+     [
+      "Title",
+      "Report"
+     ],
+     [
+      "Subject",
+      "Q3"
+     ],
+     [
+      "Author",
+      "Ada"
+     ],
+     [
+      "Keywords",
+      "a, b"
+     ],
+     [
+      "Created",
+      "2026-11-01 09:00"
+     ],
+     [
+      "Modified",
+      "2026-11-02 10:30"
+     ],
+     [
+      "Made with",
+      "Microsoft Word"
+     ],
+     [
+      "Version",
+      "PDF 1.7"
+     ],
+     [
+      "Password",
+      "Protected"
+     ]
+    ]
+   }
+  ]
+ },
+ {
+  "name": "word",
+  "facts": {
+   "file": {
+    "name": "w.docx",
+    "type": "DOCX document"
+   },
+   "document": {
+    "pages": 3,
+    "words": 1234,
+    "title": "Letter",
+    "author": "Ada",
+    "last_saved_by": "Bob",
+    "company": "Acme",
+    "application": "Microsoft Office Word"
+   }
+  },
+  "sections": [
+   {
+    "title": "File",
+    "rows": [
+     [
+      "Name",
+      "w.docx"
+     ],
+     [
+      "Type",
+      "DOCX document"
+     ]
+    ]
+   },
+   {
+    "title": "Document",
+    "rows": [
+     [
+      "Pages",
+      "3"
+     ],
+     [
+      "Words",
+      "1,234"
+     ],
+     [
+      "Title",
+      "Letter"
+     ],
+     [
+      "Author",
+      "Ada"
+     ],
+     [
+      "Last saved by",
+      "Bob"
+     ],
+     [
+      "Company",
+      "Acme"
+     ],
+     [
+      "Made with",
+      "Microsoft Office Word"
+     ]
+    ]
+   }
+  ]
+ },
+ {
+  "name": "slides",
+  "facts": {
+   "file": {
+    "name": "s.pptx",
+    "type": "PPTX document"
+   },
+   "document": {
+    "slides": 20
+   }
+  },
+  "sections": [
+   {
+    "title": "File",
+    "rows": [
+     [
+      "Name",
+      "s.pptx"
+     ],
+     [
+      "Type",
+      "PPTX document"
+     ]
+    ]
+   },
+   {
+    "title": "Document",
+    "rows": [
+     [
+      "Slides",
+      "20"
+     ]
+    ]
+   }
+  ]
+ },
+ {
+  "name": "font",
+  "facts": {
+   "file": {
+    "name": "f.ttf",
+    "type": "TTF font"
+   },
+   "font": {
+    "family": "Inter",
+    "style": "Regular",
+    "version": "Version 4.000;git-abc",
+    "designer": "Rasmus",
+    "manufacturer": "rsms",
+    "copyright": "(c) 2020",
+    "glyphs": 2548,
+    "outlines": "ttf",
+    "axes": [
+     "wght",
+     "opsz"
+    ]
+   }
+  },
+  "sections": [
+   {
+    "title": "File",
+    "rows": [
+     [
+      "Name",
+      "f.ttf"
+     ],
+     [
+      "Type",
+      "TTF font"
+     ]
+    ]
+   },
+   {
+    "title": "Font",
+    "rows": [
+     [
+      "Family",
+      "Inter"
+     ],
+     [
+      "Style",
+      "Regular"
+     ],
+     [
+      "Version",
+      "4.000;git-abc"
+     ],
+     [
+      "Designer",
+      "Rasmus"
+     ],
+     [
+      "Maker",
+      "rsms"
+     ],
+     [
+      "Copyright",
+      "(c) 2020"
+     ],
+     [
+      "Glyphs",
+      "2,548"
+     ],
+     [
+      "Outlines",
+      "TrueType"
+     ],
+     [
+      "Variable",
+      "Yes (wght, opsz)"
+     ]
+    ]
+   }
+  ]
+ },
+ {
+  "name": "font-cff",
+  "facts": {
+   "file": {
+    "name": "f.otf",
+    "type": "OTF font"
+   },
+   "font": {
+    "family": "Sans",
+    "style": "Bold",
+    "version": "1.002",
+    "glyphs": 300,
+    "outlines": "cff",
+    "axes": []
+   }
+  },
+  "sections": [
+   {
+    "title": "File",
+    "rows": [
+     [
+      "Name",
+      "f.otf"
+     ],
+     [
+      "Type",
+      "OTF font"
+     ]
+    ]
+   },
+   {
+    "title": "Font",
+    "rows": [
+     [
+      "Family",
+      "Sans"
+     ],
+     [
+      "Style",
+      "Bold"
+     ],
+     [
+      "Version",
+      "1.002"
+     ],
+     [
+      "Glyphs",
+      "300"
+     ],
+     [
+      "Outlines",
+      "PostScript (CFF)"
+     ]
+    ]
+   }
+  ]
+ },
+ {
+  "name": "model",
+  "facts": {
+   "file": {
+    "name": "m.stl",
+    "type": "STL 3D model"
+   },
+   "model": [
+    [
+     "Width (X)",
+     "10.0 mm"
+    ],
+    [
+     "Watertight",
+     "Yes"
+    ]
+   ]
+  },
+  "sections": [
+   {
+    "title": "File",
+    "rows": [
+     [
+      "Name",
+      "m.stl"
+     ],
+     [
+      "Type",
+      "STL 3D model"
+     ]
+    ]
+   },
+   {
+    "title": "3D model",
+    "rows": [
+     [
+      "Width (X)",
+      "10.0 mm"
+     ],
+     [
+      "Watertight",
+      "Yes"
+     ]
+    ]
+   }
+  ]
+ },
+ {
+  "name": "note",
+  "facts": {
+   "file": {
+    "name": "x.pdf",
+    "type": "PDF document"
+   },
+   "note": "Some details of this file couldn't be read."
+  },
+  "sections": [
+   {
+    "title": "File",
+    "rows": [
+     [
+      "Name",
+      "x.pdf"
+     ],
+     [
+      "Type",
+      "PDF document"
+     ]
+    ]
+   },
+   {
+    "title": "Note",
+    "rows": [
+     [
+      "",
+      "Some details of this file couldn't be read."
+     ]
+    ]
+   }
+  ]
+ },
+ {
+  "name": "empty",
+  "facts": {},
+  "sections": []
+ }
+]

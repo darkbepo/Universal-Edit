@@ -12,6 +12,7 @@ import { pdfToSvgConverter, traceConverter, vectorConverter } from "../converter
 import { subtitleConverter, subtitleExtractConverter, subtitleVideoConverter } from "../converters/subtitles";
 import { documentConverter, pagesConverter, splitConverter } from "../converters/pdf";
 import { pdfToolsConverter } from "../converters/pdftools";
+import { propertiesConverter } from "../converters/properties";
 import { slideshowConverter } from "../converters/slideshow";
 import { audioConverter, audioFileConverter, framesConverter, gifConverter, videoConverter } from "../converters/video";
 import { DESKTOP_ONLY_DOCUMENT_EXTS } from "./detect";
@@ -46,6 +47,7 @@ export const CONVERTERS: Converter[] = [
   packConverter,
   bgremoveConverter, // image editor only (no targets)
   model3dViewConverter, // 3D viewer only (no targets)
+  propertiesConverter, // Properties mode only (no targets)
 ];
 
 export const converterById = (id: string) => CONVERTERS.find((c) => c.id === id)!;

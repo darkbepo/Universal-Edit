@@ -482,3 +482,22 @@ def write_sample_pdf(dest: Path, lines: list[str]) -> Path:
             page.insert_text((72, 80 + 24 * i), line, fontsize=14)
         doc.save(dest)
     return dest
+
+
+def document_info(src: Path) -> dict:
+    """Pages, first page size and the info dictionary, for the Properties panel."""
+    doc = pymupdf.open(str(src))
+    try:
+        meta = dict(doc.metadata or {})
+        size = None
+        if doc.page_count and not doc.needs_pass:
+            r = doc[0].rect
+            size = [r.width, r.height]
+        return {
+            "pages": doc.page_count,
+            "page_size": size,
+            "encrypted": bool(doc.is_encrypted or doc.needs_pass),
+            "meta": meta,
+        }
+    finally:
+        doc.close()

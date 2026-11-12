@@ -63,8 +63,9 @@ imports, but keep the defaults sensible so a user can convert with zero configur
 - **Modern and minimalistic** ("calm & refined", redesigned Nov 2026 — spec
   `docs/superpowers/specs/2026-11-10-convert-redesign-design.md`). One wide window, no menus.
 - Flow: **input → output format → (optional) settings → Convert**. Same layout in both apps:
-  1. Top bar: logo + name centred (3-column grid), **Convert | Edit** switch on the right (Edit
-     disabled unless the files can be edited). The web puts the "never leave your device" badge left.
+  1. Top bar: logo + name centred (3-column grid), **Convert | Edit | Properties** switch on the
+     right (Edit disabled unless the files can be edited; Properties whenever files are added —
+     it swaps the right column for "About this file" and hides Convert in the bottom bar). The web puts the "never leave your device" badge left.
   2. Left column: drop zone (most of the window while empty, with the editor tiles below it; a
      slim "Add more files" bar after),
      then **Results** (after a run) and the **Queue** — one row per file with thumbnail, size and
@@ -135,6 +136,8 @@ See `web/README.md` for commands and deployment.
   `.form`, buttons "Convert", "Cancel", "Clear", "Settings" (cog), "Convert to" (strip), "Edit".
   Start screen: `.editor-hub`, `.editor-tile[data-editor]` (their accessible names contain
   "editor", so match "Edit" with `exact: true`), `dialog.new-picture` (`#np-size/-width/-height`).
+  Properties: button "Properties" (exact), `.properties-pane`, `.prop-file` (file picker),
+  `.prop-card[data-title]` with `dt` / `dd` rows.
   Tiles are hidden while Settings is open: tests choose formats with the `pick()` helper (strip →
   tile → cog again if Settings was open), never by clicking a tile directly.
   Playwright's own Chromium isn't always installed locally; `npx playwright test -c
@@ -834,6 +837,22 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       add-ons folder. CI installs the built add-ons before `--self-test` ("editor add-ons
       installed and loading"). Tests simulate the built app with `UMC_ADDONS_TEST=1` +
       `UMC_ADDONS_DIR`.
+   13. Properties mode (both apps), step 1 = read-only "About this file" — spec
+      `docs/superpowers/specs/2026-11-12-properties-design.md`. Model `properties/` (desktop, no
+      Qt) ↔ `web/src/properties/`: each app reads a file with its own engines into the same plain
+      "facts" dicts (`read.py` / `converters/properties.ts`, hidden converter "properties-info" →
+      facts.json), and `info.build` / `build` turn them into sections — line-by-line ports, both
+      suites check `tests/fixtures/properties_cases.json` + `properties_format_cases.json`
+      (regenerate only on purpose; avoid exact .5 values there — Python rounds half to even,
+      JS `toFixed` half up). Dates are display text (local time) inside the facts, so the
+      builders never touch time zones. Desktop panel `gui/properties/panel.py` (TaskRunner; PDFs
+      on its "pdf" lane), web `ui/properties.ts`; viewer button → `AppController._move_to_main(…,
+      "properties")`. Sample `core/samples.write_test_photo` is hand-written EXIF (no Pillow, the
+      web e2e setup calls it). Web: no folder, no subtitle track list, Mediabunny can't read
+      AVI / WMV / FLV (shows a "desktop app can" note). In both apps the editors' own top bars
+      have no mode switch ("← Back to Convert"), so Properties is reached from the converter
+      page. Next steps (owner's go-ahead given): change photo details (lossless EXIF segment
+      swap), music tags (mutagen, GPL-2.0+, approved), video, PDF / Office, file name + dates.
 11. **First public release** (owner, Nov 2026: wait until more editors are ready). Push a
     `v<__version__>` tag (bump `umc/__init__.py` first; the workflow checks they match): the
     Windows build then publishes the .exe zip, the installer and the editor add-on zips as a

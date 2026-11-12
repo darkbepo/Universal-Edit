@@ -47,8 +47,9 @@ class AppController(QObject):
             from umc.gui.viewer.viewer_window import ViewerWindow
 
             self.viewer = ViewerWindow()
-            self.viewer.convert_requested.connect(lambda p: self._move_to_main(p, edit=False))
-            self.viewer.edit_requested.connect(lambda p: self._move_to_main(p, edit=True))
+            self.viewer.convert_requested.connect(lambda p: self._move_to_main(p, "convert"))
+            self.viewer.edit_requested.connect(lambda p: self._move_to_main(p, "edit"))
+            self.viewer.properties_requested.connect(lambda p: self._move_to_main(p, "properties"))
         self.viewer.open_path(path)
         self._bring_forward(self.viewer)
 
@@ -83,10 +84,12 @@ class AppController(QObject):
             w = self.show_main(paths)
         self._convert_window, self._convert_time = w, now
 
-    def _move_to_main(self, path: Path, edit: bool) -> None:
+    def _move_to_main(self, path: Path, mode: str) -> None:
         w = self.show_main([str(path)])
-        if edit:
+        if mode == "edit":
             w.enter_edit()
+        elif mode == "properties":
+            w.enter_properties()
         if self.viewer is not None:
             self.viewer.close()
 

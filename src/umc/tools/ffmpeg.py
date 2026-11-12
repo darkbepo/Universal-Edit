@@ -345,3 +345,32 @@ def subtitle_streams(path: Path) -> list[SubtitleStream]:
         )
         for i, s in enumerate(streams)
     ]
+
+
+def probe_json(path: Path) -> dict:
+    """ffprobe's full answer (format + streams) for the Properties panel."""
+    cmd = [
+        ffprobe_path(),
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_format",
+        "-show_streams",
+        str(path),
+    ]
+    try:
+        out = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=True,
+            timeout=60,
+            creationflags=process._creationflags(),
+        ).stdout
+        data = json.loads(out)
+    except (subprocess.SubprocessError, json.JSONDecodeError) as exc:
+        raise ConversionError(f"Couldn't read “{path.name}”.") from exc
+    return data if isinstance(data, dict) else {}

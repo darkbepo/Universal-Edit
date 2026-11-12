@@ -131,8 +131,9 @@ export default async function globalSetup() {
   try {
     execFileSync("python3", ["-c",
       "import sys; sys.path.insert(0, sys.argv[1]); from pathlib import Path; " +
-      "from umc.core.samples import write_test_dng, write_test_psd; " +
-      "write_test_dng(Path(sys.argv[2]) / 'photo.dng'); write_test_psd(Path(sys.argv[2]) / 'design.psd')",
+      "from umc.core.samples import write_test_dng, write_test_photo, write_test_psd; " +
+      "write_test_dng(Path(sys.argv[2]) / 'photo.dng'); write_test_psd(Path(sys.argv[2]) / 'design.psd'); " +
+      "write_test_photo(Path(sys.argv[2]) / 'camera.jpg')",
       fileURLToPath(new URL("../../src", import.meta.url)), FIXTURES]);
   } catch {
     console.warn("python3 not found: RAW/PSD e2e tests will be skipped");
@@ -160,6 +161,14 @@ export default async function globalSetup() {
         "-ac", "2", `${FIXTURES}tone.wav`]);
     } catch {
       /* skipped like the video tests */
+    }
+  }
+  if (!existsSync(`${FIXTURES}song.mp3`)) {
+    try {
+      execFileSync("ffmpeg", ["-loglevel", "error", "-y", "-f", "lavfi", "-i", "sine=duration=3", "-ac", "2",
+        "-metadata", "title=Song", "-metadata", "artist=Band", "-metadata", "date=2019-05-01", "-id3v2_version", "3", `${FIXTURES}song.mp3`]);
+    } catch {
+      // no ffmpeg: the Properties music test is skipped
     }
   }
   if (!existsSync(`${FIXTURES}clip.mp4`)) {

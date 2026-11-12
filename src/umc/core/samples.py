@@ -167,3 +167,91 @@ def write_test_font(path: Path) -> Path:
     addOpenTypeFeaturesFromString(fb.font, "feature liga { sub f i by f_i; } liga;")
     fb.save(path)
     return path
+
+
+# A 64 × 48 blue JPEG at 300 dpi (JFIF), made once with Pillow; EXIF is added by hand below.
+_PHOTO_JPEG = bytes.fromhex(
+    "ffd8ffe000104a46494600010101012c012c0000ffdb0043000d090a0b0a080d0b0a0b0e0e0d0f1320151312"
+    "1213271c1e17202e2931302e292d2c333a4a3e333646372c2d405741464c4e525352323e5a615a50604a5152"
+    "4fffdb0043010e0e0e131113261515264f352d354f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f"
+    "4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4fffc000110800300040030122000211010311"
+    "01ffc4001500010100000000000000000000000000000004ffc4001410010000000000000000000000000000"
+    "0000ffc4001501010100000000000000000000000000000005ffc40014110100000000000000000000000000"
+    "000000ffda000c03010002110311003f008405e440000000000000000000000000000000007fffd9"
+)
+
+# EXIF field types: 1 BYTE, 2 ASCII, 3 SHORT, 4 LONG, 5 RATIONAL
+_SIZES = {1: 1, 2: 1, 3: 2, 4: 4, 5: 8}
+
+
+def _ifd(entries: list[tuple[int, int, object]], start: int, next_ifd: int = 0) -> bytes:
+    """One little-endian TIFF IFD at byte ``start`` (values that don't fit go after it)."""
+    entries = sorted(entries, key=lambda e: e[0])
+    head = struct.pack("<H", len(entries))
+    data = b""
+    data_at = start + 2 + 12 * len(entries) + 4
+    for tag, kind, value in entries:
+        if kind == 2:
+            raw = str(value).encode("ascii") + b"\0"
+            count = len(raw)
+        elif kind == 5:
+            pairs = value if isinstance(value, list) else [value]
+            raw = b"".join(struct.pack("<II", n, d) for n, d in pairs)
+            count = len(pairs)
+        else:
+            fmt = {1: "<B", 3: "<H", 4: "<I"}[kind]
+            raw = struct.pack(fmt, value)
+            count = 1
+        if len(raw) <= 4:
+            field = raw.ljust(4, b"\0")
+        else:
+            field = struct.pack("<I", data_at + len(data))
+            data += raw + (b"\0" if len(raw) % 2 else b"")
+        head += struct.pack("<HHI", tag, kind, count) + field
+    return head + struct.pack("<I", next_ifd) + data
+
+
+def photo_exif() -> bytes:
+    """The EXIF a phone writes (camera, settings, date taken, location) as TIFF bytes."""
+    gps = [
+        (1, 2, "N"),
+        (2, 5, [(55, 1), (40, 1), (3396, 100)]),
+        (3, 2, "E"),
+        (4, 5, [(12, 1), (34, 1), (1188, 100)]),
+        (5, 1, 0),
+        (6, 5, (12, 1)),
+    ]
+    exif = [
+        (0x829A, 5, (1, 120)),
+        (0x829D, 5, (18, 10)),
+        (0x8827, 3, 200),
+        (0x9003, 2, "2026:11:12 14:03:27"),
+        (0x9209, 3, 16),
+        (0x920A, 5, (50, 1)),
+        (0xA434, 2, "RF 50mm F1.8 STM"),
+    ]
+    base = [
+        (0x010E, 2, "Harbour at dusk"),
+        (0x010F, 2, "Canon"),
+        (0x0110, 2, "Canon EOS R6"),
+        (0x0112, 3, 6),
+        (0x013B, 2, "Ada Lovelace"),
+        (0x8298, 2, "CC BY 4.0"),
+    ]
+    # sizes first (pointer values don't change a block's length), then the real offsets
+    ifd0_len = len(_ifd(base + [(0x8769, 4, 0), (0x8825, 4, 0)], 8))
+    exif_at = 8 + ifd0_len
+    exif_block = _ifd(exif, exif_at)
+    gps_at = exif_at + len(exif_block)
+    ifd0 = _ifd(base + [(0x8769, 4, exif_at), (0x8825, 4, gps_at)], 8)
+    return b"II*\0" + struct.pack("<I", 8) + ifd0 + exif_block + _ifd(gps, gps_at)
+
+
+def write_test_photo(path: Path) -> Path:
+    """A small JPEG with a phone's EXIF (camera, settings, date taken, location) — written
+    without Pillow, so the web e2e setup can call it from any Python (Properties tests)."""
+    tiff = b"Exif\0\0" + photo_exif()
+    app1 = b"\xff\xe1" + struct.pack(">H", len(tiff) + 2) + tiff
+    jfif_end = 2 + 2 + struct.unpack(">H", _PHOTO_JPEG[4:6])[0]  # SOI + APP0
+    path.write_bytes(_PHOTO_JPEG[:jfif_end] + app1 + _PHOTO_JPEG[jfif_end:])
+    return path
