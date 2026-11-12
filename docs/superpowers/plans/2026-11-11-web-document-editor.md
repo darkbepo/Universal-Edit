@@ -584,6 +584,24 @@ Found in Task 5c, fix round 2. The core open/save path and the website keep all 
 
 ---
 
+### Task 6a: Task 6 follow-up — canonical normaliser and a stricter schema (both apps)
+
+Everything found while reviewing Task 6, in one round (owner rule: one follow-up per task).
+- **The normaliser must be idempotent (both apps, identical code).** About 1 % of fuzzed subset HTML changes on a second pass:
+  - a trailing space next to an empty tag at the end of a block (`<p><b>z </b><b></b> </p>` → `<p><b>z </b></p>` → `<p><b>z</b></p>`; also with an empty link, which then merges away). The trim runs before the merge; trim again after it.
+  - whitespace unwrapped at the start of an `li` (`<ol><li><sub>	</sub><b>x</b></li></ol>` → `<li>	<b>x</b></li>` → `<li><b>x</b></li>`). Decide the leading-whitespace rule after unwrapping.
+  - Add property tests `normalise(normalise(x)) == normalise(x)` to both suites (a seeded random subset generator, small loops: jsdom keeps ~0.18 MB per parse). Regenerate the vectors with the script only.
+- **A fixed nesting-depth cap in the normaliser (both apps, same number),** so the depth limit no longer depends on the call stack (2500 nested quotes failed once, 3000 passed another time). Below the cap everything opens and saves; above it the content is flattened the same way in both apps.
+- **Nested spans setting the same property** (`<span style="color:#000000"><span style="color:#ff0000">x</span>y</span>`, also font-size and empty inner spans) must load → export unchanged: keep the outer value in the `nest` record; never print the same span twice.
+- **`list_item` content becomes `paragraph (bullet_list | ordered_list)*`**, the only shape the subset can hold, so ProseMirror's own fitting stops pastes and inserts creating tables, code, rules, headings or quotes inside an item (they were flattened into `<li>a<br>b</li>` on save).
+- **Table headers / widths:** `table_header` cells export as `<td>`, so header toggles would be lost — don't create them (map parsed `th` to `td`; Task 7 offers no header toggle or column resizing). Empty `table_row`s must not vanish silently (drop them in the schema or keep a cell).
+- **Built-in fuzz test:** random subset HTML + random edits (marks, typing incl. spaces/NBSP/tab, split/join, lists, quotes, pictures, paste) → every export is a fixed point.
+
+**Files:** `web/src/doceditor/subset.ts`, `src/umc/doceditor/html_subset.py`, `web/src/ui/doceditor/schema.ts`, `convert.ts`, tests in both apps, regenerated `tests/fixtures/doceditor-vectors.json`.
+- [ ] **Step 1:** Tests that fail first for each item. **Step 2:** fix. **Step 3:** desktop `ruff` + `pytest`, web `tsc` + `npm test`, the 39-README harness in both apps stays unchanged. **Step 4: Commit** `Make the normaliser canonical and the editor schema stricter`.
+
+---
+
 ### Task 7: Editor view and formatting commands
 
 **Files:**
@@ -604,6 +622,8 @@ Found in Task 5c, fix round 2. The core open/save path and the website keep all 
     - plugins: history, keymap (the spec's shortcuts — see Task 10), tables (`columnResizing` off), search;
     - pictures shown from object URLs of `images`;
     - paste: `transformPastedHTML` through `normaliseHtml` (`data:` pictures added under fresh `nextImageName` names; remote dropped), and pasted image files added like `insertImage`.
+**Found in Task 6 review (do here):** stale `nest` records after marks are removed — an `appendTransaction` drops tokens no longer present and records with fewer than 2 tokens; a clipboard serializer strips `data-umc-nest` / `data-umc-empty` (like the desktop's 5d fixes). Set up prosemirror-tables so loading never pads short rows (`fixTables` only after a table edit). The invisible `empty_inline`: one arrow press steps over it; typing right after an empty bold isn't bold.
+
 - [ ] **Step 1: Tests**, mirroring the desktop's `test_gui_doceditor.py` command tests:
   - bold then h1 → `<h1>hello world</h1>`, then normal → `<p>hello world</p>`;
   - one undo step per command;
@@ -665,6 +685,8 @@ Found in Task 5c, fix round 2. The core open/save path and the website keep all 
   - `DocEditorPage` has:
     - `open(file: InputFile): Promise<boolean>`, `lastError(): string`, `show()`, `hide()`, `maybeLeave(): boolean`, `dropFiles(files: InputFile[]): Promise<void>`, `save()`, `saveAs()`;
     - `el` with test hooks: `.doc-page` (the editable page), `.doc-banner`, `.doc-status`, `.doc-message`, buttons named "Back to Convert", "Undo", "Redo", "Save", "Save as", "Save to a file…".
+
+**Found in Task 6 review (do here):** pasted HTML goes through `normaliseHtml` first (`transformPastedHTML`): no `javascript:` links or remote pictures go live in the editor; pasted data: pictures are stored in DocImages as `img/N` names. A depth check before loading with a plain message ("This document is nested too deeply to edit here.").
 
 - [ ] **Step 1: Implement.**
   - **Layout:** a top bar (as the image editor's), then FormatBar, FindBar, the banner (`warningText`, closable), a centre white page column (794 px, scrolls), and a bottom status: `"{words} words · {chars} characters"`, plus `" · Unsaved changes"` while dirty, with the desktop's counting rule.
