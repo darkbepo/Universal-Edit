@@ -257,7 +257,7 @@ function indexed(T: THREE, g: Geometry): { pos: Float32Array; idx: Uint32Array }
 function writePly(T: THREE, parts: Part[]): Uint8Array {
   const { pos, idx } = indexed(T, parts[0].geometry);
   const nv = pos.length / 3, nf = idx.length / 3;
-  const header = new TextEncoder().encode(`ply\nformat binary_little_endian 1.0\ncomment Universal Media Converter (units: mm)\nelement vertex ${nv}\nproperty float x\nproperty float y\nproperty float z\nelement face ${nf}\nproperty list uchar uint vertex_indices\nend_header\n`);
+  const header = new TextEncoder().encode(`ply\nformat binary_little_endian 1.0\ncomment Universal Edit (units: mm)\nelement vertex ${nv}\nproperty float x\nproperty float y\nproperty float z\nelement face ${nf}\nproperty list uchar uint vertex_indices\nend_header\n`);
   const out = new Uint8Array(header.length + nv * 12 + nf * 13);
   out.set(header);
   const dv = new DataView(out.buffer);
@@ -292,7 +292,7 @@ function writeGlb(T: THREE, parts: Part[]): Uint8Array {
     meshes.push({ name: part.name, primitives: [{ attributes: { POSITION: 2 * i }, indices: 2 * i + 1, mode: 4 }] });
     nodes.push({ name: part.name, mesh: i });
   });
-  const json = { asset: { version: "2.0", generator: "Universal Media Converter" }, scene: 0, scenes: [{ nodes: nodes.map((_, i) => i) }], nodes, meshes, accessors, bufferViews: views, buffers: [{ byteLength: length }] };
+  const json = { asset: { version: "2.0", generator: "Universal Edit" }, scene: 0, scenes: [{ nodes: nodes.map((_, i) => i) }], nodes, meshes, accessors, bufferViews: views, buffers: [{ byteLength: length }] };
   let jsonBytes = new TextEncoder().encode(JSON.stringify(json));
   const pad = (4 - (jsonBytes.length % 4)) % 4;
   if (pad) { const padded = new Uint8Array(jsonBytes.length + pad).fill(0x20); padded.set(jsonBytes); jsonBytes = padded; }

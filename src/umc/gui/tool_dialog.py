@@ -38,15 +38,15 @@ _CHECKS = {
 }
 
 _WHY = {
-    "LibreOffice": "LibreOffice is a free office suite. Universal Media Converter uses it in the "
+    "LibreOffice": "LibreOffice is a free office suite. Universal Edit uses it in the "
     "background to convert Word, OpenDocument, RTF, spreadsheet and presentation files.",
     "Pandoc": "Pandoc is a free document converter used for Markdown, HTML, EPUB and similar "
     "formats.",
-    "Ghostscript": "Ghostscript is a free PostScript interpreter. Universal Media Converter uses "
+    "Ghostscript": "Ghostscript is a free PostScript interpreter. Universal Edit uses "
     "it to open and write EPS and PostScript (.ps) files.",
-    "Calibre": "Calibre is a free e-book manager. Universal Media Converter uses its converter "
+    "Calibre": "Calibre is a free e-book manager. Universal Edit uses its converter "
     "to make Kindle e-books (MOBI and AZW3).",
-    "LibreDWG": "LibreDWG is a free library for AutoCAD drawings. Universal Media Converter uses "
+    "LibreDWG": "LibreDWG is a free library for AutoCAD drawings. Universal Edit uses "
     "it to open DWG files.",
     "FFmpeg": "FFmpeg is a free video toolkit used for every video and audio conversion.",
 }

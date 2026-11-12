@@ -41,7 +41,7 @@ Progress = Callable[[float, str], None]
 LO_INDEX = "https://download.documentfoundation.org/libreoffice/stable/"
 LO_PUBLISHER = "The Document Foundation"
 PANDOC_LATEST = "https://api.github.com/repos/jgm/pandoc/releases/latest"
-USER_AGENT = f"UniversalMediaConverter/{__version__}"
+USER_AGENT = f"UniversalEdit/{__version__}"
 
 # Free space needed (download + unpacked), with some headroom.
 LO_SPACE_BYTES = 2_000_000_000
@@ -305,7 +305,7 @@ def _works(soffice: str, cancel_event: threading.Event) -> bool:
 
     with tempfile.TemporaryDirectory(prefix="umc-lo-test-") as tmp:
         src = Path(tmp) / "test.txt"
-        src.write_text("Universal Media Converter test\n", encoding="utf-8")
+        src.write_text("Universal Edit test\n", encoding="utf-8")
         try:
             libreoffice.convert(
                 src,
@@ -470,7 +470,7 @@ def install_calibre(progress: Progress, cancel_event: threading.Event) -> str:
         progress(0.95, "Testing Calibre…")
         with tempfile.TemporaryDirectory(prefix="umc-calibre-test-") as tmp:
             src = Path(tmp) / "test.txt"
-            src.write_text("Universal Media Converter test\n", encoding="utf-8")
+            src.write_text("Universal Edit test\n", encoding="utf-8")
             calibre.convert(src, Path(tmp) / "test.epub", cancel_event=cancel_event, exe=exe)
         progress(1.0, f"Calibre {version} installed.")
         return exe

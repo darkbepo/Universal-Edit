@@ -3,9 +3,9 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "universal-media-converter"
+name = "universal-edit"
 version = "0.1.0"
-description = "Minimal desktop converter for documents, images and videos."
+description = "Universal Edit: convert and edit documents, images, video, audio, 3D models and more."
 readme = "README.md"
 license = "AGPL-3.0-or-later"
 license-files = ["LICENSE"]
@@ -46,7 +46,7 @@ umc = "umc.app:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-umc = ["gui/*.qss"]
+umc = ["gui/*.qss", "gui/*.svg"]
 
 [tool.ruff]
 line-length = 100

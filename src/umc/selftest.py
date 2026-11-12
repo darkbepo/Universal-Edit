@@ -1,4 +1,4 @@
-"""``UniversalMediaConverter --self-test REPORT.txt`` — run real conversions without the GUI.
+"""``UniversalEdit --self-test REPORT.txt`` — run real conversions without the GUI.
 
 Used by CI to prove the frozen executable works (bundled FFmpeg found, image/PDF libraries
 packaged correctly). Writes a plain-text report and exits 0 on success, 1 on any failure.
@@ -204,6 +204,21 @@ def _editor_check(d: Path) -> list[Path]:
     return [ora, png, jpg]
 
 
+def _logo_check(d: Path) -> list[Path]:
+    """The window / taskbar icon: logo.svg must be bundled and render (QtSvg)."""
+    from umc.gui import branding
+
+    d.mkdir(parents=True, exist_ok=True)
+    if not branding.LOGO_SVG.is_file():
+        raise RuntimeError(f"logo missing: {branding.LOGO_SVG}")
+    image = branding.logo_image(64)
+    if image.pixelColor(32, 32).alpha() == 0 or image.pixelColor(0, 0).alpha() != 0:
+        raise RuntimeError("logo rendered wrongly")
+    out = d / "logo.png"
+    image.save(str(out))
+    return [out]
+
+
 def _icon_check(d: Path) -> list[Path]:
     """Convert screen icons: Tabler SVG markup rendered by QtSvg (needs the QtSvg module)."""
     from PySide6.QtCore import QByteArray, QRectF, Qt
@@ -333,6 +348,7 @@ def run(report: Path) -> int:
             ("CAD: dxf -> pdf/png, save as R12", lambda: _cad_check(d, out)),
             ("editor: layers -> ora -> png/jpg", lambda: _editor_check(d / "editor")),
             ("convert screen icons (QtSvg)", lambda: _icon_check(d / "icons")),
+            ("app logo / window icon", lambda: _logo_check(d / "logo")),
             ("document editor", lambda: _doc_editor_check(d / "doceditor")),
             ("3D viewer (model + Qt OpenGL)", lambda: _viewer3d_check(d / "viewer3d")),
             ("mp4 -> webm", lambda: _convert([out / "img0 slideshow.mp4"], "webm", out)),

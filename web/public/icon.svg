@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7a6cff"/>
+      <stop offset="1" stop-color="#4a4ddc"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="url(#bg)"/>
+  <g fill="none" stroke="#fff" stroke-linecap="round">
+    <!-- blades = the arms of the U, crossing at the pivot -->
+    <path d="M19 13V24Q19 32 32 37.5Q38 40.5 39.5 44" stroke-width="7" stroke-linecap="butt"/>
+    <path d="M45 13V24Q45 32 32 37.5Q26 40.5 24.5 44" stroke-width="7" stroke-linecap="butt"/>
+    <!-- finger rings -->
+    <circle cx="41" cy="50" r="5.2" stroke-width="3.6"/>
+    <circle cx="23" cy="50" r="5.2" stroke-width="3.6"/>
+  </g>
+  <!-- pointed blade tips (cutting edge on the inside) -->
+  <path d="M15.5 13.2H22.5V5.5Z" fill="#fff"/>
+  <path d="M48.5 13.2H41.5V5.5Z" fill="#fff"/>
+  <circle cx="32" cy="37.5" r="2.3" fill="#4f50e0"/>
+</svg>

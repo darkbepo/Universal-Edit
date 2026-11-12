@@ -64,5 +64,5 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - name: Browser tests against the live site
         env:
-          E2E_BASE_URL: https://darkbepo.github.io/Universal-Media-Converter/
+          E2E_BASE_URL: https://darkbepo.github.io/Universal-Edit/
         run: npx playwright test --trace off

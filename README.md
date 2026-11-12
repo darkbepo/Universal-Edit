@@ -1,8 +1,11 @@
-# Universal Media Converter
+# Universal Edit
 
-## ▶ [Open the converter in your browser](https://darkbepo.github.io/Universal-Media-Converter/)
+Convert and edit pictures, video, audio, documents, 3D models and more, on your own device.
+(Formerly *Universal Media Converter*.)
 
-**https://darkbepo.github.io/Universal-Media-Converter/** — nothing to install, works on Windows,
+## ▶ [Open the converter in your browser](https://darkbepo.github.io/Universal-Edit/)
+
+**https://darkbepo.github.io/Universal-Edit/** — nothing to install, works on Windows,
 Mac, Linux and phones. Your files **never leave your device**: everything is converted right in
 your browser, nothing is uploaded.
 
@@ -23,7 +26,7 @@ processor (the browser version is limited to a few threads). It installs LibreOf
 conversion needs them.
 
 Get it from **Actions → Build Windows executable** → latest successful run → download
-`UniversalMediaConverter-windows`, extract, and run `UniversalMediaConverter.exe`.
+`UniversalEdit-windows`, extract, and run `UniversalEdit.exe`.
 
 The browser version's source is in [`web/`](web/README.md).
 
@@ -117,7 +120,7 @@ app offers to install it for you with one click — no restart needed.
 ## Building the Windows executable
 
 On GitHub: **Actions → Build Windows executable → Run workflow**, then download the zip from
-the finished run. Locally on Windows: `pyinstaller packaging/umc.spec` → `dist/UniversalMediaConverter/`.
+the finished run. Locally on Windows: `pyinstaller packaging/umc.spec` → `dist/UniversalEdit/`.
 
 ## License
 

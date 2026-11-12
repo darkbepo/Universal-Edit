@@ -1,4 +1,4 @@
-# Serves the Universal Media Converter web app on this computer only (http://localhost), with the headers
+# Serves the Universal Edit web app on this computer only (http://localhost), with the headers
 # the video engine needs, then opens it in your browser. Close this window to stop it.
 $ErrorActionPreference = 'Stop'
 $root = Join-Path $PSScriptRoot 'app'
@@ -21,7 +21,7 @@ if (-not $listener) { Write-Host 'No free port between 8790 and 8799.'; exit 1 }
 $url = "http://localhost:$port/"
 
 Write-Host ''
-Write-Host "  Universal Media Converter is running at $url" -ForegroundColor Green
+Write-Host "  Universal Edit is running at $url" -ForegroundColor Green
 Write-Host '  Your files stay on this computer. Keep this window open while you use it;'
 Write-Host '  close it (or press Ctrl+C) to stop.'
 Write-Host ''

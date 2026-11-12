@@ -49,10 +49,6 @@ QFrame#TopBar {
     background: @surface;
     border-bottom: 1px solid @border;
 }
-QLabel#Logo {
-    background: @accent;
-    border-radius: 9px;
-}
 QFrame#BottomBar {
     background: @surface;
     border-top: 1px solid @border;

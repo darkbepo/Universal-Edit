@@ -1,4 +1,4 @@
-Universal Media Converter — local test version
+Universal Edit — local test version
 ====================================
 
 Converts images, videos and documents inside your web browser. Everything happens on this
@@ -7,7 +7,7 @@ this computer.
 
 WINDOWS
   1. Extract the whole zip (don't run it from inside the zip).
-  2. Double-click "Start Universal Media Converter.bat".
+  2. Double-click "Start Universal Edit.bat".
      If Windows SmartScreen asks, choose "More info" > "Run anyway" (the script is
      plain text — you can open serve.ps1 in Notepad to read it).
   3. Your browser opens the converter. Keep the black window open while you use it;
@@ -21,4 +21,4 @@ The first conversion of each kind downloads its engine (5-10 MB) and takes a few
 Old Office formats (DOC, XLS, PPT) need the desktop app; DOCX, XLSX, PPTX, ODT, RTF,
 Markdown, HTML, TXT and EPUB work here.
 
-Licence: AGPL-3.0-or-later. Source: https://github.com/darkbepo/Universal-Media-Converter
+Licence: AGPL-3.0-or-later. Source: https://github.com/darkbepo/Universal-Edit

@@ -1,6 +1,6 @@
-# Universal Media Converter — web companion
+# Universal Edit — web companion
 
-The browser version of Universal Media Converter. Everything runs **on the visitor's own
+The browser version of Universal Edit. Everything runs **on the visitor's own
 device** (WebAssembly in a Web Worker) — files are never uploaded.
 
 | From | To |
@@ -29,9 +29,9 @@ npm run build      # static site in dist/
 
 ## Local test version (no install)
 
-`npm run package:local` builds `release/UniversalMediaConverter-web-local.zip`: the site in `app/` plus
-`Start Universal Media Converter.bat` (Windows, PowerShell server) and `serve.py` (macOS/Linux). Both serve
-on `localhost` only, with the isolation headers. CI publishes it as the `UniversalMediaConverter-web-local`
+`npm run package:local` builds `release/UniversalEdit-web-local.zip`: the site in `app/` plus
+`Start Universal Edit.bat` (Windows, PowerShell server) and `serve.py` (macOS/Linux). Both serve
+on `localhost` only, with the isolation headers. CI publishes it as the `UniversalEdit-web-local`
 artifact of the "Web companion" workflow, and tests the Windows launcher on windows-latest.
 
 ## Deploy

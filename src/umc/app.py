@@ -20,9 +20,9 @@ def log_dir() -> Path:
         base = Path.home() / "Library" / "Logs"
     else:
         base = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state"))
-    path = base / "UniversalMediaConverter"
-    path.mkdir(parents=True, exist_ok=True)
-    return path
+    from umc.core.paths import migrated_dir
+
+    return migrated_dir(base)
 
 
 def setup_logging() -> Path:
@@ -63,17 +63,20 @@ def main(argv: list[str] | None = None) -> int:
 
     from PySide6.QtWidgets import QApplication
 
-    from umc.gui import theme
+    from umc.gui import branding, theme
     from umc.gui.main_window import MainWindow
 
     log_path = setup_logging()
     logging.getLogger(__name__).info("starting v%s, log at %s", __version__, log_path)
     _start_cleanup()
 
+    branding.set_windows_app_id()
     app = QApplication(sys.argv if argv is None else argv)
-    app.setApplicationName("Universal Media Converter")
-    app.setOrganizationName("UniversalMediaConverter")
+    app.setApplicationName(branding.APP_NAME)
+    app.setOrganizationName(branding.ORG_NAME)
     app.setApplicationVersion(__version__)
+    app.setWindowIcon(branding.app_icon())
+    branding.migrate_settings()
     app.setStyle("Fusion")
     app.setStyleSheet(theme.stylesheet())
     app.styleHints().colorSchemeChanged.connect(lambda _: app.setStyleSheet(theme.stylesheet()))

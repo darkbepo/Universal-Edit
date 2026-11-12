@@ -1,5 +1,5 @@
 # PyInstaller spec — build with:  pyinstaller packaging/umc.spec
-# Produces a one-folder app in dist/UniversalMediaConverter/ (see CLAUDE.md → Packaging).
+# Produces a one-folder app in dist/UniversalEdit/ (see CLAUDE.md → Packaging).
 from pathlib import Path
 
 import sys
@@ -33,13 +33,13 @@ if sys.platform == "win32":  # the version-resource helpers need pefile (Windows
                           fileType=0x1, subtype=0x0, date=(0, 0)),
         kids=[
             StringFileInfo([StringTable("040904B0", [
-                StringStruct("CompanyName", "Universal Media Converter (open source)"),
-                StringStruct("FileDescription", "Universal Media Converter"),
+                StringStruct("CompanyName", "Universal Edit (open source)"),
+                StringStruct("FileDescription", "Universal Edit"),
                 StringStruct("FileVersion", VERSION),
-                StringStruct("InternalName", "UniversalMediaConverter"),
+                StringStruct("InternalName", "UniversalEdit"),
                 StringStruct("LegalCopyright", "Copyright (C) 2026 darkbepo. AGPL-3.0-or-later."),
-                StringStruct("OriginalFilename", "UniversalMediaConverter.exe"),
-                StringStruct("ProductName", "Universal Media Converter"),
+                StringStruct("OriginalFilename", "UniversalEdit.exe"),
+                StringStruct("ProductName", "Universal Edit"),
                 StringStruct("ProductVersion", VERSION),
             ])]),
             VarFileInfo([VarStruct("Translation", [0x0409, 1200])]),
@@ -47,7 +47,11 @@ if sys.platform == "win32":  # the version-resource helpers need pefile (Windows
     )
 
 binaries = [(str(p), "bin") for p in BIN.glob("*") if p.is_file()] if BIN.is_dir() else []
-datas = [(str(ROOT / "src" / "umc" / "gui" / "style.qss"), "umc/gui"), (str(ROOT / "LICENSE"), ".")]
+datas = [
+    (str(ROOT / "src" / "umc" / "gui" / "style.qss"), "umc/gui"),
+    (str(ROOT / "src" / "umc" / "gui" / "logo.svg"), "umc/gui"),  # window / taskbar icon
+    (str(ROOT / "LICENSE"), "."),
+]
 datas += collect_data_files("pymupdf")
 datas += collect_data_files("trimesh")
 datas += collect_data_files("docx")  # python-docx templates (pdf2docx)
@@ -81,10 +85,10 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="UniversalMediaConverter",
+    name="UniversalEdit",
     console=False,
     icon=str(ICON) if ICON.exists() else None,
     version=VERSION_INFO,
     upx=False,
 )
-coll = COLLECT(exe, a.binaries, a.datas, name="UniversalMediaConverter", upx=False)
+coll = COLLECT(exe, a.binaries, a.datas, name="UniversalEdit", upx=False)

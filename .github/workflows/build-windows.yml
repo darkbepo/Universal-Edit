@@ -55,18 +55,18 @@ jobs:
 
       - name: Self-test the built executable
         run: |
-          $p = Start-Process -FilePath "dist\UniversalMediaConverter\UniversalMediaConverter.exe" `
+          $p = Start-Process -FilePath "dist\UniversalEdit\UniversalEdit.exe" `
                 -ArgumentList "--self-test", "$PWD\selftest.txt" -Wait -PassThru
           Get-Content selftest.txt
           if ($p.ExitCode -ne 0) { exit 1 }
-          $info = (Get-Item "dist\UniversalMediaConverter\UniversalMediaConverter.exe").VersionInfo
+          $info = (Get-Item "dist\UniversalEdit\UniversalEdit.exe").VersionInfo
           $info | Format-List ProductName, FileDescription, FileVersion, LegalCopyright
-          if ($info.ProductName -ne "Universal Media Converter") { throw "version info missing" }
+          if ($info.ProductName -ne "Universal Edit") { throw "version info missing" }
 
       - name: Zip
-        run: Compress-Archive -Path dist/UniversalMediaConverter -DestinationPath UniversalMediaConverter-windows.zip
+        run: Compress-Archive -Path dist/UniversalEdit -DestinationPath UniversalEdit-windows.zip
 
       - uses: actions/upload-artifact@v4
         with:
-          name: UniversalMediaConverter-windows
-          path: UniversalMediaConverter-windows.zip
+          name: UniversalEdit-windows
+          path: UniversalEdit-windows.zip

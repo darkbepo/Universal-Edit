@@ -1,4 +1,4 @@
-# CLAUDE.md — Universal Media Converter
+# CLAUDE.md — Universal Edit
 
 Guidance for Claude (and humans) working in this repository.
 
@@ -35,7 +35,17 @@ Keep the worktree for the next task on the same topic; remove it when the work i
 
 ## Project overview
 
-Universal Media Converter is a **desktop application shipped as a standalone executable**.
+Universal Edit (called Universal Media Converter until Nov 2026) is a **desktop application
+shipped as a standalone executable**.
+
+**Naming:** the shown name is `branding.APP_NAME` ("Universal Edit"; folders / exe
+`UniversalEdit`, repo + site `Universal-Edit`). The Python package stays `umc` and web
+localStorage keys stay `umc-*` (internal, renaming would lose users' state). Old data is moved on
+first start: `core/paths.migrated_dir` (app-data / log folder, incl. installed tools) and
+`gui/branding.migrate_settings` (QSettings). The logo's only source is `src/umc/gui/logo.svg`
+(a U made of scissors); `python scripts/make_icon.py` regenerates `packaging/icon.ico/png` and
+`web/public/icon.svg/png` (`tests/test_branding.py` checks the copy). The window / taskbar icon
+needs `app.setWindowIcon` + the Windows AppUserModelID (`branding.set_windows_app_id`).
 The user drops in (or picks) one or more source files, chooses an output format, tweaks
 optional settings, and converts. It covers three media families:
 
@@ -53,7 +63,8 @@ imports, but keep the defaults sensible so a user can convert with zero configur
 - **Modern and minimalistic** ("calm & refined", redesigned Nov 2026 — spec
   `docs/superpowers/specs/2026-11-10-convert-redesign-design.md`). One wide window, no menus.
 - Flow: **input → output format → (optional) settings → Convert**. Same layout in both apps:
-  1. Top bar: app name + **Convert | Edit** switch (Edit disabled unless the files can be edited).
+  1. Top bar: logo + name centred (3-column grid), **Convert | Edit** switch on the right (Edit
+     disabled unless the files can be edited). The web puts the "never leave your device" badge left.
   2. Left column: drop zone (the whole window while empty, a slim "Add more files" bar after),
      then **Results** (after a run) and the **Queue** — one row per file with thumbnail, size and
      its own progress (`file_fractions` / `fileFractions`: converters report equal slices per file).
@@ -130,7 +141,7 @@ See `web/README.md` for commands and deployment.
 - **Must be cross-origin isolated** (COOP/COEP): headers in `vite.config.ts` / `public/_headers`;
   where a host can't send them (GitHub Pages) `coi-serviceworker.js` (emitted by a plugin in
   `vite.config.ts`, loaded first in `index.html`) adds them and reloads the first visit once.
-- **Local test version:** `npm run package:local` → zip with `app/` + `Start Universal Media Converter.bat`
+- **Local test version:** `npm run package:local` → zip with `app/` + `Start Universal Edit.bat`
   / `serve.ps1` (Windows) and `serve.py`, all localhost-only. Keep `.bat` files CRLF.
 - **Keep `build.assetsInlineLimit: 0`** — an inlined (data:) FFmpeg thread worker can't load the
   engine and every video conversion crashes.
@@ -282,7 +293,7 @@ prompt when there's no alternative. To support a new document format, add edges 
 Built-in edges (`tools/htmlpdf.py`: mammoth DOCX → HTML, Python-Markdown MD → HTML, PyMuPDF Story
 HTML/TXT → PDF via `pdf.layout_html`) make Word / Markdown / HTML / TXT → PDF work with nothing
 installed. They're priced above LibreOffice (simpler layout), so LibreOffice wins when present.
-LibreOffice reuses one profile (`%LOCALAPPDATA%\UniversalMediaConverter\libreoffice-profile`,
+LibreOffice reuses one profile (`%LOCALAPPDATA%\UniversalEdit\libreoffice-profile`,
 claimed per run so a second window falls back to a temporary one): ~20 s → ~7 s per document.
 
 Key rules:
@@ -308,7 +319,7 @@ python -m umc                                       # run the app
 pytest                                              # run tests (needs ffmpeg/pandoc/soffice for all; else skips)
 ruff check . && ruff format .                       # lint + format
 pyinstaller packaging/umc.spec                      # build the executable into dist/
-UniversalMediaConverter.exe --self-test report.txt  # headless smoke test of a build (exit 0 = OK)
+UniversalEdit.exe --self-test report.txt  # headless smoke test of a build (exit 0 = OK)
 python scripts/convert_matrix.py --out matrix-out   # try EVERY conversion with defaults → report.md
 node web/scripts/convert-matrix.mjs matrix-out/samples --channel msedge  # same for the website
 ```
@@ -317,8 +328,8 @@ The two matrix scripts are the broad safety net: one sample per input format, ev
 app offers, each output checked to open. Run them after anything that touches several converters;
 "tool-missing" (Pandoc/Calibre/Ghostscript not installed) is not a failure.
 
-Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
-`~/.local/state/UniversalMediaConverter/umc.log` (Linux), `~/Library/Logs/…` (macOS).
+Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
+`~/.local/state/UniversalEdit/umc.log` (Linux), `~/Library/Logs/…` (macOS).
 
 ## Packaging
 
@@ -327,7 +338,7 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
   licence text (`FFMPEG-LICENSE.txt`). It's the BtbN **shared** build: two tiny exes + one set of
   FFmpeg DLLs = 194 MB, instead of two self-contained 162 MB exes (324 MB). `--static` restores those.
 - LibreOffice (~1 GB installed) and Pandoc are **not bundled**. Lookup order: the app's private
-  tools folder (`%LOCALAPPDATA%\UniversalMediaConverter\tools`) → bundled → `PATH` → standard
+  tools folder (`%LOCALAPPDATA%\UniversalEdit\tools`) → bundled → `PATH` → standard
   install locations (e.g. `C:\Program Files\LibreOffice\program\soffice.exe`).
 - When a conversion needs a missing tool, the dialog's main button is **"Install it for me"**
   (Windows; `tools/installer.py`), with "Download … myself" and "I've installed it — check again"
@@ -389,7 +400,7 @@ Logs: `%LOCALAPPDATA%\UniversalMediaConverter\umc.log` (Windows),
 6. ✅ Document splitting (every page / N pages / custom ranges) and PDF page size & margins.
 7. ✅ One-click install of LibreOffice / Pandoc from inside the app.
 8. ✅ Web companion (`web/`): images, video, PDF and documents (Pandoc). Live at
-   https://darkbepo.github.io/Universal-Media-Converter/ — `.github/workflows/pages.yml` publishes
+   https://darkbepo.github.io/Universal-Edit/ — `.github/workflows/pages.yml` publishes
    on every push to `main` that touches `web/` and then runs all browser tests against the live site.
    Next: PWA/offline.
 9. **Converter parity with the big online converters** (owner wants all of these, in this order;

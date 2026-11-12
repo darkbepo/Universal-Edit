@@ -62,11 +62,14 @@ svg.ico { flex-shrink: 0; display: block; }
 /* ---------------------------------------------------------------- page frame */
 .app { min-height: 100vh; display: flex; flex-direction: column; padding-bottom: 76px; }
 .topbar {
-  display: flex; align-items: center; gap: 14px; padding: 12px 22px;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center;
+  gap: 14px; padding: 12px 22px;
   background: var(--surface); border-bottom: 1px solid var(--border);
 }
+.topbar-start { display: flex; align-items: center; min-width: 0; overflow: hidden; }
+.topbar-end { display: flex; align-items: center; justify-content: flex-end; min-width: 0; }
 .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.logo { width: 30px; height: 30px; border-radius: 9px; background: var(--accent); color: var(--accent-text); display: grid; place-items: center; flex-shrink: 0; }
+.logo { width: 30px; height: 30px; display: block; flex-shrink: 0; }
 h1 { font-size: 15px; font-weight: 650; margin: 0; letter-spacing: -0.005em; white-space: nowrap; }
 .badge {
   display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;
@@ -105,12 +108,16 @@ h1 { font-size: 15px; font-weight: 650; margin: 0; letter-spacing: -0.005em; whi
 @media (max-width: 900px) {
   .workspace { grid-template-columns: 1fr; padding: 14px 16px; }
   .queue { max-height: 260px; }
-  .topbar { padding: 10px 16px; flex-wrap: wrap; }
-  .badge { order: 3; }
+  .topbar { padding: 10px 16px; }
+}
+@media (max-width: 760px) {
+  .badge { display: none; } /* no room beside the centred name */
 }
 @media (max-width: 560px) {
-  .badge { display: none; }
   h1 { font-size: 14px; }
+  /* Phones: no room to centre the name beside Convert | Edit, so they share the row. */
+  .topbar { display: flex; justify-content: space-between; }
+  .topbar-start { display: none; }
 }
 
 /* ---------------------------------------------------------------- drop zone */

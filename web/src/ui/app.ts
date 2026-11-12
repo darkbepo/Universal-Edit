@@ -26,7 +26,7 @@ const h = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLEle
 // Video encoding in the browser is capped at a few threads (engines/threads.ts), so point out
 // that the desktop app is much faster for these.
 const SLOW_IN_BROWSER = new Set(["video", "gif", "frames", "slideshow", "subtitles-video"]);
-const DESKTOP_URL = "https://github.com/darkbepo/Universal-Media-Converter#desktop-app-for-the-heavy-stuff";
+const DESKTOP_URL = "https://github.com/darkbepo/Universal-Edit#desktop-app-for-the-heavy-stuff";
 const MAX_RESULTS = 200;
 
 export function mountApp(root: HTMLElement): void {
@@ -50,11 +50,13 @@ export function mountApp(root: HTMLElement): void {
   let editor: import("./editor/page").EditorPage | null = null;
   let viewer: import("./editor3d/page").ViewerPage | null = null;
   let editing = false;
+  // Three columns (badge | logo + name | Convert/Edit): the outer two are equally wide, so the
+  // name stays centred on the page.
   const topbar = h("header", { class: "topbar" },
-    h("div", { class: "brand" }, h("span", { class: "logo" }, icon("transform", 18)), h("h1", {}, "Universal Media Converter")),
-    h("span", { class: "badge", title: "Everything is processed in your browser. Nothing is uploaded." }, icon("lock", 14), "Files never leave your device"),
-    h("div", { class: "spacer" }),
-    modeBar);
+    h("div", { class: "topbar-start" },
+      h("span", { class: "badge", title: "Everything is processed in your browser. Nothing is uploaded." }, icon("lock", 14), "Files never leave your device")),
+    h("div", { class: "brand" }, h("img", { class: "logo", src: "./icon.svg", alt: "" }), h("h1", {}, "Universal Edit")),
+    h("div", { class: "topbar-end" }, modeBar));
 
   // ---------------------------------------------------------------- left: drop zone, results, queue
   const dropTitle = h("div", { class: "title" }, "Drop files here or click to browse");

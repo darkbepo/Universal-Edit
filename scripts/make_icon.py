@@ -1,25 +1,54 @@
-"""Generate packaging/icon.ico and icon.png (run once; the outputs are committed)."""
+"""Render the Universal Edit logo (src/umc/gui/logo.svg) into every icon file that's committed.
 
+Outputs: packaging/icon.ico (Windows .exe), packaging/icon.png, and the website's
+web/public/icon.png + icon.svg (favicon and top-bar logo). Run again after editing logo.svg;
+tests/test_branding.py checks the copies still match.
+"""
+
+from __future__ import annotations
+
+import io
+import os
+import shutil
 from pathlib import Path
 
-from PIL import Image, ImageDraw
+ROOT = Path(__file__).resolve().parents[1]
+SVG = ROOT / "src" / "umc" / "gui" / "logo.svg"
+ICO_SIZES = (16, 20, 24, 32, 40, 48, 64, 128, 256)
 
-OUT = Path(__file__).resolve().parents[1] / "packaging"
-S = 1024
+
+def render(size: int):
+    """The logo as a ``size`` × ``size`` Pillow image (each size drawn from the SVG, not scaled)."""
+    from PIL import Image
+    from PySide6.QtCore import QBuffer, QByteArray, QIODevice, Qt
+    from PySide6.QtGui import QImage, QPainter
+    from PySide6.QtSvg import QSvgRenderer
+
+    renderer = QSvgRenderer(str(SVG))
+    img = QImage(size, size, QImage.Format.Format_ARGB32)
+    img.fill(Qt.GlobalColor.transparent)
+    p = QPainter(img)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    renderer.render(p)
+    p.end()
+    data = QByteArray()
+    buf = QBuffer(data)
+    buf.open(QIODevice.OpenModeFlag.WriteOnly)
+    img.save(buf, "PNG")
+    return Image.open(io.BytesIO(bytes(data))).convert("RGBA")
 
 
 def main() -> None:
-    img = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    d.rounded_rectangle((48, 48, S - 48, S - 48), radius=220, fill=(91, 91, 240, 255))
-    white = (255, 255, 255, 255)
-    # two arrows: → on top, ← below ("convert")
-    d.rounded_rectangle((250, 340, 690, 410), radius=35, fill=white)
-    d.polygon([(660, 260), (800, 375), (660, 490)], fill=white)
-    d.rounded_rectangle((334, 614, 774, 684), radius=35, fill=white)
-    d.polygon([(364, 534), (224, 649), (364, 764)], fill=white)
-    img.save(OUT / "icon.png")
-    img.save(OUT / "icon.ico", sizes=[(s, s) for s in (16, 24, 32, 48, 64, 128, 256)])
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtGui import QGuiApplication
+
+    _app = QGuiApplication.instance() or QGuiApplication([])  # noqa: F841 (QtSvg needs one)
+    pack = ROOT / "packaging"
+    render(1024).save(pack / "icon.png")
+    images = [render(s) for s in ICO_SIZES]
+    images[-1].save(pack / "icon.ico", sizes=[(s, s) for s in ICO_SIZES], append_images=images[:-1])
+    render(256).save(ROOT / "web" / "public" / "icon.png")
+    shutil.copyfile(SVG, ROOT / "web" / "public" / "icon.svg")
 
 
 if __name__ == "__main__":

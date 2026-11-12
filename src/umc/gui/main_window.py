@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QButtonGroup,
     QFileDialog,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -37,7 +38,7 @@ from umc.core.detect import DetectedFile, MediaFamily, detect
 from umc.core.job import ConversionJob, file_fractions
 from umc.core.registry import MixedInputError, Target, targets_for
 from umc.doceditor.types import EDITABLE_DOCUMENT_EXTS
-from umc.gui import icons, theme
+from umc.gui import branding, icons, theme
 from umc.gui.tool_dialog import ToolMissingDialog
 from umc.gui.widgets.drop_zone import DropZone
 from umc.gui.widgets.file_queue import FileQueue, fmt_size
@@ -68,7 +69,7 @@ MAX_RESULTS = 200
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("Universal Media Converter")
+        self.setWindowTitle(branding.APP_NAME)
         self.setMinimumSize(600, 560)
         self.settings = QSettings()
         self.files: list[DetectedFile] = []
@@ -87,17 +88,26 @@ class MainWindow(QMainWindow):
         outer.setSpacing(0)
 
         # ---------------------------------------------------------- top bar
+        # Three columns: the two outer ones share the spare width equally (same stretch), so the
+        # logo + name stay centred on the window whatever the Convert | Edit switch needs.
         top = QFrame(objectName="TopBar")
-        tl = QHBoxLayout(top)
+        tl = QGridLayout(top)
         tl.setContentsMargins(22, 12, 22, 12)
-        tl.setSpacing(10)
+        tl.setHorizontalSpacing(10)
+        self.brand = QWidget(objectName="Brand")
+        bl = QHBoxLayout(self.brand)
+        bl.setContentsMargins(0, 0, 0, 0)
+        bl.setSpacing(10)
         self.logo = QLabel(objectName="Logo")
         self.logo.setFixedSize(30, 30)
         self.logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title = QLabel("Universal Media Converter", objectName="Title")
-        tl.addWidget(self.logo)
-        tl.addWidget(title)
-        tl.addStretch(1)
+        self.title = QLabel(branding.APP_NAME, objectName="Title")
+        bl.addWidget(self.logo)
+        bl.addWidget(self.title)
+        tl.addWidget(self.brand, 0, 1, Qt.AlignmentFlag.AlignCenter)
+        tl.addWidget(QWidget(), 0, 0)  # empty columns get no spacing, which would shift the name
+        tl.setColumnStretch(0, 1)
+        tl.setColumnStretch(2, 1)
 
         # Convert | Edit — Edit is enabled when the files can be edited: images,
         # exactly one editable document, or 3D models (the 3D viewer)
@@ -116,7 +126,8 @@ class MainWindow(QMainWindow):
         self.convert_mode.setChecked(True)
         self.convert_mode.clicked.connect(self.leave_edit)
         self.edit_mode.clicked.connect(self.enter_edit)
-        tl.addWidget(self.mode_bar)
+        right = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        tl.addWidget(self.mode_bar, 0, 2, right)
         outer.addWidget(top)
         self.editor = None  # EditorPage, created on first use
         self.doc_editor = None  # DocEditorPage, created on first use
@@ -296,7 +307,7 @@ class MainWindow(QMainWindow):
 
     def _retint(self) -> None:
         pal = theme.palette()
-        self.logo.setPixmap(icons.pixmap("transform", 18, pal["accent_text"]))
+        self.logo.setPixmap(branding.logo_pixmap(30, self.devicePixelRatioF()))
         self.drop.retint()
         self.picker.retint()
         self.tabs.retint()
