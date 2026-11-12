@@ -205,20 +205,14 @@ export function mountApp(root: HTMLElement): void {
     convertMode.setAttribute("aria-pressed", "true");
     editMode.setAttribute("aria-pressed", "false");
   }
-  async function ensureViewer() {
-    if (!viewer) {
-      const { mountViewer } = await import("./editor3d/page");
-      viewer = mountViewer(root, { client, onBack: showConverter, onOpen: (list) => void addFiles(list) });
-    }
-    return viewer;
-  }
-  async function ensureEditor() {
-    if (!editor) {
-      const { mountEditor } = await import("./editor/page");
-      editor = mountEditor(root, { client, onBack: showConverter });
-    }
-    return editor;
-  }
+  // One mount each, even when a second click comes while the page's code is still loading.
+  let viewerP: Promise<import("./editor3d/page").ViewerPage> | null = null;
+  let editorP: Promise<import("./editor/page").EditorPage> | null = null;
+  const ensureViewer = () => (viewerP ??= import("./editor3d/page").then(({ mountViewer }) =>
+    (viewer = mountViewer(root, { client, onBack: showConverter, onOpen: (list) => void addFiles(list) }))));
+  const ensureEditor = () => (editorP ??= import("./editor/page").then(({ mountEditor }) =>
+    (editor = mountEditor(root, { client, onBack: showConverter }))));
+  let opening = false; // an editor tile is being opened (New picture window, code loading)
   function showPage(page: { show(): void }) {
     editing = true;
     appMain.hidden = true;
@@ -248,25 +242,30 @@ export function mountApp(root: HTMLElement): void {
   }
   /** An editor tile: that editor without files (the image editor asks for a picture size first). */
   async function openEditor(id: string) {
-    if (editing || busy) return;
-    if (id === "model") {
-      const v = await ensureViewer();
-      v.openEmpty();
-      showPage(v);
-      return;
-    }
-    if (id !== "image") return; // not available yet
-    const pick = await newPictureDialog();
-    if (!pick) return;
-    const [{ blankDocument }, ed] = await Promise.all([import("../editor/blank"), ensureEditor()]);
+    if (editing || busy || opening || files.length) return;
+    opening = true;
     try {
-      ed.openBlank(blankDocument(pick.width, pick.height, pick.background));
-    } catch (e) {
-      note.textContent = e instanceof Error ? e.message : "Couldn't make the picture.";
-      note.hidden = false;
-      return;
+      if (id === "model") {
+        const v = await ensureViewer();
+        v.openEmpty();
+        showPage(v);
+        return;
+      }
+      if (id !== "image") return; // not available yet
+      const pick = await newPictureDialog();
+      if (!pick) return;
+      const [{ blankDocument }, ed] = await Promise.all([import("../editor/blank"), ensureEditor()]);
+      try {
+        ed.openBlank(blankDocument(pick.width, pick.height, pick.background));
+      } catch (e) {
+        note.textContent = e instanceof Error ? e.message : "Couldn't make the picture.";
+        note.hidden = false;
+        return;
+      }
+      showPage(ed);
+    } finally {
+      opening = false;
     }
-    showPage(ed);
   }
   editMode.addEventListener("click", () => void enterEdit());
   convertMode.addEventListener("click", () => {

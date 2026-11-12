@@ -103,7 +103,10 @@ h1 { font-size: 15px; font-weight: 650; margin: 0; letter-spacing: -0.005em; whi
   .queue-card { flex: 1 1 auto; }
   .queue { flex: 1 1 auto; max-height: none; }
   .pane-body { flex: 1 1 auto; min-height: 0; }
-  .workspace.empty .drop { flex: 1 1 auto; } /* fills what the editor tiles below leave */
+  /* the drop zone fills what the editor tiles leave; a short window scrolls the column instead
+     of cutting the tiles off */
+  .app .workspace.empty .drop { flex: 1 1 0; min-height: 160px; }
+  .workspace.empty .left { overflow-y: auto; padding-bottom: 4px; }
 }
 @media (max-width: 900px) {
   .workspace { grid-template-columns: 1fr; padding: 14px 16px; }

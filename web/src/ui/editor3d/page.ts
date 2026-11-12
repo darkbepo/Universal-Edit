@@ -31,7 +31,7 @@ export interface ViewerOptions {
   onOpen?: (files: File[]) => void;
 }
 
-const MODEL_ACCEPT = ".stl,.obj,.ply,.glb,.3mf,.off,.step,.stp,.iges,.igs";
+const MODEL_ACCEPT = ".stl,.obj,.ply,.glb,.3mf,.step,.stp,.iges,.igs"; // no OFF on the web
 const EMPTY_TEXT = "Open a 3D model with “Open…”, or drop one here (STL, OBJ, 3MF, PLY, GLB, STEP, IGES).";
 
 const cssColor = (name: string, fallback: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;

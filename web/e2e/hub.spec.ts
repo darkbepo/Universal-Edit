@@ -54,12 +54,25 @@ test("image editor tile: New picture window makes an empty picture of that size 
 
 test("3D viewer tile: opens empty, Open… shows a model", async ({ page }) => {
   await page.goto("./?e2e");
-  await page.locator(".editor-tile[data-editor=model]").click();
+  await page.locator(".editor-tile[data-editor=model]").dblclick(); // a second click while it loads
   const viewer = page.locator(".viewer3d");
   await expect(viewer).toBeVisible();
+  await expect(viewer).toHaveCount(1);
   await expect(page.locator(".viewer3d-placeholder")).toContainText("Open a 3D model");
   await viewer.locator('input[type="file"]').setInputFiles([`${FIXTURES}cube-10mm.stp`]);
   await expect(page.locator(".viewer3d-info")).toContainText("Width (X)");
   const rows = await page.evaluate(() => window.__viewer3d!.infoRows());
   expect(rows["Width (X)"]).toBe("10.0 mm");
+});
+
+test("a short, narrow window scrolls to the tiles instead of cutting them off", async ({ page }) => {
+  await page.setViewportSize({ width: 960, height: 620 });
+  await page.goto("./?e2e");
+  const last = page.locator(".editor-tile[data-editor=document]");
+  await last.scrollIntoViewIfNeeded();
+  await expect(last).toBeInViewport({ ratio: 1 });
+  const tile = (await last.boundingBox())!;
+  const bar = (await page.locator(".bar").boundingBox())!;
+  expect(tile.y + tile.height).toBeLessThanOrEqual(bar.y); // not hidden under the bottom bar
+  await expect(page.locator(".drop")).toBeVisible();
 });
