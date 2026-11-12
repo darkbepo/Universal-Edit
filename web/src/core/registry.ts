@@ -8,6 +8,7 @@ import { archiveConverter, packConverter } from "../converters/archive";
 import { fontConverter } from "../converters/fonts";
 import { cadConverter } from "../converters/cad";
 import { bgremoveConverter } from "../converters/bgremove";
+import { audioEditOpenConverter } from "../converters/audioedit";
 import { pdfToSvgConverter, traceConverter, vectorConverter } from "../converters/vector";
 import { subtitleConverter, subtitleExtractConverter, subtitleVideoConverter } from "../converters/subtitles";
 import { documentConverter, pagesConverter, splitConverter } from "../converters/pdf";
@@ -46,6 +47,7 @@ export const CONVERTERS: Converter[] = [
   packConverter,
   bgremoveConverter, // image editor only (no targets)
   model3dViewConverter, // 3D viewer only (no targets)
+  audioEditOpenConverter, // audio editor only (no targets)
 ];
 
 export const converterById = (id: string) => CONVERTERS.find((c) => c.id === id)!;

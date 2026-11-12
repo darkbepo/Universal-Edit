@@ -9,12 +9,12 @@ declare global {
   }
 }
 
-test("tiles: image editor and 3D viewer open, the rest say Coming soon; hidden once files are added", async ({ page }) => {
+test("tiles: image editor, 3D viewer and audio editor open, the rest say Coming soon; hidden once files are added", async ({ page }) => {
   await page.goto("./?e2e");
   const tiles = page.locator(".editor-tile");
   await expect(tiles).toHaveCount(5);
-  for (const id of ["image", "model"]) await expect(page.locator(`.editor-tile[data-editor=${id}]`)).toBeEnabled();
-  for (const id of ["video", "audio", "document"]) {
+  for (const id of ["image", "model", "audio"]) await expect(page.locator(`.editor-tile[data-editor=${id}]`)).toBeEnabled();
+  for (const id of ["video", "document"]) {
     const t = page.locator(`.editor-tile[data-editor=${id}]`);
     await expect(t).toBeDisabled();
     await expect(t).toContainText("Coming soon");

@@ -64,8 +64,8 @@ def window(qtbot):
 def test_tiles_shown_until_files_are_added(window, media):
     hub = window.hub
     assert hub.isVisible()
-    assert [t for t, tile in hub.tiles.items() if tile.isEnabled()] == ["image", "model"]
-    for key in ("video", "audio", "document"):
+    assert [t for t, tile in hub.tiles.items() if tile.isEnabled()] == ["image", "model", "audio"]
+    for key in ("video", "document"):
         assert hub.tiles[key].badge is not None and hub.tiles[key].badge.text() == "Coming soon"
     window.add_files([str(media / "img0.png")])
     assert not hub.isVisible()

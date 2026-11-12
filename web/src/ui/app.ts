@@ -50,6 +50,7 @@ export function mountApp(root: HTMLElement): void {
   editMode.setAttribute("aria-pressed", "false");
   let editor: import("./editor/page").EditorPage | null = null;
   let viewer: import("./editor3d/page").ViewerPage | null = null;
+  let audio: import("./audioeditor/page").AudioEditorPage | null = null;
   let editing = false;
   // Three columns (badge | logo + name | Convert/Edit): the outer two are equally wide, so the
   // name stays centred on the page.
@@ -119,6 +120,10 @@ export function mountApp(root: HTMLElement): void {
   // ---------------------------------------------------------------- files
   async function addFiles(list: FileList | File[]) {
     const skipped: string[] = [];
+    if (editing && audio && !audio.el.hidden) {
+      await audio.openFiles(Array.from(list)); // audio files replace the sound (asks first)
+      return;
+    }
     if (editing && viewer && !viewer.el.hidden) {
       // In the 3D viewer new models join the queue and are shown.
       const added: InputFile[] = [];
@@ -189,10 +194,11 @@ export function mountApp(root: HTMLElement): void {
 
   // ---------------------------------------------------------------- Convert | Edit
   const appMain = root.querySelector("main.app") as HTMLElement;
-  const editKind = (): "image" | "model" | null => {
+  const editKind = (): "image" | "model" | "audio" | null => {
     if (!files.length) return null;
     if (files.every((f) => f.family === "image")) return "image";
     if (files.every((f) => f.family === "model")) return "model";
+    if (files.every((f) => f.family === "audio")) return "audio";
     return null;
   };
   const canEdit = () => editKind() !== null;
@@ -200,6 +206,7 @@ export function mountApp(root: HTMLElement): void {
     editing = false;
     editor?.hide();
     viewer?.hide();
+    audio?.hide();
     appMain.hidden = false;
     bar.hidden = false;
     convertMode.setAttribute("aria-pressed", "true");
@@ -210,6 +217,9 @@ export function mountApp(root: HTMLElement): void {
   let editorP: Promise<import("./editor/page").EditorPage> | null = null;
   const ensureViewer = () => (viewerP ??= import("./editor3d/page").then(({ mountViewer }) =>
     (viewer = mountViewer(root, { client, onBack: showConverter, onOpen: (list) => void addFiles(list) }))));
+  let audioP: Promise<import("./audioeditor/page").AudioEditorPage> | null = null;
+  const ensureAudio = () => (audioP ??= import("./audioeditor/page").then(({ mountAudioEditor }) =>
+    (audio = mountAudioEditor(root, { client, onBack: showConverter }))));
   const ensureEditor = () => (editorP ??= import("./editor/page").then(({ mountEditor }) =>
     (editor = mountEditor(root, { client, onBack: showConverter }))));
   let opening = false; // an editor tile is being opened (New picture window, code loading)
@@ -227,6 +237,19 @@ export function mountApp(root: HTMLElement): void {
       const v = await ensureViewer();
       await v.open(files);
       showPage(v);
+      return;
+    }
+    if (editKind() === "audio") {
+      const a = await ensureAudio();
+      showPage(a); // shows "Opening…" while the worker decodes
+      editMode.disabled = true;
+      const ok = await a.open(files);
+      editMode.disabled = !canEdit();
+      if (!ok && !a.doc) {
+        showConverter();
+        note.textContent = a.lastError();
+        note.hidden = false;
+      }
       return;
     }
     const ed = await ensureEditor();
@@ -251,6 +274,12 @@ export function mountApp(root: HTMLElement): void {
         showPage(v);
         return;
       }
+      if (id === "audio") {
+        const a = await ensureAudio();
+        a.openEmpty();
+        showPage(a);
+        return;
+      }
       if (id !== "image") return; // not available yet
       const pick = await newPictureDialog();
       if (!pick) return;
@@ -270,6 +299,7 @@ export function mountApp(root: HTMLElement): void {
   editMode.addEventListener("click", () => void enterEdit());
   convertMode.addEventListener("click", () => {
     if (editing && editor && !editor.el.hidden && !editor.maybeLeave()) return;
+    if (editing && audio && !audio.el.hidden && !audio.maybeLeave()) return;
     showConverter();
   });
 
@@ -290,7 +320,7 @@ export function mountApp(root: HTMLElement): void {
     right.hidden = !has;
     editMode.disabled = !canEdit();
     const kind = editKind();
-    editMode.title = kind === "model" ? "Open the 3D models in the 3D viewer" : kind === "image" ? "Open the images in the image editor (each image becomes a layer)" : "Add images or 3D models to edit them";
+    editMode.title = kind === "model" ? "Open the 3D models in the 3D viewer" : kind === "image" ? "Open the images in the image editor (each image becomes a layer)" : kind === "audio" ? "Open the sound in the audio editor (several files are joined)" : "Add images, audio or 3D models to edit them";
     const fams = new Set(files.map((f) => f.family));
     filesLabel.textContent = fams.size === 1
       ? `Queue · ${files.length} ${NOUN[files[0].family][files.length === 1 ? 0 : 1]}`

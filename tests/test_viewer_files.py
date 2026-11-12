@@ -54,8 +54,9 @@ def test_folder_items(tmp_path):
 
 
 def test_edit_button_follows_the_editor_tiles():
-    assert vf.editor_for(vf.IMAGE).available and vf.editor_for(vf.MODEL).available
-    for kind in (vf.VIDEO, vf.AUDIO, vf.PAGES, vf.CONVERT, vf.TEXT):
+    for kind in (vf.IMAGE, vf.MODEL, vf.AUDIO):
+        assert vf.editor_for(kind).available
+    for kind in (vf.VIDEO, vf.PAGES, vf.CONVERT, vf.TEXT):
         assert not vf.editor_for(kind).available  # "coming soon"
     assert vf.editor_for(vf.OTHER) is None
 
