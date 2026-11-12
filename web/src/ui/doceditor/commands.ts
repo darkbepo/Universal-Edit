@@ -295,9 +295,9 @@ function markInline(block: PMNode, a: number, b: number, change: MarkChange, ima
   return changed ? block.copy(Fragment.fromArray(kids)) : block;
 }
 
-/** Replace the textblocks at the positions of `edits` (each edit keeps the block's size) in one
- * step; the selection stays where it was. */
-function rebuildBlocks(tr: Transaction, edits: Map<number, (block: PMNode) => PMNode>): void {
+/** Replace the textblocks at the positions of `edits` in one step. When every edit keeps the
+ * block's size (`sameSize`), the selection stays where it was; otherwise the caller places it. */
+export function rebuildBlocks(tr: Transaction, edits: Map<number, (block: PMNode) => PMNode>, sameSize = true): void {
   const positions = [...edits.keys()].sort((x, y) => x - y);
   if (!positions.length) return;
   const hit = (from: number, to: number) => {
@@ -337,7 +337,7 @@ function rebuildBlocks(tr: Transaction, edits: Map<number, (block: PMNode) => PM
   const selection = tr.selection.toJSON();
   const stored = tr.storedMarks;
   tr.replaceWith(start, at, kids);
-  tr.setSelection(Selection.fromJSON(tr.doc, selection));
+  if (sameSize) tr.setSelection(Selection.fromJSON(tr.doc, selection));
   if (stored) tr.setStoredMarks(stored);
 }
 
@@ -1206,12 +1206,15 @@ export const clearFormatting: Command = (state, dispatch) => {
 function ensureLine(tr: Transaction, at: number): boolean {
   if (tr.selection.$from.parent.isTextblock) return true;
   const $at = tr.doc.resolve(Math.min(at, tr.doc.content.size));
-  const near = Selection.findFrom($at, 1, true) ?? Selection.findFrom($at, -1, true);
-  if (near) {
-    tr.setSelection(near);
-    return true;
-  }
+  // an emptied list (or other container) gets the line, rather than the next block
   const wrap = $at.parent.contentMatchAt($at.index()).findWrapping(nodes.paragraph);
+  if (!wrap || $at.parent.childCount) {
+    const near = Selection.findFrom($at, 1, true) ?? Selection.findFrom($at, -1, true);
+    if (near) {
+      tr.setSelection(near);
+      return true;
+    }
+  }
   if (!wrap) return false;
   let line = nodes.paragraph.create();
   for (let i = wrap.length - 1; i >= 0; i--) line = wrap[i].create(null, line);
@@ -1261,9 +1264,10 @@ export const lineBreak: Command = afterDeleting((state, dispatch) => {
   return true;
 });
 
-/** Tab: a tab character, in tables and lists too (the desktop's QTextEdit does the same). */
+/** Tab: a tab character, in tables and lists too (the desktop's QTextEdit does the same). Over
+ * a cell selection (or no line) it does nothing, but is still taken, so the focus stays. */
 export const insertTab: Command = (state, dispatch) => {
-  if (!state.selection.$from.parent.isTextblock) return false;
+  if (state.selection instanceof CellSelection || !state.selection.$from.parent.isTextblock) return true;
   dispatch?.(state.tr.insertText("\t").scrollIntoView());
   return true;
 };

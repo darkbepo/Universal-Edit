@@ -4,6 +4,7 @@
 import { Slice } from "prosemirror-model";
 import { AllSelection, EditorState, TextSelection, type Command, type Transaction } from "prosemirror-state";
 import { undo } from "prosemirror-history";
+import { CellSelection } from "prosemirror-tables";
 import { describe, expect, test } from "vitest";
 import { normaliseHtml } from "../src/doceditor/subset";
 import type { OpenedDocument } from "../src/doceditor/types";
@@ -296,5 +297,49 @@ describe("big selections", () => {
       expect(html(out), name).toBe(small.repeat(40));
       expect(html(run(out, undo)), name).toBe(normaliseHtml(many).html);
     }
+  });
+});
+
+describe("Task 7a re-review", () => {
+  test("plain text pasted inside formatted text takes the formatting at the cursor", () => {
+    let v = viewAt("<p><b>abcd</b></p>", 3);
+    v.view.pasteText("PT");
+    expect(v.content().html).toBe("<p><b>abPTcd</b></p>");
+    v = viewAt('<p><span style="color:#ff0000">ab</span></p>', 2);
+    v.view.pasteText(`x${NL}y`);
+    expect(v.content().html).toBe('<p><span style="color:#ff0000">ax</span></p><p><span style="color:#ff0000">yb</span></p>');
+  });
+
+  test("a failed drop doesn't turn the next paste into plain text", () => {
+    const v = viewAt("<p>ab</p>", 2);
+    const errors = console.error;
+    console.error = () => {};
+    v.normalisePasted = () => {
+      throw new Error("unreadable");
+    };
+    // a drop runs transformPastedHTML without handlePaste
+    v.view.someProp("transformPastedHTML", (f) => f("<p>dropped</p>", v.view));
+    console.error = errors;
+    v.normalisePasted = normaliseHtml;
+    v.view.pasteHTML("<p><b>RICH</b></p>", pasteEvent({ "text/html": "<p><b>RICH</b></p>", "text/plain": "RICH" }));
+    expect(v.content().html).toBe("<p>a<b>RICH</b>b</p>");
+  });
+
+  test("a deletion that empties a list makes the new line in that list", () => {
+    const d1 = `<ol><li style="text-align:right;page-break-before:always"></li><li></li><li style="page-break-before:always">${TAB}</li></ol><hr><p></p>`;
+    expect(html(run(stateOf(d1, 3, 12), cmds.insertPageBreak))).toBe(
+      '<ol><li></li><li style="page-break-before:always"></li></ol><hr><p></p>',
+    );
+    const shifted = run(stateOf(d1, 3, 12), EDITOR_KEYS["Shift-Enter"]).doc.toString();
+    expect(shifted).toBe("doc(ordered_list(list_item(paragraph(hard_break))), horizontal_rule, paragraph)");
+    // Enter in the new empty item ends the list, as on the desktop
+    expect(html(run(stateOf(d1, 3, 12), EDITOR_KEYS.Enter))).toBe("<p></p><hr><p></p>");
+  });
+
+  test("Tab over a cell selection keeps the focus and changes nothing", () => {
+    const t = stateOf("<table><tr><td><p>a</p></td><td><p>b</p></td></tr></table>");
+    const cs = t.apply(t.tr.setSelection(CellSelection.create(t.doc, 2, 7)));
+    expect(EDITOR_KEYS.Tab(cs)).toBe(true);
+    expect(html(run(cs, EDITOR_KEYS.Tab))).toBe("<table><tr><td><p>a</p></td><td><p>b</p></td></tr></table>");
   });
 });

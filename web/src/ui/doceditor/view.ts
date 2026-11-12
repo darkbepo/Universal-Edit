@@ -252,10 +252,11 @@ export function plainText(doc: PMNode): string {
 
 const LINE_BREAKS = new RegExp("\\r?\\n|\\r", "g");
 
-/** Plain text as paragraphs, one per line, blank lines kept (the desktop's insertText). */
-export function textSlice(text: string): Slice {
+/** Plain text as paragraphs, one per line, blank lines kept, with `marks` (the formatting at the
+ * cursor, as the desktop's insertText). */
+export function textSlice(text: string, marks: readonly Mark[] = Mark.none): Slice {
   const lines = text.replace(LINE_BREAKS, "\n").split("\n");
-  const paragraphs = lines.map((line) => nodes.paragraph.create(null, line ? docSchema.text(line) : null));
+  const paragraphs = lines.map((line) => nodes.paragraph.create(null, line ? docSchema.text(line, marks) : null));
   return new Slice(Fragment.fromArray(paragraphs), 1, 1);
 }
 
@@ -334,6 +335,8 @@ export class DocView {
   images: DocImages = new Map();
   /** Called after every change of the document or the selection. */
   onChange: () => void = () => {};
+  /** Also called after every change (the bars listen here; `onChange` belongs to the page). */
+  private readonly listeners = new Set<() => void>();
   private clean: PMNode;
   private frontMatter = "";
   private title = "";
@@ -380,9 +383,20 @@ export class DocView {
         return html;
       }),
       clipboardSerializer: this.serializer,
-      clipboardTextParser: (text) => textSlice(text),
+      clipboardTextParser: (text, $context) => textSlice(text, this.marksAt($context)),
       handlePaste: (_view, event) => this.handlePaste(event),
     });
+  }
+
+  /** Listen to every change of the document or the selection; returns the way to stop. */
+  listen(fn: () => void): () => void {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  }
+
+  private changed(): void {
+    this.onChange();
+    for (const fn of this.listeners) fn();
   }
 
   /** Whether the document differs from the one loaded (or last marked clean). */
@@ -393,7 +407,7 @@ export class DocView {
   /** The document now counts as saved (`doc`: the one that was saved, if it changed since). */
   markClean(doc: PMNode = this.view.state.doc): void {
     this.clean = doc;
-    this.onChange();
+    this.changed();
   }
 
   /** Show `opened` (normalised first, as on the desktop); history and the dirty flag start over. */
@@ -409,7 +423,7 @@ export class DocView {
     this.afterCommand = false;
     this.copiedHtml = null;
     this.view.updateState(createState(doc));
-    this.onChange();
+    this.changed();
   }
 
   /** What saving writes: the subset HTML, the pictures it still uses, the plain text. */
@@ -488,13 +502,19 @@ export class DocView {
       this.afterCommand = false;
     }
     this.view.updateState(this.view.state.apply(tr));
-    this.onChange();
+    this.changed();
+  }
+
+  /** The formatting pasted plain text takes at `$at` (the marks typed there; none in code). */
+  private marksAt($at: ResolvedPos): readonly Mark[] {
+    const set = this.view.state.storedMarks ?? $at.marks();
+    return set.filter((m) => $at.parent.type.allowsMarkType(m.type));
   }
 
   /** Paste `text` as plain paragraphs (blank lines kept). */
   private pastePlain(text: string): void {
     if (!text) return;
-    const tr = this.view.state.tr.replaceSelection(textSlice(text));
+    const tr = this.view.state.tr.replaceSelection(textSlice(text, this.marksAt(this.view.state.selection.$from)));
     this.view.dispatch(tr.setMeta("uiEvent", "paste").setMeta(PLAIN_META, true).scrollIntoView());
   }
 
@@ -544,6 +564,8 @@ export class DocView {
    * and pictures of other documents (`img/N` names) dropped unless it is this editor's own copy.
    * HTML that can't be read is pasted as its plain text (`handlePaste`). */
   private transformPasted(html: string): string {
+    // a drop comes here without handlePaste: no flag may be left over from one
+    this.pasteFailed = false;
     let out: { html: string; images: DocImages };
     try {
       out = this.normalisePasted(html);

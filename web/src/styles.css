@@ -513,3 +513,25 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 .audio-editor .editor-status .msg { flex: 1; }
 .audio-selection, .audio-info { white-space: nowrap; font-variant-numeric: tabular-nums; }
 @media (max-width: 700px) { .audio-editor .editor-status { flex-wrap: wrap; } }
+
+/* ---------------------------------------------------------------- document editor */
+.doc-format, .doc-find { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; padding: 6px 12px; background: var(--surface); border-bottom: 1px solid var(--border); }
+.doc-format select { background: var(--surface-alt); border: 1px solid transparent; border-radius: 8px; padding: 5px 8px; max-width: 160px; }
+.doc-format .doc-size { width: 64px; }
+.doc-format .btn.small { padding: 5px 9px; min-width: 32px; }
+.doc-format .toggle[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.doc-format .fmt-bold { font-weight: 700; }
+.doc-format .fmt-italic { font-style: italic; }
+.doc-format .fmt-underline { text-decoration: underline; }
+.doc-format .fmt-strike { text-decoration: line-through; }
+.doc-table-menu > summary { cursor: pointer; }
+.doc-table-menu.disabled > summary { color: var(--muted); background: var(--bg); cursor: default; }
+.doc-find[hidden] { display: none; }
+.doc-find input[type="search"], .doc-find input[type="text"] { flex: 1 1 160px; min-width: 120px; background: var(--surface-alt); border: 1px solid transparent; border-radius: 8px; padding: 5px 8px; }
+.doc-find input[hidden], .doc-find button[hidden] { display: none; }
+.doc-find label.check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
+.doc-find-status { color: var(--muted); font-size: 13px; min-width: 90px; }
+.doc-find-close { margin-left: auto; }
+/* the page itself is paper: white with black text in both themes, as on the desktop */
+.doc-page, .doc-page .ProseMirror { background: #ffffff; color: #000000; }
+.doc-page .ProseMirror { outline: none; white-space: pre-wrap; }
