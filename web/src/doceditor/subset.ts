@@ -648,8 +648,10 @@ function parseDocument(html: string): Document {
 
 const FULL_HTML = new RegExp(`^${S}*<(?:html|!doctype)`, "i");
 
-/** The parsed body, or null for empty input (lxml's fragment_fromstring). */
-function parse(html: string): HTMLElement | null {
+/** The parsed body, or null for empty input (lxml's fragment_fromstring). Read the way the
+ * normaliser reads it (also by the document editor, so the subset loads exactly); text and
+ * attributes still need `restore` from subset-scan. */
+export function parseBody(html: string): HTMLElement | null {
   html = html.replace(XML_DECL, "");
   if (!pyStrip(html)) return null;
   // Like lxml's fragment_fromstring: a page that starts with <html> or <!doctype> is read as a
@@ -735,7 +737,7 @@ export function normaliseHtmlReport(
   html: string,
   opts: NormaliseOptions = {},
 ): { html: string; images: DocImages; warnings: string[] } {
-  const root = parse(html);
+  const root = parseBody(html);
   if (root === null) return { html: "", images: new Map(), warnings: [] };
   const warnings = lostParts(root.ownerDocument); // the whole page, <head> included
   const reserved = new Set<string>();
@@ -766,7 +768,7 @@ export function normaliseHtml(
 
 /** Number of characters (code points) of visible text in `html`. */
 export function textLength(html: string): number {
-  const root = parse(html);
+  const root = parseBody(html);
   if (root === null) return 0;
   let n = 0;
   const stack: Node[] = [root];
