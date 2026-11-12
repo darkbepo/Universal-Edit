@@ -118,10 +118,15 @@ def claim(
     Returns (handed over, lock). Explorer starts one copy per selected file at the same
     moment, before any of them listens: the one that gets the lock becomes the window, the
     others keep offering their file until it listens (up to ``wait_s``). (False, None) = no
-    copy answered in time: open a window of our own."""
+    copy answered in time: open a window of our own. (A window that reads the message after
+    we gave up still opens it too — a timeout can't rule that out; it needs > 8 s of a frozen
+    window.)"""
 
-    if send_to_running(message, name):
+    first = _offer(message, name, 8.0)
+    if first == "ok":
         return True, None
+    if first == "silent":  # a window took the connection but is busy: never send it twice
+        return False, None
     lock = QLockFile(lock_path or default_lock_path(name or server_name()))
     if lock.tryLock(0):
         return False, lock

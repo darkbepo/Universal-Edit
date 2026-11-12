@@ -202,6 +202,7 @@ See `web/README.md` for commands and deployment.
   tests passed). Don't remove it; release Qt objects in tests anyway (close servers, wait for
   `file_list.thumbnails_pending()`). Clipboard data we made must go through
   `gui/clipboard_owner.release_clipboard` before quitting (app `aboutToQuit`), else exit crashes.
+  (After quitting, the clip pastes as a plain picture: centred, no longer "in place".)
 
 Primary target platform is **Windows** (`.exe`); keep code cross-platform (macOS/Linux) where it costs nothing.
 

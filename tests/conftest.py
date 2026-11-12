@@ -144,18 +144,21 @@ def _release_clipboard_at_the_end():
 # order Qt doesn't expect; it happened on Windows CI since Nov 2026 and here too, also before
 # the viewer work). Every result is printed by then, but the crash turns a green run into a
 # failure. So once pytest is completely done, end the process with pytest's own exit code.
-_EXIT_STATUS: list[int] = []
+# Limits: this also skips atexit handlers and later plugins' unconfigure hooks (fine today:
+# only pytest-qt; a coverage plugin would lose its data), and pytest.main() in-process would
+# end the caller.
+_SESSION: list = []
 
 
 def pytest_sessionfinish(session, exitstatus):
-    _EXIT_STATUS.append(int(exitstatus))
+    _SESSION.append(session)
 
 
 def pytest_unconfigure(config):
     import os
     import sys
 
-    if _EXIT_STATUS and "PySide6.QtCore" in sys.modules:
+    if _SESSION and "PySide6.QtCore" in sys.modules:
         sys.stdout.flush()
         sys.stderr.flush()
-        os._exit(_EXIT_STATUS[-1])
+        os._exit(int(_SESSION[-1].exitstatus))  # read now: hooks may still have changed it

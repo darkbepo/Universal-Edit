@@ -247,3 +247,12 @@ def _thumbnails_done(qtbot, windows):
     windows go away (a late thumbnail landing on a deleted window crashes Qt)."""
     for w in windows:
         qtbot.waitUntil(lambda w=w: not w.file_list.thumbnails_pending(), timeout=10000)
+
+
+def test_a_busy_window_is_never_sent_the_file_twice(monkeypatch, tmp_path):
+    from umc.gui import single_instance as si
+
+    calls = []
+    monkeypatch.setattr(si, "_offer", lambda m, n, t: calls.append(m) or "silent")
+    assert si.claim({"view": "a"}, name="x", lock_path=str(tmp_path / "l")) == (False, None)
+    assert len(calls) == 1  # connected but no answer: open our own window, don't resend
