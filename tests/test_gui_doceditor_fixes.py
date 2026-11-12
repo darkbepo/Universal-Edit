@@ -350,3 +350,77 @@ def test_code_saved_as_markdown_comes_back_the_same_in_the_editor(qtbot, tmp_pat
     assert v.content().html == first.html == html
     save_document(v.content(), p, "md")
     assert p.read_bytes() == saved
+
+
+# ----- code blocks keep their boundaries (CODE_GROUP) -------------------------------------
+
+
+def _code_view(qtbot, html: str) -> DocTextView:
+    v = DocTextView()
+    qtbot.addWidget(v)
+    v.load(OpenedDocument(html, {}, "md"))
+    return v
+
+
+def _cursor_at_block(v: DocTextView, n: int) -> QTextCursor:
+    c = QTextCursor(v.document().findBlockByNumber(n))
+    c.movePosition(QTextCursor.MoveOperation.EndOfBlock)
+    return c
+
+
+def test_two_code_blocks_in_a_row_stay_two_through_markdown(qtbot, tmp_path):
+    p = tmp_path / "a.md"
+    p.write_text("```\na\n```\n\n```\nb\nc\n```\n", encoding="utf-8")
+    original = open_document(p)
+    v = _code_view(qtbot, original.html)
+    # the last line of a block followed by another block ends with a line break
+    assert v.content().html == "<pre>a\n</pre><pre>b</pre><pre>c</pre>"
+    save_document(v.content(), p, "md")
+    assert p.read_text(encoding="utf-8") == "```\na\n```\n\n```\nb\nc\n```\n"
+    assert open_document(p).html == original.html
+
+
+def test_enter_inside_a_code_block_keeps_the_blocks_apart(qtbot, tmp_path):
+    v = _code_view(qtbot, "<pre>a\n</pre><pre>b\n</pre>")
+    c = _cursor_at_block(v, 0)
+    c.insertBlock()
+    c.insertText("z")
+    assert v.content().html == "<pre>a</pre><pre>z\n</pre><pre>b</pre>"
+    p = tmp_path / "a.md"
+    save_document(v.content(), p, "md")
+    assert p.read_text(encoding="utf-8") == "```\na\nz\n```\n\n```\nb\n```\n"
+
+
+def test_code_lines_from_word_stay_one_block(qtbot):
+    html = "<p>x</p><pre>d</pre><pre>e</pre><p>y</p>"
+    assert _code_view(qtbot, html).content().html == html
+
+
+def test_making_a_paragraph_code_joins_the_block_above_only(qtbot):
+    from umc.gui.doceditor.formatting import set_block_style
+
+    v = _code_view(qtbot, "<pre>a\n</pre><p>b</p><p>c</p><pre>d\n</pre>")
+    set_block_style(_cursor_at_block(v, 1), "code")  # right below a code block: extends it
+    set_block_style(_cursor_at_block(v, 2), "code")  # ... and again
+    assert v.content().html == "<pre>a</pre><pre>b</pre><pre>c\n</pre><pre>d</pre>"
+    v = _code_view(qtbot, "<p>b</p><pre>d\n</pre>")
+    set_block_style(_cursor_at_block(v, 0), "code")  # no code above: a block of its own
+    assert v.content().html == "<pre>b\n</pre><pre>d</pre>"
+
+
+@pytest.mark.parametrize(
+    "html",
+    [
+        "<p>x</p><pre></pre><p>y</p>",
+        "<p>x</p><pre>a</pre><pre></pre><pre>b</pre>",
+        "<pre></pre><p>x</p>",
+    ],
+)
+def test_empty_code_lines_stay_code(qtbot, html):
+    assert _code_view(qtbot, html).content().html == html
+
+
+def test_code_starting_with_an_empty_line_keeps_it(qtbot):
+    # Markdown's one <pre> per block comes back as the editor's one <pre> per line
+    v = _code_view(qtbot, "<p>x</p><pre>\nx\n</pre><p>y</p>")
+    assert v.content().html == "<p>x</p><pre></pre><pre>x</pre><p>y</p>"

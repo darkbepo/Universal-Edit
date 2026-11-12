@@ -7,6 +7,7 @@ properties a format actually *has* are written, so what was loaded comes back un
 from __future__ import annotations
 
 import html as _html
+import itertools
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import (
@@ -24,6 +25,17 @@ from umc.doceditor.html_subset import normalise_html
 
 # Custom block property: the paragraph is a quote (shared with the text view).
 QUOTE_PROPERTY = int(QTextFormat.Property.UserProperty) + 1
+# Custom block property: which code block a code line belongs to (an int). Lines typed in a
+# block copy it (Qt copies the block format on Enter); where it changes between two code
+# lines, one block ends and the next begins.
+CODE_GROUP = int(QTextFormat.Property.UserProperty) + 2
+_groups = itertools.count(1)
+
+
+def new_code_group() -> int:
+    """A number no code block has yet."""
+    return next(_groups)
+
 
 _BULLETS = {
     QTextListFormat.Style.ListDisc,
@@ -169,7 +181,9 @@ class _Writer:
             self.lists.append((indent, lst, tag))
         self.out.append(f"<li{_block_style(block)}>{_block_text(block)}")
 
-    def block(self, block: QTextBlock) -> None:
+    def block(self, block: QTextBlock, ends_code: bool = False) -> None:
+        """``ends_code``: the last line of a code block that another one follows (written
+        with a final line break, the way Markdown reads a whole code block)."""
         fmt = block.blockFormat()
         if block.textList() is not None:
             self.close_quote()
@@ -190,7 +204,8 @@ class _Writer:
             tag = f"h{min(level, 3)}"
             self.out.append(f"<{tag}{style}>{_block_text(block, heading=True)}</{tag}>")
         elif fmt.nonBreakableLines() and not quote:
-            self.out.append(f"<pre>{_block_text(block, code=True)}</pre>")
+            end = "\n" if ends_code else ""
+            self.out.append(f"<pre>{_block_text(block, code=True)}{end}</pre>")
         else:
             self.out.append(f"<p{style}>{_block_text(block)}</p>")
 
@@ -229,9 +244,32 @@ def _container(it: QTextFrame.iterator) -> str:
             and not fmt.hasProperty(_P.BlockTrailingHorizontalRulerWidth)
         ):
             continue  # Qt's own empty paragraph around a table
-        w.block(item)
+        nxt = items[i + 1] if i + 1 < len(items) else None
+        ends_code = (
+            _is_code(item)
+            and isinstance(nxt, QTextBlock)
+            and _is_code(nxt)
+            and _code_group(nxt) != _code_group(item)
+        )
+        w.block(item, ends_code)
     w.finish()
     return "".join(w.out)
+
+
+def _is_code(block: QTextBlock) -> bool:
+    fmt = block.blockFormat()
+    return (
+        fmt.nonBreakableLines()
+        and block.textList() is None
+        and fmt.headingLevel() == 0
+        and not fmt.boolProperty(QUOTE_PROPERTY)
+        and not fmt.hasProperty(_P.BlockTrailingHorizontalRulerWidth)
+    )
+
+
+def _code_group(block: QTextBlock) -> int | None:
+    fmt = block.blockFormat()
+    return fmt.intProperty(CODE_GROUP) if fmt.hasProperty(CODE_GROUP) else None
 
 
 def _table(table: QTextTable) -> str:

@@ -26,10 +26,12 @@ from PySide6.QtGui import (
 )
 
 from umc.gui.doceditor.text_view import (
+    CODE_GROUP,
     QUOTE_MARGIN,
     QUOTE_PROPERTY,
     apply_code_format,
     apply_heading_format,
+    new_code_group,
 )
 from umc.gui.doceditor.text_view import (
     _format_fragments as format_fragments,
@@ -112,6 +114,22 @@ def block_style(c: QTextCursor) -> str:
     return "normal"
 
 
+def _code_group_for(block: QTextBlock) -> int:
+    """A line made code joins the code block directly above it (the user extends it), else it
+    starts a block of its own; a code line below stays a separate block."""
+    above = block.previous()
+    if above.isValid():
+        fmt = above.blockFormat()
+        if (
+            fmt.nonBreakableLines()
+            and fmt.hasProperty(CODE_GROUP)
+            and above.textList() is None
+            and not fmt.boolProperty(QUOTE_PROPERTY)
+        ):
+            return fmt.intProperty(CODE_GROUP)
+    return new_code_group()
+
+
 def set_block_style(c: QTextCursor, style: str) -> None:
     with _edit(c):
         for block in _blocks(c):
@@ -131,6 +149,7 @@ def set_block_style(c: QTextCursor, style: str) -> None:
             fmt.setHeadingLevel(0)
             fmt.setNonBreakableLines(False)
             fmt.clearProperty(QUOTE_PROPERTY)
+            fmt.clearProperty(CODE_GROUP)
             if was_quote:
                 fmt.setLeftMargin(0)
                 fmt.setRightMargin(0)
@@ -138,6 +157,7 @@ def set_block_style(c: QTextCursor, style: str) -> None:
                 fmt.setHeadingLevel(_HEADINGS[style])
             elif style == "code":
                 fmt.setNonBreakableLines(True)
+                fmt.setProperty(CODE_GROUP, _code_group_for(block))
             elif style == "quote":
                 fmt.setProperty(QUOTE_PROPERTY, True)
                 fmt.setLeftMargin(QUOTE_MARGIN)

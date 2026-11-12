@@ -33,7 +33,12 @@ from umc.doceditor.types import (
     next_image_name,
 )
 from umc.gui import theme
-from umc.gui.doceditor.html_export import QUOTE_PROPERTY, document_to_html
+from umc.gui.doceditor.html_export import (
+    CODE_GROUP,
+    QUOTE_PROPERTY,
+    document_to_html,
+    new_code_group,
+)
 
 log = logging.getLogger(__name__)
 
@@ -43,10 +48,12 @@ __all__ = [
     "HEADING_PT",
     "PAGE_MARGIN",
     "PAGE_WIDTH",
+    "CODE_GROUP",
     "QUOTE_PROPERTY",
     "DocTextView",
     "apply_code_format",
     "apply_heading_format",
+    "new_code_group",
 ]
 
 PAGE_WIDTH = 794  # px, A4 at 96 dpi
@@ -70,6 +77,8 @@ _MARGIN_PT = re.compile(r"(<(?:p|h[1-3]|li) [^>]*?)margin-left:(\d+(?:\.\d+)?)pt
 _IMG_SRC = re.compile(r'<img src="([^"]+)"')
 _FILE_IMG = re.compile(r"""(<img\b[^>]*?\bsrc\s*=\s*(["']))(file:[^"']*)\2""", re.I)
 CELL_PLACEHOLDER = "\u200b"  # stands in for an empty first paragraph of a table cell
+CODE_PLACEHOLDER = "\u2060"  # stands in for an empty first line of a code block
+_PRE = re.compile(r"<pre>(.*?)</pre>", re.S)
 _TAB = re.compile(r"\t(?![^<>]*>)")  # a tab in text, not inside a tag
 _NOT_A_PICTURE = "This file isn't a picture the editor can add (PNG, JPG, GIF, BMP or WebP)."
 
@@ -96,6 +105,28 @@ def _local_data_uri(src: str) -> str:
         return ""
     mime = "jpeg" if ext == "jpg" else ext
     return f"data:image/{mime};base64,{base64.b64encode(data).decode('ascii')}"
+
+
+def _code_blocks(html: str) -> str:
+    """Number the code blocks for CODE_GROUP (Qt keeps ``-qt-user-state`` on a <pre>'s first
+    line; load() turns it into the property). Consecutive one-line <pre>s (Word's code lines,
+    the editor's own) are one block, up to one that ends with a line break (a whole Markdown
+    code block), as the Markdown writer joins them. Qt drops an empty <pre> and the first line
+    break of one, so those get CODE_PLACEHOLDER first, which load() removes again."""
+    out: list[str] = []
+    pos, group, joins = 0, 0, False
+    for m in _PRE.finditer(html):
+        body = m.group(1)
+        if not (joins and m.start() == pos):
+            group = new_code_group()
+        joins = not (body.endswith("\n") or body.endswith("<br>"))
+        if not body or body.startswith("\n"):
+            body = CODE_PLACEHOLDER + body
+        out.append(html[pos : m.start()])
+        out.append(f'<pre style="-qt-user-state:{group}">{body}</pre>')
+        pos = m.end()
+    out.append(html[pos:])
+    return "".join(out)
 
 
 def _qt_html(html: str) -> str:
@@ -141,6 +172,7 @@ def _qt_html(html: str) -> str:
         ),
         html,
     )
+    html = _code_blocks(html)
     html = _QUOTE_TOKENS.sub(lambda m: quote(m, depth), html)
     html = _MARGIN_PT.sub(
         lambda m: f"{m.group(1)}margin-left:{float(m.group(2)) * 4 / 3:g}px", html
@@ -217,6 +249,7 @@ class DocTextView(QTextEdit):
             self._add_resource(name, data)
         doc.setDocumentMargin(PAGE_MARGIN)
         block = doc.begin()
+        group: int | None = None  # the code block the previous line belongs to
         while block.isValid():
             if block.text() == CELL_PLACEHOLDER and QTextCursor(block).currentTable() is not None:
                 cursor = QTextCursor(block)
@@ -225,6 +258,7 @@ class DocTextView(QTextEdit):
                 )
                 cursor.removeSelectedText()
             self._fix_block(block)
+            group = self._fix_code(block, group)
             block = block.next()
         doc.setUndoRedoEnabled(True)
         doc.clearUndoRedoStacks()
@@ -246,6 +280,25 @@ class DocTextView(QTextEdit):
             apply_heading_format(block, fmt.headingLevel())
         elif fmt.nonBreakableLines():
             apply_code_format(block)
+
+    @staticmethod
+    def _fix_code(block: QTextBlock, group: int | None) -> int | None:
+        """Give a loaded code line its CODE_GROUP: a <pre>'s first line brings it (as Qt's
+        user state, see _code_blocks), the lines after it share it. Returns the group, or None
+        when the block isn't code."""
+        fmt = block.blockFormat()
+        state = block.userState()
+        block.setUserState(-1)
+        if not fmt.nonBreakableLines() or fmt.headingLevel() > 0 or block.textList() is not None:
+            return None
+        if state >= 0 or group is None:
+            group = state if state >= 0 else new_code_group()
+        if block.text().startswith(CODE_PLACEHOLDER):
+            cursor = QTextCursor(block)
+            cursor.deleteChar()
+        fmt.setProperty(CODE_GROUP, group)
+        QTextCursor(block).setBlockFormat(fmt)
+        return group
 
     def _add_resource(self, name: str, data: bytes) -> QImage:
         image = QImage.fromData(data)
