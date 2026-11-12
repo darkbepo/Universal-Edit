@@ -27,7 +27,12 @@ type Style = "shaded" | "edges" | "wireframe";
 export interface ViewerOptions {
   client: ConversionClient;
   onBack: () => void;
+  /** Files picked with "Open…" (the page adds them to the queue and shows them). */
+  onOpen?: (files: File[]) => void;
 }
+
+const MODEL_ACCEPT = ".stl,.obj,.ply,.glb,.3mf,.off,.step,.stp,.iges,.igs";
+const EMPTY_TEXT = "Open a 3D model with “Open…”, or drop one here (STL, OBJ, 3MF, PLY, GLB, STEP, IGES).";
 
 const cssColor = (name: string, fallback: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
 
@@ -83,8 +88,15 @@ export class ViewerPage {
       const f = this.files[this.fileBox.selectedIndex];
       if (f) void this.showFile(f);
     });
+    const picker = h("input", { type: "file", multiple: true, accept: MODEL_ACCEPT, hidden: true });
+    picker.addEventListener("change", () => {
+      if (picker.files?.length) this.opts.onOpen?.(Array.from(picker.files));
+      picker.value = "";
+    });
     const top = h("div", { class: "editor-top" },
       btn("← Back to Convert", "Leave the 3D viewer", () => this.opts.onBack(), "link"),
+      h("span", { class: "gap" }),
+      btn("Open…", "Open 3D models (STL, OBJ, 3MF, STEP, …)", () => picker.click()), picker,
       h("span", { class: "gap" }), this.fileBox,
       h("div", { class: "spacer" }),
       btn("Fit", "Show the whole model (double-click the view)", () => this.fit()), ...views,
@@ -139,6 +151,20 @@ export class ViewerPage {
     this.fileBox.selectedIndex = 0;
     void this.showFile(files[0]);
     return true;
+  }
+
+  /** Started from the editor tiles: nothing to show until a model is opened or dropped. */
+  openEmpty(): void {
+    this.files = [];
+    this.current = null;
+    this.loadToken++;
+    this.fileBox.replaceChildren();
+    this.fileBox.hidden = true;
+    this.title.textContent = "";
+    this.info.replaceChildren();
+    this.message.textContent = "";
+    this.message.classList.remove("error");
+    this.showPlaceholder(EMPTY_TEXT);
   }
 
   async showFile(f: InputFile): Promise<void> {

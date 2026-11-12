@@ -95,6 +95,7 @@ The browser version's source is in [`web/`](web/README.md).
 | Layered projects: save and open OpenRaster `.ora` (GIMP and Krita open it too); `.ora` → any image format | ✅ | ✅ |
 | **Document editor**: Convert \| Edit for one DOCX, ODT, RTF, DOC, Markdown, TXT or HTML file · headings, fonts, colours, highlight, lists, tables, pictures, links, page breaks · find & replace · undo · save back or as PDF and every document format | ✅ | 🔜 |
 | **3D viewer**: Convert \| Edit for 3D models (STL, OBJ, 3MF, PLY, GLB, OFF, STEP, IGES) · rotate / pan / zoom, front / top / side / 3D views, shaded / edges / wireframe, print-bed grid · size in mm, triangles, parts, watertight check, volume | ✅ | ✅ (no OFF) |
+| **Start screen editor tiles**: open the image editor (with a new picture: size presets, white / transparent / black) or the 3D viewer without a file · video, audio and document editor tiles show "Coming soon" | ✅ | ✅ |
 | Files never leave your computer | ✅ | ✅ |
 | No install needed | ❌ | ✅ |
 | Save straight into a folder | ✅ | ✅ Chrome/Edge · ❌ Firefox/Safari (zip instead) |

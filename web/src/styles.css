@@ -103,7 +103,7 @@ h1 { font-size: 15px; font-weight: 650; margin: 0; letter-spacing: -0.005em; whi
   .queue-card { flex: 1 1 auto; }
   .queue { flex: 1 1 auto; max-height: none; }
   .pane-body { flex: 1 1 auto; min-height: 0; }
-  .workspace.empty .drop { min-height: 0; height: 100%; }
+  .workspace.empty .drop { flex: 1 1 auto; } /* fills what the editor tiles below leave */
 }
 @media (max-width: 900px) {
   .workspace { grid-template-columns: 1fr; padding: 14px 16px; }
@@ -121,13 +121,32 @@ h1 { font-size: 15px; font-weight: 650; margin: 0; letter-spacing: -0.005em; whi
 }
 
 /* ---------------------------------------------------------------- drop zone */
+/* Editor tiles under the empty drop zone (ui/hub.ts) */
+.editor-hub { text-align: center; }
+.editor-hub h2 { font-size: 14px; font-weight: 600; margin: 4px 0 10px; }
+.editor-tiles { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+.editor-tile {
+  width: 196px; min-height: 118px; display: flex; flex-direction: column; gap: 4px; text-align: left;
+  padding: 12px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+  color: var(--text); cursor: pointer; font: inherit; transition: border-color .15s, background .15s;
+}
+.editor-tile .tile-top { display: flex; align-items: center; justify-content: space-between; min-height: 26px; color: var(--accent); margin-bottom: 2px; }
+.editor-tile:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-soft); }
+.editor-tile:disabled { cursor: default; background: var(--surface-alt); border-style: dashed; color: var(--muted); }
+.editor-tile:disabled .tile-top { color: var(--border-strong); }
+.editor-tile .tile-title { font-weight: 600; font-size: 14px; }
+.editor-tile .tile-blurb { font-size: 13px; color: var(--muted); line-height: 1.35; }
+@media (max-width: 560px) { .editor-tile { width: calc(50% - 5px); } }
+.new-picture .bg-choice { gap: 16px; margin: 0; flex-wrap: wrap; justify-content: flex-start; }
+.new-picture .bg-choice .check { flex: 0 0 auto; }
+
 .drop {
   background: var(--surface); border: 2px dashed var(--border-strong); border-radius: 18px;
   min-height: 220px; display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 6px; cursor: pointer; text-align: center; padding: 20px;
   transition: border-color .15s, background .15s;
 }
-.workspace.empty .drop { min-height: calc(100vh - 190px); }
+.workspace.empty .drop { min-height: max(220px, calc(100vh - 470px)); } /* room for the editor tiles */
 .drop:hover { border-color: var(--accent-border); }
 .drop.hover { border-color: var(--accent); background: var(--accent-soft); }
 .drop .icon { color: var(--accent); line-height: 0; }

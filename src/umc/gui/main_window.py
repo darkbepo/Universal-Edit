@@ -41,6 +41,7 @@ from umc.doceditor.types import EDITABLE_DOCUMENT_EXTS
 from umc.gui import branding, icons, theme
 from umc.gui.tool_dialog import ToolMissingDialog
 from umc.gui.widgets.drop_zone import DropZone
+from umc.gui.widgets.editor_hub import EditorHub, NewPictureDialog
 from umc.gui.widgets.file_queue import FileQueue, fmt_size
 from umc.gui.widgets.format_picker import FormatPicker
 from umc.gui.widgets.settings_panel import SettingsPanel
@@ -147,6 +148,9 @@ class MainWindow(QMainWindow):
         self.drop = DropZone()
         self.drop.files_dropped.connect(self.add_files)
         left.addWidget(self.drop)
+        self.hub = EditorHub()  # editor tiles, only while no files are added
+        self.hub.editor_chosen.connect(self.open_editor)
+        left.addWidget(self.hub)
 
         self.input_error = QLabel(objectName="Error")
         self.input_error.setWordWrap(True)
@@ -309,6 +313,7 @@ class MainWindow(QMainWindow):
         pal = theme.palette()
         self.logo.setPixmap(branding.logo_pixmap(30, self.devicePixelRatioF()))
         self.drop.retint()
+        self.hub.retint()
         self.picker.retint()
         self.tabs.retint()
         for i in range(self.results_list.count()):
@@ -385,6 +390,7 @@ class MainWindow(QMainWindow):
             self._set_status("")
         has_files = bool(self.files)
         self.drop.set_compact(has_files)
+        self.hub.setVisible(not has_files)
         self.files_card.setVisible(has_files)
         self._update_left_sizes()
         error = extra_error
@@ -452,13 +458,8 @@ class MainWindow(QMainWindow):
             tip = "Add images, one text document, or 3D models to edit them"
         self.edit_mode.setToolTip(tip)
 
-    def enter_edit(self) -> None:
-        if self._current_editor() is not None:
-            return
-        kind = self.edit_kind()
-        if kind is None or self.busy:
-            self.convert_mode.setChecked(True)
-            return
+    def _page(self, kind: str) -> QWidget:
+        """The editor page for ``kind`` ("image", "document", "model"), made on first use."""
         if kind == "document":
             if self.doc_editor is None:
                 from umc.gui.doceditor.doc_editor_page import DocEditorPage
@@ -466,44 +467,90 @@ class MainWindow(QMainWindow):
                 self.doc_editor = DocEditorPage()
                 self.doc_editor.back_requested.connect(self.leave_edit)
                 self.stack.addWidget(self.doc_editor)
-            self._convert_size = self.size()
-            self.doc_editor.open_path(self.files[0].path)
-            self.stack.setCurrentWidget(self.doc_editor)
-            self.edit_mode.setChecked(True)
-            self.resize(max(self.width(), 1100), max(self.height(), 720))
-            self.doc_editor.view.setFocus()
-            return
+            return self.doc_editor
         if kind == "model":
             if self.viewer3d is None:
                 from umc.gui.editor3d.viewer_page import ViewerPage
 
                 self.viewer3d = ViewerPage()
                 self.viewer3d.back_requested.connect(self.leave_edit)
+                self.viewer3d.files_chosen.connect(self._drop_models)
                 self.stack.addWidget(self.viewer3d)
-            self._convert_size = self.size()
-            self.viewer3d.open_files(list(self.files))
-            self.stack.setCurrentWidget(self.viewer3d)
-            self.edit_mode.setChecked(True)
-            self.resize(max(self.width(), 1100), max(self.height(), 720))
-            self.viewer3d.view.setFocus()
-            return
+            return self.viewer3d
         if self.editor is None:
             from umc.gui.editor.editor_page import EditorPage
 
             self.editor = EditorPage()
             self.editor.back_requested.connect(self.leave_edit)
             self.stack.addWidget(self.editor)
-        if not self.editor.open_paths([f.path for f in self.files]):
-            self.convert_mode.setChecked(True)
-            self.input_error.setText(self.editor.message.text())
-            self.input_error.setVisible(True)
-            return
+        return self.editor
+
+    def _show_page(self, page: QWidget) -> None:
         self._convert_size = self.size()
-        self.stack.setCurrentWidget(self.editor)
+        self.stack.setCurrentWidget(page)
         self.edit_mode.setChecked(True)
         self.resize(max(self.width(), 1100), max(self.height(), 720))
-        self.editor.canvas.fit()
-        self.editor.canvas.setFocus()
+
+    def enter_edit(self) -> None:
+        if self._current_editor() is not None:
+            return
+        kind = self.edit_kind()
+        if kind is None or self.busy:
+            self.convert_mode.setChecked(True)
+            return
+        page = self._page(kind)
+        if kind == "document":
+            page.open_path(self.files[0].path)
+            self._show_page(page)
+            page.view.setFocus()
+            return
+        if kind == "model":
+            page.open_files(list(self.files))
+            self._show_page(page)
+            page.view.setFocus()
+            return
+        if not page.open_paths([f.path for f in self.files]):
+            self.convert_mode.setChecked(True)
+            self.input_error.setText(page.message.text())
+            self.input_error.setVisible(True)
+            return
+        self._show_page(page)
+        page.canvas.fit()
+        page.canvas.setFocus()
+
+    def open_editor(self, kind: str) -> bool:
+        """An editor tile: open that editor without files (the image editor asks for the size
+        of a new picture first). False if nothing was opened."""
+        if self._current_editor() is not None or self.busy:
+            return False
+        if kind == "image":
+            dialog = NewPictureDialog(self)
+            if dialog.exec() != NewPictureDialog.DialogCode.Accepted:
+                return False
+            return self.new_picture(*dialog.values())
+        if kind == "model":
+            page = self._page("model")
+            page.open_empty()
+            self._show_page(page)
+            return True
+        return False  # not available yet
+
+    def new_picture(self, width: int, height: int, background: str) -> bool:
+        from umc.core.errors import ConversionError
+        from umc.editor.blank import blank_document
+
+        try:
+            doc = blank_document(width, height, background)
+        except ConversionError as exc:
+            self.input_error.setText(str(exc))
+            self.input_error.setVisible(True)
+            return False
+        page = self._page("image")
+        page.set_document(doc)
+        self._show_page(page)
+        page.canvas.fit()
+        page.canvas.setFocus()
+        return True
 
     def leave_edit(self) -> None:
         page = self._current_editor()

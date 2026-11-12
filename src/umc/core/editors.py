@@ -1,0 +1,27 @@
+"""The editors shown as tiles on the empty start screen (same list in web/src/core/editors.ts).
+
+``available`` False = shown greyed out as "Coming soon"."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class EditorInfo:
+    id: str
+    title: str
+    blurb: str
+    icon: str  # Tabler icon name (gui/icon_data.py, web/src/ui/icon_data.ts)
+    available: bool
+
+
+EDITORS: tuple[EditorInfo, ...] = (
+    EditorInfo("image", "Image editor", "Paint, layers, retouch and effects", "photo", True),
+    EditorInfo("model", "3D viewer", "Look at and measure 3D models", "cube", True),
+    EditorInfo("video", "Video editor", "Trim, join and mix clips", "movie", False),
+    EditorInfo("audio", "Audio editor", "Cut, mix and fade sound", "music", False),
+    EditorInfo("document", "Document editor", "Write and format documents", "document", False),
+)
+
+COMING_SOON = "Coming soon"

@@ -8,6 +8,7 @@ import { fileFractions } from "../core/progress";
 import { converterById, targetsFor } from "../core/registry";
 import type { InputFile, OutputFile, Target } from "../core/types";
 import { ConversionClient, JobCancelled } from "../worker/client";
+import { editorHub, newPictureDialog } from "./hub";
 import { groupIcon, icon } from "./icons";
 import { fmtSize, Queue } from "./queue";
 import { SettingsForm } from "./settings";
@@ -79,7 +80,8 @@ export function mountApp(root: HTMLElement): void {
   const filesHint = h("div", { class: "hint" }, "Drag to reorder · × removes");
   const filesCard = h("section", { class: "card queue-card", hidden: true, ariaLabel: "Queue" },
     h("div", { class: "files-head" }, filesLabel, clearBtn), queue.el, filesHint);
-  const left = h("div", { class: "left" }, drop, note, resultsCard, filesCard);
+  const hub = editorHub((id) => void openEditor(id)); // editor tiles, only while no files are added
+  const left = h("div", { class: "left" }, drop, hub, note, resultsCard, filesCard);
 
   // ---------------------------------------------------------------- right: Convert to | Settings
   const formats = h("div", { class: "cards" });
@@ -203,40 +205,68 @@ export function mountApp(root: HTMLElement): void {
     convertMode.setAttribute("aria-pressed", "true");
     editMode.setAttribute("aria-pressed", "false");
   }
-  async function enterEdit() {
-    if (editing || busy || !canEdit()) return;
-    if (editKind() === "model") {
-      if (!viewer) {
-        const { mountViewer } = await import("./editor3d/page");
-        viewer = mountViewer(root, { client, onBack: showConverter });
-      }
-      await viewer.open(files);
-      editing = true;
-      appMain.hidden = true;
-      bar.hidden = true;
-      convertMode.setAttribute("aria-pressed", "false");
-      editMode.setAttribute("aria-pressed", "true");
-      viewer.show();
-      return;
+  async function ensureViewer() {
+    if (!viewer) {
+      const { mountViewer } = await import("./editor3d/page");
+      viewer = mountViewer(root, { client, onBack: showConverter, onOpen: (list) => void addFiles(list) });
     }
+    return viewer;
+  }
+  async function ensureEditor() {
     if (!editor) {
       const { mountEditor } = await import("./editor/page");
       editor = mountEditor(root, { client, onBack: showConverter });
     }
-    editMode.disabled = true;
-    const ok = await editor.open(files);
-    editMode.disabled = !canEdit();
-    if (!ok) {
-      note.textContent = editor.lastError();
-      note.hidden = false;
-      return;
-    }
+    return editor;
+  }
+  function showPage(page: { show(): void }) {
     editing = true;
     appMain.hidden = true;
     bar.hidden = true;
     convertMode.setAttribute("aria-pressed", "false");
     editMode.setAttribute("aria-pressed", "true");
-    editor.show();
+    page.show();
+  }
+  async function enterEdit() {
+    if (editing || busy || !canEdit()) return;
+    if (editKind() === "model") {
+      const v = await ensureViewer();
+      await v.open(files);
+      showPage(v);
+      return;
+    }
+    const ed = await ensureEditor();
+    editMode.disabled = true;
+    const ok = await ed.open(files);
+    editMode.disabled = !canEdit();
+    if (!ok) {
+      note.textContent = ed.lastError();
+      note.hidden = false;
+      return;
+    }
+    showPage(ed);
+  }
+  /** An editor tile: that editor without files (the image editor asks for a picture size first). */
+  async function openEditor(id: string) {
+    if (editing || busy) return;
+    if (id === "model") {
+      const v = await ensureViewer();
+      v.openEmpty();
+      showPage(v);
+      return;
+    }
+    if (id !== "image") return; // not available yet
+    const pick = await newPictureDialog();
+    if (!pick) return;
+    const [{ blankDocument }, ed] = await Promise.all([import("../editor/blank"), ensureEditor()]);
+    try {
+      ed.openBlank(blankDocument(pick.width, pick.height, pick.background));
+    } catch (e) {
+      note.textContent = e instanceof Error ? e.message : "Couldn't make the picture.";
+      note.hidden = false;
+      return;
+    }
+    showPage(ed);
   }
   editMode.addEventListener("click", () => void enterEdit());
   convertMode.addEventListener("click", () => {
@@ -253,6 +283,7 @@ export function mountApp(root: HTMLElement): void {
     const has = files.length > 0;
     workspace.classList.toggle("empty", !has);
     drop.classList.toggle("compact", has);
+    hub.hidden = has;
     dropTitle.textContent = has ? "Add more files" : "Drop files here or click to browse";
     drop.querySelector(".icon")!.replaceChildren(icon(has ? "plus" : "upload", has ? 18 : 34));
     filesCard.hidden = !has;

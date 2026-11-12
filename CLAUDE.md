@@ -65,7 +65,8 @@ imports, but keep the defaults sensible so a user can convert with zero configur
 - Flow: **input → output format → (optional) settings → Convert**. Same layout in both apps:
   1. Top bar: logo + name centred (3-column grid), **Convert | Edit** switch on the right (Edit
      disabled unless the files can be edited). The web puts the "never leave your device" badge left.
-  2. Left column: drop zone (the whole window while empty, a slim "Add more files" bar after),
+  2. Left column: drop zone (most of the window while empty, with the editor tiles below it; a
+     slim "Add more files" bar after),
      then **Results** (after a run) and the **Queue** — one row per file with thumbnail, size and
      its own progress (`file_fractions` / `fileFractions`: converters report equal slices per file).
   3. Right column, two sideways tabs: **Convert to** (foldable category cards with icon tiles, all
@@ -132,6 +133,8 @@ See `web/README.md` for commands and deployment.
   e2e suite relies on: `.pill[data-target]` (format tiles), `.status`, `.results li` /
   `a.fname`, `.results-head`, `.queue li[data-state]`, `.files-head` (queue only), `.note`,
   `.form`, buttons "Convert", "Cancel", "Clear", "Settings" (cog), "Convert to" (strip), "Edit".
+  Start screen: `.editor-hub`, `.editor-tile[data-editor]` (their accessible names contain
+  "editor", so match "Edit" with `exact: true`), `dialog.new-picture` (`#np-size/-width/-height`).
   Tiles are hidden while Settings is open: tests choose formats with the `pick()` helper (strip →
   tile → cog again if Settings was open), never by clicking a tile directly.
   Playwright's own Chromium isn't always installed locally; `npx playwright test -c
@@ -738,6 +741,15 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       page `ui/editor3d/page.ts` (three.js WebGL, models read in the worker by the hidden
       `model3d-view` converter → `mesh.bin` + `info.json`; `window.__viewer3d` with `?e2e`).
       Next: basic editing for 3D printing (plan in the session handoff / owner's go-ahead).
+   9. ✅ Start screen = hub (both apps): editor tiles under the empty drop zone, listed in
+      `core/editors.py` / `web/src/core/editors.ts` (same order and text; `available` False =
+      greyed "Coming soon" — video, audio, document editor for now; tests/test_editor_hub.py checks
+      both lists). Image tile → "New picture" (`editor/blank.py` / `blank.ts`, presets in
+      `web/src/editor/presets.ts` so the start page doesn't load the editor) → `MainWindow.new_picture`
+      / `EditorPage.openBlank`; 3D tile → viewer `open_empty` / `openEmpty` with an "Open…" button
+      (`files_chosen` / `onOpen` add the models to the queue like a drop). Tiles hide once files
+      are added. Later steps (owner, Nov 2026): own viewer for "Open with", Windows installer with
+      optional editors + "Convert" context menu, editors as downloadable add-ons on desktop.
 11. Ideas: installer for the app itself (Inno Setup), presets, batch queue.
 
 ## Handoff — read this first (for the next Claude account)

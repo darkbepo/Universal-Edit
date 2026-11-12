@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
     QComboBox,
+    QFileDialog,
     QFormLayout,
     QFrame,
     QHBoxLayout,
@@ -20,7 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from umc.core.detect import DetectedFile
+from umc.core.detect import MODEL_EXTS, DetectedFile
 from umc.core.errors import ConversionError
 from umc.editor3d.mesh import ViewModel, describe, load_view_model
 from umc.gui.editor3d.gl_view import ModelGLView
@@ -32,6 +33,7 @@ log = logging.getLogger(__name__)
 _ORPHANS: list[tuple[QThread, QObject]] = []
 
 HINT = "Drag to rotate · right-drag or Shift+drag to pan · wheel to zoom · double-click to fit"
+EMPTY_TEXT = "Open a 3D model with “Open…”, or drop one here (STL, OBJ, 3MF, PLY, GLB, STEP, IGES)."
 VIEW_BUTTONS = (("iso", "3D"), ("front", "Front"), ("top", "Top"), ("right", "Side"))
 STYLE_BUTTONS = (("shaded", "Shaded"), ("edges", "Edges"), ("wireframe", "Wireframe"))
 
@@ -61,6 +63,7 @@ class _Loader(QObject):
 
 class ViewerPage(QWidget):
     back_requested = Signal()
+    files_chosen = Signal(list)  # list[str] picked with "Open…" (the window adds + shows them)
     loaded = Signal()  # a model finished loading (or failed): for tests
 
     def __init__(self, parent=None) -> None:
@@ -119,6 +122,8 @@ class ViewerPage(QWidget):
         self.back_button = button("← Back to Convert", "Leave the 3D viewer", "Link")
         self.back_button.clicked.connect(self.back_requested.emit)
         lay.addSpacing(12)
+        self.open_button = button("Open…", "Open 3D models (STL, OBJ, 3MF, STEP, …)")
+        self.open_button.clicked.connect(self.choose_files)
         self.file_box = QComboBox()
         self.file_box.setToolTip("Which model to show")
         self.file_box.currentIndexChanged.connect(self._on_file_chosen)
@@ -190,6 +195,27 @@ class ViewerPage(QWidget):
         self.file_box.setVisible(len(files) > 1)
         self.show_file(files[0])
         return True
+
+    def open_empty(self) -> None:
+        """Started from the editor tiles: nothing to show until a model is opened or dropped."""
+        self.files = []
+        self.current = None
+        self.file_box.blockSignals(True)
+        self.file_box.clear()
+        self.file_box.blockSignals(False)
+        self.file_box.setVisible(False)
+        self._fill_info(None)
+        self.title.setText("")
+        self._show_placeholder(EMPTY_TEXT)
+        self.message.setText("")
+
+    def choose_files(self) -> None:
+        exts = " ".join(f"*.{e}" for e in sorted(MODEL_EXTS | {"stp", "igs"}))
+        paths, _ = QFileDialog.getOpenFileNames(
+            self, "Open 3D models", "", f"3D models ({exts});;All files (*)"
+        )
+        if paths:
+            self.files_chosen.emit(paths)
 
     def _on_file_chosen(self, index: int) -> None:
         if 0 <= index < len(self.files):

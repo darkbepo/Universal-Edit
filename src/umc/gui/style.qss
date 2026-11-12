@@ -108,6 +108,30 @@ QFrame#DropZone[compact="true"] QLabel#DropTitle {
     color: @accent;
 }
 
+/* ---------- editor tiles (empty start screen) */
+QPushButton#EditorTile {
+    background: @surface;
+    border: 1px solid @border;
+    border-radius: 14px;
+    padding: 0;
+    text-align: left;
+}
+QPushButton#EditorTile:hover {
+    border-color: @accent;
+    background: @accent_soft;
+}
+QPushButton#EditorTile:disabled {
+    background: @surface_alt;
+    border-style: dashed;
+}
+QLabel#EditorTileTitle {
+    font-size: 14px;
+    font-weight: 600;
+}
+QPushButton#EditorTile:disabled QLabel#EditorTileTitle, QPushButton#EditorTile:disabled QLabel {
+    color: @muted;
+}
+
 /* ---------- cards */
 QFrame#Card {
     background: @surface;

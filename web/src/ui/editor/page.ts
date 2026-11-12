@@ -300,6 +300,14 @@ export class EditorPage {
     }
   }
 
+  /** A new, empty picture (the image editor tile on the start screen). */
+  openBlank(doc: EditorDoc): void {
+    this.setDocument(doc);
+    this.sources = [];
+    this.lastSave = null;
+    this.showMessage("");
+  }
+
   async addFiles(files: InputFile[]): Promise<void> {
     this.commitText(); // a drop doesn't blur the typing box: finish the text first
     if (!this.doc) {
