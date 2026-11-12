@@ -58,7 +58,9 @@ def test_pull_draws_in_and_burst_pushes_out_and_fades():
 
 # ----------------------------------------------------------------------------- GUI
 @pytest.fixture
-def window(qtbot):
+def window(qtbot, monkeypatch):
+    # Windows test machines have "animation effects" off: say motion is fine for these tests
+    monkeypatch.setenv("UMC_REDUCE_MOTION", "0")
     from umc.gui.main_window import MainWindow
 
     w = MainWindow()
