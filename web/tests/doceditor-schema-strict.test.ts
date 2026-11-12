@@ -18,6 +18,8 @@ import { describe, expect, test } from "vitest";
 import { normaliseHtml } from "../src/doceditor/subset";
 import { docToHtml, htmlToDoc } from "../src/ui/doceditor/convert";
 import { docSchema } from "../src/ui/doceditor/schema";
+import * as cmds from "../src/ui/doceditor/commands";
+import { createState } from "../src/ui/doceditor/view";
 import { Rand, randomHtml } from "./doceditor-gen";
 
 const nodes = docSchema.nodes;
@@ -162,12 +164,32 @@ function randomEdit(state: EditorState, r: Rand): EditorState {
     sinkListItem(nodes.list_item),
     wrapIn(nodes.blockquote),
     lift,
+    // the editor's own commands (commands.ts)
+    cmds.setBlockStyle(r.pick(["normal", "h1", "h3", "quote", "code"] as const)),
+    cmds.toggleMark(r.pick(["bold", "italic", "underline", "strike"] as const)),
+    cmds.setFont("Arial"),
+    cmds.setSize(r.pick([9, 14])),
+    cmds.setColor("#ff0000"),
+    cmds.setHighlight(r.pick(["#00ff00", null])),
+    cmds.setAlign(r.pick(["left", "center", "right", "justify"] as const)),
+    cmds.toggleList(r.pick(["bullet", "number"] as const)),
+    cmds.changeIndent(r.pick([1, -1, 2])),
+    cmds.insertLink("u", r.pick([null, "t"])),
+    cmds.insertImage("img/2.png", r.pick([null, 5])),
+    cmds.insertTable(1 + r.int(2), 1 + r.int(2)),
+    cmds.tableOp(r.pick(["row_above", "row_below", "col_left", "col_right", "del_row", "del_col", "del_table", "split"] as const)),
+    cmds.insertPageBreak,
+    cmds.insertRule,
+    cmds.clearFormatting,
+    cmds.stepOverEmpty(r.pick([1, -1] as const)),
     (s, d) => {
       // paste: a copied slice of the document somewhere else
       const slice = s.doc.slice(Math.min(a, b), Math.max(a, b));
       const at = r.int(s.doc.content.size + 1);
       try {
-        d?.(s.tr.replace(at, at, slice));
+        const tr = s.tr.replace(at, at, slice);
+        tr.doc.check(); // ProseMirror's fitting can leave an empty cell; the view drops such pastes
+        d?.(tr);
       } catch {
         /* not a place the slice fits */
       }
@@ -188,7 +210,8 @@ function randomEdit(state: EditorState, r: Rand): EditorState {
 test.each([1, 2, 3])("random edits export a fixed point (seed %i)", (seed) => {
   const r = new Rand(seed * 104729);
   for (let n = 0; n < 200; n++) {
-    let state = EditorState.create({ doc: htmlToDoc(normaliseHtml(randomHtml(r)).html) });
+    // the editor's plugins (nest records, empty tags, tables) take part, as in the page
+    let state = createState(htmlToDoc(normaliseHtml(randomHtml(r)).html));
     for (let e = 0; e < 6; e++) state = randomEdit(state, r);
     state.doc.check();
     const out = docToHtml(state.doc);

@@ -144,6 +144,14 @@ NORMALISE = [
     '<p><b>z </b><b></b> </p><p><a href="u">z </a><a href="u"></a> x</p>',
     "<ol><li><sub>\t</sub><b>x</b></li><li>\t</li><li><p>a</p>\t</li><li>a\t<p>b</p></li></ol>",
     "<ul><li>a\t<ul><li>b</li></ul></li><li>c<i>\t</i><code></code><ol><li>d</li></ol></li></ul>",
+    # a link opened inside another inline tag of an open link is only its text (libxml2 nests it,
+    # an HTML5 parser would split the outer link); one opened directly in a link closes it
+    '<p><a href="u"><b>a<a href="v">b</a></b></a></p>'
+    '<p><a href="u"><span style="color:red">a<a href="v">b</a>c</span>d</a>e</p>',
+    '<p><a href="u"><b><a href="v">x</a>y</b></a>z</p>'
+    '<p><a href="u">a<b><a href="v">b</b>c</a>d</p>',
+    '<p><a href="u"><b>a<a href="v">b<a href="w">c</a>d</b>e</a>f</p>'
+    '<p><a href="u">x<a href="v">y</a>z</a></p>',
     # nesting deeper than MAX_NESTING (100) is flattened, the same way in both apps
     "<blockquote>" * 102 + "<p>a <b>b</b></p>",
     "<ul><li>" * 102 + "a<p>b</p>c",

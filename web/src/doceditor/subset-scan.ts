@@ -1,7 +1,8 @@
 /**
  * The pre-parse scan of the HTML normaliser (the desktop's `html_scan.py`): finds tags the way
  * the desktop's libxml2 reads them, so numeric references, NUL / control characters, the paragraph
- * marks and  inside <pre> can be adjusted before the page's HTML5 parser sees the text.
+ * marks and 
+ inside <pre> can be adjusted before the page's HTML5 parser sees the text.
  */
 
 const set = (s: string) => new Set(s.split(" "));
@@ -98,6 +99,7 @@ function tagEnd(html: string, i: number): number {
 }
 
 interface Tag {
+  start: number; // the "<"
   name: string; // lower case
   closing: boolean;
   nameEnd: number; // where the attributes start
@@ -133,7 +135,7 @@ function nextTag(html: string, from: number): Tag | null {
       closer.lastIndex = gt + 1;
       bodyEnd = closer.exec(html)?.index ?? html.length;
     }
-    return { name, closing, nameEnd: after, end: gt + 1, bodyEnd };
+    return { start: m.index, name, closing, nameEnd: after, end: gt + 1, bodyEnd };
   }
 }
 
@@ -159,10 +161,64 @@ export const P_MARK = "data-umc-p";
 // A numeric reference to a line feed at the start of a text.
 const LF_REF = /^&#(?:0*10(?![0-9])|[xX]0*[aA](?![0-9a-fA-F]))/;
 
+// Tags that end the inline run nestedLinks follows (it starts over after them), and void tags.
+const RUN_BREAK = set(
+  "p div h1 h2 h3 h4 h5 h6 blockquote pre ul ol li table thead tbody tfoot tr td th caption hr " +
+    "section article header footer nav aside main form figure figcaption address center dl dt dd " +
+    "fieldset body html head",
+);
+const VOID = set("br img input meta link wbr col area base embed param source track keygen basefont frame");
+const LINK_START = /<a[\t\n\f\r />]/i;
+
+/** A link opened inside another inline tag of an open link (`<a u><b>x<a v>y</a></b></a>`):
+ * libxml2 nests it (and the normaliser keeps only its text), an HTML5 parser splits the outer
+ * link around it. Its start tag and its own end tag are dropped, so both read "<a u><b>xy</b></a>".
+ * A link opened directly inside a link is closed by both parsers alike and is left as it is. */
+function nestedLinks(html: string): string {
+  const first = html.search(LINK_START);
+  if (first < 0 || html.slice(first + 2).search(LINK_START) < 0) return html;
+  const stack: { name: string; phantom: boolean }[] = [];
+  const out: string[] = [];
+  let from = 0;
+  const drop = (t: Tag) => {
+    out.push(html.slice(from, t.start));
+    from = t.end;
+  };
+  for (let t = nextTag(html, 0); t; t = nextTag(html, t.bodyEnd)) {
+    const name = t.name;
+    if (RUN_BREAK.has(name)) {
+      stack.length = 0;
+      continue;
+    }
+    if (VOID.has(name)) continue;
+    if (t.closing) {
+      let i = stack.length - 1;
+      while (i >= 0 && stack[i].name !== name) i--;
+      if (i < 0) continue; // libxml2 ignores a stray end tag
+      if (stack[i].phantom) drop(t);
+      stack.length = i;
+      continue;
+    }
+    let phantom = false;
+    if (name === "a") {
+      // libxml2 closes a link that is the current element when another one starts
+      if (stack.length && stack[stack.length - 1].name === "a") {
+        phantom = stack[stack.length - 1].phantom;
+        stack.pop();
+      } else phantom = stack.some((e) => e.name === "a" && !e.phantom);
+      if (phantom) drop(t);
+    }
+    stack.push({ name, phantom });
+  }
+  out.push(html.slice(from));
+  return out.join("");
+}
+
 /** Make an HTML5 parser read `html` the way libxml2 does where they differ. */
 export function libxmlLike(html: string): string {
   // libxml2 turns NUL into a space and drops the other characters XML 1.0 forbids.
-  html = html.replace(/\x00/g, " ").replace(XML_FORBIDDEN, "");
+  html = nestedLinks(html.replace(/\x00/g, " ").replace(XML_FORBIDDEN, ""));
+
   const marked: string[] = [];
   let from = 0;
   for (let t = nextTag(html, 0); t; t = nextTag(html, t.bodyEnd)) {

@@ -186,7 +186,10 @@ function span(el: Element, name: string): number {
 
 const isListNode = (n: PMNode) => n.type === nodes.bullet_list || n.type === nodes.ordered_list;
 
-/** A list item frame: its own line (before the first nested list) is the first paragraph. */
+/** A list item frame: its own line (before the first nested list) is the first paragraph.
+ * `li` must be normalised (`normaliseHtml` output, as every caller passes): there, an item is
+ * its line, then only nested lists (blocks after them already sit after the list). Anything else
+ * after the first list isn't subset HTML and is left out rather than misread. */
 function itemFrame(li: Element): Frame {
   const all = Array.from(li.childNodes);
   let cut = all.findIndex(isList);
@@ -275,8 +278,8 @@ interface Wrap {
   close: string;
 }
 
-const NBSP = " ";
-const OBJECT = "￼"; // what a picture or an empty link is to the typed-space rule
+const NBSP = "\u00a0";
+const OBJECT = "\ufffc"; // what a picture or an empty link is to the typed-space rule
 const SIMPLE_WRAPS: Record<string, Wrap> = Object.fromEntries(
   ["b", "i", "u", "s"].map((t) => [t, { name: t, open: `<${t}>`, close: `</${t}>` }]),
 );
