@@ -2,9 +2,10 @@
 import { expect, test } from "@playwright/test";
 
 /** Drops a file on the page; returns whether the burst started (read in the same tick). */
-const dropFile = (name: string) => {
+const dropFile = ([name, junk]: [string, boolean]) => {
   const dt = new DataTransfer();
-  dt.items.add(new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], name, { type: "image/png" }));
+  const bytes = junk ? new TextEncoder().encode("not a file the app reads") : new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+  dt.items.add(new File([bytes], name, { type: junk ? "" : "image/png" }));
   for (const type of ["dragover", "drop"]) document.body.dispatchEvent(new DragEvent(type, { dataTransfer: dt, bubbles: true, cancelable: true }));
   return document.querySelector<HTMLElement>(".drop canvas.orbit")?.dataset.burst === "true";
 };
@@ -16,7 +17,7 @@ test("badges move on the empty page; a drop bursts them, then the file is listed
   await expect(orbit).toHaveAttribute("data-moving", "true");
   await expect(orbit).toHaveAttribute("aria-hidden", "true");
   const before = Date.now();
-  expect(await page.evaluate(dropFile, "dropped.png")).toBe(true);
+  expect(await page.evaluate(dropFile, ["dropped.png", false] as [string, boolean])).toBe(true);
   await expect(page.locator(".queue li")).toHaveCount(1);
   expect(Date.now() - before).toBeGreaterThanOrEqual(350); // waited for the burst
   await expect(orbit).toBeHidden();
@@ -29,14 +30,14 @@ test("with reduce motion the badges stand still and a drop adds at once", async 
   await page.goto("./");
   const orbit = page.locator(".drop canvas.orbit");
   await expect(orbit).toHaveAttribute("data-moving", "false");
-  expect(await page.evaluate(dropFile, "dropped.png")).toBe(false); // no burst, no waiting
+  expect(await page.evaluate(dropFile, ["dropped.png", false] as [string, boolean])).toBe(false); // no burst, no waiting
   await expect(page.locator(".queue li")).toHaveCount(1);
 });
 
 test("a drop that adds nothing brings the badges back", async ({ page }) => {
   await page.goto("./");
   const orbit = page.locator(".drop canvas.orbit");
-  expect(await page.evaluate(dropFile, "notes.xyz")).toBe(true);
+  expect(await page.evaluate(dropFile, ["notes.xyz", true] as [string, boolean])).toBe(true);
   await expect(orbit).not.toHaveAttribute("data-burst", "true");
   await expect(page.locator(".queue li")).toHaveCount(0);
   await expect(orbit).toBeVisible();
