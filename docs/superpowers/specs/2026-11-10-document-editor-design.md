@@ -224,6 +224,14 @@ columns when done.
   are), so a file saved by one app opens identically in the other.
 - **Tests:** vitest for the DOCX reader / writer and schema ↔ HTML; Playwright e2e: open a
   DOCX, make text bold, add a table row, save DOCX and PDF, re-open the DOCX and check.
+- **Deliberate differences from the desktop editor** (both save the same HTML for what they
+  show; these are about editing):
+  - Typing right after a link doesn't continue the link (a ProseMirror link isn't inclusive);
+    on the desktop, Qt carries the link format on to the typed text.
+  - A horizontal rule inserted in a list item goes after the whole list, because a list item
+    only holds its line and nested lists.
+  - Paragraph styles (headings, quote, code) leave list lines as they are. The desktop applies
+    them, but its export writes the list item anyway, so the saved file is the same.
 
 ## Docs
 

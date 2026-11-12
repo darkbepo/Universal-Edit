@@ -89,6 +89,14 @@ const IMAGE_EXTS: Record<string, string> = {
 const FONT_SIZES_PT: Record<string, number> = { 1: 8, 2: 10, 3: 12, 4: 14, 5: 18, 6: 24, 7: 36 };
 const SAFE_SCHEMES = new Set(["", "http", "https", "mailto", "tel"]);
 
+/** A link address the subset keeps (control characters removed, trimmed), or null: empty, or
+ * a scheme other than http(s), mailto and tel (no javascript:, data:, …). */
+export function safeHref(raw: string): string | null {
+  const href = pyStrip(raw.replace(/[\x00-\x1f\x7f]/g, ""));
+  const parsed = href ? urlparse(href) : null;
+  return parsed && SAFE_SCHEMES.has(parsed.scheme) ? href : null;
+}
+
 // Python's white space (strip(), split() and re's Unicode classes), as a character class.
 const isHtmlSpace = (c: string) =>
   c === " " || c === "\t" || c === "\r" || c === "\n" || c === "\f";
@@ -141,7 +149,7 @@ function collapseWs(s: string): string {
 }
 
 const DATA_URI = new RegExp(`^data:image/(png|jpe?g|gif|bmp|webp)(?:;[^,;]*)*;base64,(.*)$`, "is");
-const CANON_IMG = /^img\/\d+\.(?:png|jpg|gif|bmp|webp)$/;
+export const CANON_IMG = /^img\/\d+\.(?:png|jpg|gif|bmp|webp)$/;
 const XML_DECL = new RegExp(`^${S}*<\\?xml[^>]*\\?>`, "i");
 // Deepest paragraph indent, 720 pt (huge values used to print as "1e+27pt").
 const MAX_INDENT = 20;
@@ -343,9 +351,8 @@ class Normaliser {
       this.inlineChildren(node, toks);
       toks.push(["C", `</${out}>`]);
     } else if (tag === "a") {
-      const href = pyStrip((attr(node, "href") ?? "").replace(/[\x00-\x1f\x7f]/g, ""));
-      const parsed = href ? urlparse(href) : null;
-      if (parsed && SAFE_SCHEMES.has(parsed.scheme) && !this.inLink) {
+      const href = safeHref(attr(node, "href") ?? "");
+      if (href !== null && !this.inLink) {
         toks.push(["O", `<a href="${escAttr(href)}">`]);
         this.inLink = true;
         this.inlineChildren(node, toks);

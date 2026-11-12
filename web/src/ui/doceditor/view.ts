@@ -23,20 +23,20 @@ import { EditorView } from "prosemirror-view";
 import { baseKeymap } from "prosemirror-commands";
 import { closeHistory, history, redo, undo } from "prosemirror-history";
 import { keymap } from "prosemirror-keymap";
-import { splitListItem } from "prosemirror-schema-list";
 import { search } from "prosemirror-search";
-import { goToNextCell, isInTable, tableEditing } from "prosemirror-tables";
-import { normaliseHtml } from "../../doceditor/subset";
+import { tableEditing } from "prosemirror-tables";
+import { CANON_IMG, normaliseHtml } from "../../doceditor/subset";
 import type { DocImages, OpenedDocument, SaveContent } from "../../doceditor/types";
 import {
   COMMAND_META,
-  changeIndent,
   clearFormatting,
   insertImage,
   insertPageBreak,
-  selectedTextblocks,
+  insertTab,
+  lineBreak,
   setAlign,
   setBlockStyle,
+  splitLine,
   stepOverEmpty,
   toggleList,
   toggleMark,
@@ -81,31 +81,36 @@ export function cleanNest(order: string, set: readonly Mark[]): string {
   return kept.length >= 2 ? kept.join(" ") : "";
 }
 
-/** The ranges of the final document that `trs` changed (marks included). */
+/** The ranges of the final document that `trs` changed (marks included). The ranges collected
+ * so far are carried forward through each step and kept merged, so this is linear in the steps
+ * (typing: one step; a big selection: one step from `rebuildBlocks`). */
 function changedRanges(trs: readonly Transaction[], size: number): [number, number][] {
-  const out: [number, number][] = [];
-  trs.forEach((tr, t) => {
-    tr.steps.forEach((step, i) => {
-      const local: [number, number][] = [];
-      step.getMap().forEach((_a, _b, from, to) => local.push([from, to]));
-      if (step instanceof AddMarkStep || step instanceof RemoveMarkStep) local.push([step.from, step.to]);
-      else if (step instanceof AddNodeMarkStep || step instanceof RemoveNodeMarkStep) local.push([step.pos, step.pos + 1]);
-      const rest = tr.mapping.slice(i + 1);
-      for (const range of local) {
-        let [a, b] = [rest.map(range[0], -1), rest.map(range[1], 1)];
-        for (const later of trs.slice(t + 1)) [a, b] = [later.mapping.map(a, -1), later.mapping.map(b, 1)];
-        out.push([Math.max(0, a), Math.min(size, b)]);
+  let ranges: [number, number][] = [];
+  const add = (a: number, b: number) => {
+    ranges.push([a, b]);
+    if (ranges.length > 1) {
+      ranges.sort((x, y) => x[0] - y[0]);
+      const merged: [number, number][] = [];
+      for (const r of ranges) {
+        const last = merged[merged.length - 1];
+        if (last && r[0] <= last[1]) last[1] = Math.max(last[1], r[1]);
+        else merged.push([r[0], r[1]]);
       }
-    });
-  });
-  out.sort((x, y) => x[0] - y[0]);
-  const merged: [number, number][] = [];
-  for (const r of out) {
-    const last = merged[merged.length - 1];
-    if (last && r[0] <= last[1]) last[1] = Math.max(last[1], r[1]);
-    else merged.push(r);
+      ranges = merged;
+    }
+  };
+  for (const tr of trs) {
+    for (const step of tr.steps) {
+      const map = step.getMap();
+      const local: [number, number][] = [];
+      map.forEach((_a, _b, from, to) => local.push([from, to]));
+      if (local.length) ranges = ranges.map(([x, y]) => [map.map(x, -1), map.map(y, 1)]);
+      for (const [x, y] of local) add(x, y);
+      if (step instanceof AddMarkStep || step instanceof RemoveMarkStep) add(step.from, step.to);
+      else if (step instanceof AddNodeMarkStep || step instanceof RemoveNodeMarkStep) add(step.pos, step.pos + 1);
+    }
   }
-  return merged;
+  return ranges.map(([x, y]) => [Math.max(0, x), Math.min(size, y)]);
 }
 
 /** Drops the tags of `nest` records whose marks were removed (and records left with one). */
@@ -166,33 +171,8 @@ const tables = new Plugin({
   appendTransaction: (trs, _old, state) => editing.spec.appendTransaction?.call(editing, trs, state, state),
 });
 
-const hardBreak: Command = (state, dispatch) => {
-  if (state.selection.$from.parent.type === nodes.code_block) {
-    dispatch?.(state.tr.insertText("\n").scrollIntoView());
-  } else dispatch?.(state.tr.replaceSelectionWith(nodes.hard_break.create()).scrollIntoView());
-  return true;
-};
-
-/** Tab: the next cell in a table; a list line's level at its start (or over a selection);
- * else a tab character. Shift+Tab goes back. */
-const tab =
-  (dir: 1 | -1): Command =>
-  (state, dispatch) => {
-    if (isInTable(state)) {
-      goToNextCell(dir)(state, dispatch);
-      return true;
-    }
-    const sel = state.selection;
-    const lines = selectedTextblocks(state);
-    const inList = lines.length > 0 && lines.every((b) => state.doc.resolve(b.pos).parent.type === nodes.list_item);
-    if (inList && (!sel.empty || sel.$from.parentOffset === 0)) {
-      changeIndent(dir)(state, dispatch);
-      return true;
-    }
-    if (dir < 0) return false;
-    dispatch?.(state.tr.insertText("\t").scrollIntoView());
-    return true;
-  };
+/** Shift+Tab does nothing (as on the desktop), but keeps the focus in the page. */
+const nothing: Command = () => true;
 
 /** The editor's shortcuts (the spec's list; Ctrl+K, F, H and S belong to the page). */
 export const EDITOR_KEYS: Record<string, Command> = {
@@ -214,10 +194,10 @@ export const EDITOR_KEYS: Record<string, Command> = {
   "Mod-z": undo,
   "Mod-y": redo,
   "Mod-Shift-z": redo,
-  "Shift-Enter": hardBreak,
-  Enter: splitListItem(nodes.list_item),
-  Tab: tab(1),
-  "Shift-Tab": tab(-1),
+  "Shift-Enter": lineBreak,
+  Enter: splitLine,
+  Tab: insertTab,
+  "Shift-Tab": nothing,
   ArrowRight: stepOverEmpty(1),
   ArrowLeft: stepOverEmpty(-1),
 };
@@ -270,6 +250,15 @@ export function plainText(doc: PMNode): string {
 
 // ----- clipboard -----------------------------------------------------------------------------
 
+const LINE_BREAKS = new RegExp("\\r?\\n|\\r", "g");
+
+/** Plain text as paragraphs, one per line, blank lines kept (the desktop's insertText). */
+export function textSlice(text: string): Slice {
+  const lines = text.replace(LINE_BREAKS, "\n").split("\n");
+  const paragraphs = lines.map((line) => nodes.paragraph.create(null, line ? docSchema.text(line) : null));
+  return new Slice(Fragment.fromArray(paragraphs), 1, 1);
+}
+
 /** `fragment` (a copied part) as a document, or null when it can't be one. */
 function asDoc(fragment: Fragment): PMNode | null {
   const first = fragment.firstChild;
@@ -290,9 +279,9 @@ const plainDom = new DOMSerializer(
   { ...DOMSerializer.marksFromSchema(docSchema), nest: () => ["span", 0] },
 );
 
-/** Writes the copied part as subset HTML (`docToHtml`). */
+/** Writes the copied part as subset HTML (`docToHtml`); `copied` hears what was written. */
 class SubsetSerializer extends DOMSerializer {
-  constructor() {
+  constructor(private readonly copied: (html: string) => void) {
     super(plainDom.nodes, plainDom.marks);
   }
   serializeFragment(
@@ -304,7 +293,9 @@ class SubsetSerializer extends DOMSerializer {
     if (!doc) return plainDom.serializeFragment(fragment, options, target);
     const dom = options.document ?? window.document;
     const holder = dom.createElement("div");
-    holder.innerHTML = docToHtml(doc);
+    const html = docToHtml(doc);
+    this.copied(html);
+    holder.innerHTML = html;
     const out = target ?? dom.createDocumentFragment();
     while (holder.firstChild) out.appendChild(holder.firstChild);
     return out;
@@ -332,6 +323,9 @@ class SubsetParser extends DOMParser {
 // ----- the view ------------------------------------------------------------------------------
 
 const IMG_SRC = /<img src="([^"]*)"/g;
+const IMG_TAG = /<img src="([^"]*)"[^>]*>/g;
+/** A transaction that pastes plain text after a paste failed (it isn't retried again). */
+const PLAIN_META = "umc-plain-paste";
 const unescapeAttr = (s: string) =>
   s.replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
 
@@ -347,7 +341,16 @@ export class DocView {
   private readonly urls = new Map<string, string>();
   private afterCommand = false;
   private pastedHtml: string | null = null;
-  private readonly serializer = new SubsetSerializer();
+  /** The subset HTML of this editor's last copy: a paste of it keeps its picture references. */
+  private copiedHtml: string | null = null;
+  /** The plain text of the paste being handled, and whether its HTML couldn't be read. */
+  private pasteText = "";
+  private pasteFailed = false;
+  private readonly serializer = new SubsetSerializer((html) => {
+    this.copiedHtml = html;
+  });
+  /** How pasted HTML is normalised (replaceable in tests). */
+  normalisePasted: typeof normaliseHtml = normaliseHtml;
 
   constructor(host: HTMLElement) {
     const doc = htmlToDoc("");
@@ -377,7 +380,8 @@ export class DocView {
         return html;
       }),
       clipboardSerializer: this.serializer,
-      handlePaste: (_view, event) => this.pasteFiles(event),
+      clipboardTextParser: (text) => textSlice(text),
+      handlePaste: (_view, event) => this.handlePaste(event),
     });
   }
 
@@ -403,6 +407,7 @@ export class DocView {
     const doc = htmlToDoc(normaliseHtml(opened.html).html);
     this.clean = doc;
     this.afterCommand = false;
+    this.copiedHtml = null;
     this.view.updateState(createState(doc));
     this.onChange();
   }
@@ -465,28 +470,51 @@ export class DocView {
   private dispatch(tr: Transaction): void {
     const ui = tr.getMeta("uiEvent");
     if (tr.docChanged && (ui === "paste" || ui === "drop")) {
-      // ProseMirror's fitting can leave an empty table cell for some pasted slices
+      // ProseMirror's fitting can leave an empty table cell for some pasted slices: paste the
+      // plain text instead (as the desktop does when pasted HTML can't be used)
       try {
         tr.doc.check();
       } catch (err) {
-        console.error("A paste the document can't hold was left out", err);
+        console.error("A paste the document can't hold was replaced by its text", err);
+        if (!tr.getMeta(PLAIN_META) && ui === "paste") this.pastePlain(this.pasteText);
         return;
       }
     }
-    if (tr.docChanged) {
-      const command = tr.getMeta(COMMAND_META) === true;
+    const command = tr.getMeta(COMMAND_META) === true;
+    if (command) this.afterCommand = true; // also one that only sets the marks typed next
+    else if (tr.docChanged) {
       // typing after a command is an undo step of its own, like the command
-      if (!command && this.afterCommand) closeHistory(tr);
-      this.afterCommand = command;
+      if (this.afterCommand) closeHistory(tr);
+      this.afterCommand = false;
     }
     this.view.updateState(this.view.state.apply(tr));
     this.onChange();
   }
 
-  private freeName(ext: string): string {
+  /** Paste `text` as plain paragraphs (blank lines kept). */
+  private pastePlain(text: string): void {
+    if (!text) return;
+    const tr = this.view.state.tr.replaceSelection(textSlice(text));
+    this.view.dispatch(tr.setMeta("uiEvent", "paste").setMeta(PLAIN_META, true).scrollIntoView());
+  }
+
+  /** Picture names the document points at now (with or without their bytes). */
+  private namesInUse(): Set<string> {
+    const names = new Set(this.images.keys());
+    this.view.state.doc.descendants((node) => {
+      if (node.type === nodes.image) names.add(String(node.attrs.src));
+      return !node.isTextblock || node.inlineContent;
+    });
+    return names;
+  }
+
+  /** A picture name nothing uses yet (also none the text points at without bytes). */
+  private freeName(ext: string, taken: Set<string> = this.namesInUse()): string {
     let n = this.images.size + 1;
-    while (this.images.has(`img/${n}.${ext}`)) n++;
-    return `img/${n}.${ext}`;
+    while (taken.has(`img/${n}.${ext}`)) n++;
+    const name = `img/${n}.${ext}`;
+    taken.add(name);
+    return name;
   }
 
   private urlFor(name: string): string {
@@ -512,27 +540,50 @@ export class DocView {
     }
   }
 
-  /** Pasted HTML in the subset: `data:` pictures are kept under fresh names, the web dropped. */
+  /** Pasted HTML in the subset: `data:` pictures are kept under fresh names, the web dropped,
+   * and pictures of other documents (`img/N` names) dropped unless it is this editor's own copy.
+   * HTML that can't be read is pasted as its plain text (`handlePaste`). */
   private transformPasted(html: string): string {
     let out: { html: string; images: DocImages };
     try {
-      out = normaliseHtml(html);
+      out = this.normalisePasted(html);
     } catch (err) {
-      console.error("Pasted HTML couldn't be read", err);
+      console.error("Pasted HTML couldn't be read; pasting its text", err);
+      this.pasteFailed = true;
       this.pastedHtml = "";
       return "";
     }
-    const renames = new Map<string, string>();
-    for (const [old, data] of out.images) {
-      const name = this.freeName(old.slice(old.lastIndexOf(".") + 1));
-      this.images.set(name, data);
-      renames.set(old, name);
+    let fixed = out.html;
+    const own = this.copiedHtml !== null && fixed === this.copiedHtml;
+    if (!own) {
+      const before = fixed;
+      fixed = fixed.replace(IMG_TAG, (m, src: string) => (CANON_IMG.test(src) && !out.images.has(src) ? "" : m));
+      if (fixed !== before) fixed = normaliseHtml(fixed).html;
     }
-    const fixed = renames.size
-      ? out.html.replace(IMG_SRC, (m, src: string) => (renames.has(src) ? `<img src="${renames.get(src)}"` : m))
-      : out.html;
+    if (out.images.size) {
+      const taken = this.namesInUse();
+      for (const m of fixed.matchAll(IMG_SRC)) taken.add(m[1]);
+      const renames = new Map<string, string>();
+      for (const [old, data] of out.images) {
+        const name = this.freeName(old.slice(old.lastIndexOf(".") + 1), taken);
+        this.images.set(name, data);
+        renames.set(old, name);
+      }
+      fixed = fixed.replace(IMG_SRC, (m, src: string) => (renames.has(src) ? `<img src="${renames.get(src)}"` : m));
+    }
     this.pastedHtml = fixed;
     return fixed;
+  }
+
+  /** Remembers the paste's plain text; pastes it when the HTML couldn't be read. */
+  private handlePaste(event: ClipboardEvent): boolean {
+    this.pasteText = event.clipboardData?.getData("text/plain") ?? "";
+    if (this.pasteFailed) {
+      this.pasteFailed = false;
+      this.pastePlain(this.pasteText);
+      return true;
+    }
+    return this.pasteFiles(event);
   }
 
   /** Picture files pasted on their own (a screenshot) are added like `insertImage`. */

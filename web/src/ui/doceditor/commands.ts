@@ -15,11 +15,12 @@
  * - Typed links and pictures don't take the formatting around them.
  */
 
-import { Fragment, Mark, type MarkType, type Node as PMNode, type ResolvedPos } from "prosemirror-model";
+import { Fragment, Mark, type MarkType, type Node as PMNode, type NodeType, type ResolvedPos } from "prosemirror-model";
 import { EditorState, Selection, TextSelection, type Command, type Transaction } from "prosemirror-state";
+import { chainCommands, createParagraphNear, liftEmptyBlock, newlineInCode, splitBlock } from "prosemirror-commands";
 import { Mapping, StepMap, findWrapping, liftTarget } from "prosemirror-transform";
 import { closeHistory } from "prosemirror-history";
-import { liftListItem, sinkListItem } from "prosemirror-schema-list";
+import { liftListItem, sinkListItem, splitListItem } from "prosemirror-schema-list";
 import {
   CellSelection,
   TableMap,
@@ -35,6 +36,8 @@ import {
   selectedRect,
   splitCell,
 } from "prosemirror-tables";
+import { CANON_IMG, safeHref } from "../../doceditor/subset";
+import { colour, fontFamily } from "../../doceditor/subset-values";
 import { docSchema } from "./schema";
 
 const nodes = docSchema.nodes;
@@ -74,6 +77,58 @@ function finish(tr: Transaction, dispatch: (tr: Transaction) => void): void {
 interface Located {
   node: PMNode;
   pos: number;
+  /** The type of the node holding it (list_item for a list line), where that node is (-1: the
+   * document) and the block's index in it. */
+  parent: NodeType;
+  parentPos: number;
+  index: number;
+  /** In a quote (a blockquote around it before any list item or table cell). */
+  quoted: boolean;
+  /** List nesting (1 = a top-level list line, 0 = not in a list). */
+  level: number;
+  /** The kind of the list it is in, if any. */
+  kind: "bullet" | "number" | null;
+  /** For a list line: where its list is and the item's index in it. */
+  item: { listPos: number; index: number } | null;
+}
+
+/** The textblocks touching [from, to] with their context (ProseMirror's nodesBetween rule), found
+ * in one walk: resolving every block's position would scan its parent's children each time. */
+function textblocksIn(doc: PMNode, from: number, to: number, out: Located[], seen: Set<number>): void {
+  const visit = (
+    node: PMNode,
+    start: number,
+    quoted: boolean,
+    level: number,
+    kind: Located["kind"],
+    item: Located["item"],
+  ) => {
+    node.forEach((child, offset, index) => {
+      const pos = start + offset;
+      if (!(pos + child.nodeSize > from && pos < to) || child.isLeaf) return;
+      if (child.isTextblock) {
+        // a selection that ends right at the start of a block leaves it out, as on the desktop
+        const skip = to > from && to <= pos + 1 && pos + 1 > from;
+        if (!skip && !seen.has(pos)) {
+          seen.add(pos);
+          const line = node.type === nodes.list_item ? item : null;
+          out.push({ node: child, pos, parent: node.type, parentPos: start - 1, index, quoted, level, kind, item: line });
+        }
+        return;
+      }
+      const t = child.type;
+      const inList = t === nodes.list_item || t === nodes.bullet_list || t === nodes.ordered_list;
+      visit(
+        child,
+        pos + 1,
+        t === nodes.blockquote ? true : t === nodes.list_item || t === nodes.table_cell ? false : quoted,
+        t === nodes.list_item ? level + 1 : inList ? level : 0,
+        t === nodes.bullet_list ? "bullet" : t === nodes.ordered_list ? "number" : inList ? kind : null,
+        t === nodes.list_item ? { listPos: start - 1, index } : null,
+      );
+    });
+  };
+  visit(doc, 0, false, 0, null, null);
 }
 
 /** The textblocks the selection touches, in document order (a selection that ends right at the
@@ -81,28 +136,56 @@ interface Located {
 export function selectedTextblocks(state: EditorState): Located[] {
   const out: Located[] = [];
   const seen = new Set<number>();
-  for (const r of state.selection.ranges) {
-    const from = r.$from.pos;
-    const to = r.$to.pos;
-    state.doc.nodesBetween(from, to, (node, pos) => {
-      if (!node.isTextblock) return true;
-      const skip = to > from && to <= pos + 1 && pos + 1 > from;
-      if (!skip && !seen.has(pos)) {
-        seen.add(pos);
-        out.push({ node, pos });
-      }
-      return false;
-    });
-  }
+  for (const r of state.selection.ranges) textblocksIn(state.doc, r.$from.pos, r.$to.pos, out, seen);
   if (!out.length) {
     const $f = state.selection.$from;
-    if ($f.parent.isTextblock) out.push({ node: $f.parent, pos: $f.before() });
+    if ($f.parent.isTextblock) {
+      const pos = $f.before();
+      textblocksIn(state.doc, pos + 1, pos + 1, out, seen);
+    }
   }
-  return out.sort((a, b) => a.pos - b.pos);
+  return out.sort((x, y) => x.pos - y.pos);
 }
 
-/** A list item's own line (its first paragraph). */
-const isListLine = (doc: PMNode, pos: number) => doc.resolve(pos).parent.type === nodes.list_item;
+/** Where a text selection is, as (textblock number, offset): kept across a change that wraps or
+ * unwraps blocks without changing them (lists in one step). Null for other selections. */
+function textBookmark(doc: PMNode, sel: Selection): [number, number][] | null {
+  if (!(sel instanceof TextSelection)) return null;
+  const starts: number[] = [];
+  doc.descendants((node, pos) => {
+    if (node.isTextblock) starts.push(pos + 1);
+    return !node.isTextblock;
+  });
+  const at = (p: number): [number, number] => {
+    let lo = 0;
+    let hi = starts.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (starts[mid] <= p) lo = mid;
+      else hi = mid - 1;
+    }
+    return [lo, p - starts[lo]];
+  };
+  return [at(sel.anchor), at(sel.head)];
+}
+
+function restoreBookmark(tr: Transaction, mark: [number, number][] | null, before: Selection): void {
+  if (!mark) {
+    if (!(before instanceof TextSelection)) tr.setSelection(Selection.fromJSON(tr.doc, before.toJSON()));
+    return;
+  }
+  const starts: number[] = [];
+  tr.doc.descendants((node, pos) => {
+    if (node.isTextblock) starts.push(pos + 1);
+    return !node.isTextblock;
+  });
+  const pos = ([k, off]: [number, number]) => Math.min((starts[k] ?? 0) + off, tr.doc.content.size);
+  try {
+    tr.setSelection(TextSelection.create(tr.doc, pos(mark[0]), pos(mark[1])));
+  } catch {
+    /* keep the mapped selection */
+  }
+}
 
 /** Inside a quote: a blockquote around the block before any list item or table cell. */
 function inQuote($pos: ResolvedPos): boolean {
@@ -145,7 +228,8 @@ function chain(state: EditorState, commands: Command[]): Transaction | null {
   for (const cmd of commands) {
     cmd(cur, (tr) => {
       for (const step of tr.steps) master.step(step);
-      cur = cur.apply(tr);
+      // a plain state: no plugin may add steps the master doesn't have
+      cur = EditorState.create({ doc: tr.doc, selection: tr.selection, storedMarks: tr.storedMarks });
       applied = true;
     });
   }
@@ -173,6 +257,211 @@ function removeMarks(tr: Transaction, from: number, to: number, types: MarkType[
     else for (const t of types) tr.removeMark(a, b, t);
   }
 }
+
+// ----- big selections ------------------------------------------------------------------------
+
+/** From this many textblocks on, a change is made by rebuilding the blocks and replacing them in
+ * one step: a step per block costs a copy of the whole document each (Ctrl+A on 16 000
+ * paragraphs took seconds). Below it, ordinary steps keep the mapping exact. */
+export const BULK_MIN = 64;
+
+type MarkChange = (set: readonly Mark[]) => readonly Mark[];
+
+/** `block` with `change` applied to the marks of its inline content in [a, b) (content offsets);
+ * pictures only when `images`. The same result as removeMark / addMark steps. */
+function markInline(block: PMNode, a: number, b: number, change: MarkChange, images: boolean): PMNode {
+  const kids: PMNode[] = [];
+  let changed = false;
+  block.forEach((child, offset) => {
+    const end = offset + child.nodeSize;
+    if (end <= a || offset >= b || (!images && child.type === nodes.image)) {
+      kids.push(child);
+      return;
+    }
+    const next = change(child.marks);
+    if (Mark.sameSet(next, child.marks)) {
+      kids.push(child);
+      return;
+    }
+    changed = true;
+    if (child.isText) {
+      const s = Math.max(a, offset) - offset;
+      const e = Math.min(b, end) - offset;
+      if (s > 0) kids.push(child.cut(0, s));
+      kids.push(child.cut(s, e).mark(next));
+      if (e < child.nodeSize) kids.push(child.cut(e));
+    } else kids.push(child.mark(next));
+  });
+  return changed ? block.copy(Fragment.fromArray(kids)) : block;
+}
+
+/** Replace the textblocks at the positions of `edits` (each edit keeps the block's size) in one
+ * step; the selection stays where it was. */
+function rebuildBlocks(tr: Transaction, edits: Map<number, (block: PMNode) => PMNode>): void {
+  const positions = [...edits.keys()].sort((x, y) => x - y);
+  if (!positions.length) return;
+  const hit = (from: number, to: number) => {
+    let lo = 0;
+    let hi = positions.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (positions[mid] < from) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo < positions.length && positions[lo] < to;
+  };
+  const rebuild = (node: PMNode, pos: number): PMNode => {
+    const edit = edits.get(pos);
+    if (node.isTextblock) return edit ? edit(node) : node;
+    const kids: PMNode[] = [];
+    let changed = false;
+    node.forEach((child, offset) => {
+      const at = pos + 1 + offset;
+      const next = child.isLeaf || !hit(at, at + child.nodeSize) ? child : rebuild(child, at);
+      if (next !== child) changed = true;
+      kids.push(next);
+    });
+    return changed ? node.copy(Fragment.fromArray(kids)) : node;
+  };
+  const doc = tr.doc;
+  const first = doc.resolve(positions[0]).index(0);
+  const last = doc.resolve(positions[positions.length - 1]).index(0);
+  const start = doc.resolve(0).posAtIndex(first, 0);
+  const kids: PMNode[] = [];
+  let at = start;
+  for (let i = first; i <= last; i++) {
+    const child = doc.child(i);
+    kids.push(hit(at, at + child.nodeSize) ? rebuild(child, at) : child);
+    at += child.nodeSize;
+  }
+  const selection = tr.selection.toJSON();
+  const stored = tr.storedMarks;
+  tr.replaceWith(start, at, kids);
+  tr.setSelection(Selection.fromJSON(tr.doc, selection));
+  if (stored) tr.setStoredMarks(stored);
+}
+
+/** Rebuild the containers at the positions of `edits` (-1: the document) in one step. An edit
+ * gets the container with its children already rebuilt and may regroup its children; positions
+ * move, so the caller keeps the selection with a text bookmark. */
+function rebuildTree(tr: Transaction, edits: Map<number, (node: PMNode) => PMNode>): void {
+  const positions = [...edits.keys()].filter((p) => p >= 0).sort((x, y) => x - y);
+  const hit = (from: number, to: number) => {
+    let lo = 0;
+    let hi = positions.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (positions[mid] < from) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo < positions.length && positions[lo] < to;
+  };
+  const rebuild = (node: PMNode, pos: number): PMNode => {
+    let out = node;
+    if (!node.isTextblock && hit(pos + 1, pos + node.nodeSize)) {
+      const kids: PMNode[] = [];
+      let changed = false;
+      node.forEach((child, offset) => {
+        const at = pos + 1 + offset;
+        const next = child.isLeaf || !hit(at, at + child.nodeSize) ? child : rebuild(child, at);
+        if (next !== child) changed = true;
+        kids.push(next);
+      });
+      if (changed) out = node.copy(Fragment.fromArray(kids));
+    }
+    const edit = edits.get(pos);
+    return edit ? edit(out) : out;
+  };
+  const doc = rebuild(tr.doc, -1);
+  if (doc !== tr.doc) tr.replaceWith(0, tr.doc.content.size, doc.content);
+}
+
+/** `node` with the children at `runs` (lists of child indices, each a run of neighbours)
+ * replaced by `make(children)`. */
+function replaceRuns(node: PMNode, runs: number[][], make: (kids: PMNode[]) => PMNode[]): PMNode {
+  const start = new Map(runs.map((r) => [r[0], r]));
+  const kids: PMNode[] = [];
+  for (let i = 0; i < node.childCount; i++) {
+    const run = start.get(i);
+    if (run) {
+      kids.push(...make(run.map((k) => node.child(k))));
+      i = run[run.length - 1];
+    } else kids.push(node.child(i));
+  }
+  return node.copy(Fragment.fromArray(kids));
+}
+
+interface Covered {
+  pos: number;
+  a: number;
+  b: number;
+}
+
+/** The textblocks of `ranges`, with the part of their content each range covers. */
+function blocksInRanges(doc: PMNode, ranges: [number, number][]): Covered[] {
+  const out: Covered[] = [];
+  for (const [from, to] of ranges) {
+    doc.nodesBetween(from, to, (node, pos) => {
+      if (!node.isTextblock) return true;
+      const a = Math.max(from, pos + 1) - (pos + 1);
+      const b = Math.min(to, pos + node.nodeSize - 1) - (pos + 1);
+      if (b > a) out.push({ pos, a, b });
+      return false;
+    });
+  }
+  return out;
+}
+
+/** Change the marks over `ranges` (remove `types`, all when null; then add `mark`): one step
+ * for a big selection, else ordinary mark steps. */
+function changeMarks(
+  tr: Transaction,
+  ranges: [number, number][],
+  types: MarkType[] | null,
+  mark: Mark | null,
+  images: boolean,
+): void {
+  const blocks = blocksInRanges(tr.doc, ranges);
+  if (blocks.length >= BULK_MIN) {
+    const change: MarkChange = (set) => {
+      let next = types === null ? Mark.none : set;
+      if (types !== null) for (const t of types) next = t.removeFromSet(next);
+      return mark ? mark.addToSet(next) : next;
+    };
+    const edits = new Map<number, (block: PMNode) => PMNode>();
+    for (const { pos, a, b } of blocks) {
+      const prev = edits.get(pos);
+      edits.set(pos, (block) => markInline(prev ? prev(block) : block, a, b, change, images));
+    }
+    rebuildBlocks(tr, edits);
+    return;
+  }
+  for (const [from, to] of ranges) {
+    if (from === to) continue;
+    if (images) {
+      if (types === null) tr.removeMark(from, to);
+      else for (const t of types) tr.removeMark(from, to, t);
+    } else removeMarks(tr, from, to, types);
+    if (mark) tr.addMark(from, to, mark);
+  }
+}
+
+/** Set attributes / types of textblocks (`make` keeps their content): one step for many, else
+ * setNodeMarkup each. */
+function retype(tr: Transaction, blocks: Located[], make: (block: PMNode) => PMNode): void {
+  if (blocks.length >= BULK_MIN) {
+    rebuildBlocks(tr, new Map(blocks.map((b) => [b.pos, make] as const)));
+    return;
+  }
+  for (const b of blocks) {
+    const node = tr.doc.nodeAt(b.pos) as PMNode;
+    const next = make(node);
+    if (next !== node) tr.setNodeMarkup(b.pos, next.type, next.attrs, next.marks);
+  }
+}
+
+const selectionRanges = (state: EditorState): [number, number][] =>
+  state.selection.ranges.map((r) => [r.$from.pos, r.$to.pos]);
 
 // ----- paragraph style ---------------------------------------------------------------------
 
@@ -289,14 +578,25 @@ function joinCode(tr: Transaction, run: number[]): void {
 
 export function setBlockStyle(style: BlockStyle): Command {
   return (state, dispatch) => {
-    const blocks = selectedTextblocks(state).filter((b) => !isListLine(state.doc, b.pos));
+    const blocks = selectedTextblocks(state).filter((b) => b.parent !== nodes.list_item);
     if (!blocks.length) return false;
     if (!dispatch) return true;
     const tr = state.tr;
     const level = HEADINGS[style] ?? 0;
+    // Many plain paragraphs / headings outside quotes made normal or a heading: those in one
+    // step at the end (`simple`); quotes and code (`slow`) step by step first.
+    const plain = (b: Located) =>
+      (b.node.type === nodes.paragraph || b.node.type === nodes.heading) && !b.quoted;
+    let simple: Located[] = [];
+    let slow = blocks;
+    if (blocks.length >= BULK_MIN && (style === "normal" || level)) {
+      simple = blocks.filter(plain);
+      if (simple.length >= BULK_MIN) slow = blocks.filter((b) => !plain(b));
+      else simple = [];
+    }
     const sel = { from: new Tracked(tr, state.selection.from), to: new Tracked(tr, state.selection.to) };
     const made: { at: Tracked; quoted: boolean }[] = [];
-    for (const b of blocks) {
+    for (const b of slow) {
       const pos = tr.mapping.map(b.pos);
       const node = tr.doc.nodeAt(pos) as PMNode;
       const wasCode = node.type === nodes.code_block;
@@ -345,6 +645,25 @@ export function setBlockStyle(style: BlockStyle): Command {
       // a split code block maps the cursor away from its line: put it back
       tr.setSelection(TextSelection.between(tr.doc.resolve(sel.from.now), tr.doc.resolve(sel.to.now)));
     }
+    if (simple.length) {
+      const moved = simple.map((b) => ({ node: b.node, pos: tr.mapping.map(b.pos) }));
+      rebuildBlocks(
+        tr,
+        new Map(
+          moved.map((b) => [
+            b.pos,
+            (block: PMNode) => {
+              const drop = level || block.type === nodes.heading ? [marks.size, marks.bold] : [];
+              const change: MarkChange = (set) => drop.reduce((acc, t) => t.removeFromSet(acc), set);
+              const content = drop.length ? markInline(block, 0, block.content.size, change, false).content : block.content;
+              return level
+                ? nodes.heading.create({ level, ...blockAttrs(block) }, content, block.marks)
+                : nodes.paragraph.create(blockAttrs(block), content, block.marks);
+            },
+          ]),
+        ),
+      );
+    }
     finish(tr, dispatch);
     return true;
   };
@@ -379,13 +698,7 @@ function applyMark(type: MarkType, mark: Mark | null): Command {
     if (state.selection.empty) {
       if (mark) tr.addStoredMark(mark);
       else tr.removeStoredMark(type);
-    } else {
-      for (const r of state.selection.ranges) {
-        if (r.$from.pos === r.$to.pos) continue;
-        tr.removeMark(r.$from.pos, r.$to.pos, type);
-        if (mark) tr.addMark(r.$from.pos, r.$to.pos, mark);
-      }
-    }
+    } else changeMarks(tr, selectionRanges(state), [type], mark, true);
     finish(tr, dispatch);
     return true;
   };
@@ -400,11 +713,32 @@ export function toggleMark(name: ToggleMark): Command {
   };
 }
 
-export const setFont = (family: string): Command => applyMark(marks.font, marks.font.create({ family }));
-export const setSize = (pt: number): Command => applyMark(marks.size, marks.size.create({ pt }));
-export const setColor = (rgb: string): Command => applyMark(marks.color, marks.color.create({ rgb: rgb.toLowerCase() }));
-export const setHighlight = (rgb: string | null): Command =>
-  applyMark(marks.highlight, rgb ? marks.highlight.create({ rgb: rgb.toLowerCase() }) : null);
+/** Refuses (false) a value the export would drop, so the editor never shows what won't be saved. */
+const refused: Command = () => false;
+
+/** A font family as the subset writes it (its first name, no quotes or CSS characters). */
+export function setFont(family: string): Command {
+  const name = fontFamily(family);
+  return name ? applyMark(marks.font, marks.font.create({ family: name })) : refused;
+}
+
+/** A size in points, 0 < pt <= 1000, rounded to the subset's two decimals. */
+export function setSize(pt: number): Command {
+  const v = Math.round(pt * 100) / 100;
+  return Number.isFinite(v) && v > 0 && v <= 1000 ? applyMark(marks.size, marks.size.create({ pt: v })) : refused;
+}
+
+/** Any CSS colour the subset reads ("red", "#F00"), kept as "#rrggbb". */
+export function setColor(value: string): Command {
+  const rgb = colour(value);
+  return rgb ? applyMark(marks.color, marks.color.create({ rgb })) : refused;
+}
+
+export function setHighlight(value: string | null): Command {
+  if (value === null) return applyMark(marks.highlight, null);
+  const rgb = colour(value);
+  return rgb ? applyMark(marks.highlight, marks.highlight.create({ rgb })) : refused;
+}
 
 export function setAlign(align: Align): Command {
   return (state, dispatch) => {
@@ -412,7 +746,10 @@ export function setAlign(align: Align): Command {
     if (!blocks.length) return false;
     if (!dispatch) return true;
     const tr = state.tr;
-    for (const b of blocks) tr.setNodeMarkup(b.pos, null, { ...b.node.attrs, align: align === "left" ? null : align });
+    const value = align === "left" ? null : align;
+    retype(tr, blocks, (block) =>
+      block.attrs.align === value ? block : block.type.create({ ...block.attrs, align: value }, block.content, block.marks),
+    );
     finish(tr, dispatch);
     return true;
   };
@@ -420,33 +757,52 @@ export function setAlign(align: Align): Command {
 
 // ----- lists and indentation -----------------------------------------------------------------
 
-/** How deep the list line at `pos` is (1 = top level). */
-function listLevel(doc: PMNode, pos: number): number {
-  const $p = doc.resolve(pos);
-  let n = 0;
-  for (let d = $p.depth; d > 0; d--) {
-    const t = $p.node(d).type;
-    if (t === nodes.list_item) n++;
-    else if (t !== nodes.bullet_list && t !== nodes.ordered_list) break;
+/** Many top-level list lines that make up whole flat lists: the lists become their lines in one
+ * rebuild (lifting line by line costs a step, a copy of the document, per line). */
+function liftWholeLists(tr: Transaction, lines: Located[]): boolean {
+  if (lines.length < BULK_MIN || !lines.every((b) => b.parent === nodes.list_item && b.level === 1)) return false;
+  // the lists holding them (an item's parent is its list): every item one selected line
+  const items = new Map<number, Set<number>>(); // list position → indices of selected items
+  for (const b of lines) {
+    const { listPos, index } = b.item as { listPos: number; index: number };
+    if (!items.has(listPos)) items.set(listPos, new Set());
+    (items.get(listPos) as Set<number>).add(index);
   }
-  return n;
+  const byParent = new Map<number, number[][]>();
+  for (const [listPos, picked] of items) {
+    const list = tr.doc.nodeAt(listPos) as PMNode;
+    let whole = picked.size === list.childCount;
+    list.forEach((item) => {
+      if (item.childCount !== 1) whole = false;
+    });
+    if (!whole) return false;
+    const $list = tr.doc.resolve(listPos);
+    const parentPos = $list.depth ? $list.before() : -1;
+    byParent.set(parentPos, [...(byParent.get(parentPos) ?? []), [$list.index()]]);
+  }
+  const mark = textBookmark(tr.doc, tr.selection);
+  const before = tr.selection;
+  const unwrap = (kids: PMNode[]) => {
+    const out: PMNode[] = [];
+    for (const list of kids) list.forEach((item) => out.push(item.child(0)));
+    return out;
+  };
+  rebuildTree(tr, new Map([...byParent].map(([pos, r]) => [pos, (node: PMNode) => replaceRuns(node, r, unwrap)])));
+  restoreBookmark(tr, mark, before);
+  return true;
 }
-
-const listKind = (doc: PMNode, pos: number) => {
-  const $p = doc.resolve(pos);
-  return $p.depth >= 2 && $p.node($p.depth - 1).type === nodes.ordered_list ? "number" : "bullet";
-};
 
 /** Take `lines` out of their lists one line at a time (prosemirror-schema-list lifts several
  * items by first merging them into one, which a list item here can't hold). */
 function liftLines(state: EditorState, lines: Located[]): Transaction {
   const master = state.tr;
+  if (liftWholeLists(master, lines)) return master;
   const lift = liftListItem(nodes.list_item);
   let inside = lines.map((b) => b.pos + 1);
   for (let round = 0; round < 1000; round++) {
     let lifted = false;
     for (let k = inside.length - 1; k >= 0; k--) {
-      if (!isListLine(master.doc, inside[k] - 1)) continue;
+      if (master.doc.resolve(inside[k]).node(-1)?.type !== nodes.list_item) continue;
       const at = EditorState.create({ doc: master.doc, selection: TextSelection.create(master.doc, inside[k]) });
       lift(at, (tr) => {
         for (const step of tr.steps) master.step(step);
@@ -466,12 +822,15 @@ export function toggleList(kind: "bullet" | "number"): Command {
     const lines = selectedTextblocks(state).filter((b) => b.node.type !== nodes.code_block);
     if (!lines.length) return false;
     if (!dispatch) return true;
-    const off = lines.every((b) => isListLine(state.doc, b.pos) && listKind(state.doc, b.pos) === kind);
+    const off = lines.every((b) => b.parent === nodes.list_item && b.kind === kind);
     if (off) {
       const tr = liftLines(state, lines);
-      for (const b of selectedTextblocks(EditorState.create({ doc: tr.doc, selection: tr.selection }))) {
-        if (b.node.attrs.indent) tr.setNodeMarkup(b.pos, null, { ...b.node.attrs, indent: 0 });
-      }
+      const after = selectedTextblocks(EditorState.create({ doc: tr.doc, selection: tr.selection }));
+      retype(
+        tr,
+        after.filter((b) => b.node.attrs.indent),
+        (block) => block.type.create({ ...block.attrs, indent: 0 }, block.content, block.marks),
+      );
       finish(tr, dispatch);
       return true;
     }
@@ -479,17 +838,44 @@ export function toggleList(kind: "bullet" | "number"): Command {
     // lines on a list of the other kind: that list changes kind
     const lists = new Set<number>();
     for (const b of lines) {
-      if (!isListLine(state.doc, b.pos)) continue;
-      const $p = state.doc.resolve(b.pos);
-      const list = $p.before($p.depth - 1);
-      if (state.doc.nodeAt(list)?.type !== type) lists.add(list);
+      if (b.parent !== nodes.list_item || b.kind === kind) continue;
+      const $p = state.doc.resolve(b.pos); // (only lines on a list of the other kind)
+      lists.add($p.before($p.depth - 1));
     }
     for (const list of lists) tr.setNodeMarkup(list, type);
     // the other lines become a list, a run of neighbours one list
-    const others = lines.filter((b) => !isListLine(state.doc, b.pos)).map((b) => b.pos);
-    const runs = siblingRuns(tr, others);
+    const others = lines.filter((b) => b.parent !== nodes.list_item);
+    const runs: Located[][] = [];
+    for (const b of others) {
+      const last = runs[runs.length - 1];
+      const prev = last?.[last.length - 1];
+      if (prev && prev.pos + prev.node.nodeSize === b.pos) last.push(b);
+      else runs.push([b]);
+    }
+    if (others.length >= BULK_MIN) {
+      // many lines: every run becomes a list in one rebuild of their containers (a step per
+      // run would copy the document each time); the cursor is kept by a text bookmark
+      const mark = textBookmark(tr.doc, tr.selection);
+      const before = tr.selection;
+      const byParent = new Map<number, number[][]>();
+      for (const run of runs) {
+        const key = run[0].parentPos;
+        byParent.set(key, [...(byParent.get(key) ?? []), run.map((b) => b.index)]);
+      }
+      const make = (kids: PMNode[]) => [
+        type.create(
+          null,
+          kids.map((k) => nodes.list_item.create(null, nodes.paragraph.create(blockAttrs(k), k.content, k.marks))),
+        ),
+      ];
+      rebuildTree(tr, new Map([...byParent].map(([pos, r]) => [pos, (node: PMNode) => replaceRuns(node, r, make)])));
+      restoreBookmark(tr, mark, before);
+      finish(tr, dispatch);
+      return true;
+    }
     for (let i = runs.length - 1; i >= 0; i--) {
-      const run = runs[i];
+      const located = runs[i];
+      const run = located.map((b) => b.pos);
       // each line its own list item (an item holds one line), then the lists joined: steps that
       // keep the cursor where it was
       for (let k = run.length - 1; k >= 0; k--) {
@@ -522,20 +908,20 @@ export function changeIndent(delta: number): Command {
   return (state, dispatch) => {
     const lines = selectedTextblocks(state);
     if (!lines.length || !delta) return false;
-    if (lines.every((b) => isListLine(state.doc, b.pos))) {
+    if (lines.every((b) => b.parent === nodes.list_item)) {
       const steps: Command[] = [];
       const item = nodes.list_item;
       for (let i = 0; i < Math.min(Math.abs(delta), MAX_LEVEL); i++) {
         steps.push((s, d) => {
           const blocks = selectedTextblocks(s);
-          if (!blocks.every((b) => isListLine(s.doc, b.pos))) return false;
+          if (!blocks.every((b) => b.parent === nodes.list_item)) return false;
           if (delta > 0) {
             // at most MAX_LEVEL deep; sinkListItem only nests under an item above (the cap)
-            if (blocks.some((b) => listLevel(s.doc, b.pos) >= MAX_LEVEL)) return false;
+            if (blocks.some((b) => b.level >= MAX_LEVEL)) return false;
             return sinkListItem(item)(s, d);
           }
           // the top level stays in its list
-          if (blocks.some((b) => listLevel(s.doc, b.pos) <= 1)) return false;
+          if (blocks.some((b) => b.level <= 1)) return false;
           return liftListItem(item)(s, d);
         });
       }
@@ -547,11 +933,11 @@ export function changeIndent(delta: number): Command {
     }
     if (!dispatch) return true;
     const tr = state.tr;
-    for (const b of lines) {
-      if (b.node.type === nodes.code_block) continue;
-      const indent = Math.min(MAX_LEVEL, Math.max(0, (Number(b.node.attrs.indent) || 0) + delta));
-      tr.setNodeMarkup(b.pos, null, { ...b.node.attrs, indent });
-    }
+    const blocks = lines.filter((b) => b.node.type !== nodes.code_block);
+    retype(tr, blocks, (block) => {
+      const indent = Math.min(MAX_LEVEL, Math.max(0, (Number(block.attrs.indent) || 0) + delta));
+      return indent === block.attrs.indent ? block : block.type.create({ ...block.attrs, indent }, block.content, block.marks);
+    });
     finish(tr, dispatch);
     return true;
   };
@@ -560,28 +946,33 @@ export function changeIndent(delta: number): Command {
 // ----- inserts -----------------------------------------------------------------------------------
 
 /** A link on the selection (no `text`), or `text` (else the address) typed as a link. */
-export function insertLink(href: string, text?: string | null): Command {
+export function insertLink(address: string, text?: string | null): Command {
+  // the normaliser's rule: no javascript:, data: or other schemes, nothing empty
+  const href = safeHref(address);
+  if (href === null) return refused;
   return (state, dispatch) => {
     if (!dispatch) return true;
     const tr = state.tr;
     const link = marks.link.create({ href });
-    if (!text && !state.selection.empty) {
-      for (const r of state.selection.ranges) {
-        tr.removeMark(r.$from.pos, r.$to.pos, marks.link);
-        tr.addMark(r.$from.pos, r.$to.pos, link);
-      }
-    } else {
-      tr.replaceSelectionWith(docSchema.text(text || href, [link]), false);
-    }
+    if (!text && !state.selection.empty) changeMarks(tr, selectionRanges(state), [marks.link], link, true);
+    else tr.replaceSelectionWith(docSchema.text(text || href, [link]), false);
     finish(tr, dispatch);
     return true;
   };
 }
 
+/** A picture of the document (`img/N.ext`); a size the subset doesn't keep (not 1 to 100 000)
+ * is left out. */
 export function insertImage(name: string, width?: number | null, height?: number | null): Command {
+  if (!CANON_IMG.test(name)) return refused;
+  // the normaliser's rule (readDimension): a whole number of pixels, 1 to 100 000
+  const size = (n: number | null | undefined) => {
+    const v = n == null || !Number.isFinite(n) ? 0 : Math.round(n);
+    return v > 0 && v <= 100000 ? v : null;
+  };
   return (state, dispatch) => {
     if (!dispatch) return true;
-    const image = nodes.image.create({ src: name, width: width || null, height: height || null });
+    const image = nodes.image.create({ src: name, width: size(width), height: size(height) });
     finish(state.tr.replaceSelectionWith(image, false), dispatch);
     return true;
   };
@@ -736,9 +1127,14 @@ export const insertPageBreak: Command = (state, dispatch) => {
   if (!$f.parent.isTextblock || $f.parent.type === nodes.code_block) return false;
   if (!dispatch) return true;
   const tr = state.tr;
-  if (!state.selection.empty) tr.deleteSelection();
+  if (!state.selection.empty) {
+    tr.deleteSelection();
+    if (!ensureLine(tr, tr.mapping.map(state.selection.from))) return false;
+  }
   const $p = tr.selection.$from;
   const block = $p.parent;
+  // deleting can leave the cursor outside a line (or in code): then nothing happens
+  if (!block.isTextblock || block.type === nodes.code_block || $p.depth < 1) return false;
   const attrs = { ...block.attrs, pageBreak: true };
   if ($p.node($p.depth - 1).type === nodes.list_item) {
     tr.split($p.pos, 2, [{ type: nodes.list_item }, { type: nodes.paragraph, attrs }]);
@@ -790,8 +1186,8 @@ export const clearFormatting: Command = (state, dispatch) => {
         if (node.type === nodes.empty_inline) empties.push(pos);
         return !node.isInline;
       });
-      removeMarks(tr, a, b, null);
     }
+    changeMarks(tr, ranges, null, null, false); // sizes stay: the positions below are still valid
     for (const p of [...new Set(empties)].sort((x, y) => y - x)) tr.delete(p, p + 1);
     tr.setStoredMarks(null);
     d?.(tr);
@@ -800,6 +1196,75 @@ export const clearFormatting: Command = (state, dispatch) => {
   const tr = chain(state, [clear, setBlockStyle("normal")]);
   if (!tr) return false;
   finish(tr, dispatch);
+  return true;
+};
+
+// ----- Enter, line breaks, Tab --------------------------------------------------------------
+
+/** Put the cursor in a line after a deletion: the nearest one, else a new empty one where the
+ * deletion was (deleting across list items can leave only an empty list). False if impossible. */
+function ensureLine(tr: Transaction, at: number): boolean {
+  if (tr.selection.$from.parent.isTextblock) return true;
+  const $at = tr.doc.resolve(Math.min(at, tr.doc.content.size));
+  const near = Selection.findFrom($at, 1, true) ?? Selection.findFrom($at, -1, true);
+  if (near) {
+    tr.setSelection(near);
+    return true;
+  }
+  const wrap = $at.parent.contentMatchAt($at.index()).findWrapping(nodes.paragraph);
+  if (!wrap) return false;
+  let line = nodes.paragraph.create();
+  for (let i = wrap.length - 1; i >= 0; i--) line = wrap[i].create(null, line);
+  tr.insert($at.pos, line);
+  tr.setSelection(TextSelection.create(tr.doc, $at.pos + wrap.length + 1));
+  return true;
+}
+
+/** Run `then` after deleting the selection, in one transaction (like the desktop, Enter over a
+ * selection replaces it). The cursor goes into a line when deleting left it between blocks. */
+function afterDeleting(then: Command): Command {
+  return (state, dispatch) => {
+    if (state.selection.empty) return then(state, dispatch);
+    const tr = state.tr.deleteSelection();
+    if (!ensureLine(tr, tr.mapping.map(state.selection.from))) {
+      dispatch?.(tr.scrollIntoView()); // nothing to split: the deletion alone
+      return true;
+    }
+    const mid = EditorState.create({ doc: tr.doc, selection: tr.selection });
+    let next: Transaction | null = null;
+    then(mid, (t) => {
+      next = t;
+    });
+    if (!dispatch) return true;
+    if (next) {
+      const t = next as Transaction;
+      for (const step of t.steps) tr.step(step);
+      tr.setSelection(Selection.fromJSON(tr.doc, t.selection.toJSON()));
+      if (t.storedMarks) tr.setStoredMarks(t.storedMarks);
+    }
+    dispatch(tr.scrollIntoView());
+    return true;
+  };
+}
+
+/** Enter: a new line (a new list item, or the line split), over a selection too. */
+export const splitLine: Command = afterDeleting(
+  chainCommands(newlineInCode, splitListItem(nodes.list_item), createParagraphNear, liftEmptyBlock, splitBlock),
+);
+
+/** Shift+Enter: a line break in the paragraph (a newline in code), over a selection too. */
+export const lineBreak: Command = afterDeleting((state, dispatch) => {
+  const $f = state.selection.$from;
+  if (!$f.parent.isTextblock) return false;
+  if ($f.parent.type === nodes.code_block) dispatch?.(state.tr.insertText("\n").scrollIntoView());
+  else dispatch?.(state.tr.replaceSelectionWith(nodes.hard_break.create()).scrollIntoView());
+  return true;
+});
+
+/** Tab: a tab character, in tables and lists too (the desktop's QTextEdit does the same). */
+export const insertTab: Command = (state, dispatch) => {
+  if (!state.selection.$from.parent.isTextblock) return false;
+  dispatch?.(state.tr.insertText("\t").scrollIntoView());
   return true;
 };
 
@@ -849,6 +1314,14 @@ export interface ActiveState {
   inTable: boolean;
 }
 
+/** The kind of list the textblock at `pos` is a line of (null: not a list line). */
+function listKindAt(doc: PMNode, pos: number): Located["kind"] {
+  const found: Located[] = [];
+  textblocksIn(doc, pos + 1, pos + 1, found, new Set());
+  const line = found.find((b) => b.pos === pos);
+  return line && line.parent === nodes.list_item ? line.kind : null;
+}
+
 export function activeState(state: EditorState): ActiveState {
   const sel = state.selection;
   let $p = sel instanceof TextSelection ? sel.$head : sel.$from;
@@ -869,7 +1342,7 @@ export function activeState(state: EditorState): ActiveState {
     highlight: attr(marks.highlight, "rgb"),
     href: attr(marks.link, "href"),
     align: ((block?.attrs.align as Align | null) ?? "left") as Align,
-    list: block && isListLine(state.doc, blockPos) ? listKind(state.doc, blockPos) : null,
+    list: block ? listKindAt(state.doc, blockPos) : null,
     inTable: isInTable(state),
   };
 }

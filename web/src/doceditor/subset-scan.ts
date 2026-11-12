@@ -1,8 +1,8 @@
 /**
  * The pre-parse scan of the HTML normaliser (the desktop's `html_scan.py`): finds tags the way
  * the desktop's libxml2 reads them, so numeric references, NUL / control characters, the paragraph
- * marks and 
- inside <pre> can be adjusted before the page's HTML5 parser sees the text.
+ * marks and carriage returns inside <pre> can be adjusted before the page's HTML5 parser sees
+ * the text.
  */
 
 const set = (s: string) => new Set(s.split(" "));

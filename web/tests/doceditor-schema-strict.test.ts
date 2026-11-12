@@ -19,7 +19,7 @@ import { normaliseHtml } from "../src/doceditor/subset";
 import { docToHtml, htmlToDoc } from "../src/ui/doceditor/convert";
 import { docSchema } from "../src/ui/doceditor/schema";
 import * as cmds from "../src/ui/doceditor/commands";
-import { createState } from "../src/ui/doceditor/view";
+import { EDITOR_KEYS, createState } from "../src/ui/doceditor/view";
 import { Rand, randomHtml } from "./doceditor-gen";
 
 const nodes = docSchema.nodes;
@@ -164,7 +164,22 @@ function randomEdit(state: EditorState, r: Rand): EditorState {
     sinkListItem(nodes.list_item),
     wrapIn(nodes.blockquote),
     lift,
-    // the editor's own commands (commands.ts)
+    (s, d) => {
+      // paste: a copied slice of the document somewhere else
+      const slice = s.doc.slice(Math.min(a, b), Math.max(a, b));
+      const at = r.int(s.doc.content.size + 1);
+      try {
+        const tr = s.tr.replace(at, at, slice);
+        tr.doc.check(); // ProseMirror's fitting can leave an empty cell; the view drops such pastes
+        d?.(tr);
+      } catch {
+        /* not a place the slice fits */
+      }
+      return true;
+    },
+  ];
+  // the editor's own commands and keys: a throw from any of them fails the test
+  const editor: Command[] = [
     cmds.setBlockStyle(r.pick(["normal", "h1", "h3", "quote", "code"] as const)),
     cmds.toggleMark(r.pick(["bold", "italic", "underline", "strike"] as const)),
     cmds.setFont("Arial"),
@@ -182,27 +197,22 @@ function randomEdit(state: EditorState, r: Rand): EditorState {
     cmds.insertRule,
     cmds.clearFormatting,
     cmds.stepOverEmpty(r.pick([1, -1] as const)),
-    (s, d) => {
-      // paste: a copied slice of the document somewhere else
-      const slice = s.doc.slice(Math.min(a, b), Math.max(a, b));
-      const at = r.int(s.doc.content.size + 1);
-      try {
-        const tr = s.tr.replace(at, at, slice);
-        tr.doc.check(); // ProseMirror's fitting can leave an empty cell; the view drops such pastes
-        d?.(tr);
-      } catch {
-        /* not a place the slice fits */
-      }
-      return true;
-    },
+    ...["Enter", "Shift-Enter", "Mod-Enter", "Tab", "Shift-Tab", "Mod-Space", "Mod-Alt-2", "Mod-Shift-l", "ArrowLeft", "ArrowRight"].map(
+      (key) => EDITOR_KEYS[key],
+    ),
   ];
   let next = state;
-  try {
-    r.pick(commands)(state, (tr: Transaction) => {
-      next = state.apply(tr);
-    });
-  } catch {
-    /* a command that doesn't apply here */
+  const i = r.int(commands.length + editor.length);
+  const apply = (tr: Transaction) => {
+    next = state.apply(tr);
+  };
+  if (i >= commands.length) editor[i - commands.length](state, apply);
+  else {
+    try {
+      commands[i](state, apply); // raw ProseMirror calls may not suit this schema
+    } catch {
+      /* a command that doesn't apply here */
+    }
   }
   return next;
 }
