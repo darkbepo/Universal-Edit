@@ -20,7 +20,7 @@ EDITORS: tuple[EditorInfo, ...] = (
     EditorInfo("image", "Image editor", "Paint, layers, retouch and effects", "photo", True),
     EditorInfo("model", "3D viewer", "Look at and measure 3D models", "cube", True),
     EditorInfo("video", "Video editor", "Trim, join and mix clips", "movie", False),
-    EditorInfo("audio", "Audio editor", "Cut, mix and fade sound", "music", False),
+    EditorInfo("audio", "Audio editor", "Cut, fade and clean up sound", "music", True),
     EditorInfo("document", "Document editor", "Write and format documents", "document", False),
 )
 

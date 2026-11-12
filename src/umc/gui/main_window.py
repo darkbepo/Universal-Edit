@@ -121,7 +121,8 @@ class MainWindow(QMainWindow):
         tl.setColumnStretch(2, 1)
 
         # Convert | Edit | Properties — Edit is enabled when the files can be edited: images,
-        # exactly one editable document, or 3D models (the 3D viewer); Properties for any files
+        # exactly one editable document, 3D models (the 3D viewer) or audio files; Properties
+        # for any files
         self.mode_bar = QFrame(objectName="ModeBar")
         mb = QHBoxLayout(self.mode_bar)
         mb.setContentsMargins(3, 3, 3, 3)
@@ -152,6 +153,7 @@ class MainWindow(QMainWindow):
         self.editor = None  # EditorPage, created on first use
         self.doc_editor = None  # DocEditorPage, created on first use
         self.viewer3d = None  # ViewerPage (3D models), created on first use
+        self.audio_editor = None  # AudioEditorPage, created on first use
         self._convert_size = None
 
         # ---------------------------------------------------------- body: two columns
@@ -453,13 +455,15 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------ Convert | Edit
     def edit_kind(self) -> str | None:
         """ "image" when every file is an image, "document" for one editable document,
-        "model" when every file is a 3D model."""
+        "model" when every file is a 3D model, "audio" when every file is audio (joined)."""
         if not self.files:
             return None
         if all(f.family == MediaFamily.IMAGE for f in self.files):
             return "image"
         if all(f.family == MediaFamily.MODEL for f in self.files):
             return "model"
+        if all(f.family == MediaFamily.AUDIO for f in self.files):
+            return "audio"
         if (
             len(self.files) == 1
             and self.files[0].family == MediaFamily.DOCUMENT
@@ -484,8 +488,10 @@ class MainWindow(QMainWindow):
             tip = "Open the 3D models in the 3D viewer"
         elif kind == "image":
             tip = "Open the images in the image editor (each image becomes a layer)"
+        elif kind == "audio":
+            tip = "Open the sound in the audio editor (several files are joined)"
         else:
-            tip = "Add images, one text document, or 3D models to edit them"
+            tip = "Add images, audio, one text document, or 3D models to edit them"
         self.edit_mode.setToolTip(tip)
 
     def open_settings(self) -> None:
@@ -494,7 +500,16 @@ class MainWindow(QMainWindow):
         SettingsDialog(self).exec()
 
     def _page(self, kind: str) -> QWidget:
-        """The editor page for ``kind`` ("image", "document", "model"), made on first use."""
+        """The editor page for ``kind`` ("image", "document", "model", "audio"), made on first
+        use."""
+        if kind == "audio":
+            if self.audio_editor is None:
+                from umc.gui.audioeditor.audio_editor_page import AudioEditorPage
+
+                self.audio_editor = AudioEditorPage()
+                self.audio_editor.back_requested.connect(self.leave_edit)
+                self.stack.addWidget(self.audio_editor)
+            return self.audio_editor
         if kind == "document":
             if self.doc_editor is None:
                 from umc.gui.doceditor.doc_editor_page import DocEditorPage
@@ -547,6 +562,12 @@ class MainWindow(QMainWindow):
             self._show_page(page)
             page.view.setFocus()
             return
+        if kind == "audio":
+            if page.open_paths([f.path for f in self.files]):  # already left: no question
+                self._show_page(page)
+            else:
+                self._check_mode_button()
+            return
         if not page.open_paths([f.path for f in self.files]):
             self._check_mode_button()
             self.input_error.setText(page.message.text())
@@ -578,6 +599,11 @@ class MainWindow(QMainWindow):
             return self.new_picture(*dialog.values())
         if kind == "model":
             page = self._page("model")
+            page.open_empty()
+            self._show_page(page)
+            return True
+        if kind == "audio":
+            page = self._page("audio")
             page.open_empty()
             self._show_page(page)
             return True
@@ -886,6 +912,8 @@ class MainWindow(QMainWindow):
             self.doc_editor.drop_paths([Path(p) for p in self._expand(paths)])
         elif page is not None and page is self.viewer3d:
             self._drop_models(paths)
+        elif page is not None and page is self.audio_editor:
+            self.audio_editor.drop_paths([Path(p) for p in self._expand(paths)])
         elif page is not None:
             self.editor.add_paths([Path(p) for p in self._expand(paths)])
         elif not self.busy:

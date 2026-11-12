@@ -363,6 +363,41 @@ def _viewer3d_check(d: Path) -> list[Path]:
     return [path]
 
 
+def _audio_editor_check(d: Path) -> list[Path]:
+    """Audio editor: open (FFmpeg → float WAV), cut, fade, save as MP3, and Qt Multimedia's
+    audio output classes are packaged."""
+    import importlib
+
+    from umc.audioedit.io import open_audio, save_audio
+
+    importlib.import_module("umc.gui.audioeditor.audio_editor_page")
+    import threading
+
+    from PySide6.QtMultimedia import QAudioFormat, QAudioSink  # noqa: F401
+
+    from umc.tools import ffmpeg
+
+    d.mkdir(parents=True, exist_ok=True)
+    sound = d / "tone.wav"
+    ffmpeg.run_ffmpeg(
+        ["-f", "lavfi", "-i", "sine=frequency=440:duration=1", "-ac", "2", str(sound)],
+        total_seconds=1,
+        progress=lambda _f: None,
+        cancel_event=threading.Event(),
+    )
+    doc = open_audio([sound])
+    before = doc.frames
+    doc.set_selection(0, doc.rate // 10)
+    doc.cut()
+    doc.set_selection(0, doc.rate // 10)
+    doc.fade_in()
+    out = save_audio(doc, d / "edited.mp3", "mp3", 128)
+    back = open_audio([out])
+    if not before > doc.frames > 0 or abs(back.duration - doc.duration) > 0.15:
+        raise RuntimeError(f"unexpected lengths: {before}, {doc.frames}, {back.duration}")
+    return [out]
+
+
 def run(report: Path) -> int:
     from PIL import Image
 
@@ -416,6 +451,10 @@ def run(report: Path) -> int:
             ("editor add-ons installed and loading", lambda: _addons_check(d / "addons")),
             ("document editor", lambda: _doc_editor_check(d / "doceditor")),
             ("3D viewer (model + Qt OpenGL)", lambda: _viewer3d_check(d / "viewer3d")),
+            (
+                "audio editor (open, cut, fade, save as mp3)",
+                lambda: _audio_editor_check(d / "audioedit"),
+            ),
             ("mp4 -> webm", lambda: _convert([out / "img0 slideshow.mp4"], "webm", out)),
             ("mp4 -> gif", lambda: _convert([out / "img0 slideshow.mp4"], "video:gif", out)),
             ("mp4 -> frames", lambda: _convert([out / "img0 slideshow.mp4"], "frames:png", out)),

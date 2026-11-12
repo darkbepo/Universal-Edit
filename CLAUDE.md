@@ -232,9 +232,13 @@ src/umc/
                          #   helpers), html_export (QTextDocument → HTML subset)
     editor3d/            # 3D viewer: ViewerPage (top bar, info panel, loads on a QThread), gl_view
     viewer/              # "Open with" viewer: ViewerWindow, views (image/media/pages/text), tasks
+    audioeditor/         # audio editor: AudioEditorPage (tool row, open/save on a QThread),
+                         #   WaveView (ruler, lanes, selection), Player (QAudioSink, pulls int16)
     launcher.py          # AppController: converter windows + the viewer; single_instance.py
   editor3d/              # 3D viewer model — mesh.py (load + measurements), camera.py (orbit); no Qt
   viewer/                # viewer model — files.py (view kinds, folder list), preview.py; no Qt
+  audioedit/             # audio editor model (numpy, no Qt) — document.py (AudioDoc, splice
+                         #   undo), ops.py, peaks.py (waveform columns), wav.py, io.py (open/save)
   doceditor/             # document editor model — pure Python, no Qt
     types.py             # SaveContent / OpenedDocument, "parts that will be lost" warnings, limits
     html_subset.py       # the small HTML the editor shows and saves (sanitise, picture names)
@@ -763,7 +767,7 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       Next: basic editing for 3D printing (plan in the session handoff / owner's go-ahead).
    9. ✅ Start screen = hub (both apps): editor tiles under the empty drop zone, listed in
       `core/editors.py` / `web/src/core/editors.ts` (same order and text; `available` False =
-      greyed "Coming soon" — video, audio, document editor for now; tests/test_editor_hub.py checks
+      greyed "Coming soon" — video and document editor for now; tests/test_editor_hub.py checks
       both lists). Image tile → "New picture" (`editor/blank.py` / `blank.ts`, presets in
       `web/src/editor/presets.ts` so the start page doesn't load the editor) → `MainWindow.new_picture`
       / `EditorPage.openBlank`; 3D tile → viewer `open_empty` / `openEmpty` with an "Open…" button
@@ -839,7 +843,32 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       add-ons folder. CI installs the built add-ons before `--self-test` ("editor add-ons
       installed and loading"). Tests simulate the built app with `UMC_ADDONS_TEST=1` +
       `UMC_ADDONS_DIR`.
-   13. Properties mode (both apps), step 1 = read-only "About this file" — spec
+   13. ✅ Audio editor (both apps; owner, Nov 2026: "a simple design like Audacity"). Convert | Edit
+      when every file is audio (several are joined end to end at the first one's rate / channels);
+      hub tile opens it empty. Model `audioedit/` / `web/src/audioedit/` (line-by-line ports, same
+      test cases in `tests/test_audioedit.py` ↔ `web/tests/audioedit.test.ts`): planar float32
+      samples; every edit is a list of *splices* (replace `[start, start+len(old))` with `new`),
+      so undo keeps only what changed and same-length edits are written in place (history capped:
+      500 MB desktop / 300 MB web). Edits: cut / copy / paste (mono ↔ stereo fitted), delete, trim,
+      silence, fade in / out (linear), amplify (dB), normalize (peak −1 dB), reverse — amplify /
+      normalize / reverse use the whole sound when nothing is selected. Waveform = min / max per
+      column from a 256-frame block summary (`peaks.py` / `peaks.ts`; a block shared by two
+      columns counts for both), straight from the samples when zoomed in. Opening: FFmpeg →
+      `pcm_f32le` WAV, `aformat=channel_layouts=mono|stereo` (desktop `io.decode`; web the hidden
+      `audio-edit-open` converter in the worker), read by our own `wav.py` / `wav.ts`; limits
+      `MAX_SAMPLES` 240 M desktop / 80 M web. Saving: a float WAV through the normal audio
+      converter (all its formats; only the bitrate is asked, for lossy ones); the first Save asks
+      for a name ("<name> edited.<ext>", never over the original). Playback: desktop
+      `gui/audioeditor/player.py` (QAudioSink pulling int16 from a QIODevice; offscreen / no
+      device → a plain message), web Web Audio (AudioBuffer of the range; pause = suspend).
+      Worker results must reach the page through bound-method slots (a lambda runs on the worker
+      thread). Shortcuts: Space, Home / End, Ctrl+X / C / V, Delete, Ctrl+T, Ctrl+L, Ctrl+A, Esc,
+      + / − (desktop also Ctrl+1 / 3; Chrome keeps those for tabs), Ctrl+E, Ctrl+F, Ctrl+Z / Y,
+      Ctrl+S. Desktop add-on "audio" (`umc.gui.audioeditor`; the model stays in the app); self-test
+      step "audio editor". e2e `e2e/audioeditor.spec.ts` (`window.__audio` with `?e2e`).
+      Not yet: several tracks / mixing, recording, spectrogram, noise reduction, speed / pitch,
+      editable selection times, tags (title / artist) are not carried over when saving.
+   14. Properties mode (both apps), step 1 = read-only "About this file" — spec
       `docs/superpowers/specs/2026-11-12-properties-design.md`. Model `properties/` (desktop, no
       Qt) ↔ `web/src/properties/`: each app reads a file with its own engines into the same plain
       "facts" dicts (`read.py` / `converters/properties.ts`, hidden converter "properties-info" →
@@ -855,7 +884,7 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       have no mode switch ("← Back to Convert"), so Properties is reached from the converter
       page. Next steps (owner's go-ahead given): change photo details (lossless EXIF segment
       swap), music tags (mutagen, GPL-2.0+, approved), video, PDF / Office, file name + dates.
-   14. Orbiting drop-zone badges (both apps): 12 file-type badges (icon + type, own colour,
+   15. Orbiting drop-zone badges (both apps): 12 file-type badges (icon + type, own colour,
       dimmed to 62 %) on three tilted rings around the empty drop zone's text, smaller / fainter
       on the far side, faded near the text. Dragging a file over pulls them in and speeds them up;
       a drop on the empty page bursts them outward, then adds the files. Model `core/orbit.py`

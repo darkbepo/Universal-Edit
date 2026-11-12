@@ -171,6 +171,14 @@ export default async function globalSetup() {
       // no ffmpeg: the Properties music test is skipped
     }
   }
+  if (!existsSync(`${FIXTURES}beep.mp3`)) {
+    try {
+      execFileSync("ffmpeg", ["-loglevel", "error", "-y", "-f", "lavfi", "-i", "sine=frequency=660:duration=1",
+        `${FIXTURES}beep.mp3`]); // mono, 1 s: the audio editor joins it after tone.wav
+    } catch {
+      /* skipped like the video tests */
+    }
+  }
   if (!existsSync(`${FIXTURES}clip.mp4`)) {
     try {
       execFileSync("ffmpeg", ["-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc=duration=2:size=320x240:rate=30",
