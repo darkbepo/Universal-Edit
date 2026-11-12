@@ -134,7 +134,7 @@ class Orbit(QObject):
         now = self._now()
         dt = min(now - self._last, 0.05)
         self._last = now
-        self.pull += (self.pull_target - self.pull) * min(1.0, dt * 6)
+        self.pull += (self.pull_target - self.pull) * min(1.0, dt * model.PULL_EASE)
         self.tau += dt * model.speed(self.pull)
         self.widget.update()
 

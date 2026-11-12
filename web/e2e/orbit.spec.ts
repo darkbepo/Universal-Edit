@@ -19,7 +19,7 @@ test("badges move on the empty page; a drop bursts them, then the file is listed
   const before = Date.now();
   expect(await page.evaluate(dropFile, ["dropped.png", false] as [string, boolean])).toBe(true);
   await expect(page.locator(".queue li")).toHaveCount(1);
-  expect(Date.now() - before).toBeGreaterThanOrEqual(350); // waited for the burst
+  expect(Date.now() - before).toBeGreaterThanOrEqual(550); // waited for the burst
   await expect(orbit).toBeHidden();
   await page.getByRole("button", { name: "Clear" }).click();
   await expect(orbit).toBeVisible();

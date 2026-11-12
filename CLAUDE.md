@@ -138,7 +138,7 @@ See `web/README.md` for commands and deployment.
   "editor", so match "Edit" with `exact: true`), `dialog.new-picture` (`#np-size/-width/-height`).
   Properties: button "Properties" (exact), `.properties-pane`, `.prop-file` (file picker),
   `.prop-card[data-title]` with `dt` / `dd` rows. Drop zone badges: `.drop canvas.orbit`
-  (`data-moving`). A real `drop` event on the empty page waits `burstMs` (420 ms) before the
+  (`data-moving`). A real `drop` event on the empty page waits `burstMs` (650 ms) before the
   files are added (the burst); `setInputFiles` and reduce-motion add at once.
   Tiles are hidden while Settings is open: tests choose formats with the `pick()` helper (strip →
   tile → cog again if Settings was open), never by clicking a tile directly.
@@ -894,6 +894,7 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       visible + empty). Both check `tests/fixtures/orbit_cases.json`. Reduce motion (web
       `prefers-reduced-motion`; Windows "Animation effects" via SPI_GETCLIENTAREAANIMATION;
       `UMC_REDUCE_MOTION=1/0` overrides) = still badges, no burst delay.
+      Kept calm on purpose (owner): laps of 72–100 s, pull 1.8× speed, 650 ms soft burst.
 11. **First public release** (owner, Nov 2026: wait until more editors are ready). Push a
     `v<__version__>` tag (bump `umc/__init__.py` first; the workflow checks they match): the
     Windows build then publishes the .exe zip, the installer and the editor add-on zips as a

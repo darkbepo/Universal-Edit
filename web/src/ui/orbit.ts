@@ -16,7 +16,7 @@ export const speed = (pull: number) => 1 + data.pullSpeed * pull;
 export function layout(tau: number, width: number, height: number, textW: number, textH: number, pull = 0, burst = 0): Spot[] {
   const sx = Math.max(width / 2 - data.pad, 1);
   const sy = Math.max(height / 2 - data.pad, 1);
-  const out = 1 + data.burstOut * (1 - (1 - burst) ** 3);
+  const out = 1 + data.burstOut * (1 - (1 - burst) ** 2);
   const fade = (1 - burst) ** 2;
   const shrink = 1 - data.pullIn * pull;
   const spots: Spot[] = [];
@@ -157,7 +157,7 @@ export class Orbit {
     const dt = Math.min((now - this.last) / 1000, 0.05);
     this.last = now;
     if (moving) {
-      this.pull += (this.pullTarget - this.pull) * Math.min(1, dt * 6);
+      this.pull += (this.pullTarget - this.pull) * Math.min(1, dt * data.pullEase);
       this.tau += dt * speed(this.pull);
     } else {
       this.pull = 0;

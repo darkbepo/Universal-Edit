@@ -47,16 +47,18 @@ class Ring:
 
 
 RINGS: list[Ring] = [
-    Ring(radius=1.0, tilt=62, roll=-10, period=40, direction=1, phase=0.0, count=5),
-    Ring(radius=0.84, tilt=56, roll=14, period=32, direction=-1, phase=0.1, count=4),
-    Ring(radius=0.68, tilt=68, roll=3, period=26, direction=1, phase=0.3, count=3),
+    Ring(radius=1.0, tilt=62, roll=-10, period=100, direction=1, phase=0.0, count=5),
+    Ring(radius=0.84, tilt=56, roll=14, period=85, direction=-1, phase=0.1, count=4),
+    Ring(radius=0.68, tilt=68, roll=3, period=72, direction=1, phase=0.3, count=3),
 ]
 
 PAD = 34  # px kept free at the box edges (half a badge)
-PULL_IN = 0.45  # pull 1 shrinks the rings to 55 %
-PULL_SPEED = 2.5  # pull 1 makes them 3.5 × as fast (the GUI advances tau with ``speed``)
-BURST_OUT = 1.6  # burst 1 pushes them out to 260 %
-BURST_MS = 420  # how long the drop burst runs before the files are added
+# Calm on purpose (owner, Nov 2026: "more calm and slow"): laps of 72–100 s, a gentle pull.
+PULL_IN = 0.35  # pull 1 shrinks the rings to 65 %
+PULL_SPEED = 0.8  # pull 1 makes them 1.8 × as fast (the GUI advances tau with ``speed``)
+PULL_EASE = 2.0  # how quickly the pull follows the drag (per second; the GUI eases toward it)
+BURST_OUT = 0.9  # burst 1 pushes them out to 190 %
+BURST_MS = 650  # how long the drop burst runs before the files are added
 STRETCH = 1.8  # leaning rings come out flat; this fills the box's height again
 CLEAR = 0.45  # fade-out band around the text, as a share of its half-size
 
@@ -87,7 +89,7 @@ def layout(
     ``width`` × ``height`` px, around text ``text_w`` × ``text_h`` px."""
     sx = max(width / 2 - PAD, 1.0)
     sy = max(height / 2 - PAD, 1.0)
-    out = 1 + BURST_OUT * (1 - (1 - burst) ** 3)
+    out = 1 + BURST_OUT * (1 - (1 - burst) ** 2)
     fade = (1 - burst) ** 2
     shrink = 1 - PULL_IN * pull
     spots: list[Spot] = []
@@ -119,6 +121,7 @@ def export() -> dict:
         "pad": PAD,
         "pullIn": PULL_IN,
         "pullSpeed": PULL_SPEED,
+        "pullEase": PULL_EASE,
         "burstOut": BURST_OUT,
         "burstMs": BURST_MS,
         "clear": CLEAR,

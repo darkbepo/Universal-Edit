@@ -66,7 +66,7 @@
    "radius": 1.0,
    "tilt": 62,
    "roll": -10,
-   "period": 40,
+   "period": 100,
    "direction": 1,
    "phase": 0.0,
    "count": 5
@@ -75,7 +75,7 @@
    "radius": 0.84,
    "tilt": 56,
    "roll": 14,
-   "period": 32,
+   "period": 85,
    "direction": -1,
    "phase": 0.1,
    "count": 4
@@ -84,17 +84,18 @@
    "radius": 0.68,
    "tilt": 68,
    "roll": 3,
-   "period": 26,
+   "period": 72,
    "direction": 1,
    "phase": 0.3,
    "count": 3
   }
  ],
  "pad": 34,
- "pullIn": 0.45,
- "pullSpeed": 2.5,
- "burstOut": 1.6,
- "burstMs": 420,
+ "pullIn": 0.35,
+ "pullSpeed": 0.8,
+ "pullEase": 2.0,
+ "burstOut": 0.9,
+ "burstMs": 650,
  "clear": 0.45,
  "stretch": 1.8
 }
