@@ -39,6 +39,31 @@ def send_to_running(message: dict, name: str | None = None, timeout_ms: int = 50
     return ok
 
 
+def claim(
+    message: dict, name: str | None = None, lock_path: str | None = None, wait_s: float = 8.0
+) -> tuple[bool, QLockFile | None]:
+    """For ``--view`` / ``--convert``: hand ``message`` to a running copy, or become it.
+
+    Returns (handed over, lock). Explorer starts one copy per selected file at the same
+    moment, before any of them listens: the one that gets the lock becomes the window, the
+    others keep offering their file until it listens (up to ``wait_s``). (False, None) = no
+    copy answered in time: open a window of our own."""
+    import time
+
+    if send_to_running(message, name):
+        return True, None
+    server = InstanceServer(name=name, lock_path=lock_path)
+    lock = QLockFile(server.lock_file())
+    if lock.tryLock(0):
+        return False, lock
+    deadline = time.monotonic() + wait_s
+    while time.monotonic() < deadline:
+        if send_to_running(message, name, timeout_ms=200):
+            return True, None
+        time.sleep(0.1)
+    return False, None
+
+
 class InstanceServer(QObject):
     """Receives messages from later starts (``message_received(dict)``).
 
@@ -59,16 +84,19 @@ class InstanceServer(QObject):
         self.server = QLocalServer(self)
         self.server.newConnection.connect(self._on_connection)
 
-    def start(self) -> bool:
-        """True if this copy now answers later starts."""
-        path = self.lock_path
-        if path is None:
-            from umc.core.paths import app_data_dir
+    def lock_file(self) -> str:
+        if self.lock_path is not None:
+            return self.lock_path
+        from umc.core.paths import app_data_dir
 
-            path = str(app_data_dir() / f"{self.name}.lock")
-        lock = QLockFile(path)
-        if not lock.tryLock(0):
-            return False  # another copy is running and answers
+        return str(app_data_dir() / f"{self.name}.lock")
+
+    def start(self, lock: QLockFile | None = None) -> bool:
+        """True if this copy now answers later starts (``lock``: already taken by ``claim``)."""
+        if lock is None:
+            lock = QLockFile(self.lock_file())
+            if not lock.tryLock(0):
+                return False  # another copy is running and answers
         self.lock = lock
         QLocalServer.removeServer(self.name)  # a socket file left by a crashed run (Unix)
         if not self.server.listen(self.name):

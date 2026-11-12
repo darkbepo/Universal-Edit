@@ -794,6 +794,13 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       "Choose default apps…" opens `ms-settings:defaultapps`. The app's Settings window
       (`gui/settings_dialog.py`, cog top-left of the converter) switches both. Windows 11 shows
       the entry under "Show more options" (the short menu needs a signed MSIX — not done).
+      **Never touch `HKCU\Software\UniversalEdit`** — that's QSettings (the app's own settings);
+      Capabilities live in `Software\UniversalEdit.Integration`. `register_*` first runs
+      `unregister_*`, which scans for our verb / ProgID everywhere (older versions' extensions).
+      `single_instance.claim`: copies started together (a multi-file right-click while the app
+      is closed) race for the QLockFile; the winner becomes the window, the others keep
+      offering their file for up to 8 s. The installer's [Run] writes each switch as ticked and
+      its [Code] starts an upgrade's ticks from the current registry state (Settings window).
       Next (step 5): editors as downloadable add-ons, chosen in the installer / Install tiles.
 11. Ideas: presets, batch queue.
 

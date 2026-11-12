@@ -27,7 +27,8 @@ log = logging.getLogger(__name__)
 CLASSES = r"Software\Classes"
 VERB = "UniversalEdit.Convert"
 PROGID = "UniversalEdit.View"
-APP_KEY = r"Software\UniversalEdit"
+# Not Software\UniversalEdit: QSettings keeps the app's own settings there (branding.ORG_NAME).
+APP_KEY = r"Software\UniversalEdit.Integration"
 CAPABILITIES = APP_KEY + r"\Capabilities"
 REGISTERED_APPS = r"Software\RegisteredApplications"
 APP_NAME = "Universal Edit"
@@ -39,6 +40,7 @@ class Registry(Protocol):
     """HKEY_CURRENT_USER; paths like ``Software\\Classes\\.png``; ``name`` "" = default value."""
 
     def set_value(self, path: str, name: str, value: str) -> None: ...
+    def set_empty(self, path: str, name: str) -> None: ...  # REG_NONE (OpenWithProgids)
     def get_value(self, path: str, name: str) -> str | None: ...
     def delete_value(self, path: str, name: str) -> None: ...
     def delete_tree(self, path: str) -> None: ...
@@ -58,6 +60,10 @@ class WinRegistry:
     def set_value(self, path: str, name: str, value: str) -> None:
         with self.w.CreateKeyEx(self.root, path, 0, self.w.KEY_WRITE) as k:
             self.w.SetValueEx(k, name, 0, self.w.REG_SZ, value)
+
+    def set_empty(self, path: str, name: str) -> None:
+        with self.w.CreateKeyEx(self.root, path, 0, self.w.KEY_WRITE) as k:
+            self.w.SetValueEx(k, name, 0, self.w.REG_NONE, None)
 
     def get_value(self, path: str, name: str) -> str | None:
         try:
@@ -128,6 +134,7 @@ def icon_ref() -> str:
 
 # --------------------------------------------------------------------------- right-click Convert
 def register_context_menu(reg: Registry) -> None:
+    unregister_context_menu(reg)  # also what an older version registered
     command = launch_command("--convert", '"%1"')
     for ext in convert_extensions():
         key = rf"{CLASSES}\SystemFileAssociations\.{ext}\shell\{VERB}"
@@ -139,8 +146,14 @@ def register_context_menu(reg: Registry) -> None:
 
 
 def unregister_context_menu(reg: Registry) -> None:
-    for ext in convert_extensions():
-        reg.delete_tree(rf"{CLASSES}\SystemFileAssociations\.{ext}\shell\{VERB}")
+    """Our verb wherever it is — also for extensions an older version listed and this one
+    doesn't. Other programs' entries are never touched."""
+    base = rf"{CLASSES}\SystemFileAssociations"
+    exts = {"." + e for e in convert_extensions()} | set(reg.subkeys(base))
+    for sub in sorted(exts):
+        key = rf"{base}\{sub}\shell\{VERB}"
+        if reg.has_key(key):
+            reg.delete_tree(key)
 
 
 def context_menu_registered(reg: Registry) -> bool:
@@ -149,6 +162,7 @@ def context_menu_registered(reg: Registry) -> bool:
 
 # --------------------------------------------------------------------------- Open with (viewer)
 def register_open_with(reg: Registry) -> None:
+    unregister_open_with(reg)  # also what an older version registered
     command = launch_command("--view", '"%1"')
     prog = rf"{CLASSES}\{PROGID}"
     reg.set_value(prog, "", f"File opened with {APP_NAME}")
@@ -163,16 +177,20 @@ def register_open_with(reg: Registry) -> None:
     reg.set_value(
         CAPABILITIES, "ApplicationDescription", "View, convert and edit pictures, video, …"
     )
+    if icon_ref():
+        reg.set_value(CAPABILITIES, "ApplicationIcon", icon_ref())
     for ext in view_extensions():
-        reg.set_value(rf"{CLASSES}\.{ext}\OpenWithProgids", PROGID, "")
-        reg.set_value(app + r"\SupportedTypes", "." + ext, "")
+        reg.set_empty(rf"{CLASSES}\.{ext}\OpenWithProgids", PROGID)
+        reg.set_empty(app + r"\SupportedTypes", "." + ext)
         reg.set_value(CAPABILITIES + r"\FileAssociations", "." + ext, PROGID)
     reg.set_value(REGISTERED_APPS, APP_NAME, CAPABILITIES)
 
 
 def unregister_open_with(reg: Registry) -> None:
-    for ext in view_extensions():
-        reg.delete_value(rf"{CLASSES}\.{ext}\OpenWithProgids", PROGID)
+    exts = {"." + e for e in view_extensions()}
+    exts |= {k for k in reg.subkeys(CLASSES) if k.startswith(".")}  # older versions' too
+    for sub in sorted(exts):
+        reg.delete_value(rf"{CLASSES}\{sub}\OpenWithProgids", PROGID)
     reg.delete_tree(rf"{CLASSES}\{PROGID}")
     reg.delete_tree(rf"{CLASSES}\Applications\{EXE_NAME}")
     reg.delete_value(REGISTERED_APPS, APP_NAME)
@@ -205,9 +223,11 @@ def open_default_apps() -> None:
     """Windows' Default apps page, on Universal Edit's entry where Windows supports that."""
     if sys.platform == "win32":
         import os
+        from urllib.parse import quote
 
         try:
-            os.startfile(f"ms-settings:defaultapps?registeredAppUser={APP_NAME}")  # type: ignore[attr-defined]
+            uri = f"ms-settings:defaultapps?registeredAppUser={quote(APP_NAME)}"
+            os.startfile(uri)  # type: ignore[attr-defined]
         except OSError:
             subprocess.run(["explorer", "ms-settings:defaultapps"], check=False)
 

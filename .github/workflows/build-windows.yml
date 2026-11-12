@@ -97,7 +97,7 @@ jobs:
           "right-click command: $cmd"
           if ($cmd -notlike '*UniversalEdit.exe*--convert*') { throw "right-click Convert missing" }
           $caps = (Get-ItemProperty 'HKCU:\Software\RegisteredApplications').'Universal Edit'
-          if ($caps -ne 'Software\UniversalEdit\Capabilities') { throw "Open with missing" }
+          if ($caps -ne 'Software\UniversalEdit.Integration\Capabilities') { throw "Open with missing" }
           $view = (Get-ItemProperty 'HKCU:\Software\Classes\UniversalEdit.View\shell\open\command').'(default)'
           if ($view -notlike '*UniversalEdit.exe*--view*') { throw "viewer command missing" }
           Start-Process "$dir\unins000.exe" -Wait -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'

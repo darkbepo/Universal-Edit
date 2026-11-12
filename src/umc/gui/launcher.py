@@ -19,7 +19,7 @@ GROUP_SECONDS = 3.0  # right-clicked files arriving this close together share on
 
 
 class AppController(QObject):
-    def __init__(self, listen: bool = True) -> None:
+    def __init__(self, listen: bool = True, lock=None) -> None:
         super().__init__()
         self.windows: list = []  # MainWindow (imported on first use: the viewer starts faster)
         self.viewer = None
@@ -28,7 +28,7 @@ class AppController(QObject):
         self.server = InstanceServer(self)
         self.server.message_received.connect(self._on_message)
         if listen:
-            self.server.start()
+            self.server.start(lock)
 
     def _on_message(self, msg: dict) -> None:
         if isinstance(msg.get("view"), str):

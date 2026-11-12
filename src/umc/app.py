@@ -99,11 +99,13 @@ def main(argv: list[str] | None = None) -> int:
     app.setApplicationVersion(__version__)
     app.setWindowIcon(branding.app_icon())
 
+    lock = None
     if view_path is not None or convert_paths:
-        from umc.gui.single_instance import send_to_running
+        from umc.gui.single_instance import claim
 
         message = {"view": view_path} if view_path is not None else {"convert": convert_paths}
-        if send_to_running(message):
+        handed_over, lock = claim(message)
+        if handed_over:
             return 0  # the running copy shows it
     _start_cleanup()
     branding.migrate_settings()
@@ -113,7 +115,7 @@ def main(argv: list[str] | None = None) -> int:
 
     from umc.gui.launcher import AppController
 
-    controller = AppController()
+    controller = AppController(lock=lock)
     if view_path is not None:
         controller.view(view_path)
     elif convert_paths:

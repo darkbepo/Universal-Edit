@@ -63,12 +63,41 @@ Name: "{autoprograms}\Universal Edit"; Filename: "{app}\UniversalEdit.exe"
 Name: "{autodesktop}\Universal Edit"; Filename: "{app}\UniversalEdit.exe"; Tasks: desktopicon
 
 [Run]
-; an upgrade first removes what an earlier install registered, then writes what was chosen now
-Filename: "{app}\UniversalEdit.exe"; Parameters: "--unregister all"; Flags: runhidden waituntilterminated
+; each switch is written as chosen (--register also clears what an older version registered)
 Filename: "{app}\UniversalEdit.exe"; Parameters: "--register context-menu"; Tasks: contextmenu; Flags: runhidden waituntilterminated
+Filename: "{app}\UniversalEdit.exe"; Parameters: "--unregister context-menu"; Tasks: not contextmenu; Flags: runhidden waituntilterminated
 Filename: "{app}\UniversalEdit.exe"; Parameters: "--register open-with"; Tasks: openwith; Flags: runhidden waituntilterminated
+Filename: "{app}\UniversalEdit.exe"; Parameters: "--unregister open-with"; Tasks: not openwith; Flags: runhidden waituntilterminated
 Filename: "ms-settings:defaultapps"; Description: "Choose Universal Edit as the default app for pictures and videos (opens Windows settings)"; Tasks: openwith; Flags: postinstall shellexec skipifsilent unchecked
 Filename: "{app}\UniversalEdit.exe"; Description: "Start Universal Edit"; Flags: postinstall nowait skipifsilent
 
 [UninstallRun]
 Filename: "{app}\UniversalEdit.exe"; Parameters: "--unregister all"; Flags: runhidden waituntilterminated; RunOnceId: "UnregisterShell"
+
+[Code]
+{ On an upgrade the two Windows switches start as they are now — the app's Settings window may
+  have changed them since the last install — instead of as ticked last time. Done once, so
+  going Back to the page keeps what the user changed. }
+var
+  TasksPrepared: Boolean;
+
+function AlreadyInstalled: Boolean;
+begin
+  Result := RegKeyExists(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{6F3C2B1E-8D4A-4E7B-9C55-2A1D7E0B9F31}_is1');
+end;
+
+procedure CurPageChanged(CurPageID: Integer);
+begin
+  if (CurPageID = wpSelectTasks) and not TasksPrepared and AlreadyInstalled then
+  begin
+    TasksPrepared := True;
+    if RegKeyExists(HKCU, 'Software\Classes\SystemFileAssociations\.png\shell\UniversalEdit.Convert') then
+      WizardSelectTasks('contextmenu')
+    else
+      WizardSelectTasks('!contextmenu');
+    if RegValueExists(HKCU, 'Software\RegisteredApplications', 'Universal Edit') then
+      WizardSelectTasks('openwith')
+    else
+      WizardSelectTasks('!openwith');
+  end;
+end;
