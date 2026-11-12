@@ -24,6 +24,13 @@ def test_windows_icon_has_small_and_large_sizes():
     assert {(16, 16), (32, 32), (48, 48), (256, 256)} <= sizes
 
 
+@pytest.fixture(autouse=True)
+def _fresh_migration():
+    paths.migrated_dir.cache_clear()
+    yield
+    paths.migrated_dir.cache_clear()
+
+
 def test_old_data_folder_is_moved(tmp_path):
     old = tmp_path / paths.OLD_APP_DIR_NAME
     (old / "tools" / "pandoc").mkdir(parents=True)
@@ -34,23 +41,46 @@ def test_old_data_folder_is_moved(tmp_path):
     assert not old.exists()
 
 
-def test_new_folder_wins_when_both_exist(tmp_path):
-    (tmp_path / paths.OLD_APP_DIR_NAME).mkdir()
-    (tmp_path / "UniversalEdit").mkdir()
-    assert paths.migrated_dir(tmp_path) == tmp_path / "UniversalEdit"
-    assert (tmp_path / paths.OLD_APP_DIR_NAME).exists()  # never deleted
+def test_missing_entries_are_moved_when_the_new_folder_already_exists(tmp_path):
+    old, new = tmp_path / paths.OLD_APP_DIR_NAME, tmp_path / "UniversalEdit"
+    (old / "tools").mkdir(parents=True)
+    (old / "umc.log").write_text("old log")
+    (new / "cache").mkdir(parents=True)  # e.g. made by Qt, or another copy starting
+    (new / "umc.log").write_text("new log")
+    assert paths.migrated_dir(tmp_path) == new
+    assert (new / "tools").is_dir() and (new / "cache").is_dir()
+    assert (new / "umc.log").read_text() == "new log"  # never overwritten
+    assert (old / "umc.log").read_text() == "old log"  # and never deleted
+    assert not (old / "tools").exists()
 
 
-def test_old_folder_kept_in_use_when_it_cannot_move(tmp_path, monkeypatch):
+def test_another_copy_moved_it_first(tmp_path, monkeypatch):
+    old, new = tmp_path / paths.OLD_APP_DIR_NAME, tmp_path / "UniversalEdit"
+    (old / "tools").mkdir(parents=True)
+    real_rename = Path.rename
+
+    def raced(self, target):  # the other process wins the rename between our check and ours
+        real_rename(self, target)
+        raise FileNotFoundError(self)
+
+    monkeypatch.setattr(Path, "rename", raced)
+    assert paths.migrated_dir(tmp_path) == new
+    assert (new / "tools").is_dir() and not old.exists()
+
+
+def test_tools_in_use_are_still_found_in_the_old_folder(tmp_path, monkeypatch):
     old = tmp_path / paths.OLD_APP_DIR_NAME
-    old.mkdir()
+    (old / "tools" / "libreoffice").mkdir(parents=True)
 
     def busy(self, target):
         raise PermissionError("in use")
 
     monkeypatch.setattr(Path, "rename", busy)
-    assert paths.migrated_dir(tmp_path) == old
-    assert not (tmp_path / "UniversalEdit").exists()
+    monkeypatch.setattr(paths, "_data_base", lambda: tmp_path)
+    monkeypatch.delenv("UMC_TOOLS_DIR", raising=False)
+    assert paths.app_data_dir() == tmp_path / "UniversalEdit"
+    assert paths.tools_dir() == old / "tools"
+    assert any("could not move" in n for n in paths.MIGRATION_NOTES)
 
 
 def test_fresh_install_makes_the_new_folder(tmp_path):

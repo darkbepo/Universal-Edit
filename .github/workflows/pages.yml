@@ -41,6 +41,8 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+    outputs:
+      page_url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
@@ -64,5 +66,6 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - name: Browser tests against the live site
         env:
-          E2E_BASE_URL: https://darkbepo.github.io/Universal-Edit/
+          # Wherever Pages published (follows a repository rename by itself).
+          E2E_BASE_URL: ${{ needs.deploy.outputs.page_url }}
         run: npx playwright test --trace off

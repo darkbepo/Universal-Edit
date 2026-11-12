@@ -37,6 +37,14 @@ def setup_logging() -> Path:
     return path
 
 
+def _log_migration() -> None:
+    """Report what moving the data folders from the app's old name did (see core.paths)."""
+    from umc.core.paths import MIGRATION_NOTES
+
+    for note in MIGRATION_NOTES:
+        logging.getLogger(__name__).info("rename to Universal Edit: %s", note)
+
+
 def _start_cleanup() -> None:
     """Sweep leftovers of crashed runs in the background (never delays or breaks startup)."""
     import threading
@@ -68,6 +76,7 @@ def main(argv: list[str] | None = None) -> int:
 
     log_path = setup_logging()
     logging.getLogger(__name__).info("starting v%s, log at %s", __version__, log_path)
+    _log_migration()
     _start_cleanup()
 
     branding.set_windows_app_id()
