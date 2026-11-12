@@ -532,6 +532,28 @@ Found by the Task 5 re-review's README round trip, from the scratchpad scripts `
 
 ---
 
+### Task 5d: Desktop editor — first save through the Qt view must not change READMEs
+
+Found in Task 5c, fix round 2. The core open/save path and the website keep all 39 test READMEs unchanged. But going through the desktop editor's Qt view (`DocTextView.load` → `content()`, i.e. what really happens when the user presses Save) changes 23 of the 37 Markdown ones on the first save. The causes found so far:
+- empty badge links (`[![](x)](url)` whose picture was dropped) vanish;
+- bold links come back with bold and link swapped (`**[x](u)**` ↔ `[**x**](u)`);
+- a GitHub `> [!NOTE]` quote loses its quote;
+- a ragged table gains empty cells;
+- runs of spaces in centred text change;
+- a document that is only an empty `<pre></pre>` saves as an empty document.
+
+**Files:**
+- Modify: `src/umc/gui/doceditor/text_view.py` (load fix-ups) and `src/umc/gui/doceditor/html_export.py` (export), plus the normaliser if a construct isn't a fixed point. The web must stay unaffected (its view is Task 6/7).
+- Test: `tests/test_gui_doceditor_fixes.py` (pytest-qt, offscreen)
+
+- [ ] **Step 1:** Extend the 39-README harness from the scratchpad, `rev5c\` and the Task 5c report, to run through `DocTextView`: `open_document` → `view.load` → `view.content()` → `save_document(md)` → reopen. Record which files change and reduce each cause to a minimal input.
+- [ ] **Step 2: Tests**, one per cause: `load(opened)` → `content().html == opened.html` (identity), plus the Markdown file staying byte-identical after a save over it.
+- [ ] **Step 3:** Fix each cause in the view's load or export.
+- [ ] **Step 4:** Run. Expected: all 39 READMEs unchanged through the desktop view from the first save, and the full `pytest` passes.
+- [ ] **Step 5: Commit** `Keep READMEs unchanged when saved from the desktop editor`.
+
+---
+
 ### Task 6: ProseMirror schema and subset conversion
 
 **Files:**
