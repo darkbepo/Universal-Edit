@@ -761,6 +761,23 @@ Known limit to list (both apps, by design): typed spaces and a final Shift+Enter
 
 ---
 
+### Task 9a: Task 9 follow-up — shortcuts and caret everywhere on the page, download progress, small fixes
+
+Everything found while reviewing Task 9, in one round (owner rule).
+- **Shortcuts stop when focus leaves the page** (clicking the grey area, the margin, the empty paper, or the banner's ×): Ctrl+S opens the browser's "Save page as". Listen on `window` while the editor is shown (as `ui/editor/page.ts` does).
+- **Clicking the empty paper places no caret:** make `.ProseMirror` fill the paper (flex column) and, on mousedown outside it on the paper/scroll area, focus the view at the nearest position (or the end), like the desktop.
+- **Backward find with overlapping matches** (`aa` in `aaa` from the end gives [0,2] forever): collect matches at every start and take the last one before `from` — desktop gives [1,3] then [0,2].
+- **Pandoc download percent:** with `content-encoding` set, Content-Length is the compressed size — show indeterminate progress (or use the known raw size from the build). Allocate one `Uint8Array(total)` when there is no encoding (peak memory 117 MB → 59 MB). Check `res.ok` and give a plain error. Tests: bytes reach `createPandocInstance` intact; no Content-Length path; encoded path.
+- **"Save to a file…" errors:** only `AbortError` is silent; anything else goes to `.doc-message` in plain words.
+- **Dropping one unsupported picture** (SVG/HEIC/TIFF) says "Only one document…" — use the not-a-picture message.
+- **Lifecycle:** a `dispose()` removing the window/beforeunload listeners (Task 10 mounts the page once).
+- **Ctrl+Alt+1/2/3/0** behave the same in the text and from elsewhere on AltGr layouts (use the `code` fallback in both, or neither, consistently).
+
+**Files:** `web/src/ui/doceditor/page.ts`, `findbar.ts`, `web/src/engines/pandoc.ts`, `web/src/styles.css`, tests.
+- [ ] Tests that fail first → fix → `tsc`, `npm test`, e2e (Edge config) → commit `Keep the website editor's shortcuts, caret and download progress working`.
+
+---
+
 ### Task 10: Convert | Edit for documents on the website
 
 **Files:**
@@ -783,6 +800,8 @@ Known limit to list (both apps, by design): typed spaces and a final Shift+Enter
 ---
 
 ### Task 11: End-to-end tests, cross-app check, docs
+
+**Real-browser checks collected from the Task 7–9 reviews (put them in `doceditor.spec.ts`):** click the grey margin / empty paper then Ctrl+S, Ctrl+F, Ctrl+K — no browser dialog, caret in the page; Ctrl+S/K/H/L/E/J/R kept from the browser in the text; a real picture drop lands at the drop position and a document drop doesn't navigate; `<dialog>` showModal + Esc; `showSaveFilePicker` then Ctrl+S writes the same file (where the browser allows); colour and file picker cancel detection; `beforeunload` while dirty; banner close; status line after typing; keyboard behaviour around empty links; clipboard copy/paste inside the editor; pasted pictures shrunk to the page width; Pandoc progress on the live site (check `content-encoding`).
 
 **Files:**
 - Create: `web/e2e/doceditor.spec.ts`
