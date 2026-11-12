@@ -208,20 +208,22 @@ function finalise(tokens: Token[], pre = false, dropTrailingBr = false): string 
 function mergeAdjacent(tokens: Token[]): Token[] {
   const out: Token[] = [];
   const stack: string[] = []; // the opening tags still open
-  let closed: [string, boolean] | null = null; // the element out[-1] closed, and was it empty
+  let closed: [string, boolean][] = []; // the elements the closing tags ending out close
   for (const [kind, text] of tokens) {
-    if (kind === "O" && closed !== null && closed[0] === text && !closed[1]) {
-      out.pop(); // reopen it instead
+    const top = closed[closed.length - 1];
+    if (kind === "O" && top !== undefined && top[0] === text && !top[1]) {
+      out.pop(); // reopen it instead (and the one it was in, if that comes next)
+      closed.pop();
       stack.push(text);
-      closed = null;
       continue;
     }
-    closed = null;
-    if (kind === "O") stack.push(text);
-    else if (kind === "C" && stack.length) {
+    if (kind === "C" && stack.length) {
       const opener = stack.pop()!;
       const last = out[out.length - 1];
-      closed = [opener, last !== undefined && last[0] === "O" && last[1] === opener];
+      closed.push([opener, last !== undefined && last[0] === "O" && last[1] === opener]);
+    } else {
+      closed = [];
+      if (kind === "O") stack.push(text);
     }
     out.push([kind, text]);
   }

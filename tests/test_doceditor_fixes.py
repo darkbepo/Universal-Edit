@@ -490,6 +490,13 @@ def test_markdown_without_dropped_formats_does_not_warn(tmp_path):
         ("<p><b><i>x</i></b><b>y</b></p>", "<p><b><i>x</i>y</b></p>"),
         ('<p><a href="u">x</a><a href="u">y</a></p>', '<p><a href="u">xy</a></p>'),
         ("<pre><b>a</b><b>b</b></pre>", "<pre><b>ab</b></pre>"),
+        # nested ones merge all the way in one pass
+        ("<p><b><i>x</i></b><b><i>y</i></b></p>", "<p><b><i>xy</i></b></p>"),
+        (
+            '<p><a href="u"><b>x</b></a><a href="u"><b>y</b></a></p>',
+            '<p><a href="u"><b>xy</b></a></p>',
+        ),
+        ("<pre><b><i>a</i></b><b><i>b</i></b></pre>", "<pre><b><i>ab</i></b></pre>"),
         # ... but an empty link stays its own link (a badge row)
         ('<p><a href="u"></a><a href="u">t</a></p>', '<p><a href="u"></a><a href="u">t</a></p>'),
         ("<p><b>x</b> <b>y</b></p>", "<p><b>x</b> <b>y</b></p>"),

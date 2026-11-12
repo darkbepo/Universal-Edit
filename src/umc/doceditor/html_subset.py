@@ -334,19 +334,20 @@ def _merge_adjacent(tokens: list[_Token]) -> list[_Token]:
     where the first is an empty badge)."""
     out: list[_Token] = []
     stack: list[str] = []  # the opening tags still open
-    closed: tuple[str, bool] | None = None  # the element out[-1] closed, and was it empty
+    closed: list[tuple[str, bool]] = []  # the elements the closing tags ending out close
     for kind, text in tokens:
-        if kind == "O" and closed is not None and closed[0] == text and not closed[1]:
-            out.pop()  # reopen it instead
+        if kind == "O" and closed and closed[-1][0] == text and not closed[-1][1]:
+            out.pop()  # reopen it instead (and the one it was in, if that comes next)
+            closed.pop()
             stack.append(text)
-            closed = None
             continue
-        closed = None
-        if kind == "O":
-            stack.append(text)
-        elif kind == "C" and stack:
+        if kind == "C" and stack:
             opener = stack.pop()
-            closed = (opener, bool(out) and out[-1] == ("O", opener))
+            closed.append((opener, bool(out) and out[-1] == ("O", opener)))
+        else:
+            closed = []
+            if kind == "O":
+                stack.append(text)
         out.append((kind, text))
     return out
 

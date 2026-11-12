@@ -135,6 +135,9 @@ NORMALISE = [
     # the same inline tag closed and opened again is one; an empty link stays its own
     '<p><b>x</b><b>y</b> <b><i>i</i></b><b>j</b> <a href="u">a</a><a href="u">b</a></p>'
     '<pre><b>c</b><b>d</b></pre><p><a href="u"></a><a href="u">t</a></p>',
+    # ... nested ones too, all the way in one pass
+    '<p><b><i>x</i></b><b><i>y</i></b> <a href="u"><b>a</b></a><a href="u"><b>b</b></a></p>'
+    "<pre><b><i>c</i></b><b><i>d</i></b></pre>",
     # spaces after empty links (badges whose pictures were dropped) are kept
     '<p><a href="a"></a> <a href="b"></a> <a href="c"></a> Hello</p><p>a <a href="u"></a>  b</p>',
 ]
