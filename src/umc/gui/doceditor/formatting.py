@@ -25,6 +25,7 @@ from PySide6.QtGui import (
     QTextTableFormat,
 )
 
+from umc.gui.doceditor.html_export import CODE_FORM, code_group_of, set_code_group
 from umc.gui.doceditor.text_view import (
     CODE_GROUP,
     QUOTE_MARGIN,
@@ -114,20 +115,22 @@ def block_style(c: QTextCursor) -> str:
     return "normal"
 
 
-def _code_group_for(block: QTextBlock) -> int:
-    """A line made code joins the code block directly above it (the user extends it), else it
-    starts a block of its own; a code line below stays a separate block."""
+def code_group_for(block: QTextBlock) -> tuple[int, int]:
+    """(CODE_GROUP, CODE_FORM) for a line made code: it joins the code block directly above it
+    (the user extends it), else it starts a block of its own; a code line below stays a
+    separate block."""
     above = block.previous()
     if above.isValid():
         fmt = above.blockFormat()
+        group = code_group_of(fmt)
         if (
             fmt.nonBreakableLines()
-            and fmt.hasProperty(CODE_GROUP)
+            and group is not None
             and above.textList() is None
             and not fmt.boolProperty(QUOTE_PROPERTY)
         ):
-            return fmt.intProperty(CODE_GROUP)
-    return new_code_group()
+            return group
+    return new_code_group(), 0
 
 
 def set_block_style(c: QTextCursor, style: str) -> None:
@@ -150,6 +153,7 @@ def set_block_style(c: QTextCursor, style: str) -> None:
             fmt.setNonBreakableLines(False)
             fmt.clearProperty(QUOTE_PROPERTY)
             fmt.clearProperty(CODE_GROUP)
+            fmt.clearProperty(CODE_FORM)
             if was_quote:
                 fmt.setLeftMargin(0)
                 fmt.setRightMargin(0)
@@ -157,7 +161,7 @@ def set_block_style(c: QTextCursor, style: str) -> None:
                 fmt.setHeadingLevel(_HEADINGS[style])
             elif style == "code":
                 fmt.setNonBreakableLines(True)
-                fmt.setProperty(CODE_GROUP, _code_group_for(block))
+                set_code_group(fmt, *code_group_for(block))
             elif style == "quote":
                 fmt.setProperty(QUOTE_PROPERTY, True)
                 fmt.setLeftMargin(QUOTE_MARGIN)

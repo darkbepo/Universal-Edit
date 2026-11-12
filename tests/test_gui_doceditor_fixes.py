@@ -335,8 +335,9 @@ def test_empty_table_cells_stay_one_paragraph(qtbot, page, tmp_path):
     ],
 )
 def test_code_saved_as_markdown_comes_back_the_same_in_the_editor(qtbot, tmp_path, html):
-    """Markdown reads a code block with a final line break (``<pre>code\n</pre>``); the editor
-    shows it as the same lines again, and the file doesn't change on later saves."""
+    """Markdown reads a code block as one <pre> with a final line break
+    (``<pre>code\n</pre>``); the editor gives that back, and the file doesn't change on later
+    saves."""
     from umc.doceditor.save import save_document
 
     v = DocTextView()
@@ -346,8 +347,10 @@ def test_code_saved_as_markdown_comes_back_the_same_in_the_editor(qtbot, tmp_pat
     p = tmp_path / "a.md"
     save_document(first, p, "md")
     saved = p.read_bytes()
-    v.load(open_document(p))
-    assert v.content().html == first.html == html
+    assert first.html == html
+    reopened = open_document(p)
+    v.load(reopened)
+    assert v.content().html == reopened.html
     save_document(v.content(), p, "md")
     assert p.read_bytes() == saved
 
@@ -373,8 +376,7 @@ def test_two_code_blocks_in_a_row_stay_two_through_markdown(qtbot, tmp_path):
     p.write_text("```\na\n```\n\n```\nb\nc\n```\n", encoding="utf-8")
     original = open_document(p)
     v = _code_view(qtbot, original.html)
-    # the last line of a block followed by another block ends with a line break
-    assert v.content().html == "<pre>a\n</pre><pre>b</pre><pre>c</pre>"
+    assert v.content().html == original.html == "<pre>a\n</pre><pre>b\nc\n</pre>"
     save_document(v.content(), p, "md")
     assert p.read_text(encoding="utf-8") == "```\na\n```\n\n```\nb\nc\n```\n"
     assert open_document(p).html == original.html
@@ -385,7 +387,7 @@ def test_enter_inside_a_code_block_keeps_the_blocks_apart(qtbot, tmp_path):
     c = _cursor_at_block(v, 0)
     c.insertBlock()
     c.insertText("z")
-    assert v.content().html == "<pre>a</pre><pre>z\n</pre><pre>b</pre>"
+    assert v.content().html == "<pre>a\nz\n</pre><pre>b\n</pre>"
     p = tmp_path / "a.md"
     save_document(v.content(), p, "md")
     assert p.read_text(encoding="utf-8") == "```\na\nz\n```\n\n```\nb\n```\n"
@@ -402,10 +404,10 @@ def test_making_a_paragraph_code_joins_the_block_above_only(qtbot):
     v = _code_view(qtbot, "<pre>a\n</pre><p>b</p><p>c</p><pre>d\n</pre>")
     set_block_style(_cursor_at_block(v, 1), "code")  # right below a code block: extends it
     set_block_style(_cursor_at_block(v, 2), "code")  # ... and again
-    assert v.content().html == "<pre>a</pre><pre>b</pre><pre>c\n</pre><pre>d</pre>"
+    assert v.content().html == "<pre>a\nb\nc\n</pre><pre>d\n</pre>"
     v = _code_view(qtbot, "<p>b</p><pre>d\n</pre>")
     set_block_style(_cursor_at_block(v, 0), "code")  # no code above: a block of its own
-    assert v.content().html == "<pre>b\n</pre><pre>d</pre>"
+    assert v.content().html == "<pre>b\n</pre><pre>d\n</pre>"
 
 
 @pytest.mark.parametrize(
@@ -421,6 +423,172 @@ def test_empty_code_lines_stay_code(qtbot, html):
 
 
 def test_code_starting_with_an_empty_line_keeps_it(qtbot):
-    # Markdown's one <pre> per block comes back as the editor's one <pre> per line
-    v = _code_view(qtbot, "<p>x</p><pre>\nx\n</pre><p>y</p>")
-    assert v.content().html == "<p>x</p><pre></pre><pre>x</pre><p>y</p>"
+    html = "<p>x</p><pre>\nx\n</pre><p>y</p>"
+    assert _code_view(qtbot, html).content().html == html
+
+
+# ----- a README saved from the editor without edits doesn't change (Task 5d) ---------------
+
+
+def _view_keeps(qtbot, tmp_path, md: str) -> DocTextView:
+    """Open ``md`` in the editor's view and save it back as Markdown: the view gives back
+    the opened HTML, and the file doesn't change."""
+    p = tmp_path / "a.md"
+    p.write_text(md, encoding="utf-8")
+    opened = open_document(p)
+    v = DocTextView()
+    qtbot.addWidget(v)
+    v.load(opened)
+    assert v.content().html == opened.html
+    save_document(v.content(), p, "md")
+    assert p.read_text(encoding="utf-8") == md
+    return v
+
+
+@pytest.mark.parametrize(
+    "md",
+    [
+        "```\na\nb\n```\n",  # one Markdown code block of two lines
+        "```\na\n```\n\n```\nb\nc\n```\n",  # two in a row
+        "```\n\n```\n",  # a code block of one empty line
+        "x\n\n```\n\na\n```\n",  # starting with an empty line
+    ],
+)
+def test_markdown_code_blocks_come_back_whole(qtbot, tmp_path, md):
+    _view_keeps(qtbot, tmp_path, md)
+
+
+@pytest.mark.parametrize(
+    "md",
+    [
+        "[](https://u)\n",  # a badge whose web picture was dropped
+        "[](https://u)[](https://u)\n",  # two of them, to the same address
+        "# Title [](https://u)\n",
+        "a [](https://u)b [](https://v)\n",
+    ],
+)
+def test_empty_links_are_kept(qtbot, tmp_path, md):
+    v = _view_keeps(qtbot, tmp_path, md)
+    assert "⁣" not in v.content().plain_text
+
+
+@pytest.mark.parametrize(
+    "md",
+    [
+        "**[x](https://u)**\n",  # bold around a link ...
+        "[**x**](https://u)\n",  # ... and inside one
+        "***x***\n",  # italic around bold
+        "*zero or **one***\n",
+        "**Apply now at [x](https://u)**\n",
+        "*a [b](https://u)*\n",
+    ],
+)
+def test_bold_italic_and_links_keep_their_nesting(qtbot, tmp_path, md):
+    _view_keeps(qtbot, tmp_path, md)
+
+
+def test_space_after_no_break_spaces_is_kept(qtbot, tmp_path):
+    _view_keeps(qtbot, tmp_path, "a\xa0\xa0 b [x](https://u) \xa0\xa0•\xa0\xa0 [y](https://v)\n")
+
+
+def test_two_quotes_in_a_row_stay_two(qtbot, tmp_path):
+    _view_keeps(qtbot, tmp_path, "- a\n\n> b\n\n<!-- -->\n\n> c\n")
+
+
+def test_ragged_table_gets_no_empty_cells(qtbot, tmp_path):
+    md = "<table><tr><td><p>a</p></td><td><p>b</p></td></tr><tr><td><p>c</p></td></tr></table>\n"
+    v = _view_keeps(qtbot, tmp_path, md)
+    # a cell the user types into is kept
+    table = QTextCursor(v.document().findBlockByNumber(1)).currentTable()
+    QTextCursor(table.cellAt(1, 1).firstCursorPosition()).insertText("d")
+    assert v.content().html.endswith("<td><p>c</p></td><td><p>d</p></td></tr></table>")
+
+
+def test_document_of_one_empty_code_line_is_kept(qtbot):
+    v = _code_view(qtbot, "<pre></pre>")
+    assert v.content().html == "<pre></pre>"
+
+
+@pytest.mark.parametrize(
+    ("start", "line", "pasted", "html"),
+    [
+        ("<pre>a\nb\n</pre>", 0, "<pre>y</pre><pre>z</pre>", "<pre>ay\nz\nb\n</pre>"),
+        (
+            "<pre>a</pre><pre>b</pre>",
+            0,
+            "<pre>y</pre><pre>z</pre>",
+            "<pre>ay</pre><pre>z</pre><pre>b</pre>",
+        ),
+        ("<pre>a\nb\n</pre>", 0, "<p>q</p><pre>y</pre>", "<pre>aq\ny\nb\n</pre>"),
+    ],
+)
+def test_pasted_code_lines_join_the_code_block(qtbot, start, line, pasted, html):
+    v = _code_view(qtbot, start)
+    v.setTextCursor(_cursor_at_block(v, line))
+    mime = QMimeData()
+    mime.setHtml(pasted)
+    v.insertFromMimeData(mime)
+    assert v.content().html == html
+
+
+@pytest.mark.parametrize(
+    "md",
+    [
+        "[![](a_files/1.png)](https://u)\n",  # a linked picture
+        "[a ![](a_files/1.png) b](https://u)\n",
+        "**![](a_files/1.png) x**\n",
+    ],
+)
+def test_linked_pictures_keep_their_link(qtbot, tmp_path, md):
+    (tmp_path / "a_files").mkdir()
+    (tmp_path / "a_files" / "1.png").write_bytes(PNG_1PX)  # where saving puts pictures
+    _view_keeps(qtbot, tmp_path, md)
+
+
+@pytest.mark.parametrize(
+    "html",
+    [
+        "<table><tr><td><ol><li></li><li>x</li></ol></td></tr></table>",  # from a README
+        "<ol><li></li><li>x</li></ol>",
+        "<ul><li><ul><li>x</li></ul></li></ul>",  # an item that holds only a nested list
+        "<p>a</p><ul><li><ul><li>x</li></ul></li></ul>",
+        "<ol><li></li></ol>",
+        "<blockquote><p></p></blockquote>",
+    ],
+)
+def test_empty_list_items_and_quotes_stay(qtbot, html):
+    assert _code_view(qtbot, html).content().html == html
+
+
+def test_nesting_tool_tips_are_never_shown(qtbot):
+    from PySide6.QtCore import QEvent, QPoint
+    from PySide6.QtGui import QHelpEvent
+    from PySide6.QtWidgets import QApplication, QToolTip
+
+    v = _code_view(qtbot, "<p><b>bold bold bold bold</b></p>")
+    v.resize(900, 600)
+    v.show()
+    pos = v.cursorRect(QTextCursor(v.document().begin())).center() + QPoint(30, 0)
+    assert v.cursorForPosition(pos).charFormat().toolTip()  # the nesting is recorded ...
+    QToolTip.hideText()
+    QApplication.sendEvent(
+        v.viewport(), QHelpEvent(QEvent.Type.ToolTip, pos, v.viewport().mapToGlobal(pos))
+    )
+    assert not QToolTip.isVisible()  # ... but not shown
+
+
+def test_copied_text_has_no_link_placeholder(qtbot, tmp_path):
+    v = _view_keeps(qtbot, tmp_path, "a [](https://u)b\n")
+    v.selectAll()
+    assert v.createMimeDataFromSelection().text() == "a b"
+
+
+@pytest.mark.parametrize("pasted", ["<ul><li></li><li>x</li></ul>", "<pre></pre><pre>y</pre>"])
+def test_pasted_empty_items_leave_no_placeholder(qtbot, pasted):
+    v = _code_view(qtbot, "<p>a</p><p>b</p>")
+    v.setTextCursor(_cursor_at_block(v, 1))
+    mime = QMimeData()
+    mime.setHtml(pasted)
+    v.insertFromMimeData(mime)
+    html = v.content().html
+    assert "​" not in html and "⁠" not in html, html

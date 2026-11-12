@@ -8,11 +8,13 @@ from __future__ import annotations
 
 import html as _html
 import itertools
+import re
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import (
     QGuiApplication,
     QTextBlock,
+    QTextBlockFormat,
     QTextCharFormat,
     QTextDocument,
     QTextFormat,
@@ -29,12 +31,42 @@ QUOTE_PROPERTY = int(QTextFormat.Property.UserProperty) + 1
 # block copy it (Qt copies the block format on Enter); where it changes between two code
 # lines, one block ends and the next begins.
 CODE_GROUP = int(QTextFormat.Property.UserProperty) + 2
+# Custom block property: how a code block is written. Without it, one <pre> per line (Word's
+# code lines, the editor's own); CODE_WHOLE: the block is one <pre> ending with a line break
+# (a Markdown code block); CODE_JOINED: one <pre> without it (a web page's <pre>).
+CODE_FORM = int(QTextFormat.Property.UserProperty) + 3
+CODE_WHOLE = 1
+CODE_JOINED = 2
+# Custom block property: which quote a quoted paragraph belongs to (an int; two quotes in a
+# row stay two). Typed quote lines have none and join the quote above.
+QUOTE_GROUP = int(QTextFormat.Property.UserProperty) + 4
+# Custom table cell property: Qt added the cell to fill a short row; while it stays empty it
+# isn't written.
+PADDED_CELL = int(QTextFormat.Property.UserProperty) + 5
 _groups = itertools.count(1)
 
 
 def new_code_group() -> int:
     """A number no code block has yet."""
     return next(_groups)
+
+
+def set_code_group(fmt: QTextBlockFormat, group: int, form: int = 0) -> None:
+    """Make ``fmt`` a line of code block ``group``, written in ``form`` (CODE_FORM)."""
+    fmt.setProperty(CODE_GROUP, group)
+    if form:
+        fmt.setProperty(CODE_FORM, form)
+    else:
+        fmt.clearProperty(CODE_FORM)
+
+
+def code_group_of(fmt: QTextBlockFormat) -> tuple[int, int] | None:
+    """(group, form) of a code line's format, None without a group."""
+    if not fmt.hasProperty(CODE_GROUP):
+        return None
+    return fmt.intProperty(CODE_GROUP), (
+        fmt.intProperty(CODE_FORM) if fmt.hasProperty(CODE_FORM) else 0
+    )
 
 
 _BULLETS = {
@@ -54,6 +86,12 @@ _P = QTextFormat.Property
 NBSP = "\xa0"
 LINE_SEPARATOR = "\u2028"  # Shift+Enter inside a block
 OBJECT = "\ufffc"  # a picture
+# An empty link (a badge whose web picture was dropped) holds this invisible character in the
+# view, because Qt drops empty anchors; it is never exported.
+LINK_PLACEHOLDER = "\u2063"
+# A loaded fragment's tool tip "umc-wrap:b a" records how its tags were nested, outermost
+# first (Qt keeps only the formats, not their order); it is never exported.
+WRAP_PREFIX = "umc-wrap:"
 
 
 def _rgb(brush) -> str | None:
@@ -62,9 +100,9 @@ def _rgb(brush) -> str | None:
     return brush.color().name()
 
 
-def _inline(fmt: QTextCharFormat, text: str, *, heading: bool, code: bool) -> str:
-    """One fragment of text with its character format."""
-    body = _html.escape(text, quote=False).replace(" ", "<br>")
+def _wraps(fmt: QTextCharFormat, *, heading: bool, code: bool) -> list[tuple[str, str, str]]:
+    """The tags a fragment is wrapped in, as (name, opening tag, closing tag), outermost
+    first in the default order: link, span, b, i, u, s."""
     anchor = fmt.anchorHref() if fmt.isAnchor() else ""
     styles = []
     if not code and fmt.hasProperty(_P.FontFamilies) and fmt.fontFamilies():
@@ -78,22 +116,20 @@ def _inline(fmt: QTextCharFormat, text: str, *, heading: bool, code: bool) -> st
             styles.append(f"color:{colour}")
     if fmt.hasProperty(_P.BackgroundBrush) and (colour := _rgb(fmt.background())):
         styles.append(f"background-color:{colour}")
-    wraps: list[str] = []
-    if not heading and fmt.hasProperty(_P.FontWeight) and fmt.fontWeight() >= 600:
-        wraps.append("b")
-    if fmt.hasProperty(_P.FontItalic) and fmt.fontItalic():
-        wraps.append("i")
-    if not anchor and fmt.fontUnderline():  # Qt underlines links itself
-        wraps.append("u")
-    if fmt.hasProperty(_P.FontStrikeOut) and fmt.fontStrikeOut():
-        wraps.append("s")
-    for tag in reversed(wraps):
-        body = f"<{tag}>{body}</{tag}>"
-    if styles:
-        body = f'<span style="{_html.escape(";".join(styles))}">{body}</span>'
+    out = []
     if anchor:
-        body = f'<a href="{_html.escape(anchor)}">{body}</a>'
-    return body
+        out.append(("a", f'<a href="{_html.escape(anchor)}">', "</a>"))
+    if styles:
+        out.append(("span", f'<span style="{_html.escape(";".join(styles))}">', "</span>"))
+    if not heading and fmt.hasProperty(_P.FontWeight) and fmt.fontWeight() >= 600:
+        out.append(("b", "<b>", "</b>"))
+    if fmt.hasProperty(_P.FontItalic) and fmt.fontItalic():
+        out.append(("i", "<i>", "</i>"))
+    if not anchor and fmt.fontUnderline():  # Qt underlines links itself
+        out.append(("u", "<u>", "</u>"))
+    if fmt.hasProperty(_P.FontStrikeOut) and fmt.fontStrikeOut():
+        out.append(("s", "<s>", "</s>"))
+    return out
 
 
 def _image(fmt: QTextCharFormat) -> str:
@@ -122,32 +158,83 @@ def _block_style(block: QTextBlock) -> str:
 
 def _keep_spaces(text: str, before: str) -> tuple[str, str]:
     """The TXT reader's rule for typed text: a space at the start of a line or after another
-    space becomes a no-break space, so HTML doesn't collapse it. Returns (text, last char)."""
+    space becomes a no-break space, so HTML doesn't collapse it (a space after a no-break
+    space is kept: it doesn't collapse). Returns (text, last char)."""
     out = []
     for c in text:
-        if c == " " and before in ("", " ", NBSP, LINE_SEPARATOR):
-            c = NBSP
-        out.append(c)
+        out.append(NBSP if c == " " and before in ("", " ", LINE_SEPARATOR) else c)
         before = c
     return "".join(out), before
 
 
+def _ordered(wraps: list[tuple[str, str, str]], order: list[str], stack: list) -> list:
+    """The fragment's tags outermost first: as the loaded document nested them (``order``,
+    see text_view.WRAP_ORDER), else the tags already open first, then the default order."""
+    rest = list(wraps)
+    first = []
+    if order:
+        for name in order:
+            for w in rest:
+                if w[0] == name:
+                    first.append(w)
+                    rest.remove(w)
+                    break
+    else:
+        for w in stack:
+            if w not in rest:
+                break
+            first.append(w)
+            rest.remove(w)
+    return first + rest
+
+
 def _block_text(block: QTextBlock, *, heading: bool = False, code: bool = False) -> str:
-    out = []
+    out: list[str] = []
+    stack: list[tuple[str, str, str]] = []  # the tags open now, outermost first
     before = ""  # the start of the block
+    empty_link = False  # the last thing written was an empty link (LINK_PLACEHOLDER)
+
+    def write(wraps: list, body: str, *, fresh_link: bool = False) -> None:
+        keep = 0
+        while keep < min(len(stack), len(wraps)) and stack[keep] == wraps[keep]:
+            if fresh_link and wraps[keep][0] == "a":
+                break  # two empty links in a row stay two links
+            keep += 1
+        while len(stack) > keep:
+            out.append(stack.pop()[2])
+        for w in wraps[keep:]:
+            out.append(w[1])
+            stack.append(w)
+        out.append(body)
+
     it = block.begin()
     while not it.atEnd():
         frag = it.fragment()
         fmt = frag.charFormat()
+        order = fmt.toolTip().removeprefix(WRAP_PREFIX).split() if fmt.toolTip() else []
+        wraps = _ordered(_wraps(fmt, heading=heading, code=code), order, stack)
         if fmt.isImageFormat():
-            out.append(_image(fmt) * len(frag.text()))
-            before = OBJECT
-        else:
-            text = frag.text()
+            for _ in frag.text():
+                write(wraps, _image(fmt))
+            before, empty_link = OBJECT, False
+            it += 1
+            continue
+        for part in re.split(f"({LINK_PLACEHOLDER})", frag.text()):
+            if part == LINK_PLACEHOLDER:
+                if fmt.isAnchor():
+                    write(wraps, "", fresh_link=empty_link)
+                    empty_link = True
+                before = OBJECT
+                continue
+            if not part:
+                continue
             if not code:  # <pre> keeps every space anyway
-                text, before = _keep_spaces(text, before)
-            out.append(_inline(fmt, text, heading=heading, code=code))
+                part, before = _keep_spaces(part, before)
+            write(wraps, _html.escape(part, quote=False).replace(LINE_SEPARATOR, "<br>"))
+            empty_link = False
         it += 1
+    while stack:
+        out.append(stack.pop()[2])
     return "".join(out)
 
 
@@ -156,6 +243,7 @@ class _Writer:
         self.out: list[str] = []
         self.lists: list[tuple[int, object, str]] = []  # (indent, QTextList, tag)
         self.quote = False
+        self.quote_group: int | None = None
 
     def close_lists(self, to_indent: int = 0) -> None:
         while self.lists and self.lists[-1][0] > to_indent:
@@ -191,11 +279,12 @@ class _Writer:
             return
         self.close_lists()
         quote = bool(fmt.boolProperty(QUOTE_PROPERTY))
-        if quote != self.quote:
+        group = fmt.intProperty(QUOTE_GROUP) if fmt.hasProperty(QUOTE_GROUP) else None
+        if quote != self.quote or (quote and group != self.quote_group):
             self.close_quote()
             if quote:
                 self.out.append("<blockquote>")
-                self.quote = True
+                self.quote, self.quote_group = True, group
         style = _block_style(block)
         level = fmt.headingLevel()
         if fmt.hasProperty(_P.BlockTrailingHorizontalRulerWidth):
@@ -208,6 +297,14 @@ class _Writer:
             self.out.append(f"<pre>{_block_text(block, code=True)}{end}</pre>")
         else:
             self.out.append(f"<p{style}>{_block_text(block)}</p>")
+
+    def code(self, blocks: list[QTextBlock], form: int) -> None:
+        """A code block written as one <pre> (``form``: CODE_WHOLE or CODE_JOINED)."""
+        self.close_lists()
+        self.close_quote()
+        body = "\n".join(_block_text(b, code=True) for b in blocks)
+        end = "\n" if form == CODE_WHOLE else ""
+        self.out.append(f"<pre>{body}{end}</pre>")
 
     def finish(self) -> None:
         self.close_lists()
@@ -227,7 +324,11 @@ def _container(it: QTextFrame.iterator) -> str:
     """The blocks and tables of one frame or table cell."""
     items = _children(it)
     w = _Writer()
+    skip = 0
     for i, item in enumerate(items):
+        if skip:
+            skip -= 1
+            continue
         if isinstance(item, QTextFrame):
             w.finish()
             if isinstance(item, QTextTable):
@@ -244,6 +345,19 @@ def _container(it: QTextFrame.iterator) -> str:
             and not fmt.hasProperty(_P.BlockTrailingHorizontalRulerWidth)
         ):
             continue  # Qt's own empty paragraph around a table
+        form = _code_form(item) if _is_code(item) else 0
+        if form:
+            group = _code_group(item)
+            lines = [item]
+            for later in items[i + 1 :]:
+                if not (isinstance(later, QTextBlock) and _is_code(later)):
+                    break
+                if _code_group(later) != group:
+                    break
+                lines.append(later)
+            w.code(lines, form)
+            skip = len(lines) - 1
+            continue
         nxt = items[i + 1] if i + 1 < len(items) else None
         ends_code = (
             _is_code(item)
@@ -272,14 +386,29 @@ def _code_group(block: QTextBlock) -> int | None:
     return fmt.intProperty(CODE_GROUP) if fmt.hasProperty(CODE_GROUP) else None
 
 
+def _code_form(block: QTextBlock) -> int:
+    fmt = block.blockFormat()
+    form = fmt.intProperty(CODE_FORM) if fmt.hasProperty(CODE_FORM) else 0
+    return form if form in (CODE_WHOLE, CODE_JOINED) else 0
+
+
+def _padding(cell) -> bool:
+    """A cell Qt added to a short row, still empty."""
+    return cell.format().boolProperty(PADDED_CELL) and cell.firstPosition() == cell.lastPosition()
+
+
 def _table(table: QTextTable) -> str:
     rows = []
     for r in range(table.rows()):
         cells = []
-        for c in range(table.columns()):
-            cell = table.cellAt(r, c)
-            if cell.row() != r or cell.column() != c:
-                continue  # covered by a spanning cell
+        real = [
+            table.cellAt(r, c)
+            for c in range(table.columns())
+            if table.cellAt(r, c).row() == r and table.cellAt(r, c).column() == c
+        ]  # without those covered by a spanning cell
+        while real and _padding(real[-1]):
+            real.pop()
+        for cell in real:
             span = ""
             if cell.columnSpan() > 1:
                 span += f' colspan="{cell.columnSpan()}"'
@@ -293,6 +422,12 @@ def _table(table: QTextTable) -> str:
 
 def document_to_html(doc: QTextDocument) -> str:
     """The document as the editor's (normalised) HTML subset."""
-    if doc.isEmpty():
+    first = doc.begin()
+    if (
+        doc.isEmpty()
+        and not _is_code(first)
+        and first.textList() is None
+        and not first.blockFormat().boolProperty(QUOTE_PROPERTY)
+    ):  # nothing but an empty paragraph (an empty code line, list item or quote is kept)
         return ""
     return normalise_html(_container(doc.rootFrame().begin()))[0]
