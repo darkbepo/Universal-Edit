@@ -70,3 +70,43 @@ jobs:
         with:
           name: UniversalEdit-windows
           path: UniversalEdit-windows.zip
+
+      # The installer (packaging/installer.iss): per user, no admin; optional right-click
+      # "Convert" and "Open with", written by the app itself (--register / --unregister).
+      - name: Build installer
+        run: |
+          $v = python -c "import umc; print(umc.__version__)"
+          $iscc = (Get-Command iscc -ErrorAction SilentlyContinue).Source
+          if (-not $iscc) { $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup --no-progress -y
+            $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          }
+          & $iscc "/DAppVersion=$v" "/DSourceDir=$PWD\dist\UniversalEdit" "/DOutputDir=$PWD\installer" packaging\installer.iss
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Test the installer (silent install, check Windows integration, uninstall)
+        run: |
+          $p = Start-Process installer\UniversalEdit-setup.exe -Wait -PassThru -ArgumentList `
+                '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/TASKS="contextmenu,openwith"', "/LOG=$PWD\install.log"
+          if ($p.ExitCode -ne 0) { Get-Content install.log; exit 1 }
+          $dir = "$env:LOCALAPPDATA\Programs\Universal Edit"
+          if (-not (Test-Path "$dir\UniversalEdit.exe")) { throw "not installed in $dir" }
+          $menu = 'HKCU:\Software\Classes\SystemFileAssociations\.png\shell\UniversalEdit.Convert\command'
+          $cmd = (Get-ItemProperty $menu).'(default)'
+          "right-click command: $cmd"
+          if ($cmd -notlike '*UniversalEdit.exe*--convert*') { throw "right-click Convert missing" }
+          $caps = (Get-ItemProperty 'HKCU:\Software\RegisteredApplications').'Universal Edit'
+          if ($caps -ne 'Software\UniversalEdit\Capabilities') { throw "Open with missing" }
+          $view = (Get-ItemProperty 'HKCU:\Software\Classes\UniversalEdit.View\shell\open\command').'(default)'
+          if ($view -notlike '*UniversalEdit.exe*--view*') { throw "viewer command missing" }
+          Start-Process "$dir\unins000.exe" -Wait -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'
+          for ($i = 0; $i -lt 60 -and (Test-Path "$dir\UniversalEdit.exe"); $i++) { Start-Sleep 1 }
+          if (Test-Path "$dir\UniversalEdit.exe") { throw "files left after uninstalling" }
+          if (Test-Path ($menu -replace '\\command$', '')) { throw "right-click Convert left after uninstalling" }
+          if ((Get-ItemProperty 'HKCU:\Software\RegisteredApplications').'Universal Edit') { throw "Open with left" }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: UniversalEdit-setup
+          path: installer/UniversalEdit-setup.exe

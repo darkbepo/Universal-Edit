@@ -106,7 +106,15 @@ class MainWindow(QMainWindow):
         bl.addWidget(self.logo)
         bl.addWidget(self.title)
         tl.addWidget(self.brand, 0, 1, Qt.AlignmentFlag.AlignCenter)
-        tl.addWidget(QWidget(), 0, 0)  # empty columns get no spacing, which would shift the name
+        # left column: the settings cog (an empty column gets no spacing: the name would shift)
+        self.settings_button = QToolButton(objectName="Cog")
+        self.settings_button.setToolTip("Settings")
+        self.settings_button.setAccessibleName("Settings")
+        self.settings_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.settings_button.setAutoRaise(True)
+        self.settings_button.clicked.connect(self.open_settings)
+        at_left = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        tl.addWidget(self.settings_button, 0, 0, at_left)
         tl.setColumnStretch(0, 1)
         tl.setColumnStretch(2, 1)
 
@@ -314,6 +322,7 @@ class MainWindow(QMainWindow):
         self.logo.setPixmap(branding.logo_pixmap(30, self.devicePixelRatioF()))
         self.drop.retint()
         self.hub.retint()
+        self.settings_button.setIcon(icons.icon("settings", pal["muted"], 20))
         self.picker.retint()
         self.tabs.retint()
         for i in range(self.results_list.count()):
@@ -457,6 +466,11 @@ class MainWindow(QMainWindow):
         else:
             tip = "Add images, one text document, or 3D models to edit them"
         self.edit_mode.setToolTip(tip)
+
+    def open_settings(self) -> None:
+        from umc.gui.settings_dialog import SettingsDialog
+
+        SettingsDialog(self).exec()
 
     def _page(self, kind: str) -> QWidget:
         """The editor page for ``kind`` ("image", "document", "model"), made on first use."""

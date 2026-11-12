@@ -670,3 +670,12 @@ QToolButton#PanelButton:hover {
     background: white;
     color: black;
 }
+
+QToolButton#Cog {
+    border: none;
+    border-radius: 8px;
+    padding: 5px;
+}
+QToolButton#Cog:hover {
+    background: @surface_alt;
+}

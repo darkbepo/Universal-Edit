@@ -371,6 +371,8 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
   recompiles the bootloader from source (`PYINSTALLER_COMPILE_BOOTLOADER=1`), and the spec embeds
   Windows version info. Keep `upx=False` (UPX packing makes it worse). The real fix is code
   signing — not set up yet (needs the owner's decision; SignPath.io is free for open source).
+- The installer is `packaging/installer.iss` (Inno Setup; roadmap 10.11), built and tested by the
+  same workflow.
 - The Windows build is produced by `.github/workflows/build-windows.yml` (Actions → "Build Windows
   executable" → Run workflow, or push a `v*` tag); download the zip from the run's artifacts.
 
@@ -777,7 +779,23 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       says "Press Convert to install it" (Convert has the one-click installer). PyMuPDF is warmed up
       in the background (its first import takes ~1 s). Offscreen Qt has no GL / audio device:
       the 3D view shows a message there, video is checked by counting frames on `videoSink()`.
-11. Ideas: installer for the app itself (Inno Setup), presets, batch queue.
+   11. ✅ Windows installer + Explorer integration (desktop). `packaging/installer.iss` (Inno Setup
+      6, built + silently installed / checked / uninstalled by `build-windows.yml`, artifact
+      `UniversalEdit-setup`): per user (`PrivilegesRequired=lowest`,
+      `%LOCALAPPDATA%\Programs\Universal Edit`), never change its `AppId`. Tasks "contextmenu" /
+      "openwith" run `UniversalEdit.exe --register context-menu|open-with`; uninstall runs
+      `--unregister all` (handled in `app.py` before Qt starts). The keys are written only by
+      `tools/shell_integration.py` (HKCU via a `Registry` adapter — tests use a fake):
+      `SystemFileAssociations\.ext\shell\UniversalEdit.Convert` (MultiSelectModel=Player,
+      `--convert "%1"`: Explorer starts one copy per file, `single_instance` passes them on and
+      `AppController.convert` groups files arriving within 3 s into one window), ProgID
+      `UniversalEdit.View` + `OpenWithProgids` + `Applications\UniversalEdit.exe` + Capabilities
+      / `RegisteredApplications` (`--view "%1"`). A program can't make itself the default:
+      "Choose default apps…" opens `ms-settings:defaultapps`. The app's Settings window
+      (`gui/settings_dialog.py`, cog top-left of the converter) switches both. Windows 11 shows
+      the entry under "Show more options" (the short menu needs a signed MSIX — not done).
+      Next (step 5): editors as downloadable add-ons, chosen in the installer / Install tiles.
+11. Ideas: presets, batch queue.
 
 ## Handoff — read this first (for the next Claude account)
 

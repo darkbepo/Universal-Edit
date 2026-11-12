@@ -6,6 +6,7 @@ The viewer's Convert / Edit move its file into a converter window (a free one, e
 from __future__ import annotations
 
 import logging
+import time
 from pathlib import Path
 
 from PySide6.QtCore import QObject
@@ -14,12 +15,16 @@ from umc.gui.single_instance import InstanceServer
 
 log = logging.getLogger(__name__)
 
+GROUP_SECONDS = 3.0  # right-clicked files arriving this close together share one window
+
 
 class AppController(QObject):
     def __init__(self, listen: bool = True) -> None:
         super().__init__()
         self.windows: list = []  # MainWindow (imported on first use: the viewer starts faster)
         self.viewer = None
+        self._convert_window = None  # where right-clicked files went last, and when
+        self._convert_time = 0.0
         self.server = InstanceServer(self)
         self.server.message_received.connect(self._on_message)
         if listen:
@@ -28,6 +33,8 @@ class AppController(QObject):
     def _on_message(self, msg: dict) -> None:
         if isinstance(msg.get("view"), str):
             self.view(msg["view"])
+        elif isinstance(msg.get("convert"), list):
+            self.convert([p for p in msg["convert"] if isinstance(p, str)])
 
     # ------------------------------------------------------------ viewer
     def view(self, path: str | Path) -> None:
@@ -63,6 +70,18 @@ class AppController(QObject):
             w.add_files(files)
         self._bring_forward(w)
         return w
+
+    def convert(self, paths: list[str]) -> None:
+        """Right-click "Convert with Universal Edit". Explorer starts us once per selected file,
+        so files arriving close together join the same converter window."""
+        now = time.monotonic()
+        w = self._convert_window
+        if w is not None and now - self._convert_time < GROUP_SECONDS and not w.busy:
+            w.add_files(paths)
+            self._bring_forward(w)
+        else:
+            w = self.show_main(paths)
+        self._convert_window, self._convert_time = w, now
 
     def _move_to_main(self, path: Path, edit: bool) -> None:
         w = self.show_main([str(path)])

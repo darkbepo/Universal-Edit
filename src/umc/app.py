@@ -69,9 +69,17 @@ def main(argv: list[str] | None = None) -> int:
         setup_logging()
         return run(Path(args[1] if len(args) > 1 else "umc-selftest.txt"))
 
+    if args[:1] in (["--register"], ["--unregister"]):  # the installer / uninstaller
+        from umc.tools.shell_integration import run_cli
+
+        setup_logging()
+        return run_cli(args)
+
     view_path = None
     if args[:1] == ["--view"]:  # "Open with → Universal Edit" runs this
         view_path = str(Path(args[1]).resolve()) if len(args) > 1 else None
+    # Right-click "Convert with Universal Edit" (one start per selected file)
+    convert_paths = [str(Path(a).resolve()) for a in args[1:]] if args[:1] == ["--convert"] else []
 
     # The viewer plays through Qt's FFmpeg backend everywhere (Windows' own one reads far fewer
     # formats); --self-test checks that it loads.
@@ -91,11 +99,12 @@ def main(argv: list[str] | None = None) -> int:
     app.setApplicationVersion(__version__)
     app.setWindowIcon(branding.app_icon())
 
-    if view_path is not None:
+    if view_path is not None or convert_paths:
         from umc.gui.single_instance import send_to_running
 
-        if send_to_running({"view": view_path}):
-            return 0  # the running window shows it
+        message = {"view": view_path} if view_path is not None else {"convert": convert_paths}
+        if send_to_running(message):
+            return 0  # the running copy shows it
     _start_cleanup()
     branding.migrate_settings()
     app.setStyle("Fusion")
@@ -107,6 +116,8 @@ def main(argv: list[str] | None = None) -> int:
     controller = AppController()
     if view_path is not None:
         controller.view(view_path)
+    elif convert_paths:
+        controller.convert(convert_paths)
     else:
         files = [a for a in app.arguments()[1:] if Path(a).exists()]
         controller.show_main(files)  # "Open with…" / drag onto the .exe

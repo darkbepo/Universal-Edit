@@ -26,6 +26,11 @@ processor (the browser version is limited to a few threads). It installs LibreOf
 conversion needs them.
 
 Get it from **Actions → Build Windows executable** → latest successful run → download
+**`UniversalEdit-setup`** and run `UniversalEdit-setup.exe` (installs for your user only, no
+administrator rights needed). During setup you can add **"Convert with Universal Edit"** to the
+right-click menu and put Universal Edit in **"Open with"**; both can be switched later in the
+app (cog, top left). To make the viewer your default for pictures or videos, pick it once in
+Windows' *Default apps* (setup offers a shortcut there). Prefer no installer? Download
 `UniversalEdit-windows`, extract, and run `UniversalEdit.exe`.
 
 The browser version's source is in [`web/`](web/README.md).
@@ -97,6 +102,7 @@ The browser version's source is in [`web/`](web/README.md).
 | **3D viewer**: Convert \| Edit for 3D models (STL, OBJ, 3MF, PLY, GLB, OFF, STEP, IGES) · rotate / pan / zoom, front / top / side / 3D views, shaded / edges / wireframe, print-bed grid · size in mm, triangles, parts, watertight check, volume | ✅ | ✅ (no OFF) |
 | **Start screen editor tiles**: open the image editor (with a new picture: size presets, white / transparent / black) or the 3D viewer without a file · video, audio and document editor tiles show "Coming soon" | ✅ | ✅ |
 | **Viewer** (`UniversalEdit.exe --view FILE`, for "Open with"): pictures (zoom / pan, animated GIFs), video and music with sound, PDF / EPUB / SVG pages, Word / Excel / PowerPoint / EPS / DXF as pages (converted in the background), text, 3D models · the folder's other files beside it (← / →) · **Convert** / **Edit** move the file into the converter or editor · one window: a second "Open with" reuses it | ✅ | — |
+| **Windows installer** (per user, no admin) · right-click **"Convert with Universal Edit"** (several files → one window) · **"Open with"** → viewer · switches in the app's Settings (cog) | ✅ | — |
 | Files never leave your computer | ✅ | ✅ |
 | No install needed | ❌ | ✅ |
 | Save straight into a folder | ✅ | ✅ Chrome/Edge · ❌ Firefox/Safari (zip instead) |
