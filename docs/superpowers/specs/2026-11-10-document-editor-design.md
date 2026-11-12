@@ -118,7 +118,7 @@ to keep a copy." The banner can be closed.
 Further warnings: Word lists numbered with letters or Roman numerals ("numbering with letters
 or Roman numerals" — they open as ordinary numbered lists); HTML and Markdown that lose page
 styles, classes or scripts, pictures from the web, or embedded HTML (iframes, forms, video …);
-Markdown footnotes and block-level raw HTML ("footnotes and other Markdown extras"); Markdown
+Markdown footnotes and raw HTML with tags the editor drops, anywhere ("footnotes and other Markdown extras"); Markdown
 inline code spans, level 4–6 headings and picture alt texts outside fenced code ("inline code,
 small headings and picture descriptions" — they open as plain text, level-3 headings and
 pictures without a description). They use the same banner and the same "Save anyway?" question.
