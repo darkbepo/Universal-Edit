@@ -541,6 +541,9 @@ Found in Task 5c, fix round 2. The core open/save path and the website keep all 
 - a ragged table gains empty cells;
 - runs of spaces in centred text change;
 - a document that is only an empty `<pre></pre>` saves as an empty document.
+- From the Task 5c re-review:
+  - **Pasted code line:** a pasted code line gets no `CODE_GROUP`, so it is written as a separate code block from its neighbour. Pasted code lines should join the code block they land in.
+  - **Over-warning (both apps):** raw `<hr>`, `<blockquote>` and `<div align=…>` that the normaliser keeps still raise the Markdown-extras warning, because they are missing from the "kept tags" set. Add every tag the normaliser keeps or maps without loss. `h4`–`h6` keep warning through `W_MDFORMAT` "small headings".
 
 **Files:**
 - Modify: `src/umc/gui/doceditor/text_view.py` (load fix-ups) and `src/umc/gui/doceditor/html_export.py` (export), plus the normaliser if a construct isn't a fixed point. The web must stay unaffected (its view is Task 6/7).
