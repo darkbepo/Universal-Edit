@@ -219,10 +219,11 @@ def _logo_check(d: Path) -> list[Path]:
     return [out]
 
 
-def _viewer_check(d: Path) -> list[Path]:
+def _viewer_check(d: Path, video: Path) -> list[Path]:
     """The viewer: Qt Multimedia (PySide6-Addons) with its FFmpeg backend is bundled, the
     single-instance socket module loads, and the folder rules work."""
     import importlib
+    import os
 
     from PySide6.QtCore import QLibraryInfo
 
@@ -234,6 +235,29 @@ def _viewer_check(d: Path) -> list[Path]:
     plugins = Path(QLibraryInfo.path(QLibraryInfo.LibraryPath.PluginsPath)) / "multimedia"
     if not any("ffmpeg" in p.name.lower() for p in plugins.glob("*")):
         raise RuntimeError(f"Qt's FFmpeg media plugin is missing in {plugins}")
+    # The plugin must also *load* (its avcodec/avformat DLLs found) and decode: play a few frames
+    # of the H.264 slideshow an earlier step made. The app forces the same backend (app.py), so
+    # a silent fall-back to Windows' own one can't hide a broken FFmpeg backend.
+    os.environ["QT_MEDIA_BACKEND"] = "ffmpeg"
+    import time
+
+    from PySide6.QtCore import QCoreApplication, QUrl
+    from PySide6.QtMultimedia import QMediaPlayer, QVideoSink
+
+    app = QCoreApplication.instance() or QCoreApplication([])
+    player, sink, frames, errors = QMediaPlayer(), QVideoSink(), [], []
+    player.setVideoOutput(sink)
+    sink.videoFrameChanged.connect(lambda f: frames.append(f.isValid()))
+    player.errorOccurred.connect(lambda _e, msg: errors.append(msg))
+    player.setSource(QUrl.fromLocalFile(str(video)))
+    player.play()
+    deadline = time.monotonic() + 20
+    while sum(frames) < 3 and not errors and time.monotonic() < deadline:
+        app.processEvents()
+        time.sleep(0.01)
+    player.stop()
+    if sum(frames) < 3:
+        raise RuntimeError(f"Qt Multimedia didn't play the test video: {errors or 'no frames'}")
     d.mkdir(parents=True, exist_ok=True)
     for name in ("b.png", "a.mp4", "c.pdf"):
         (d / name).write_bytes(b"x")
@@ -372,7 +396,6 @@ def run(report: Path) -> int:
             ("editor: layers -> ora -> png/jpg", lambda: _editor_check(d / "editor")),
             ("convert screen icons (QtSvg)", lambda: _icon_check(d / "icons")),
             ("app logo / window icon", lambda: _logo_check(d / "logo")),
-            ("viewer (Qt Multimedia + FFmpeg plugin)", lambda: _viewer_check(d / "viewer")),
             ("document editor", lambda: _doc_editor_check(d / "doceditor")),
             ("3D viewer (model + Qt OpenGL)", lambda: _viewer3d_check(d / "viewer3d")),
             ("mp4 -> webm", lambda: _convert([out / "img0 slideshow.mp4"], "webm", out)),
@@ -380,6 +403,11 @@ def run(report: Path) -> int:
             ("mp4 -> frames", lambda: _convert([out / "img0 slideshow.mp4"], "frames:png", out)),
             ("pdf -> png pages", lambda: _convert([out / "img0 + 2 more.pdf"], "pages:png", out)),
             ("pdf -> split", lambda: _convert([out / "img0 + 2 more.pdf"], "split:pdf", out)),
+            # last: it leaves a QCoreApplication behind
+            (
+                "viewer (Qt Multimedia + FFmpeg backend)",
+                lambda: _viewer_check(d / "viewer", out / "img0 slideshow.mp4"),
+            ),
         ]
         for name, step in steps:
             try:

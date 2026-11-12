@@ -6,7 +6,7 @@ import threading
 from pathlib import Path
 
 from umc.core.detect import DetectedFile
-from umc.core.errors import ConversionError
+from umc.core.errors import ConversionError, ToolMissingError
 from umc.viewer.files import PREVIEW_TARGETS
 
 TEXT_LIMIT = 2_000_000  # characters shown of a text file
@@ -58,7 +58,10 @@ def preview_pdf(f: DetectedFile, out_dir: Path, cancel: threading.Event | None =
     )
     if cancel is not None:
         job.cancel_event = cancel
-    outputs = target.converter.run(job)
+    try:
+        outputs = target.converter.run(job)
+    except ToolMissingError as exc:  # Convert offers "Install it for me"; the viewer doesn't
+        raise ConversionError(f"{exc} Press Convert to install it with one click.") from exc
     pdfs = [Path(p) for p in outputs if str(p).lower().endswith(".pdf")]
     if not pdfs:
         raise ConversionError("This file can't be previewed.")

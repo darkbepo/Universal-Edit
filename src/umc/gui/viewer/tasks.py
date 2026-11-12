@@ -1,8 +1,12 @@
 """Run small jobs off the UI thread and hand the result back on it.
 
-Each ``submit`` returns a ticket; results of a job whose ticket was superseded (``cancel_group``
-or a newer job in the same group) are dropped, so a slow load never shows up after the user
-moved on to the next file."""
+Each ``submit`` returns a ticket; a job's result is dropped when a newer job of the same group
+was submitted (``exclusive``) or the group was cancelled since, so a slow load never shows up
+after the user moved on to the next file.
+
+Two lanes: "pool" (2 threads: pictures, thumbnails, text, 3D) and "pdf" (1 thread) for everything
+that touches PyMuPDF — MuPDF has one shared context and isn't safe on two threads at once, even
+for different documents (PDF pages, documents turned into PDFs, which also use it)."""
 
 from __future__ import annotations
 
@@ -23,17 +27,17 @@ class _Bridge(QObject):
 
 
 class TaskRunner(QObject):
-    """A private pool (so closing the window can wait for exactly its own jobs)."""
-
     def __init__(self, parent: QObject | None = None, threads: int = 2) -> None:
         super().__init__(parent)
-        self.pool = QThreadPool(self)
-        self.pool.setMaxThreadCount(threads)
+        self.pools = {"pool": QThreadPool(self), "pdf": QThreadPool(self)}
+        self.pools["pool"].setMaxThreadCount(threads)
+        self.pools["pdf"].setMaxThreadCount(1)
         self._bridge = _Bridge(self)
         self._bridge.finished.connect(self._finished)
         self._next = 0
-        self._latest: dict[str, int] = {}  # group → newest ticket
-        self._callbacks: dict[int, tuple[str, Callable, Callable]] = {}
+        self._latest: dict[str, int] = {}  # exclusive group → newest ticket
+        self._cancelled: dict[str, int] = {}  # group → tickets up to this one are dropped
+        self._callbacks: dict[int, tuple[str, bool, Callable, Callable]] = {}
 
     def submit(
         self,
@@ -42,20 +46,23 @@ class TaskRunner(QObject):
         on_done: Callable[[Any], None],
         on_failed: Callable[[str], None] | None = None,
         exclusive: bool = True,
+        lane: str = "pool",
     ) -> int:
-        """Run ``fn`` on the pool. With ``exclusive``, only the newest job of ``group`` reports."""
+        """Run ``fn`` in ``lane``. With ``exclusive``, only the newest job of ``group`` reports;
+        otherwise every job reports unless ``cancel_group(group)`` came after it."""
         self._next += 1
         ticket = self._next
         if exclusive:
             self._latest[group] = ticket
-        self._callbacks[ticket] = (
-            group if exclusive else "",
-            on_done,
-            on_failed or (lambda m: None),
-        )
+        fail = on_failed or (lambda _m: None)
+        self._callbacks[ticket] = (group, exclusive, on_done, fail)
         bridge = self._bridge
 
         def job() -> None:
+            if self.is_stale(ticket):  # cancelled while it waited: skip the work
+                with contextlib.suppress(RuntimeError):
+                    bridge.finished.emit(ticket, False, "")
+                return
             try:
                 ok, result = True, fn()
             except ConversionError as exc:
@@ -66,23 +73,39 @@ class TaskRunner(QObject):
             with contextlib.suppress(RuntimeError):  # the window is already gone
                 bridge.finished.emit(ticket, ok, result)
 
-        self.pool.start(job)
+        self.pools[lane].start(job)
         return ticket
 
     def cancel_group(self, group: str) -> None:
         self._latest[group] = -1
+        self._cancelled[group] = self._next
+
+    def is_stale(self, ticket: int) -> bool:
+        entry = self._callbacks.get(ticket)
+        if entry is None:
+            return True
+        group, exclusive, _done, _fail = entry
+        if exclusive and self._latest.get(group) != ticket:
+            return True
+        return ticket <= self._cancelled.get(group, 0)
 
     def _finished(self, ticket: int, ok: bool, result: object) -> None:
-        group, on_done, on_failed = self._callbacks.pop(ticket, ("", None, None))
-        if on_done is None or (group and self._latest.get(group) != ticket):
+        stale = self.is_stale(ticket)
+        entry = self._callbacks.pop(ticket, None)
+        if entry is None or stale:
             return
+        _group, _exclusive, on_done, on_failed = entry
         if ok:
             on_done(result)
         else:
             on_failed(result)
 
-    def shutdown(self, ms: int = 5000) -> None:
-        """Forget queued jobs and wait for running ones (call before the window goes away)."""
-        self.pool.clear()
-        self.pool.waitForDone(ms)
+    def shutdown(self) -> None:
+        """Forget queued jobs and every pending result, without waiting for running ones (a
+        LibreOffice preview can take a while; its result is simply dropped)."""
+        for pool in self.pools.values():
+            pool.clear()
         self._callbacks.clear()
+
+    def wait(self, ms: int = 5000) -> bool:
+        return all(pool.waitForDone(ms) for pool in self.pools.values())

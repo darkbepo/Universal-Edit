@@ -127,16 +127,99 @@ def test_convert_and_edit_move_the_file_to_the_main_window(qtbot, folder):
         w.close()
 
 
-def test_a_second_start_hands_its_file_over(qtbot):
+def test_a_second_start_hands_its_file_over(qtbot, tmp_path):
     import uuid
 
     from umc.gui.single_instance import InstanceServer, send_to_running
 
     name = f"umc-test-{uuid.uuid4().hex[:8]}"
-    server = InstanceServer(name=name)
-    assert server.start()
+    lock = str(tmp_path / "instance.lock")
+    first = InstanceServer(name=name, lock_path=lock)
+    assert first.start()
     got = []
-    server.message_received.connect(got.append)
+    first.message_received.connect(got.append)
+    # a second normal start must not take over (it would cut the first one off)
+    second = InstanceServer(name=name, lock_path=lock)
+    assert not second.start()
     assert send_to_running({"view": "/x/y.png"}, name=name)
     qtbot.waitUntil(lambda: got == [{"view": "/x/y.png"}], timeout=3000)
     assert not send_to_running({"view": "z"}, name=name + "-nobody")
+
+
+def test_runner_drops_results_of_cancelled_and_replaced_jobs(qtbot):
+    import threading
+
+    from umc.gui.viewer.tasks import TaskRunner
+
+    runner = TaskRunner()
+    gate = threading.Event()
+    got = []
+    runner.submit("page", lambda: gate.wait(5) and "old page", got.append, exclusive=False)
+    runner.submit("main", lambda: gate.wait(5) and "old file", got.append)
+    runner.cancel_group("page")  # the user moved on to another document
+    runner.submit("main", lambda: "new file", got.append)  # replaces the old file's load
+    runner.submit("page", lambda: "new page", got.append, exclusive=False, lane="pdf")
+    gate.set()
+    qtbot.waitUntil(lambda: sorted(got) == ["new file", "new page"], timeout=5000)
+    qtbot.wait(100)
+    assert sorted(got) == ["new file", "new page"]
+    runner.shutdown()
+    assert runner.wait()
+
+
+def test_switching_pdfs_fast_never_shows_old_pages(qtbot, viewer, folder, media):
+    shutil.copy(media / "three.pdf", folder / "again.pdf")
+    viewer.open_path(folder / "three.pdf")
+    viewer.go_to(viewer.items.index((folder / "again.pdf").resolve()))
+    _shows(qtbot, viewer, viewer.pages, timeout=15000)
+    calls = []
+    real = viewer.pages.set_page
+    viewer.pages.set_page = lambda i, img: (calls.append(viewer._pdf_for_pages), real(i, img))
+    qtbot.waitUntil(lambda: not viewer.pages.labels[0].pixmap().isNull(), timeout=15000)
+    assert calls and all(p.name == "again.pdf" for p in calls)
+
+
+def test_documents_are_previewed_as_pages(qtbot, viewer, folder):
+    (folder / "page.html").write_text("<h1>Hello</h1><p>World</p>", encoding="utf-8")
+    viewer.open_path(folder / "page.html")
+    assert viewer.kind == vf.CONVERT
+    _shows(qtbot, viewer, viewer.pages, timeout=30000)
+    assert len(viewer.pages.labels) >= 1
+
+
+def test_missing_tool_says_convert_can_install_it(folder, monkeypatch):
+    from dataclasses import dataclass
+    from types import SimpleNamespace
+
+    from umc.core.detect import detect
+    from umc.core.errors import ConversionError, ToolMissingError
+    from umc.viewer import preview
+
+    @dataclass
+    class NoOptions:
+        pass
+
+    def run(_job):
+        raise ToolMissingError("LibreOffice", "https://example.invalid", "show this file")
+
+    fake = SimpleNamespace(id="doc:pdf", converter=SimpleNamespace(options_cls=NoOptions, run=run))
+    monkeypatch.setattr("umc.core.registry.targets_for", lambda files: [fake])
+    (folder / "sheet.xlsx").write_bytes(b"PK")
+    with pytest.raises(ConversionError) as err:
+        preview.preview_pdf(detect(folder / "sheet.xlsx"), folder)
+    assert "LibreOffice is needed" in str(err.value)
+    assert "Press Convert to install it" in str(err.value)
+
+
+def test_closed_converter_window_is_reused(qtbot, folder):
+    from PySide6.QtCore import QCoreApplication
+
+    QCoreApplication.setOrganizationName("UMC-tests")
+    from umc.gui.launcher import AppController
+
+    c = AppController(listen=False)
+    first = c.show_main()
+    qtbot.addWidget(first)
+    first.close()
+    assert c.show_main() is first and len(c.windows) == 1
+    first.close()

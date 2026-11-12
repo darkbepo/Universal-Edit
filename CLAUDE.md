@@ -761,12 +761,20 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       `ViewerWindow` (stage, side list with lazy thumbnails, bottom bar Convert / Edit; ← → PgUp
       PgDn Home End, F11, Space), `views.py` (ImageCanvas with QMovie for animations, MediaView =
       QMediaPlayer + QVideoWidget, PagesView renders only visible pages, TextView, InfoView),
-      `tasks.py` (`TaskRunner`: own QThreadPool, a newer job in a group drops older results;
-      `shutdown()` on close). Playback = Qt Multimedia from **PySide6-Addons** (LGPL; its own
-      LGPL FFmpeg ~25 MB in the build; `--self-test` checks the plugin is bundled). `app.py` →
+      `tasks.py` (`TaskRunner`: lanes "pool" (2 threads) and "pdf" (1 thread — **everything that
+      touches PyMuPDF goes there**: MuPDF isn't safe on two threads, even for different docs);
+      a newer exclusive job or `cancel_group` drops older results; `shutdown()` on close doesn't
+      wait, the preview temp dir is removed by a thread once jobs end). Playback = Qt Multimedia
+      from **PySide6-Addons** (LGPL; its own LGPL FFmpeg ~25 MB in the build; `app.py` forces
+      `QT_MEDIA_BACKEND=ffmpeg`; `--self-test` plays frames of an H.264 clip — Qt's
+      `supportedVideoCodecs()` omits H.264 although it decodes it, so don't test with that).
+      The spec's bin/ FFmpeg-DLL filter only drops copies whose source is in `packaging/bin`
+      (Qt's FFmpeg DLLs can have the same names). `app.py` →
       `gui/launcher.AppController` holds every window (converter windows import lazily so the
-      viewer opens fast); `gui/single_instance.py`: every GUI run listens on a local socket
-      named after the user, `--view` first hands its file to a running copy. PyMuPDF is warmed up
+      viewer opens fast); `gui/single_instance.py`: the first GUI run holds a QLockFile in the
+      app-data folder and listens on a local socket named after the user (later runs never take
+      it over); `--view` first hands its file to a running copy. A missing tool in a preview
+      says "Press Convert to install it" (Convert has the one-click installer). PyMuPDF is warmed up
       in the background (its first import takes ~1 s). Offscreen Qt has no GL / audio device:
       the 3D view shows a message there, video is checked by counting frames on `videoSink()`.
 11. Ideas: installer for the app itself (Inno Setup), presets, batch queue.

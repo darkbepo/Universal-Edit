@@ -73,6 +73,9 @@ def main(argv: list[str] | None = None) -> int:
     if args[:1] == ["--view"]:  # "Open with → Universal Edit" runs this
         view_path = str(Path(args[1]).resolve()) if len(args) > 1 else None
 
+    # The viewer plays through Qt's FFmpeg backend everywhere (Windows' own one reads far fewer
+    # formats); --self-test checks that it loads.
+    os.environ.setdefault("QT_MEDIA_BACKEND", "ffmpeg")
     from PySide6.QtWidgets import QApplication
 
     from umc.gui import branding, theme

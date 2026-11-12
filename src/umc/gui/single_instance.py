@@ -10,7 +10,7 @@ import json
 import logging
 import re
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QLockFile, QObject, Signal
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 
 log = logging.getLogger(__name__)
@@ -40,26 +40,42 @@ def send_to_running(message: dict, name: str | None = None, timeout_ms: int = 50
 
 
 class InstanceServer(QObject):
-    """Receives messages from later starts (``message_received(dict)``)."""
+    """Receives messages from later starts (``message_received(dict)``).
+
+    Only the first running copy listens: it holds a lock file in the app-data folder (Qt
+    notices a lock left by a crashed run from its process id). A later normal start doesn't
+    take the socket over — on Windows a second named pipe would happily listen too, and on Unix
+    removing the socket file would cut the first copy off."""
 
     message_received = Signal(dict)
 
-    def __init__(self, parent: QObject | None = None, name: str | None = None) -> None:
+    def __init__(
+        self, parent: QObject | None = None, name: str | None = None, lock_path: str | None = None
+    ) -> None:
         super().__init__(parent)
         self.name = name or server_name()
+        self.lock_path = lock_path
+        self.lock: QLockFile | None = None
         self.server = QLocalServer(self)
         self.server.newConnection.connect(self._on_connection)
 
     def start(self) -> bool:
-        if self.server.listen(self.name):
-            return True
-        QLocalServer.removeServer(self.name)  # a stale socket left by a crashed run (Unix)
-        ok = self.server.listen(self.name)
-        if not ok:
-            log.warning(
-                "single instance: can't listen on %s: %s", self.name, self.server.errorString()
-            )
-        return ok
+        """True if this copy now answers later starts."""
+        path = self.lock_path
+        if path is None:
+            from umc.core.paths import app_data_dir
+
+            path = str(app_data_dir() / f"{self.name}.lock")
+        lock = QLockFile(path)
+        if not lock.tryLock(0):
+            return False  # another copy is running and answers
+        self.lock = lock
+        QLocalServer.removeServer(self.name)  # a socket file left by a crashed run (Unix)
+        if not self.server.listen(self.name):
+            why = self.server.errorString()
+            log.warning("single instance: can't listen on %s: %s", self.name, why)
+            return False
+        return True
 
     def _on_connection(self) -> None:
         while self.server.hasPendingConnections():

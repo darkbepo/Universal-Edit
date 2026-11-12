@@ -155,7 +155,9 @@ class ViewerWindow(QMainWindow):
         self.setCentralWidget(root)
 
         # PyMuPDF takes about a second to import: do it early, so the first PDF opens quickly
-        QTimer.singleShot(800, self, lambda: self.tasks.submit("warm", _warm_up, lambda _r: None))
+        QTimer.singleShot(
+            800, self, lambda: self.tasks.submit("warm", _warm_up, lambda _r: None, lane="pdf")
+        )
         self.media.player.durationChanged.connect(self._on_duration)
         self._thumb_timer = QTimer(self, singleShot=True, interval=50)
         self._thumb_timer.timeout.connect(self._request_thumbs)
@@ -177,6 +179,7 @@ class ViewerWindow(QMainWindow):
         """Show ``path`` and fill the side list with its folder."""
         path = Path(path).resolve()
         self.items = vf.folder_items(path)
+        self.tasks.cancel_group("thumb")
         self._thumbs_requested.clear()
         self.list.blockSignals(True)
         self.list.clear()
@@ -246,18 +249,23 @@ class ViewerWindow(QMainWindow):
     # ------------------------------------------------------------ each kind
     def _show_image(self, f: DetectedFile) -> None:
         self._show_info("photo", "Opening…")
-        if is_animated(f.path):
-            self.canvas.set_movie(f.path)
-            self._image_ready(self.canvas.image)
-            return
 
-        def done(image: QImage) -> None:
-            self.canvas.set_image(image)
+        def load() -> tuple[QImage | None, bool]:
+            # imageCount() reads a whole GIF: decide here, not on the UI thread
+            if is_animated(f.path):
+                return None, True
+            return load_image(f.path), False
+
+        def done(result: tuple[QImage | None, bool]) -> None:
+            image, animated = result
+            if animated:
+                self.canvas.set_movie(f.path)
+                image = self.canvas.image
+            else:
+                self.canvas.set_image(image)
             self._image_ready(image)
 
-        self.tasks.submit(
-            "main", lambda: load_image(f.path), done, self._failed("This picture can't be opened.")
-        )
+        self.tasks.submit("main", load, done, self._failed("This picture can't be opened."))
 
     def _image_ready(self, image: QImage | None) -> None:
         self.stack.setCurrentWidget(self.canvas)
@@ -279,6 +287,7 @@ class ViewerWindow(QMainWindow):
 
     def _open_pages(self, pdf_path: Path) -> None:
         self._show_info("pdf", "Opening…")
+        self.tasks.cancel_group("page")  # renders of the document shown before
         self._pdf_for_pages = pdf_path
 
         def done(sizes: list[tuple[float, float]]) -> None:
@@ -295,6 +304,7 @@ class ViewerWindow(QMainWindow):
             lambda: preview.page_sizes(pdf_path),
             done,
             self._failed("This document can't be opened."),
+            lane="pdf",
         )
 
     def _render_page(self, index: int, width: int) -> None:
@@ -314,6 +324,7 @@ class ViewerWindow(QMainWindow):
             render,
             lambda image: self.pages.set_page(index, image),
             exclusive=False,
+            lane="pdf",
         )
 
     def _show_convert(self, f: DetectedFile) -> None:
@@ -332,7 +343,11 @@ class ViewerWindow(QMainWindow):
             )
 
         self.tasks.submit(
-            "main", lambda: preview.preview_pdf(f, out, cancel), self._open_pages_later, failed
+            "main",
+            lambda: preview.preview_pdf(f, out, cancel),
+            self._open_pages_later,
+            failed,
+            lane="pdf",
         )
 
     def _open_pages_later(self, pdf_path: Path) -> None:
@@ -457,8 +472,14 @@ class ViewerWindow(QMainWindow):
     # ------------------------------------------------------------ closing
     def closeEvent(self, event) -> None:  # noqa: N802
         self._stop_current()
-        self.tasks.shutdown()
-        if self._preview_dir is not None:
-            shutil.rmtree(self._preview_dir, ignore_errors=True)
-            self._preview_dir = None
+        self.tasks.shutdown()  # doesn't wait: a slow preview conversion mustn't freeze closing
+        folder, self._preview_dir = self._preview_dir, None
+        if folder is not None:
+            tasks = self.tasks
+
+            def remove_when_idle() -> None:  # after any conversion still writing into it
+                tasks.wait(120_000)
+                shutil.rmtree(folder, ignore_errors=True)
+
+            threading.Thread(target=remove_when_idle, name="umc-view-cleanup", daemon=True).start()
         super().closeEvent(event)

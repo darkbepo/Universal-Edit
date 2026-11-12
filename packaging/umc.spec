@@ -76,8 +76,13 @@ a.binaries = [b for b in a.binaries if "opencv_videoio_ffmpeg" not in b[0].lower
 # The shared FFmpeg DLLs live in bin/ next to ffmpeg.exe (which loads them from there).
 # PyInstaller also copies them to the top folder as "dependencies" of the exe: a ~180 MB duplicate.
 _ffmpeg_dlls = {p.name.lower() for p in BIN.glob("*.dll")} if BIN.is_dir() else set()
+# Only copies *from bin/*: Qt Multimedia (viewer) brings its own LGPL FFmpeg DLLs, which can have
+# the very same names (avcodec-61.dll …) and must stay.
+_bin = BIN.resolve()
 a.binaries = [
-    b for b in a.binaries if not ("/" not in b[0].replace("\\", "/") and b[0].lower() in _ffmpeg_dlls)
+    b for b in a.binaries
+    if not ("/" not in b[0].replace("\\", "/") and b[0].lower() in _ffmpeg_dlls
+            and Path(b[1]).resolve().parent == _bin)
 ]
 pyz = PYZ(a.pure)
 exe = EXE(

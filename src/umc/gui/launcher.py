@@ -48,8 +48,8 @@ class AppController(QObject):
     # ------------------------------------------------------------ converter windows
     def free_main(self):
         """A converter window with nothing going on, else a new one."""
-        for w in self.windows:
-            if w.isVisible() and not w.files and not w.busy and w._current_editor() is None:
+        for w in self.windows:  # a closed (hidden) window is reused too
+            if not w.files and not w.busy and w._current_editor() is None:
                 return w
         from umc.gui.main_window import MainWindow
 
