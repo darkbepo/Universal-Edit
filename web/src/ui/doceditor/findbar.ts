@@ -104,13 +104,16 @@ function replaceIn(block: PMNode, ranges: [number, number][], text: string): PMN
  * character on. Every step moves on by a whole character (a surrogate pair is one): with the "u"
  * flag a `lastIndex` inside a pair is moved back to its start, so stepping by one code unit
  * would find the same match forever. Empty matches are never taken. The scan starts at offset
- * `start` (forward find from the cursor: a match overlapping one before it is still found). */
+ * `start` (forward find from the cursor: a match overlapping one before it is still found).
+ * With `overlap`, a match is looked for at every start, also inside the previous match (backward
+ * find takes the last one before the cursor, as the desktop does). */
 export function scanMatches(
   text: string,
   pattern: string,
   flags: string,
   accept: (start: number, end: number) => boolean,
   start = 0,
+  overlap = false,
 ): [number, number][] {
   const out: [number, number][] = [];
   let re: RegExp;
@@ -128,7 +131,7 @@ export function scanMatches(
     const end = at + m[0].length;
     if (end > at && at >= from && accept(at, end)) {
       out.push([at, end]);
-      from = end;
+      from = overlap ? at + ((text.codePointAt(at) ?? 0) > 0xffff ? 2 : 1) : end;
     } else {
       const cp = text.codePointAt(Math.max(at, from)) ?? 0;
       from = Math.max(at, from) + (cp > 0xffff ? 2 : 1);
@@ -271,7 +274,7 @@ export class FindBar {
 
   /** The good matches in `block` (content offsets, scanned from `start`), for `text` with
    * `opts`. */
-  private blockMatches(block: PMNode, text: string, opts: FindOptions, start = 0): [number, number][] {
+  private blockMatches(block: PMNode, text: string, opts: FindOptions, start = 0, overlap = false): [number, number][] {
     const whole = !!opts.wholeWord;
     return scanMatches(
       blockText(block),
@@ -279,6 +282,7 @@ export class FindBar {
       opts.matchCase ? "gu" : "giu",
       (a, b) => goodIn(block, a, b, whole),
       start,
+      overlap,
     );
   }
 
@@ -291,7 +295,7 @@ export class FindBar {
       // forward, the block holding `from` is scanned from there (as the desktop's find from the
       // cursor), so a match overlapping an earlier one ("aa" in "aaa") isn't skipped
       const offset = backward ? 0 : Math.min(Math.max(0, from - start), node.content.size);
-      const ranges = this.blockMatches(node, text, opts, offset).map(([a, b]) => ({ from: start + a, to: start + b }));
+      const ranges = this.blockMatches(node, text, opts, offset, backward).map(([a, b]) => ({ from: start + a, to: start + b }));
       found = (backward ? ranges.filter((r) => r.from < from).pop() : ranges.find((r) => r.from >= from)) ?? null;
       return found !== null;
     });

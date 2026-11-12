@@ -10,13 +10,17 @@ let ready: Promise<Pandoc> | null = null;
 
 export const PANDOC_LOADING = "Loading document engine (first time only)…";
 
-/** The response's bytes, reporting whole percents of its Content-Length as they arrive (none
- * when the length is unknown). The length may be the compressed size: percents stop at 100. */
+export const DOWNLOAD_FAILED = "Couldn't download the document converter. Check the internet connection and try again.";
+
+/** The response's bytes. A plain download (Content-Length, no Content-Encoding) reports whole
+ * percents as they arrive and is read into one buffer of that size; a compressed one says no
+ * percent (its Content-Length is the compressed size, the stream gives the unpacked bytes). */
 async function download(res: Response, onPercent: (pct: number) => void): Promise<ArrayBuffer> {
-  const total = Number(res.headers.get("content-length")) || 0;
+  const encoding = (res.headers.get("content-encoding") ?? "identity").toLowerCase();
+  const total = encoding === "identity" ? Number(res.headers.get("content-length")) || 0 : 0;
   if (!res.body || !total) return res.arrayBuffer();
   const reader = res.body.getReader();
-  const parts: Uint8Array[] = [];
+  let out = new Uint8Array(total);
   let received = 0;
   let shown = -1;
   const report = () => {
@@ -27,24 +31,30 @@ async function download(res: Response, onPercent: (pct: number) => void): Promis
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
-    parts.push(value);
+    if (received + value.length > out.length) {
+      // more than the server said: grow (rare; the percent stays at 100)
+      const bigger = new Uint8Array(Math.max(out.length * 2, received + value.length));
+      bigger.set(out.subarray(0, received));
+      out = bigger;
+    }
+    out.set(value, received);
     received += value.length;
     report();
   }
-  const out = new Uint8Array(received);
-  let at = 0;
-  for (const p of parts) {
-    out.set(p, at);
-    at += p.length;
-  }
-  return out.buffer;
+  return received === out.length ? out.buffer : out.slice(0, received).buffer;
 }
 
 export function getPandoc(onStatus?: (msg: string) => void): Promise<Pandoc> {
   if (!ready) {
     ready = (async () => {
       onStatus?.(PANDOC_LOADING);
-      const res = await fetch(wasmURL);
+      let res: Response;
+      try {
+        res = await fetch(wasmURL);
+      } catch (e) {
+        throw new ConversionError(DOWNLOAD_FAILED, String(e));
+      }
+      if (!res.ok) throw new ConversionError(DOWNLOAD_FAILED, `HTTP ${res.status}`);
       const wasm = await download(res, (pct) => onStatus?.(`${PANDOC_LOADING} ${pct} %`));
       return createPandocInstance(wasm);
     })();

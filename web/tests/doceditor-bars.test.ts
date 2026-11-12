@@ -583,3 +583,18 @@ describe("Task 9: the Task 8a re-review items", () => {
     expect(await third).toBe(null);
   });
 });
+
+describe("Task 9a: backward find with overlapping matches", () => {
+  test('"aa" in "aaa" from the end: [1,3], then [0,2], as on the desktop', () => {
+    const v = viewOf("<p>aaa</p>");
+    const bar = new FindBar(v);
+    select(v, 4);
+    const at = () => [v.view.state.selection.from - 1, v.view.state.selection.to - 1];
+    expect(bar.find("aa", { backward: true })).toBe(true);
+    expect(at()).toEqual([1, 3]);
+    expect(bar.find("aa", { backward: true })).toBe(true);
+    expect(at()).toEqual([0, 2]);
+    expect(bar.find("aa", { backward: true })).toBe(true); // wraps to the last
+    expect(at()).toEqual([1, 3]);
+  });
+});

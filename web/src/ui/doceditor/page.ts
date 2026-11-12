@@ -9,7 +9,7 @@
  */
 
 import { redo, redoDepth, undo, undoDepth } from "prosemirror-history";
-import type { Command } from "prosemirror-state";
+import { Selection, type Command } from "prosemirror-state";
 import { defaults } from "../../core/options";
 import { canonicalExt, detect, familyOfExt } from "../../core/detect";
 import { converterById, targetsFor } from "../../core/registry";
@@ -21,7 +21,7 @@ import { MAX_FILE_BYTES, WEB_EDITABLE_DOCUMENT_EXTS, warningText } from "../../d
 import type { ConversionClient } from "../../worker/client";
 import { FindBar } from "./findbar";
 import { FormatBar, browserAsker, type Asker } from "./formatbar";
-import { DocView, EDITOR_KEYS, pictureExt, plainText } from "./view";
+import { DocView, EDITOR_KEYS, NOT_A_PICTURE, pictureExt, plainText } from "./view";
 
 export const ONLY_ONE = "Only one document can be edited at a time.";
 export const DISCARD = "Discard unsaved changes to this document?";
@@ -77,14 +77,27 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text = ""):
 /** The name without its extension ("a.tar.gz" keeps "a.tar"; a name without one stays). */
 const stemOf = (name: string) => (name.includes(".") ? name.slice(0, name.lastIndexOf(".")) : name);
 
-/** `e` as a key name like ProseMirror's keymaps ("Mod-Shift-s", "Mod-Alt-1", "Mod-Space"). */
-function keyName(e: KeyboardEvent): string {
+const WINDOWS = typeof navigator !== "undefined" && /Win/.test(navigator.platform);
+
+/** The names `e` is looked up by, like ProseMirror's keymaps ("Mod-Shift-s", "Mod-Alt-1",
+ * "Mod-Space"): the key typed, then (ProseMirror's rule, so a shortcut works the same in the
+ * text and elsewhere on the page) the key code's letter or digit when a modifier is held and it
+ * typed another character — except Ctrl+Alt on Windows, which is AltGr typing a character. */
+export function keyNames(e: KeyboardEvent, windows = WINDOWS): string[] {
+  const mods = `${e.ctrlKey || e.metaKey ? "Mod-" : ""}${e.altKey ? "Alt-" : ""}${e.shiftKey ? "Shift-" : ""}`;
   let key = e.key === " " ? "Space" : e.key;
   if (key.length === 1) key = key.toLowerCase();
-  // with Alt, some layouts turn a digit into another character: the digit is in `code`
-  if (e.altKey && /^Digit\d$/.test(e.code)) key = e.code.slice(5);
-  return `${e.ctrlKey || e.metaKey ? "Mod-" : ""}${e.altKey ? "Alt-" : ""}${e.shiftKey ? "Shift-" : ""}${key}`;
+  const names = [mods + key];
+  const code = e.keyCode;
+  const base = code >= 48 && code <= 57 ? String(code - 48) : code >= 65 && code <= 90 ? String.fromCharCode(code + 32) : "";
+  if (key.length === 1 && key !== " " && (e.altKey || e.metaKey || e.ctrlKey) && !(windows && e.ctrlKey && e.altKey) && base && base !== key) {
+    names.push(mods + base);
+  }
+  return names;
 }
+
+/** Shown when the browser's save window couldn't be opened (other than being cancelled). */
+export const PICK_FAILED = "The browser couldn't open its save window. Try again, or use Save as without “Save to a file…”.";
 
 export class DocEditorPage {
   readonly el: HTMLElement = el("div", "editor doc-editor");
@@ -177,7 +190,10 @@ export class DocEditorPage {
       clearTimeout(this.statusTimer);
       this.statusTimer = setTimeout(() => this.updateStatus(), STATUS_DELAY_MS);
     };
-    this.el.addEventListener("keydown", (e) => this.key(e));
+    // the page's keys work wherever the focus is while it is shown (the grey area, the banner…)
+    window.addEventListener("keydown", this.onKey);
+    // a press on the empty paper or around it puts the caret in the page, like the desktop
+    scroll.addEventListener("mousedown", (e) => this.pressOutside(e));
     // links in the page are text to edit: no click (Ctrl+click, middle click) ever follows one
     for (const type of ["click", "auxclick"]) {
       this.view.view.dom.addEventListener(type, (e) => {
@@ -198,14 +214,51 @@ export class DocEditorPage {
       e.preventDefault();
       void this.droppedFiles(files);
     });
-    window.addEventListener("beforeunload", (e) => {
-      if (this.active && this.view.dirty) {
-        e.preventDefault();
-        e.returnValue = "";
-      }
-    });
+    window.addEventListener("beforeunload", this.onUnload);
     this.updateButtons();
     this.updateStatus();
+  }
+
+  private readonly onKey = (e: KeyboardEvent) => this.key(e);
+  private readonly onUnload = (e: BeforeUnloadEvent) => {
+    if (this.active && this.view.dirty) {
+      e.preventDefault();
+      e.returnValue = "";
+    }
+  };
+
+  /** Remove the page and everything it listens to on the window. */
+  dispose(): void {
+    this.active = false;
+    clearTimeout(this.statusTimer);
+    window.removeEventListener("keydown", this.onKey);
+    window.removeEventListener("beforeunload", this.onUnload);
+    this.view.view.destroy();
+    this.el.remove();
+  }
+
+  /** A press on the paper outside the text, or the grey area: the caret goes to the nearest
+   * place in the text (the end when there is none to find). */
+  private pressOutside(e: MouseEvent): void {
+    const v = this.view.view;
+    if (e.button !== 0 || v.dom.contains(e.target as Node)) return;
+    e.preventDefault();
+    let pos: number | null = null;
+    try {
+      // the point moved into the text's box: a press beside a line goes to that line
+      const r = v.dom.getBoundingClientRect();
+      if (r.width > 2 && r.height > 2) {
+        const left = Math.min(Math.max(e.clientX, r.left + 1), r.right - 1);
+        const top = Math.min(Math.max(e.clientY, r.top + 1), r.bottom - 1);
+        pos = v.posAtCoords({ left, top })?.pos ?? null;
+      }
+    } catch {
+      /* no layout to read */
+    }
+    const doc = v.state.doc;
+    const $pos = doc.resolve(pos ?? doc.content.size);
+    v.dispatch(v.state.tr.setSelection(pos === null ? Selection.atEnd(doc) : Selection.near($pos)));
+    v.focus();
   }
 
   // ---------------------------------------------------------------- showing
@@ -257,8 +310,8 @@ export class DocEditorPage {
 
   // ---------------------------------------------------------------- keys
   private key(e: KeyboardEvent): void {
-    if (e.defaultPrevented || e.isComposing || this.el.hidden) return;
-    const name = keyName(e);
+    if (!this.active || e.defaultPrevented || e.isComposing || this.el.hidden) return;
+    const names = keyNames(e);
     const page: Record<string, () => void> = {
       "Mod-s": () => void this.save(),
       "Mod-Shift-s": () => void this.saveAs(),
@@ -266,16 +319,19 @@ export class DocEditorPage {
       "Mod-h": () => this.findBar.open(true),
       "Mod-k": () => this.formatBar.buttons.link.click(),
     };
-    const t = e.target as HTMLElement;
+    const t = e.target instanceof Element ? e.target : document.body;
     if (t.closest("dialog")) return;
-    if (Object.hasOwn(page, name)) {
+    const pageKey = names.find((n) => Object.hasOwn(page, n));
+    if (pageKey) {
       e.preventDefault();
-      page[name]();
+      page[pageKey]();
       return;
     }
-    // the editor's own keys work from the bars too (not in a text field: its own undo, typing)
+    // the editor's own keys work from the bars too (not in a text field: its own undo, typing);
+    // in the text, its keymap has had them already
     if (t.closest("input, select, textarea") || this.view.view.dom.contains(t)) return;
-    const command = Object.hasOwn(EDITOR_KEYS, name) && name.startsWith("Mod-") ? EDITOR_KEYS[name] : null;
+    const name = names.find((n) => n.startsWith("Mod-") && Object.hasOwn(EDITOR_KEYS, n));
+    const command = name ? EDITOR_KEYS[name] : null;
     if (command) {
       e.preventDefault();
       this.runCommand(command);
@@ -377,6 +433,12 @@ export class DocEditorPage {
       return;
     }
     const found = await Promise.all(files.map((f) => detect(f).catch(() => null)));
+    const one = found.length === 1 ? found[0] : null;
+    if (files.length === 1 && (files[0].type.startsWith("image/") || one?.family === "image" || one?.family === "vector")) {
+      // one picture the editor can't add (SVG, HEIC, TIFF…): say that, not "one document"
+      this.showMessage(NOT_A_PICTURE, true);
+      return;
+    }
     if (found.some((f) => f === null)) {
       this.showMessage(ONLY_ONE, true);
       return;
@@ -422,8 +484,12 @@ export class DocEditorPage {
         handle = await (window as unknown as { showSaveFilePicker: (o: object) => Promise<FileHandle> }).showSaveFilePicker({
           suggestedName: `${choice.stem.replace(/[\\/:*?"<>|]/g, "_")}.${ext}`,
         });
-      } catch {
-        return false; // picker cancelled
+      } catch (err) {
+        if ((err as { name?: string } | null)?.name !== "AbortError") {
+          console.error("The save window couldn't be opened", err);
+          this.showMessage(PICK_FAILED, true);
+        }
+        return false; // cancelled: nothing to say
       }
     }
     this.lastSave = { stem: choice.stem, format: choice.format, handle };

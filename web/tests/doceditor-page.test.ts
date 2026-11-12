@@ -6,8 +6,8 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { InputFile, OutputFile, Target } from "../src/core/types";
 import type { ConversionClient } from "../src/worker/client";
 import { TOO_LARGE, W_PAGESTYLE } from "../src/doceditor/types";
-import { DISCARD, ONLY_ONE, countText, mountDocEditor, type DocEditorPage } from "../src/ui/doceditor/page";
-import { TOO_DEEP } from "../src/ui/doceditor/view";
+import { DISCARD, ONLY_ONE, PICK_FAILED, countText, keyNames, mountDocEditor, type DocEditorPage } from "../src/ui/doceditor/page";
+import { NOT_A_PICTURE, TOO_DEEP } from "../src/ui/doceditor/view";
 
 // jsdom has no ClipboardEvent (EditorView.pasteHTML makes one)
 if (typeof globalThis.ClipboardEvent === "undefined") {
@@ -71,10 +71,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  for (const p of pages) {
-    p.hide();
-    p.el.remove();
-  }
+  for (const p of pages) p.dispose();
   pages = [];
   vi.restoreAllMocks();
 });
@@ -415,5 +412,95 @@ describe("links", () => {
       a.dispatchEvent(e);
       expect(e.defaultPrevented, type).toBe(true);
     }
+  });
+});
+
+describe("Task 9a", () => {
+  const keydown = (target: EventTarget, init: KeyboardEventInit) => {
+    const e = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init });
+    target.dispatchEvent(e);
+    return e;
+  };
+
+  test("shortcuts work with the focus anywhere while the page is shown, and stop after hide / dispose", async () => {
+    const { page } = mount();
+    await page.open(input("a.txt", "x\n"));
+    expect(keydown(document.body, { key: "f", ctrlKey: true }).defaultPrevented).toBe(true);
+    expect(q(page, ".doc-find").hidden).toBe(false);
+    page.hide();
+    expect(keydown(document.body, { key: "s", ctrlKey: true }).defaultPrevented).toBe(false);
+    page.show();
+    type(page, "y");
+    page.dispose();
+    expect(keydown(document.body, { key: "s", ctrlKey: true }).defaultPrevented).toBe(false);
+    const e = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(e);
+    expect(e.defaultPrevented).toBe(false);
+    expect(page.el.isConnected).toBe(false);
+  });
+
+  test("a press on the empty paper or the grey area puts the caret in the page", async () => {
+    const { page } = mount();
+    await page.open(input("a.txt", "ab\ncd\n"));
+    (document.activeElement as HTMLElement | null)?.blur();
+    for (const sel of [".doc-page", ".doc-scroll"]) {
+      const v = page.view.view;
+      v.dispatch(v.state.tr.setSelection(TextSelection.create(v.state.doc, 1)));
+      const e = new MouseEvent("mousedown", { bubbles: true, cancelable: true, clientX: 5, clientY: 900 });
+      q(page, sel).dispatchEvent(e);
+      expect(e.defaultPrevented, sel).toBe(true);
+      expect(v.hasFocus(), sel).toBe(true);
+      expect(v.state.selection.from, sel).toBe(v.state.doc.content.size - 1); // the end
+    }
+  });
+
+  test("Save to a file…: a cancelled picker is silent, any other failure is said plainly", async () => {
+    const { page } = mount();
+    await page.open(input("a.txt", "x\n"));
+    page.askSaveAs = async () => ({ stem: "a", format: "txt", toFile: true });
+    const w = window as unknown as { showSaveFilePicker?: () => Promise<never> };
+    try {
+      w.showSaveFilePicker = async () => {
+        throw new DOMException("cancelled", "AbortError");
+      };
+      expect(await page.saveAs()).toBe(false);
+      expect(q(page, ".doc-message").textContent).toBe("");
+      w.showSaveFilePicker = async () => {
+        throw new DOMException("no", "SecurityError");
+      };
+      expect(await page.saveAs()).toBe(false);
+      expect(page.lastError()).toBe(PICK_FAILED);
+    } finally {
+      delete w.showSaveFilePicker;
+    }
+  });
+
+  test("one dropped picture the editor can't add says so", async () => {
+    const { page } = mount();
+    await page.open(input("a.txt", "x\n"));
+    for (const file of [new File(["<svg/>"], "a.svg", { type: "image/svg+xml" }), new File([new Uint8Array(4)], "b.heic")]) {
+      const e = new Event("drop", { bubbles: true, cancelable: true });
+      Object.defineProperty(e, "dataTransfer", { value: { files: [file], types: ["Files"], getData: () => "" } });
+      page.view.view.dom.dispatchEvent(e);
+      await vi.waitFor(() => expect(page.lastError()).toBe(NOT_A_PICTURE));
+      q(page, ".doc-message").textContent = "";
+    }
+  });
+
+  test("Ctrl+Alt+digit: the same in the text and from a button (ProseMirror's keyCode rule)", async () => {
+    const { page } = mount();
+    await page.open(input("a.txt", "ab\n"));
+    // a layout where Ctrl+Alt+1 types another character: the key code decides, as in ProseMirror
+    const init = { key: "¹", code: "Digit1", keyCode: 49, ctrlKey: true, altKey: true };
+    keydown(page.view.view.dom, init);
+    expect(html(page)).toBe("<h1>ab</h1>");
+    keydown(page.view.view.dom, { key: "0", code: "Digit0", keyCode: 48, ctrlKey: true, altKey: true });
+    keydown(buttonNamed(page, "Undo") as HTMLElement, init);
+    expect(html(page)).toBe("<h1>ab</h1>");
+    // on Windows Ctrl+Alt is AltGr: the typed character wins (no key code fallback), in both
+    const altGr = new KeyboardEvent("keydown", { key: "}", code: "Digit0", keyCode: 48, ctrlKey: true, altKey: true });
+    expect(keyNames(altGr, true)).toEqual(["Mod-Alt-}"]);
+    expect(keyNames(altGr, false)).toEqual(["Mod-Alt-}", "Mod-Alt-0"]);
+    expect(keyNames(new KeyboardEvent("keydown", { key: "S", code: "KeyS", keyCode: 83, ctrlKey: true, shiftKey: true }), true)).toEqual(["Mod-Shift-s"]);
   });
 });

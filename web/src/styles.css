@@ -543,9 +543,9 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 .doc-banner[hidden] { display: none; }
 .doc-banner-text { flex: 1; }
 .doc-banner-close { background: none; border: none; padding: 0 6px; }
-.doc-scroll { flex: 1; min-height: 0; overflow: auto; padding: 24px 16px; }
-.doc-page { box-sizing: border-box; width: 794px; max-width: 100%; min-height: 1123px; margin: 0 auto; padding: 76px; border: 1px solid var(--border); box-shadow: 0 2px 12px rgba(0,0,0,.12); cursor: text; }
-.doc-page .ProseMirror { min-height: 100%; font-family: sans-serif; font-size: 12pt; line-height: 1.4; word-wrap: break-word; overflow-wrap: break-word; font-variant-ligatures: none; }
+.doc-scroll { flex: 1; min-height: 0; overflow: auto; padding: 24px 16px; cursor: text; }
+.doc-page { display: flex; flex-direction: column; box-sizing: border-box; width: 794px; max-width: 100%; min-height: 1123px; margin: 0 auto; padding: 76px; border: 1px solid var(--border); box-shadow: 0 2px 12px rgba(0,0,0,.12); cursor: text; }
+.doc-page .ProseMirror { flex: 1 0 auto; font-family: sans-serif; font-size: 12pt; line-height: 1.4; word-wrap: break-word; overflow-wrap: break-word; font-variant-ligatures: none; }
 .doc-page h1 { font-size: 20pt; } .doc-page h2 { font-size: 16pt; } .doc-page h3 { font-size: 13pt; }
 .doc-page pre { font-family: monospace; font-size: 10pt; white-space: pre-wrap; }
 .doc-page blockquote { margin-left: 18pt; color: #444444; }
