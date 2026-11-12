@@ -692,7 +692,8 @@ Found in Task 5c, fix round 2. The core open/save path and the website keep all 
 **Interfaces:**
 - Consumes: `mountDocEditor` (Task 9), `WEB_EDITABLE_DOCUMENT_EXTS`.
 - A single `.zip` counts as a document when `isEditableMarkdownZip(bytes)` (from `doceditor/open.ts`, Task 5b) is true, so a Markdown ZIP saved by the website can be edited again.
-- Produces: `editKind(): "image" | "document" | null` in app.ts. `canEdit()` = `editKind() !== null`. The tooltip texts are in Global Constraints.
+- **Note (2026-11-12):** `main` now has a 3D viewer on the same switch. `app.ts` already has `editKind(): "image" | "model" | null`, with `viewer` mounted from `./editor3d/page`. Extend it to `"image" | "model" | "document" | null` and keep the image and 3D flows unchanged. The tooltip gains the document case. The desktop already routes documents and 3D models through `edit_kind()` / `_current_editor()`.
+- Produces: `editKind(): "image" | "model" | "document" | null` in app.ts. `canEdit()` = `editKind() !== null`. The tooltip texts are in Global Constraints.
 
 - [ ] **Step 1: Implement.**
   - `enterEdit` branches on the kind. The document page is created lazily with `await import("./doceditor/page")`.
