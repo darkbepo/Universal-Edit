@@ -143,6 +143,11 @@ class MainWindow(QMainWindow):
         self.mode = "convert"  # on the converter screen: "convert" or "properties"
         right = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
         tl.addWidget(self.mode_bar, 0, 2, right)
+        # the outer columns only share the spare width equally when it's enough for the switch;
+        # an equal minimum keeps the name centred in a narrow window too (Windows' wider fonts)
+        side = self.mode_bar.sizeHint().width()
+        tl.setColumnMinimumWidth(0, side)
+        tl.setColumnMinimumWidth(2, side)
         outer.addWidget(top)
         self.editor = None  # EditorPage, created on first use
         self.doc_editor = None  # DocEditorPage, created on first use
