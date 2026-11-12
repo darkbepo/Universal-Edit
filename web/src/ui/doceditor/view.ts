@@ -17,7 +17,7 @@ import {
   type Node as PMNode,
   type ResolvedPos,
 } from "prosemirror-model";
-import { EditorState, Plugin, TextSelection, type Command, type Transaction } from "prosemirror-state";
+import { EditorState, Plugin, Selection, TextSelection, type Command, type Transaction } from "prosemirror-state";
 import { AddMarkStep, AddNodeMarkStep, RemoveMarkStep, RemoveNodeMarkStep } from "prosemirror-transform";
 import { EditorView } from "prosemirror-view";
 import { baseKeymap } from "prosemirror-commands";
@@ -55,6 +55,34 @@ export const PICTURE_TYPES: Record<string, string> = {
   "image/bmp": "bmp",
   "image/webp": "webp",
 };
+const PICTURE_EXTS: Record<string, string> = { png: "png", jpg: "jpg", jpeg: "jpg", gif: "gif", bmp: "bmp", webp: "webp" };
+/** The desktop's message for a file that isn't a picture the editor takes. */
+export const NOT_A_PICTURE = "This file isn't a picture the editor can add (PNG, JPG, GIF, BMP or WebP).";
+export const MAX_PICTURE_BYTES = 50 * 1024 * 1024;
+/** The picture extension the editor stores `file` under (by its type, else its name), or null
+ * when it isn't a picture the editor takes. */
+export function pictureExt(file: File): string | null {
+  return PICTURE_TYPES[file.type] ?? PICTURE_EXTS[file.name.slice(file.name.lastIndexOf(".") + 1).toLowerCase()] ?? null;
+}
+export const TOO_DEEP = "This document is nested too deeply to edit here.";
+/** Deepest node nesting the view takes. The normaliser flattens HTML past 100 elements, so a
+ * normalised document stays far below this; it guards the recursive rendering. */
+export const MAX_EDIT_DEPTH = 400;
+
+/** How deeply `doc`'s nodes nest (a paragraph at the top is 1), walked without recursion. */
+export function docDepth(doc: PMNode): number {
+  let deepest = 0;
+  const stack: [PMNode, number][] = [[doc, 0]];
+  while (stack.length) {
+    const [node, depth] = stack.pop() as [PMNode, number];
+    if (depth > deepest) deepest = depth;
+    if (node.isTextblock) continue;
+    node.forEach((child) => {
+      if (!child.isLeaf) stack.push([child, depth + 1]);
+    });
+  }
+  return deepest;
+}
 const MIME: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", bmp: "image/bmp", webp: "image/webp" };
 /** The page column is 794 px (A4 at 96 dpi) with 76 px margins: wider pictures are shrunk. */
 const ROOM = 794 - 2 * 76;
@@ -213,26 +241,28 @@ export function createState(doc: PMNode): EditorState {
 
 const NBSP_ALL = /\u00a0/g;
 
-function lineText(block: PMNode): string {
+function lineText(block: PMNode, picture: string): string {
   let out = "";
   block.forEach((child) => {
     if (child.isText) out += (child.text as string).replace(NBSP_ALL, " ");
     else if (child.type === nodes.hard_break) out += "\n";
+    else if (child.type === nodes.image) out += picture;
   });
   return block.type === nodes.code_block && out.endsWith("\n") ? out.slice(0, -1) : out;
 }
 
 /** The document as plain text, as the desktop's QTextDocument.toPlainText gives it (no-break
  * spaces as spaces, pictures and empty tags left out, an empty line after every table and
- * before one that starts the page or a cell), with a final line break ("" when empty). */
-export function plainText(doc: PMNode): string {
+ * before one that starts the page or a cell), with a final line break ("" when empty).
+ * `picture` stands for each picture (the status line counts one as a space, as the desktop). */
+export function plainText(doc: PMNode, picture = ""): string {
   if (doc.childCount === 1 && doc.child(0).type === nodes.paragraph && !doc.child(0).content.size) return "";
   const lines: string[] = [];
   const frame = (container: PMNode) => {
     const start = lines.length;
     const walk = (node: PMNode) => {
       node.forEach((child) => {
-        if (child.isTextblock) lines.push(lineText(child));
+        if (child.isTextblock) lines.push(lineText(child, picture));
         else if (child.type === nodes.horizontal_rule) lines.push("");
         else if (child.type === nodes.table) {
           if (lines.length === start) lines.push("");
@@ -352,6 +382,12 @@ export class DocView {
   private readonly serializer = new SubsetSerializer((html) => {
     this.copiedHtml = html;
   });
+  /** Deepest nesting `load` takes (replaceable in tests). */
+  maxDepth = MAX_EDIT_DEPTH;
+  /** Files dropped on the page that aren't all pictures (the page decides what to do). */
+  onDropFiles: (files: File[]) => void = () => {};
+  /** A plain-language problem (a dropped file that can't be added); the page shows it. */
+  onError: (message: string) => void = () => {};
   /** How pasted HTML is normalised (replaceable in tests). */
   normalisePasted: typeof normaliseHtml = normaliseHtml;
 
@@ -385,6 +421,9 @@ export class DocView {
       clipboardSerializer: this.serializer,
       clipboardTextParser: (text, $context) => textSlice(text, this.marksAt($context)),
       handlePaste: (_view, event) => this.handlePaste(event),
+      // dropped files are handled before ProseMirror looks for a drop position, which it may not
+      // find: the browser would then open the file instead of the page
+      handleDOMEvents: { drop: (_view, event) => this.handleDrop(event as DragEvent) },
     });
   }
 
@@ -410,15 +449,23 @@ export class DocView {
     this.changed();
   }
 
-  /** Show `opened` (normalised first, as on the desktop); history and the dirty flag start over. */
+  /** Show `opened` (normalised first, as on the desktop); history and the dirty flag start over.
+   * A document nested more deeply than `maxDepth` is refused with `TOO_DEEP` (nothing changes). */
   load(opened: OpenedDocument): void {
+    let doc: PMNode;
+    try {
+      doc = htmlToDoc(normaliseHtml(opened.html).html);
+    } catch (err) {
+      if (err instanceof RangeError) throw new Error(TOO_DEEP, { cause: err }); // the call stack
+      throw err;
+    }
+    if (docDepth(doc) > this.maxDepth) throw new Error(TOO_DEEP);
     for (const url of this.urls.values()) URL.revokeObjectURL(url);
     this.urls.clear();
     this.images = new Map(opened.images);
     this.frontMatter = opened.frontMatter;
     this.title = opened.title;
     this.template = opened.template;
-    const doc = htmlToDoc(normaliseHtml(opened.html).html);
     this.clean = doc;
     this.afterCommand = false;
     this.copiedHtml = null;
@@ -472,6 +519,49 @@ export class DocView {
     this.images.set(name, data);
     this.run(insertImage(name, width, height));
     return name;
+  }
+
+  /** Add picture files at `pos` (or the cursor); a file that isn't a picture the editor takes is
+   * reported with `onError`. */
+  async insertPictureFiles(files: File[], pos: number | null = null): Promise<void> {
+    if (pos !== null) {
+      const $pos = this.view.state.doc.resolve(Math.min(pos, this.view.state.doc.content.size));
+      this.view.dispatch(this.view.state.tr.setSelection(Selection.near($pos)));
+    }
+    for (const file of files) {
+      const ext = pictureExt(file);
+      if (!ext || file.size > MAX_PICTURE_BYTES) {
+        this.onError(NOT_A_PICTURE);
+        continue;
+      }
+      try {
+        await this.addPicture(new Uint8Array(await file.arrayBuffer()), ext);
+      } catch (err) {
+        console.error("A dropped picture couldn't be added", err);
+        this.onError("The picture couldn't be read.");
+      }
+    }
+    this.focus();
+  }
+
+  /** Files dropped on the page: pictures are inserted where they were dropped, anything else
+   * goes to `onDropFiles`. Never left to the browser (it would leave the page). */
+  private handleDrop(event: DragEvent): boolean {
+    const files = Array.from(event.dataTransfer?.files ?? []);
+    if (!files.length) return false;
+    event.preventDefault();
+    if (!files.every((f) => pictureExt(f) !== null)) {
+      this.onDropFiles(files);
+      return true;
+    }
+    let pos: number | null = null;
+    try {
+      pos = this.view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos ?? null;
+    } catch {
+      /* no layout to read: the cursor */
+    }
+    void this.insertPictureFiles(files, pos);
+    return true;
   }
 
   /** What the clipboard gets for `slice` (as `text/html`). */

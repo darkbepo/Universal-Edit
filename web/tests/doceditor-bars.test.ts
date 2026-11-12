@@ -3,7 +3,7 @@
 // test_gui_doceditor.py format / find bar tests).
 import { TextSelection } from "prosemirror-state";
 import { undo } from "prosemirror-history";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import type { OpenedDocument } from "../src/doceditor/types";
 import * as cmds from "../src/ui/doceditor/commands";
 import { FindBar, scanMatches } from "../src/ui/doceditor/findbar";
@@ -453,7 +453,7 @@ describe("Task 8a: colour pickers and bar details", () => {
   test("highlight starts at yellow, text colour lets black be chosen", async () => {
     const hl = browserAsker.color("Highlight colour");
     const a = inputs()[inputs().length - 1] as HTMLInputElement;
-    expect(a.value).toBe("#ffff00");
+    expect(a.value).toBe("#ffff01");
     a.value = "#00ff00";
     a.dispatchEvent(new Event("input")); // dragging in the picker
     window.dispatchEvent(new Event("focus")); // closed: the last colour counts
@@ -517,5 +517,69 @@ describe("Task 8a: colour pickers and bar details", () => {
     document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
     expect(bar.tableMenu.open).toBe(false);
     bar.el.remove();
+  });
+});
+
+describe("Task 9: the Task 8a re-review items", () => {
+  test("forward find starts at the cursor, so an overlapping match is found", () => {
+    const v = viewOf("<p>aaa</p>");
+    const bar = new FindBar(v);
+    select(v, 2); // after the first a
+    expect(bar.find("aa")).toBe(true);
+    expect([v.view.state.selection.from, v.view.state.selection.to]).toEqual([2, 4]);
+    expect(scanMatches("aaa", "aa", "gu", () => true, 1)).toEqual([[1, 3]]);
+  });
+
+  const colourInput = () => document.body.querySelector('input[type="color"]') as HTMLInputElement;
+
+  test("a colour pick that ends on its starting value is no choice; pure yellow can be chosen", async () => {
+    const hl = browserAsker.color("Highlight colour");
+    const a = colourInput();
+    expect(a.value).toBe("#ffff01");
+    a.dispatchEvent(new Event("input")); // reported, but still the starting value
+    a.dispatchEvent(new Event("cancel"));
+    expect(await hl).toBe(null);
+    const text = browserAsker.color("Text colour");
+    const b = colourInput();
+    b.value = "#123456";
+    b.dispatchEvent(new Event("input"));
+    b.value = "#010101"; // dragged back to where it started
+    b.dispatchEvent(new Event("input"));
+    window.dispatchEvent(new Event("focus"));
+    expect(await text).toBe(null);
+    const yellow = browserAsker.color("Highlight colour");
+    const c = colourInput();
+    c.value = "#ffff00";
+    c.dispatchEvent(new Event("change"));
+    expect(await yellow).toBe("#ffff00");
+  });
+
+  test("a file pick isn't lost when its change comes long after the focus", async () => {
+    vi.useFakeTimers();
+    try {
+      const picked = browserAsker.file("image/png");
+      const input = document.body.querySelector('input[type="file"]') as HTMLInputElement;
+      window.dispatchEvent(new Event("focus"));
+      vi.advanceTimersByTime(2000);
+      const file = new File([new Uint8Array([1])], "a.png", { type: "image/png" });
+      Object.defineProperty(input, "files", { value: [file] });
+      input.dispatchEvent(new Event("change"));
+      expect(await picked).toBe(file);
+      expect(document.body.querySelector('input[type="file"]')).toBe(null);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("a file pick ends on cancel, or when a new pick starts", async () => {
+    const first = browserAsker.file("image/png");
+    (document.body.querySelector('input[type="file"]') as HTMLInputElement).dispatchEvent(new Event("cancel"));
+    expect(await first).toBe(null);
+    const second = browserAsker.file("image/png");
+    const third = browserAsker.file("image/png");
+    expect(await second).toBe(null);
+    expect(document.body.querySelectorAll('input[type="file"]').length).toBe(1);
+    (document.body.querySelector('input[type="file"]') as HTMLInputElement).dispatchEvent(new Event("cancel"));
+    expect(await third).toBe(null);
   });
 });

@@ -535,3 +535,36 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 /* the page itself is paper: white with black text in both themes, as on the desktop */
 .doc-page, .doc-page .ProseMirror { background: #ffffff; color: #000000; }
 .doc-page .ProseMirror { outline: none; white-space: pre-wrap; }
+/* the page: top bar, bars + banner, the paper column (794 px = A4 at 96 dpi) and the status line */
+.doc-editor { grid-template-rows: auto 1fr auto; }
+.doc-body { display: flex; flex-direction: column; min-height: 0; }
+.doc-bars { flex: none; }
+.doc-banner { display: flex; align-items: flex-start; gap: 8px; margin: 8px 12px 0; padding: 8px 8px 8px 12px; background: var(--accent-soft); color: var(--text); border: 1px solid var(--border); border-radius: 8px; font-size: 13px; }
+.doc-banner[hidden] { display: none; }
+.doc-banner-text { flex: 1; }
+.doc-banner-close { background: none; border: none; padding: 0 6px; }
+.doc-scroll { flex: 1; min-height: 0; overflow: auto; padding: 24px 16px; }
+.doc-page { box-sizing: border-box; width: 794px; max-width: 100%; min-height: 1123px; margin: 0 auto; padding: 76px; border: 1px solid var(--border); box-shadow: 0 2px 12px rgba(0,0,0,.12); cursor: text; }
+.doc-page .ProseMirror { min-height: 100%; font-family: sans-serif; font-size: 12pt; line-height: 1.4; word-wrap: break-word; overflow-wrap: break-word; font-variant-ligatures: none; }
+.doc-page h1 { font-size: 20pt; } .doc-page h2 { font-size: 16pt; } .doc-page h3 { font-size: 13pt; }
+.doc-page pre { font-family: monospace; font-size: 10pt; white-space: pre-wrap; }
+.doc-page blockquote { margin-left: 18pt; color: #444444; }
+.doc-page a { color: #1a55c4; cursor: text; }
+.doc-page img { max-width: 100%; }
+.doc-page table { border-collapse: collapse; margin: 6pt 0; }
+.doc-page td, .doc-page th { border: 1px solid #999999; padding: 3pt 6pt; min-width: 2em; vertical-align: top; }
+.doc-page table[style*="border:none"] td, .doc-page table[style*="border:none"] th { border: 1px dashed #dddddd; }
+.doc-page .selectedCell { background: #d7e3fb; }
+.doc-page [style*="page-break-before"] { border-top: 1px dashed #999999; padding-top: 6pt; }
+.doc-page .ProseMirror-selectednode { outline: 2px solid #4a6cf7; }
+.doc-page .ProseMirror-hideselection *::selection { background: transparent; }
+.doc-page .ProseMirror-hideselection { caret-color: transparent; }
+.doc-page .ProseMirror-gapcursor { display: none; }
+.doc-statusbar .doc-status { white-space: nowrap; }
+.doc-save-dialog .row { flex-wrap: wrap; }
+.doc-save-dialog [hidden] { display: none; }
+@media (max-width: 900px) {
+  .doc-editor { grid-template-rows: auto 1fr auto; overflow: hidden; }
+  .doc-scroll { padding: 12px 0; }
+  .doc-page { width: 100%; min-height: 0; padding: 24px 16px; border-left: none; border-right: none; }
+}

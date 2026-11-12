@@ -8,11 +8,44 @@ import { relativeOfficeRels } from "./officezip";
 type Pandoc = Awaited<ReturnType<typeof createPandocInstance>>;
 let ready: Promise<Pandoc> | null = null;
 
+export const PANDOC_LOADING = "Loading document engine (first time only)…";
+
+/** The response's bytes, reporting whole percents of its Content-Length as they arrive (none
+ * when the length is unknown). The length may be the compressed size: percents stop at 100. */
+async function download(res: Response, onPercent: (pct: number) => void): Promise<ArrayBuffer> {
+  const total = Number(res.headers.get("content-length")) || 0;
+  if (!res.body || !total) return res.arrayBuffer();
+  const reader = res.body.getReader();
+  const parts: Uint8Array[] = [];
+  let received = 0;
+  let shown = -1;
+  const report = () => {
+    const pct = Math.min(100, Math.floor((received * 100) / total));
+    if (pct !== shown) onPercent((shown = pct));
+  };
+  report();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    parts.push(value);
+    received += value.length;
+    report();
+  }
+  const out = new Uint8Array(received);
+  let at = 0;
+  for (const p of parts) {
+    out.set(p, at);
+    at += p.length;
+  }
+  return out.buffer;
+}
+
 export function getPandoc(onStatus?: (msg: string) => void): Promise<Pandoc> {
   if (!ready) {
     ready = (async () => {
-      onStatus?.("Loading document engine (first time only)…");
-      const wasm = await (await fetch(wasmURL)).arrayBuffer();
+      onStatus?.(PANDOC_LOADING);
+      const res = await fetch(wasmURL);
+      const wasm = await download(res, (pct) => onStatus?.(`${PANDOC_LOADING} ${pct} %`));
       return createPandocInstance(wasm);
     })();
     ready.catch(() => (ready = null));

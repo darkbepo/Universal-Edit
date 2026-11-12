@@ -32,7 +32,7 @@ import {
   type ToggleMark,
 } from "./commands";
 import { docSchema } from "./schema";
-import { PICTURE_TYPES, type DocView } from "./view";
+import { MAX_PICTURE_BYTES, NOT_A_PICTURE, PICTURE_TYPES, pictureExt, type DocView } from "./view";
 
 /** The questions the bar asks (a dialog each); null = cancelled. */
 export interface Asker {
@@ -97,10 +97,7 @@ export const TABLE_OPS: [TableOp, string][] = [
   ["split", "Split cell"],
 ];
 const PICTURE_ACCEPT = Object.keys(PICTURE_TYPES).join(",");
-const PICTURE_EXTS: Record<string, string> = { png: "png", jpg: "jpg", jpeg: "jpg", gif: "gif", bmp: "bmp", webp: "webp" };
-/** The desktop's message for a file that isn't a picture the editor takes. */
-export const NOT_A_PICTURE = "This file isn't a picture the editor can add (PNG, JPG, GIF, BMP or WebP).";
-const MAX_PICTURE_BYTES = 50 * 1024 * 1024;
+export { NOT_A_PICTURE };
 
 /** The style a textblock shows in the style box (as `activeState`: a quote first). */
 function styleOf(b: { node: PMNode; quoted: boolean }): string {
@@ -343,7 +340,7 @@ export class FormatBar {
   private async insertPicture(): Promise<void> {
     const file = await this.ask.file(PICTURE_ACCEPT);
     if (!file) return;
-    const ext = PICTURE_TYPES[file.type] ?? PICTURE_EXTS[file.name.slice(file.name.lastIndexOf(".") + 1).toLowerCase()];
+    const ext = pictureExt(file);
     if (!ext || file.size > MAX_PICTURE_BYTES) {
       this.onError(NOT_A_PICTURE);
       return;
@@ -406,21 +403,25 @@ export class FormatBar {
 
 /** The picker waiting for an answer (a new pick ends it, as cancelled). */
 let pending: (() => void) | null = null;
-/** After the window gets the focus back, how long a pick may still arrive (a file input's
- * `change` can come after the focus). */
+/** After the window gets the focus back, how long a colour may still arrive. */
 const RETURN_GRACE_MS = 300;
 
-/** An input element the user picks with (a colour or a file). Resolves with what was chosen
- * (`change`; a colour's last `input` counts too), or null when the picker closes without one:
- * its `cancel`, the window getting the focus back, or another pick starting. The input is
- * always removed. */
-function pick<T>(input: HTMLInputElement, read: () => T | null): Promise<T | null> {
+/**
+ * An input element the user picks with (a colour or a file). Resolves with what was chosen
+ * (`change`), or null when the picker closes without one: its `cancel`, or another pick
+ * starting. A colour picker's last `input` counts too, and the window getting the focus back
+ * also ends a colour pick (`focusEnds`; some browsers never send `cancel` for one); there a
+ * value equal to the starting one is no choice. A file pick never ends on the focus: Chrome
+ * can send `change` well after the focus is back. The input is always removed.
+ */
+function pick<T>(input: HTMLInputElement, read: () => T | null, focusEnds: boolean): Promise<T | null> {
   pending?.();
   return new Promise((resolve) => {
     input.style.position = "fixed";
     input.style.opacity = "0";
     input.style.pointerEvents = "none";
     document.body.append(input);
+    const initial = read();
     let latest: T | null = null;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const done = (value: T | null) => {
@@ -432,17 +433,19 @@ function pick<T>(input: HTMLInputElement, read: () => T | null): Promise<T | nul
       resolve(value);
     };
     const cancel = () => done(null);
+    // a picker that closed: what it last showed counts, unless that is where it started
+    const closed = () => done(latest !== null && latest !== initial ? latest : null);
     const back = () => {
       clearTimeout(timer);
-      timer = setTimeout(() => done(latest), RETURN_GRACE_MS);
+      timer = setTimeout(closed, RETURN_GRACE_MS);
     };
     pending = cancel;
     input.addEventListener("input", () => {
       latest = read();
     });
     input.addEventListener("change", () => done(read()));
-    input.addEventListener("cancel", () => done(latest));
-    window.addEventListener("focus", back);
+    input.addEventListener("cancel", closed);
+    if (focusEnds) window.addEventListener("focus", back);
     input.click();
   });
 }
@@ -454,16 +457,16 @@ export const browserAsker: Asker = {
     const input = el("input");
     input.type = "color";
     if (label) input.title = label;
-    // highlight starts at yellow (the desktop's); text one step from black, so that choosing
-    // black is a change the input reports
-    input.value = label === "Highlight colour" ? "#ffff00" : "#010101";
-    return pick(input, () => input.value);
+    // each picker starts one step from the colour people most often want (yellow, black), so
+    // choosing exactly that is a change the input reports
+    input.value = label === "Highlight colour" ? "#ffff01" : "#010101";
+    return pick(input, () => input.value, true);
   },
   file: (accept) => {
     const input = el("input");
     input.type = "file";
     input.accept = accept;
-    return pick(input, () => input.files?.[0] ?? null);
+    return pick(input, () => input.files?.[0] ?? null, false);
   },
   tableSize: () =>
     new Promise((resolve) => {

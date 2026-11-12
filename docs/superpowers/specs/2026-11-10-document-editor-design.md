@@ -240,6 +240,10 @@ columns when done.
   - The find bar has a × close button (Esc closes it in both apps; the desktop has no button).
   - Matches aren't all highlighted in either app; on the website, marking every match redrew
     the page on each keystroke, which took seconds on long documents.
+  - Save over the original asks a plain OK / Cancel question on the website (the browser's
+    `confirm`); the desktop's box also offers "Save as…".
+- **Known limits (both apps, by design):** typed spaces and a final Shift+Enter line break at
+  the end of a line are trimmed when the document is saved.
 
 ## Docs
 
