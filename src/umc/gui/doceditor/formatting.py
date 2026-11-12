@@ -25,7 +25,7 @@ from PySide6.QtGui import (
     QTextTableFormat,
 )
 
-from umc.gui.doceditor.html_export import CODE_FORM, code_group_of, set_code_group
+from umc.gui.doceditor.html_export import CODE_FORM, CODE_PRE, code_group_of, set_code_group
 from umc.gui.doceditor.text_view import (
     CODE_GROUP,
     QUOTE_MARGIN,
@@ -115,10 +115,10 @@ def block_style(c: QTextCursor) -> str:
     return "normal"
 
 
-def code_group_for(block: QTextBlock) -> tuple[int, int]:
-    """(CODE_GROUP, CODE_FORM) for a line made code: it joins the code block directly above it
-    (the user extends it), else it starts a block of its own; a code line below stays a
-    separate block."""
+def code_group_for(block: QTextBlock) -> tuple[int, int, int]:
+    """(CODE_GROUP, CODE_FORM, CODE_PRE) for a line made code: it joins the code block
+    directly above it (the user extends it), else it starts a block of its own; a code line
+    below stays a separate block."""
     above = block.previous()
     if above.isValid():
         fmt = above.blockFormat()
@@ -130,7 +130,8 @@ def code_group_for(block: QTextBlock) -> tuple[int, int]:
             and not fmt.boolProperty(QUOTE_PROPERTY)
         ):
             return group
-    return new_code_group(), 0
+    group = new_code_group()
+    return group, 0, group
 
 
 def set_block_style(c: QTextCursor, style: str) -> None:
@@ -154,6 +155,7 @@ def set_block_style(c: QTextCursor, style: str) -> None:
             fmt.clearProperty(QUOTE_PROPERTY)
             fmt.clearProperty(CODE_GROUP)
             fmt.clearProperty(CODE_FORM)
+            fmt.clearProperty(CODE_PRE)
             if was_quote:
                 fmt.setLeftMargin(0)
                 fmt.setRightMargin(0)

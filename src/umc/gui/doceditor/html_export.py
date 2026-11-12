@@ -37,12 +37,21 @@ CODE_GROUP = int(QTextFormat.Property.UserProperty) + 2
 CODE_FORM = int(QTextFormat.Property.UserProperty) + 3
 CODE_WHOLE = 1
 CODE_JOINED = 2
+CODE_WHOLE_INSIDE = 3  # like CODE_WHOLE, the final line break inside the tags around it
 # Custom block property: which quote a quoted paragraph belongs to (an int; two quotes in a
 # row stay two). Typed quote lines have none and join the quote above.
 QUOTE_GROUP = int(QTextFormat.Property.UserProperty) + 4
 # Custom table cell property: Qt added the cell to fill a short row; while it stays empty it
 # isn't written.
 PADDED_CELL = int(QTextFormat.Property.UserProperty) + 5
+# Custom character property (a string): how a loaded fragment's tags were nested, outermost
+# first, e.g. "b a" (Qt keeps only the formats, not their order). Qt never writes custom
+# properties to HTML or shows them.
+WRAP_ORDER = int(QTextFormat.Property.UserProperty) + 6
+# Custom block property: which <pre> of its code block a code line came from (an int). A
+# block joins one-line <pre>s and a whole one the way the Markdown writer does; each keeps
+# its own form.
+CODE_PRE = int(QTextFormat.Property.UserProperty) + 7
 _groups = itertools.count(1)
 
 
@@ -51,22 +60,26 @@ def new_code_group() -> int:
     return next(_groups)
 
 
-def set_code_group(fmt: QTextBlockFormat, group: int, form: int = 0) -> None:
-    """Make ``fmt`` a line of code block ``group``, written in ``form`` (CODE_FORM)."""
+def set_code_group(
+    fmt: QTextBlockFormat, group: int, form: int = 0, pre: int | None = None
+) -> None:
+    """Make ``fmt`` a line of code block ``group``, of its <pre> ``pre`` (default: the
+    group's number), written in ``form`` (CODE_FORM)."""
     fmt.setProperty(CODE_GROUP, group)
+    fmt.setProperty(CODE_PRE, group if pre is None else pre)
     if form:
         fmt.setProperty(CODE_FORM, form)
     else:
         fmt.clearProperty(CODE_FORM)
 
 
-def code_group_of(fmt: QTextBlockFormat) -> tuple[int, int] | None:
-    """(group, form) of a code line's format, None without a group."""
+def code_group_of(fmt: QTextBlockFormat) -> tuple[int, int, int] | None:
+    """(group, form, pre) of a code line's format, None without a group."""
     if not fmt.hasProperty(CODE_GROUP):
         return None
-    return fmt.intProperty(CODE_GROUP), (
-        fmt.intProperty(CODE_FORM) if fmt.hasProperty(CODE_FORM) else 0
-    )
+    group = fmt.intProperty(CODE_GROUP)
+    form = fmt.intProperty(CODE_FORM) if fmt.hasProperty(CODE_FORM) else 0
+    return group, form, fmt.intProperty(CODE_PRE) if fmt.hasProperty(CODE_PRE) else group
 
 
 _BULLETS = {
@@ -89,8 +102,8 @@ OBJECT = "\ufffc"  # a picture
 # An empty link (a badge whose web picture was dropped) holds this invisible character in the
 # view, because Qt drops empty anchors; it is never exported.
 LINK_PLACEHOLDER = "\u2063"
-# A loaded fragment's tool tip "umc-wrap:b a" records how its tags were nested, outermost
-# first (Qt keeps only the formats, not their order); it is never exported.
+# The HTML the view loads names a fragment's nesting in a "title" (Qt reads it as the tool
+# tip); right after loading it moves into WRAP_ORDER and the tool tip is cleared.
 WRAP_PREFIX = "umc-wrap:"
 
 
@@ -169,7 +182,7 @@ def _keep_spaces(text: str, before: str) -> tuple[str, str]:
 
 def _ordered(wraps: list[tuple[str, str, str]], order: list[str], stack: list) -> list:
     """The fragment's tags outermost first: as the loaded document nested them (``order``,
-    see text_view.WRAP_ORDER), else the tags already open first, then the default order."""
+    WRAP_ORDER), else the tags already open first, then the default order."""
     rest = list(wraps)
     first = []
     if order:
@@ -189,16 +202,39 @@ def _ordered(wraps: list[tuple[str, str, str]], order: list[str], stack: list) -
 
 
 def _block_text(block: QTextBlock, *, heading: bool = False, code: bool = False) -> str:
+    return _blocks_text([block], heading=heading, code=code)
+
+
+def _blocks_text(
+    blocks: list[QTextBlock],
+    *,
+    heading: bool = False,
+    code: bool = False,
+    end: str = "",
+    end_inside: bool = False,
+) -> str:
+    """The inline HTML of ``blocks`` (the lines of one <pre>, else one block), joined by line
+    breaks, then ``end``. A line break stays inside the tags that go on after it; ``end``
+    goes inside the tags still open with ``end_inside``, else after them."""
     out: list[str] = []
     stack: list[tuple[str, str, str]] = []  # the tags open now, outermost first
-    before = ""  # the start of the block
     empty_link = False  # the last thing written was an empty link (LINK_PLACEHOLDER)
+    breaks = 0  # line breaks not written yet
 
     def write(wraps: list, body: str, *, fresh_link: bool = False) -> None:
+        nonlocal breaks
+        if breaks:  # close what doesn't go on past the line break, then write it
+            keep = 0
+            while keep < min(len(stack), len(wraps)) and stack[keep] == wraps[keep]:
+                keep += 1
+            while len(stack) > keep:
+                out.append(stack.pop()[2])
+            out.append("\n" * breaks)
+            breaks = 0
         keep = 0
         while keep < min(len(stack), len(wraps)) and stack[keep] == wraps[keep]:
             if fresh_link and wraps[keep][0] == "a":
-                break  # two empty links in a row stay two links
+                break  # what follows an empty link is a link of its own
             keep += 1
         while len(stack) > keep:
             out.append(stack.pop()[2])
@@ -207,32 +243,41 @@ def _block_text(block: QTextBlock, *, heading: bool = False, code: bool = False)
             stack.append(w)
         out.append(body)
 
-    it = block.begin()
-    while not it.atEnd():
-        frag = it.fragment()
-        fmt = frag.charFormat()
-        order = fmt.toolTip().removeprefix(WRAP_PREFIX).split() if fmt.toolTip() else []
-        wraps = _ordered(_wraps(fmt, heading=heading, code=code), order, stack)
-        if fmt.isImageFormat():
-            for _ in frag.text():
-                write(wraps, _image(fmt))
-            before, empty_link = OBJECT, False
-            it += 1
-            continue
-        for part in re.split(f"({LINK_PLACEHOLDER})", frag.text()):
-            if part == LINK_PLACEHOLDER:
-                if fmt.isAnchor():
-                    write(wraps, "", fresh_link=empty_link)
-                    empty_link = True
+    for n, block in enumerate(blocks):
+        breaks += 1 if n else 0
+        before = ""  # the start of the line
+        it = block.begin()
+        while not it.atEnd():
+            frag = it.fragment()
+            fmt = frag.charFormat()
+            order = str(fmt.property(WRAP_ORDER) or "").split()
+            wraps = _ordered(_wraps(fmt, heading=heading, code=code), order, stack)
+            if fmt.isImageFormat():
+                for _ in frag.text():
+                    write(wraps, _image(fmt), fresh_link=empty_link)
+                    empty_link = False
                 before = OBJECT
+                it += 1
                 continue
-            if not part:
-                continue
-            if not code:  # <pre> keeps every space anyway
-                part, before = _keep_spaces(part, before)
-            write(wraps, _html.escape(part, quote=False).replace(LINE_SEPARATOR, "<br>"))
-            empty_link = False
-        it += 1
+            for part in re.split(f"({LINK_PLACEHOLDER})", frag.text()):
+                if part == LINK_PLACEHOLDER:
+                    if fmt.isAnchor():
+                        write(wraps, "", fresh_link=empty_link)
+                        empty_link = True
+                    before = OBJECT
+                    continue
+                if not part:
+                    continue
+                if not code:  # <pre> keeps every space anyway
+                    part, before = _keep_spaces(part, before)
+                body = _html.escape(part, quote=False).replace(LINE_SEPARATOR, "<br>")
+                write(wraps, body, fresh_link=empty_link)
+                empty_link = False
+            it += 1
+    if not end_inside:
+        while stack:
+            out.append(stack.pop()[2])
+    out.append("\n" * breaks + end)
     while stack:
         out.append(stack.pop()[2])
     return "".join(out)
@@ -299,12 +344,13 @@ class _Writer:
             self.out.append(f"<p{style}>{_block_text(block)}</p>")
 
     def code(self, blocks: list[QTextBlock], form: int) -> None:
-        """A code block written as one <pre> (``form``: CODE_WHOLE or CODE_JOINED)."""
+        """A code block written as one <pre> (``form``: a CODE_FORM other than 0)."""
         self.close_lists()
         self.close_quote()
-        body = "\n".join(_block_text(b, code=True) for b in blocks)
-        end = "\n" if form == CODE_WHOLE else ""
-        self.out.append(f"<pre>{body}{end}</pre>")
+        end = "" if form == CODE_JOINED else "\n"
+        inside = form == CODE_WHOLE_INSIDE
+        body = _blocks_text(blocks, code=True, end=end, end_inside=inside)
+        self.out.append(f"<pre>{body}</pre>")
 
     def finish(self) -> None:
         self.close_lists()
@@ -347,12 +393,12 @@ def _container(it: QTextFrame.iterator) -> str:
             continue  # Qt's own empty paragraph around a table
         form = _code_form(item) if _is_code(item) else 0
         if form:
-            group = _code_group(item)
+            pre = _code_pre(item)
             lines = [item]
             for later in items[i + 1 :]:
                 if not (isinstance(later, QTextBlock) and _is_code(later)):
                     break
-                if _code_group(later) != group:
+                if _code_pre(later) != pre or _code_form(later) != form:
                     break
                 lines.append(later)
             w.code(lines, form)
@@ -386,10 +432,16 @@ def _code_group(block: QTextBlock) -> int | None:
     return fmt.intProperty(CODE_GROUP) if fmt.hasProperty(CODE_GROUP) else None
 
 
+def _code_pre(block: QTextBlock) -> tuple[int, int] | None:
+    """(group, pre) of a code line: lines of one <pre> share it."""
+    found = code_group_of(block.blockFormat())
+    return None if found is None else (found[0], found[2])
+
+
 def _code_form(block: QTextBlock) -> int:
     fmt = block.blockFormat()
     form = fmt.intProperty(CODE_FORM) if fmt.hasProperty(CODE_FORM) else 0
-    return form if form in (CODE_WHOLE, CODE_JOINED) else 0
+    return form if form in (CODE_WHOLE, CODE_JOINED, CODE_WHOLE_INSIDE) else 0
 
 
 def _padding(cell) -> bool:

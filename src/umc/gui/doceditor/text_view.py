@@ -8,9 +8,10 @@ import logging
 import re
 from pathlib import Path
 
-from PySide6.QtCore import QBuffer, QEvent, QIODevice, QPointF, QRectF, Qt, QUrl
+from PySide6.QtCore import QBuffer, QIODevice, QPointF, QRectF, Qt, QUrl
 from PySide6.QtGui import (
     QColor,
+    QGuiApplication,
     QImage,
     QPainter,
     QPen,
@@ -23,7 +24,7 @@ from PySide6.QtGui import (
     QTextImageFormat,
     QTextTable,
 )
-from PySide6.QtWidgets import QFrame, QTextEdit, QToolTip
+from PySide6.QtWidgets import QFrame, QTextEdit
 
 from umc.core.errors import ConversionError
 from umc.doceditor.html_subset import normalise_html
@@ -39,10 +40,12 @@ from umc.gui.doceditor.html_export import (
     CODE_GROUP,
     CODE_JOINED,
     CODE_WHOLE,
+    CODE_WHOLE_INSIDE,
     LINK_PLACEHOLDER,
     PADDED_CELL,
     QUOTE_GROUP,
     QUOTE_PROPERTY,
+    WRAP_ORDER,
     WRAP_PREFIX,
     code_group_of,
     document_to_html,
@@ -51,6 +54,7 @@ from umc.gui.doceditor.html_export import (
 )
 
 log = logging.getLogger(__name__)
+_P = QTextFormat.Property
 
 __all__ = [
     "CODE_FONT",
@@ -90,7 +94,13 @@ CELL_PLACEHOLDER = "\u200b"  # stands in for an empty first paragraph of a table
 CODE_PLACEHOLDER = "\u2060"  # stands in for an empty first line of a code block
 _PLACEHOLDERS = CELL_PLACEHOLDER + CODE_PLACEHOLDER  # removed right after loading
 _PRE = re.compile(r"<pre>(.*?)</pre>", re.S)
+_TAGS = re.compile(r"<[^>]*>")
+_ENDS_BR = re.compile(r"<br>(?:</[^>]*>)*$")
 _EMPTY_LINK = re.compile(r'(<a href="[^"]*">)</a>')
+# An empty link in Qt's own HTML (copying): the placeholder in a span of Qt's link look.
+_COPIED_EMPTY_LINK = re.compile(
+    "(<a [^>]*>)(?:<span[^>]*>)?" + LINK_PLACEHOLDER + "+(?:</span>)?(</a>)"
+)
 # An inline tag (1 = "/", 2 = name), a picture or line break (3), another tag, or text.
 _INLINE_TOKEN = re.compile(r"<(/?)(b|i|u|s|a|span)\b[^>]*>|(<(?:img|br)\b[^>]*>)|<[^>]*>|[^<]+")
 _TABLE_TOKEN = re.compile(r"<(/?)(table|tr|td)\b([^>]*)>")
@@ -125,24 +135,32 @@ def _local_data_uri(src: str) -> str:
 
 def _code_blocks(html: str) -> str:
     """Number the code blocks for CODE_GROUP (Qt keeps ``-qt-user-state`` on a <pre>'s first
-    line; load() turns it into the property). Consecutive one-line <pre>s (Word's code lines,
+    line; load() turns it into the properties). Consecutive one-line <pre>s (Word's code lines,
     the editor's own) are one block, up to one that ends with a line break (a whole Markdown
-    code block), as the Markdown writer joins them. The state is ``group * 4 + form``, the
-    block's CODE_FORM: a block whose first <pre> has several lines or a final line break is
-    written back as one <pre>. Qt drops an empty <pre> and the first line break of one, so
+    code block), as the Markdown writer joins them. The state is
+    ``pre * 8 + form * 2 + joins``: the <pre>'s own number (CODE_PRE), its CODE_FORM (a <pre>
+    of several lines or with a final line break is written back as one <pre>) and whether it
+    joins the block before it. Qt drops an empty <pre> and the first line break of one, so
     those get CODE_PLACEHOLDER first, which load() removes again."""
     out: list[str] = []
-    pos, group, form, joins = 0, 0, 0, False
+    pos, joins = 0, False
     for m in _PRE.finditer(html):
         body = m.group(1)
-        if not (joins and m.start() == pos):
-            group = new_code_group()
-            form = CODE_WHOLE if body.endswith("\n") else CODE_JOINED if "\n" in body else 0
-        joins = not (body.endswith("\n") or body.endswith("<br>"))
-        if not body or body.startswith("\n"):
+        text = _TAGS.sub("", body)  # the tags _mark_wraps added don't count
+        if body.endswith("\n"):
+            form = CODE_WHOLE
+        elif text.endswith("\n"):  # inside tags: Qt would make it one more (empty) line
+            form = CODE_WHOLE_INSIDE
+            cut = body.rfind("\n")
+            body = body[:cut] + body[cut + 1 :]
+        else:
+            form = CODE_JOINED if "\n" in text else 0
+        state = new_code_group() * 8 + form * 2 + (1 if joins and m.start() == pos else 0)
+        joins = not (text.endswith("\n") or _ENDS_BR.search(body))
+        if not text or text.startswith("\n"):
             body = CODE_PLACEHOLDER + body
         out.append(html[pos : m.start()])
-        out.append(f'<pre style="-qt-user-state:{group * 4 + form}">{body}</pre>')
+        out.append(f'<pre style="-qt-user-state:{state}">{body}</pre>')
         pos = m.end()
     out.append(html[pos:])
     return "".join(out)
@@ -297,6 +315,29 @@ def _mark_padding(doc: QTextDocument, shapes: list[list[set[int]]]) -> None:
                     cell.setFormat(fmt)
 
 
+def _move_wrap_orders(first: QTextBlock, last: int = -1) -> None:
+    """Move the nesting _mark_wraps put in tool tips into WRAP_ORDER (a property Qt never
+    shows or copies into HTML), from block ``first`` to block number ``last`` (-1: the end)."""
+    block = first
+    while block.isValid() and (last < 0 or block.blockNumber() <= last):
+        found = []
+        it = block.begin()
+        while not it.atEnd():
+            frag = it.fragment()
+            tip = frag.charFormat().toolTip()
+            if tip.startswith(WRAP_PREFIX):
+                found.append((frag.position(), frag.length(), frag.charFormat(), tip))
+            it += 1
+        for pos, length, fmt, tip in found:
+            fmt.setProperty(WRAP_ORDER, tip.removeprefix(WRAP_PREFIX))
+            fmt.clearProperty(QTextFormat.Property.TextToolTip)
+            cursor = QTextCursor(block)
+            cursor.setPosition(pos)
+            cursor.setPosition(pos + length, QTextCursor.MoveMode.KeepAnchor)
+            cursor.setCharFormat(fmt)
+        block = block.next()
+
+
 def _drop_placeholder(block: QTextBlock) -> None:
     """Remove what _qt_html put in an empty cell paragraph, list item or code line."""
     text = block.text()
@@ -360,6 +401,40 @@ class DocTextView(QTextEdit):
         self.viewport().setObjectName("DocPage")
         self.document().setDocumentMargin(PAGE_MARGIN)
         self._update_margins()
+        self.cursorPositionChanged.connect(self._leave_empty_link)
+
+    def _leave_empty_link(self) -> None:
+        """Right after an empty link (its LINK_PLACEHOLDER) typed text isn't part of the link,
+        unless the cursor is inside a real link to the same address."""
+        cursor = self.textCursor()
+        if cursor.hasSelection():
+            return
+        doc = self.document()
+        pos = cursor.position()
+        if pos == 0 or doc.characterAt(pos - 1) != LINK_PLACEHOLDER:
+            return
+        fmt = cursor.charFormat()  # the placeholder's
+        if not fmt.isAnchor():
+            return
+        block = cursor.block()
+        if pos < block.position() + block.length() - 1 and doc.characterAt(pos) != LINK_PLACEHOLDER:
+            after = QTextCursor(doc)
+            after.setPosition(pos + 1)
+            nxt = after.charFormat()  # the next character's
+            if nxt.isAnchor() and nxt.anchorHref() == fmt.anchorHref():
+                return  # inside a real link: typing extends it
+        plain = QTextCharFormat(fmt)
+        for prop in (_P.AnchorHref, _P.IsAnchor, _P.AnchorName, _P.TextUnderlineStyle):
+            plain.clearProperty(prop)
+        plain.clearProperty(_P.FontUnderline)
+        if plain.foreground().color() == QGuiApplication.palette().link().color():
+            plain.clearProperty(_P.ForegroundBrush)
+        order = [n for n in str(fmt.property(WRAP_ORDER) or "").split() if n != "a"]
+        if order:
+            plain.setProperty(WRAP_ORDER, " ".join(order))
+        else:
+            plain.clearProperty(WRAP_ORDER)
+        self.setCurrentCharFormat(plain)
 
     # ----- loading --------------------------------------------------------
     def load(self, opened: OpenedDocument) -> None:
@@ -369,16 +444,17 @@ class DocTextView(QTextEdit):
         doc.setUndoRedoEnabled(False)
         html = normalise_html(opened.html)[0]
         self.setHtml(_qt_html(html))
+        _move_wrap_orders(doc.begin())
         _mark_padding(doc, _table_shapes(html))
         for name, data in self.images.items():
             self._add_resource(name, data)
         doc.setDocumentMargin(PAGE_MARGIN)
         block = doc.begin()
-        group: tuple[int, int] | None = None  # the previous line's code block and its form
+        line: tuple[int, int, int] | None = None  # the previous code line's (group, form, pre)
         while block.isValid():
             _drop_placeholder(block)
             self._fix_block(block)
-            group = self._fix_code(block, group)
+            line = self._fix_code(block, line)
             block = block.next()
         doc.setUndoRedoEnabled(True)
         doc.clearUndoRedoStacks()
@@ -404,22 +480,28 @@ class DocTextView(QTextEdit):
             apply_code_format(block)
 
     @staticmethod
-    def _fix_code(block: QTextBlock, group: tuple[int, int] | None) -> tuple[int, int] | None:
-        """Give a loaded code line its CODE_GROUP and CODE_FORM: a <pre>'s first line brings
-        them (as Qt's user state, see _code_blocks), the lines after it share them. Returns
-        (group, form), or None when the block isn't code."""
+    def _fix_code(
+        block: QTextBlock, line: tuple[int, int, int] | None
+    ) -> tuple[int, int, int] | None:
+        """Give a loaded code line its CODE_GROUP, CODE_FORM and CODE_PRE: a <pre>'s first
+        line brings them (as Qt's user state, see _code_blocks), the lines after it share
+        them. ``line`` is the previous line's (group, form, pre); returns this one's, or None
+        when the block isn't code."""
         fmt = block.blockFormat()
         state = block.userState()
         block.setUserState(-1)
         if not fmt.nonBreakableLines() or fmt.headingLevel() > 0 or block.textList() is not None:
             return None
         if state >= 0:
-            group = divmod(state, 4)
-        elif group is None:
-            group = (new_code_group(), 0)
-        set_code_group(fmt, *group)
+            pre, rest = divmod(state, 8)
+            form, joins = divmod(rest, 2)
+            line = (line[0] if joins and line is not None else pre, form, pre)
+        elif line is None:
+            group = new_code_group()
+            line = (group, 0, group)
+        set_code_group(fmt, *line)
         QTextCursor(block).setBlockFormat(fmt)
-        return group
+        return line
 
     @staticmethod
     def _join_pasted(block: QTextBlock, last: int) -> None:
@@ -457,7 +539,10 @@ class DocTextView(QTextEdit):
             ):
                 break
             group = None
-        set_code_group(fmt, *(group or (new_code_group(), 0)))
+        if group is None:
+            new = new_code_group()
+            group = (new, 0, new)
+        set_code_group(fmt, *group)
         QTextCursor(block).setBlockFormat(fmt)
 
     def _add_resource(self, name: str, data: bytes) -> QImage:
@@ -548,6 +633,7 @@ class DocTextView(QTextEdit):
         cursor.insertHtml(_qt_html(fragment))
         block = self.document().findBlockByNumber(first)
         last = cursor.block().blockNumber()
+        _move_wrap_orders(block, last)
         while block.isValid() and block.blockNumber() <= last:
             # pasted into a line, an empty item or code line keeps its placeholder mid-line
             text = block.text()
@@ -576,19 +662,13 @@ class DocTextView(QTextEdit):
             title=self.title,
         )
 
-    def viewportEvent(self, event) -> bool:  # noqa: N802 (Qt override)
-        """The tool tips that record tag nesting (WRAP_PREFIX) are never shown."""
-        if event.type() == QEvent.Type.ToolTip:
-            tip = self.cursorForPosition(event.pos()).charFormat().toolTip()
-            if tip.startswith(WRAP_PREFIX):
-                QToolTip.hideText()
-                event.accept()  # handled here, not passed on to be shown
-                return True
-        return super().viewportEvent(event)
-
     def createMimeDataFromSelection(self):  # noqa: N802 (Qt override)
-        """Copied text without the invisible LINK_PLACEHOLDER."""
+        """Copied text and HTML without the invisible LINK_PLACEHOLDER (an empty link stays an
+        empty <a> in the HTML, which pasting here turns back into one)."""
         mime = super().createMimeDataFromSelection()
+        if mime.hasHtml():
+            html = _COPIED_EMPTY_LINK.sub(r"\1\2", mime.html())
+            mime.setHtml(html.replace(LINK_PLACEHOLDER, ""))
         if mime.hasText():
             mime.setText(mime.text().replace(LINK_PLACEHOLDER, ""))
         return mime

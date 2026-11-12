@@ -30,6 +30,7 @@ from umc.gui import theme
 from umc.gui.doceditor import formatting as fm
 from umc.gui.doceditor.find_bar import FindBar
 from umc.gui.doceditor.format_bar import FormatBar
+from umc.gui.doceditor.html_export import LINK_PLACEHOLDER
 from umc.gui.doceditor.text_view import DocTextView
 from umc.gui.tool_dialog import ToolMissingDialog
 
@@ -251,7 +252,7 @@ class DocEditorPage(QWidget):
             self.status.setText("")
             return
         doc = self.view.document()
-        text = doc.toPlainText().replace("￼", " ")
+        text = doc.toPlainText().replace("￼", " ").replace(LINK_PLACEHOLDER, "")
         words = len(text.split())
         chars = len(text) - sum(text.count(ch) for ch in ("\n", " ", " ", "￼"))
         line = f"{words} words · {chars} characters"

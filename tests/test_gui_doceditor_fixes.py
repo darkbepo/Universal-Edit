@@ -560,21 +560,34 @@ def test_empty_list_items_and_quotes_stay(qtbot, html):
     assert _code_view(qtbot, html).content().html == html
 
 
-def test_nesting_tool_tips_are_never_shown(qtbot):
-    from PySide6.QtCore import QEvent, QPoint
-    from PySide6.QtGui import QHelpEvent
-    from PySide6.QtWidgets import QApplication, QToolTip
+def _tool_tips(v: DocTextView) -> list[str]:
+    tips = []
+    block = v.document().begin()
+    while block.isValid():
+        it = block.begin()
+        while not it.atEnd():
+            if tip := it.fragment().charFormat().toolTip():
+                tips.append(tip)
+            it += 1
+        block = block.next()
+    return tips
 
-    v = _code_view(qtbot, "<p><b>bold bold bold bold</b></p>")
-    v.resize(900, 600)
-    v.show()
-    pos = v.cursorRect(QTextCursor(v.document().begin())).center() + QPoint(30, 0)
-    assert v.cursorForPosition(pos).charFormat().toolTip()  # the nesting is recorded ...
-    QToolTip.hideText()
-    QApplication.sendEvent(
-        v.viewport(), QHelpEvent(QEvent.Type.ToolTip, pos, v.viewport().mapToGlobal(pos))
+
+def test_the_nesting_is_no_tool_tip(qtbot):
+    """The nesting the view records is a hidden property, never a tool tip (the subset has
+    no title attribute, so no fragment has one)."""
+    v = _code_view(
+        qtbot,
+        '<p><b><a href="u">x</a> y</b> <i>z</i></p>'
+        "<table><tr><td><p><b>c</b></p></td></tr></table>",
     )
-    assert not QToolTip.isVisible()  # ... but not shown
+    assert _tool_tips(v) == []
+    mime = QMimeData()
+    mime.setHtml("<p><b><i>p</i></b></p>")
+    v.setTextCursor(_cursor_at_block(v, 0))
+    v.insertFromMimeData(mime)
+    assert _tool_tips(v) == []
+    assert v.content().html.startswith('<p><b><a href="u">x</a> y</b> <i>z</i><b><i>p</i></b></p>')
 
 
 def test_copied_text_has_no_link_placeholder(qtbot, tmp_path):
@@ -592,3 +605,86 @@ def test_pasted_empty_items_leave_no_placeholder(qtbot, pasted):
     v.insertFromMimeData(mime)
     html = v.content().html
     assert "​" not in html and "⁠" not in html, html
+
+
+def test_copied_html_has_no_nesting_marks_or_placeholders(qtbot, tmp_path):
+    v = _view_keeps(qtbot, tmp_path, "**[x](https://u)** a [](https://v)b\n")
+    v.selectAll()
+    html = v.createMimeDataFromSelection().html()
+    assert "umc-wrap" not in html and "⁣" not in html
+    assert "<a href=" in html  # still a link
+
+
+def test_empty_links_survive_copy_and_paste_in_the_editor(qtbot, tmp_path):
+    v = _view_keeps(qtbot, tmp_path, "a [](https://v)b\n")
+    v.selectAll()
+    mime = v.createMimeDataFromSelection()
+    c = v.textCursor()
+    c.movePosition(QTextCursor.MoveOperation.End)
+    v.setTextCursor(c)
+    v.insertFromMimeData(mime)
+    assert v.content().html == '<p>a <a href="https://v"></a>ba <a href="https://v"></a>b</p>'
+
+
+def test_typing_after_an_empty_link_is_not_part_of_it(qtbot):
+    v = _code_view(qtbot, '<p>a <a href="u"></a></p>')
+    v.setFocus()
+    c = v.textCursor()
+    c.movePosition(QTextCursor.MoveOperation.End)
+    v.setTextCursor(c)
+    qtbot.keyClicks(v, "T")
+    assert v.content().html == '<p>a <a href="u"></a>T</p>'
+    # inside a real link, typing still extends it
+    v = _code_view(qtbot, '<p><a href="u">ab</a></p>')
+    c = v.textCursor()
+    c.setPosition(1)
+    v.setTextCursor(c)
+    qtbot.keyClicks(v, "x")
+    assert v.content().html == '<p><a href="u">axb</a></p>'
+
+
+def test_find_matches_across_an_empty_link(qtbot):
+    from umc.gui.doceditor.find_bar import FindBar
+
+    v = _code_view(qtbot, '<p>say a <a href="u"></a> b now</p>')
+    bar = FindBar(v)
+    assert bar.find("a  b")
+    assert v.textCursor().selectedText().replace("⁣", "") == "a  b"
+    assert bar.find("A  B") and not bar.find("A  B", case=True)
+    assert bar.replace_all("now", "then") == 1
+
+
+def test_status_counts_leave_out_empty_links(qtbot, tmp_path):
+    from umc.gui.doceditor.doc_editor_page import DocEditorPage
+
+    pg = DocEditorPage()
+    qtbot.addWidget(pg)
+    p = tmp_path / "a.md"
+    p.write_text("ab [](https://u)cd\n", encoding="utf-8")
+    with qtbot.waitSignal(pg.opened, timeout=20000):
+        pg.open_path(p)
+    pg._update_status()
+    assert pg.status.text() == "2 words · 5 characters"  # "ab cd"
+
+
+@pytest.mark.parametrize(
+    "html",
+    [
+        '<p><a href="u"></a><a href="u">t</a></p>',  # an empty badge, then a link there
+        "<pre><b>a\nb</b></pre>",  # formatting across a line break
+        "<pre><b>a\n</b></pre>",
+        "<pre>x <b>y</b>\nz\n</pre>",
+        "<pre>a</pre><pre>b\nc\n</pre>",  # a code line, then a whole block: one fence
+        "<pre>a</pre><pre>b</pre><pre>c\nd\n</pre><p>x</p>",
+    ],
+)
+def test_more_identity_cases(qtbot, html):
+    assert _code_view(qtbot, html).content().html == html
+
+
+def test_enter_in_a_mixed_code_block_stays_in_its_pre(qtbot):
+    v = _code_view(qtbot, "<pre>a</pre><pre>b\nc\n</pre>")
+    c = _cursor_at_block(v, 1)
+    c.insertBlock()
+    c.insertText("z")
+    assert v.content().html == "<pre>a</pre><pre>b\nz\nc\n</pre>"

@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, QObject, Qt
+from PySide6.QtCore import QEvent, QObject, QRegularExpression, Qt
 from PySide6.QtGui import QTextCursor, QTextDocument
 from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QLabel, QLineEdit, QToolButton, QWidget
 
+from umc.gui.doceditor.html_export import LINK_PLACEHOLDER
 from umc.gui.doceditor.text_view import DocTextView
 
 _Find = QTextDocument.FindFlag
@@ -95,6 +96,20 @@ class FindBar(QWidget):
             flags |= _Find.FindBackward
         return flags
 
+    @staticmethod
+    def _pattern(text: str, case: bool) -> QRegularExpression:
+        """``text`` as a pattern that also matches across an empty link's LINK_PLACEHOLDER."""
+        skip = f"{LINK_PLACEHOLDER}*"
+        pattern = skip.join(QRegularExpression.escape(c) for c in text)
+        options = QRegularExpression.PatternOption.NoPatternOption
+        if not case:
+            options |= QRegularExpression.PatternOption.CaseInsensitiveOption
+        return QRegularExpression(pattern, options)
+
+    def _search(self, text: str, cursor: QTextCursor, case: bool, whole: bool, backward=False):
+        flags = self._flags(case, whole, backward)
+        return self.view.document().find(self._pattern(text, case), cursor, flags)
+
     def find(
         self, text: str, backward: bool = False, case: bool = False, whole: bool = False
     ) -> bool:
@@ -106,14 +121,13 @@ class FindBar(QWidget):
         if not text:
             return False
         doc = self.view.document()
-        flags = self._flags(case, whole, backward)
-        match = doc.find(text, self.view.textCursor(), flags)
+        match = self._search(text, self.view.textCursor(), case, whole, backward)
         if match.isNull():  # wrap around
             start = QTextCursor(doc)
             start.movePosition(
                 QTextCursor.MoveOperation.End if backward else QTextCursor.MoveOperation.Start
             )
-            match = doc.find(text, start, flags)
+            match = self._search(text, start, case, whole, backward)
         if match.isNull():
             return False
         self.view.setTextCursor(match)
@@ -127,7 +141,7 @@ class FindBar(QWidget):
         if cursor.hasSelection():
             probe = QTextCursor(self.view.document())
             probe.setPosition(cursor.selectionStart())
-            match = self.view.document().find(text, probe, self._flags(case, whole))
+            match = self._search(text, probe, case, whole)
             if (
                 not match.isNull()
                 and match.selectionStart() == cursor.selectionStart()
@@ -145,13 +159,12 @@ class FindBar(QWidget):
         if not text:
             return 0
         doc = self.view.document()
-        flags = self._flags(case, whole)
         count = 0
         edit = QTextCursor(doc)
         edit.beginEditBlock()
         cursor = QTextCursor(doc)
         while True:
-            cursor = doc.find(text, cursor, flags)
+            cursor = self._search(text, cursor, case, whole)
             if cursor.isNull():
                 break
             cursor.insertText(new)
