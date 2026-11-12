@@ -1,5 +1,6 @@
 """The viewer window ("Open with"), moving a file to Convert / Edit, and the single instance."""
 
+import json
 import shutil
 
 import pytest
@@ -128,34 +129,26 @@ def test_convert_and_edit_move_the_file_to_the_main_window(qtbot, folder):
         w.close()
 
 
-def test_a_second_start_hands_its_file_over(qtbot, tmp_path):
+def test_a_second_start_hands_its_file_over(tmp_path):
     import uuid
 
-    from umc.gui.single_instance import InstanceServer, send_to_running
+    from PySide6.QtCore import QLockFile
+
+    from tests.instance_window import start_window
+    from umc.gui.single_instance import send_to_running
 
     name = f"umc-test-{uuid.uuid4().hex[:8]}"
     lock = str(tmp_path / "instance.lock")
-    first = InstanceServer(name=name, lock_path=lock)
-    assert first.start()
-    got = []
-    first.message_received.connect(got.append)
-    # a second normal start must not take over (it would cut the first one off)
-    second = InstanceServer(name=name, lock_path=lock)
-    assert not second.start()
-    # sent from another thread, like another program would: on Windows a named pipe written
-    # from the thread that also serves it can't finish (that thread is blocked writing)
-    import threading
-
-    sent = []
-    t = threading.Thread(
-        target=lambda: sent.append(send_to_running({"view": "/x/y.png"}, name=name))
-    )
-    t.start()
-    qtbot.waitUntil(lambda: bool(got == [{"view": "/x/y.png"}] and sent), timeout=8000)
-    t.join(5)
-    assert sent == [True]
-    assert not send_to_running({"view": "z"}, name=name + "-nobody")
-    first.server.close()
+    window = start_window(name, lock)
+    try:
+        assert window.stdout.readline().strip() == "ready"
+        # a second normal start must not take over (it would cut the first one off)
+        assert not QLockFile(lock).tryLock(0)
+        assert send_to_running({"view": "/x/y.png"}, name=name)
+        assert json.loads(window.stdout.readline()) == {"view": "/x/y.png"}
+        assert not send_to_running({"view": "z"}, name=name + "-nobody")
+    finally:
+        window.wait(20)
 
 
 def test_runner_drops_results_of_cancelled_and_replaced_jobs(qtbot):

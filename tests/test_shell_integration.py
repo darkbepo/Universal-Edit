@@ -205,34 +205,25 @@ def test_no_grouping_into_a_busy_window(qtbot, media, monkeypatch):
     _thumbnails_done(qtbot, c.windows)
 
 
-def test_copies_started_together_end_up_in_one(qtbot, tmp_path):
+def test_copies_started_together_end_up_in_one(tmp_path):
     """Explorer starts one copy per selected file at once: one takes the lock and becomes the
-    window, the rest wait until it listens and hand their file over."""
-    import threading
+    window (here: its own process, listening only after a second, like a slow start), the
+    rest wait until it listens and hand their file over — once."""
+    import json
     import uuid
 
-    from umc.gui.single_instance import InstanceServer, claim
+    from tests.instance_window import start_window
+    from umc.gui.single_instance import claim
 
     name = f"umc-test-{uuid.uuid4().hex[:8]}"
     lock = str(tmp_path / "i.lock")
-    handed, held = claim({"convert": ["a"]}, name=name, lock_path=lock)
-    assert not handed and held is not None  # the first: becomes the window
-    results = []
-    t = threading.Thread(
-        target=lambda: results.append(claim({"convert": ["b"]}, name=name, lock_path=lock))
-    )
-    t.start()  # the second, started while the first isn't listening yet
-    qtbot.wait(300)
-    server = InstanceServer(name=name, lock_path=lock)
-    got = []
-    server.message_received.connect(got.append)
-    assert server.start(held)  # the first one now listens
-    # keep this (the window's) event loop running until the other copy has its answer
-    qtbot.waitUntil(lambda: bool(got == [{"convert": ["b"]}] and results), timeout=10000)
-    t.join(5)
-    assert results and results[0][0] is True
-    server.server.close()  # don't leave a listening server for Python's final clean-up
-    held.unlock()
+    window = start_window(name, lock, listen_after=1.0)
+    try:
+        assert claim({"convert": ["b"]}, name=name, lock_path=lock) == (True, None)
+        lines = [window.stdout.readline().strip(), window.stdout.readline().strip()]
+        assert lines[0] == "ready" and json.loads(lines[1]) == {"convert": ["b"]}
+    finally:
+        window.wait(20)
 
 
 def test_where_the_running_copy_listens(monkeypatch):
