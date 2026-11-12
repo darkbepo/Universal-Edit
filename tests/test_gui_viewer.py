@@ -124,6 +124,7 @@ def test_convert_and_edit_move_the_file_to_the_main_window(qtbot, folder):
     qtbot.addWidget(second)
     assert second.stack.currentWidget() is second.editor
     for w in c.windows:
+        qtbot.waitUntil(lambda w=w: not w.file_list.thumbnails_pending(), timeout=10000)
         w.close()
 
 
@@ -154,6 +155,7 @@ def test_a_second_start_hands_its_file_over(qtbot, tmp_path):
     t.join(5)
     assert sent == [True]
     assert not send_to_running({"view": "z"}, name=name + "-nobody")
+    first.server.close()
 
 
 def test_runner_drops_results_of_cancelled_and_replaced_jobs(qtbot):

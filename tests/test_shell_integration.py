@@ -185,6 +185,7 @@ def test_right_clicked_files_share_one_window(qtbot, media):
     assert len(c.windows) == 2
     qtbot.addWidget(c.windows[1])
     assert [f.name for f in c.windows[1].files] == ["img3.png"]
+    _thumbnails_done(qtbot, c.windows)
 
 
 def test_no_grouping_into_a_busy_window(qtbot, media, monkeypatch):
@@ -201,6 +202,7 @@ def test_no_grouping_into_a_busy_window(qtbot, media, monkeypatch):
     c.convert([str(media / "img1.png")])  # the first one is converting: don't disturb it
     assert len(c.windows) == 2
     qtbot.addWidget(c.windows[1])
+    _thumbnails_done(qtbot, c.windows)
 
 
 def test_copies_started_together_end_up_in_one(qtbot, tmp_path):
@@ -229,6 +231,8 @@ def test_copies_started_together_end_up_in_one(qtbot, tmp_path):
     qtbot.waitUntil(lambda: bool(got == [{"convert": ["b"]}] and results), timeout=10000)
     t.join(5)
     assert results and results[0][0] is True
+    server.server.close()  # don't leave a listening server for Python's final clean-up
+    held.unlock()
 
 
 def test_where_the_running_copy_listens(monkeypatch):
@@ -236,3 +240,10 @@ def test_where_the_running_copy_listens(monkeypatch):
 
     monkeypatch.setattr(si.sys, "platform", "win32")
     assert si._server_address("UniversalEdit-me") == r"\\.\pipe\UniversalEdit-me"
+
+
+def _thumbnails_done(qtbot, windows):
+    """Converter windows make thumbnails on worker threads: let them finish before the
+    windows go away (a late thumbnail landing on a deleted window crashes Qt)."""
+    for w in windows:
+        qtbot.waitUntil(lambda w=w: not w.file_list.thumbnails_pending(), timeout=10000)

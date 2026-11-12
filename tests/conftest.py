@@ -128,3 +128,34 @@ def _release_clipboard_at_the_end():
     except ImportError:  # no Qt
         return
     release_clipboard()
+    # Destroy what tests left behind while Qt is still running, not during Python's own final
+    # clean-up (Qt objects freed after the application object is gone can crash the exit).
+    import gc
+
+    from PySide6.QtCore import QCoreApplication, QEvent
+
+    if QCoreApplication.instance() is not None:
+        gc.collect()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        QCoreApplication.processEvents()
+
+
+# Python + Qt's own final clean-up after the last test sometimes crashes (objects freed in an
+# order Qt doesn't expect; it happened on Windows CI since Nov 2026 and here too, also before
+# the viewer work). Every result is printed by then, but the crash turns a green run into a
+# failure. So once pytest is completely done, end the process with pytest's own exit code.
+_EXIT_STATUS: list[int] = []
+
+
+def pytest_sessionfinish(session, exitstatus):
+    _EXIT_STATUS.append(int(exitstatus))
+
+
+def pytest_unconfigure(config):
+    import os
+    import sys
+
+    if _EXIT_STATUS and "PySide6.QtCore" in sys.modules:
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(_EXIT_STATUS[-1])

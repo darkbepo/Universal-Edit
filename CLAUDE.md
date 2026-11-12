@@ -197,6 +197,11 @@ See `web/README.md` for commands and deployment.
 - **Text-ish formats:** Pandoc CLI (called directly via `subprocess`, no `pypandoc`) for md/html/epub/rst/tex ↔ docx etc. — *not bundled; one-click install*
 - **Packaging:** PyInstaller one-folder build; FFmpeg bundled; LibreOffice/Pandoc installed on demand by the app
 - **Tests:** pytest + pytest-qt (GUI tests run with `QT_QPA_PLATFORM=offscreen`)
+  `tests/conftest.py` ends the test process with `os._exit(pytest's code)` after the summary:
+  Python + Qt's final clean-up crashed at random after green runs (Windows CI failed with all
+  tests passed). Don't remove it; release Qt objects in tests anyway (close servers, wait for
+  `file_list.thumbnails_pending()`). Clipboard data we made must go through
+  `gui/clipboard_owner.release_clipboard` before quitting (app `aboutToQuit`), else exit crashes.
 
 Primary target platform is **Windows** (`.exe`); keep code cross-platform (macOS/Linux) where it costs nothing.
 
