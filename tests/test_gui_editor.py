@@ -519,7 +519,15 @@ def test_crop_bar_appears_after_drag_and_applies(page, qtbot):
     assert bar.isVisible() and bar.size_label.text() == "20 × 10 px"
     assert bar.apply_button.text() == "Apply crop"
     corner = page.canvas.image_to_widget(20, 10)
-    assert bar.y() >= corner.y() and abs(bar.geometry().right() - corner.x()) <= 2
+    assert bar.y() >= corner.y()  # below the rectangle
+    # lined up with the corner's right side — unless the bar is wider than the room left of it
+    # (Windows' fonts make it ~370 px), then it's kept inside the view at the margin
+    from umc.gui.editor.crop_bar import MARGIN
+
+    if corner.x() - bar.width() >= MARGIN:
+        assert abs(bar.geometry().right() - corner.x()) <= 2
+    else:
+        assert bar.x() == MARGIN
     qtbot.mouseClick(bar.apply_button, Qt.MouseButton.LeftButton)
     page.canvas.repaint()
     assert (page.doc.width, page.doc.height) == (20, 10) and not bar.isVisible()
