@@ -641,6 +641,27 @@ Everything found while reviewing Task 6, in one round (owner rule: one follow-up
 
 ---
 
+### Task 7a: Task 7 follow-up — robust Enter, paste fallbacks, fast big selections
+
+Everything found while reviewing Task 7, in one round (owner rule).
+- **Enter over a selection spanning list items** does nothing or throws (`splitBlock` `contentMatchAt`). Like the desktop: delete the selection, then split the item/block, in one transaction (also Shift+Enter).
+- **`insertPageBreak` throws after `deleteSelection`** when the cursor lands outside a text block — re-check after the deletion (or return false). Same audit for every command that deletes first.
+- **The fuzz test swallows exceptions** (`doceditor-schema-strict.test.ts`): a throw from any `cmds.*` command or editor key must fail it; keep the catch only for raw ProseMirror calls / the simulated paste.
+- **Formatting a large selection is quadratic** (Ctrl+A + bold: 16k paragraphs 11.6 s). Map collected ranges forward step by step in `changedRanges`; for large ranges build the new blocks and replace them in one step. Target: Ctrl+A + bold on 16k paragraphs well under 2 s; typing stays < 1 ms.
+- **Paste failures fall back to plain text** like the desktop (`text_view.py:599-604`): when `normaliseHtml` throws, and when the `doc.check` guard rejects the result, insert the clipboard's plain text instead of dropping the paste silently.
+- **Commands validate their values with the normaliser's rules:** `insertLink` refuses `javascript:` and other links the export drops; sizes/colours outside the kept range are clamped or refused — the editor never shows what won't be saved.
+- **Pasted `img/N` references** from another document are dropped unless the paste came from this editor's own copy (and a pasted data: picture never reuses a name already pointed at).
+- **Plain-text paste keeps blank lines** as empty paragraphs (`clipboardTextParser`), like the desktop.
+- **Tab in a table's last cell adds a row** (check the desktop's Qt behaviour first and match it).
+- **Undo grouping test:** typing after a command is its own undo step; a stored-marks command (Ctrl+B at a cursor) counts as a command.
+- **`subset-scan.ts` docstring** broken by a literal CR — write it in words.
+- **Spec:** document the three deliberate differences (typing after a link doesn't continue it; a rule inserted in a list goes after the list; block styles skip list lines).
+
+**Files:** `web/src/ui/doceditor/view.ts`, `commands.ts`, `web/src/doceditor/subset-scan.ts`, tests, `docs/superpowers/specs/2026-11-10-document-editor-design.md`.
+- [ ] Tests that fail first → fix → `tsc`, `npm test`, e2e (Edge config) → commit `Make the website editor's Enter, paste and big selections robust`.
+
+---
+
 ### Task 8: Formatting bar, table menu, find & replace
 
 **Files:**
@@ -689,6 +710,8 @@ Everything found while reviewing Task 6, in one round (owner rule: one follow-up
     - `el` with test hooks: `.doc-page` (the editable page), `.doc-banner`, `.doc-status`, `.doc-message`, buttons named "Back to Convert", "Undo", "Redo", "Save", "Save as", "Save to a file…".
 
 Known limit to list (both apps, by design): typed spaces and a final Shift+Enter at the end of a block are trimmed on save.
+
+**Found in Task 7 review (do here):** dropping a picture file on the editor must not navigate the browser away (handleDrop inserts it as a picture, plus a page-level drop guard). Link dialog relies on the command's link check (Task 7a); no Ctrl+click opening of unchecked links.
 
 **Found in Task 6 review (do here):** pasted HTML goes through `normaliseHtml` first (`transformPastedHTML`): no `javascript:` links or remote pictures go live in the editor; pasted data: pictures are stored in DocImages as `img/N` names. A depth check before loading with a plain message ("This document is nested too deeply to edit here.").
 
