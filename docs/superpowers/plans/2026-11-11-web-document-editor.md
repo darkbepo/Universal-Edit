@@ -622,6 +622,8 @@ Everything found while reviewing Task 6, in one round (owner rule: one follow-up
     - plugins: history, keymap (the spec's shortcuts — see Task 10), tables (`columnResizing` off), search;
     - pictures shown from object URLs of `images`;
     - paste: `transformPastedHTML` through `normaliseHtml` (`data:` pictures added under fresh `nextImageName` names; remote dropped), and pasted image files added like `insertImage`.
+**Found in Task 6a re-review (do here too):** a nested link inside another inline tag differs between the apps (`<p><a href="u"><b>a<a href="v">b</a></b></a></p>`: desktop `<a href="u"><b>ab</b></a>`, web splits it) — on the web drop an inner `<a …>` open tag inside an open `<a>` in the `libxmlLike` pre-pass so it matches the desktop, and add both forms (with `<b>` and `<span>`) as shared vectors via the script. Write the `NBSP` / `OBJECT` constants in `convert.ts` as escapes; comment/assert in `itemFrame` that its input is normalised.
+
 **Found in Task 6 review (do here):** stale `nest` records after marks are removed — an `appendTransaction` drops tokens no longer present and records with fewer than 2 tokens; a clipboard serializer strips `data-umc-nest` / `data-umc-empty` (like the desktop's 5d fixes). Set up prosemirror-tables so loading never pads short rows (`fixTables` only after a table edit). The invisible `empty_inline`: one arrow press steps over it; typing right after an empty bold isn't bold.
 
 - [ ] **Step 1: Tests**, mirroring the desktop's `test_gui_doceditor.py` command tests:
@@ -685,6 +687,8 @@ Everything found while reviewing Task 6, in one round (owner rule: one follow-up
   - `DocEditorPage` has:
     - `open(file: InputFile): Promise<boolean>`, `lastError(): string`, `show()`, `hide()`, `maybeLeave(): boolean`, `dropFiles(files: InputFile[]): Promise<void>`, `save()`, `saveAs()`;
     - `el` with test hooks: `.doc-page` (the editable page), `.doc-banner`, `.doc-status`, `.doc-message`, buttons named "Back to Convert", "Undo", "Redo", "Save", "Save as", "Save to a file…".
+
+Known limit to list (both apps, by design): typed spaces and a final Shift+Enter at the end of a block are trimmed on save.
 
 **Found in Task 6 review (do here):** pasted HTML goes through `normaliseHtml` first (`transformPastedHTML`): no `javascript:` links or remote pictures go live in the editor; pasted data: pictures are stored in DocImages as `img/N` names. A depth check before loading with a plain message ("This document is nested too deeply to edit here.").
 
