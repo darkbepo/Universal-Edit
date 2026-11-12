@@ -136,11 +136,9 @@ def test_deeply_nested_content_survives():
     assert "x" in html
 
 
-def test_unparseable_html_raises():
-    from umc.core.errors import ConversionError
-
-    with pytest.raises(ConversionError, match="couldn't be read as HTML"):
-        normalise_html("<div>" * 100000 + "x")
+def test_very_deep_nesting_is_flattened():
+    # past MAX_NESTING the content is flattened (the same on the website), never an error
+    assert normalise_html("<div>" * 100000 + "x")[0] == "<p>x</p>"
 
 
 def test_empty_input_is_empty():

@@ -295,12 +295,13 @@ describe("structure", () => {
     expectIdentity("<ul><li></li></ul>");
   });
 
-  test("an edit that breaks the subset's shape is normalised", () => {
-    // a second paragraph inside a list item becomes a line of it
+  test("a paragraph inserted into a list item goes after the list", () => {
+    // a list item holds its own line and nested lists only (the subset's shape)
     const state = EditorState.create({ doc: htmlToDoc("<ul><li>a</li></ul>") });
     const p = docSchema.nodes.paragraph.create(null, docSchema.text("b"));
     const tr = state.tr.insert(4, p);
-    expect(docToHtml(tr.doc)).toBe("<ul><li>a<br>b</li></ul>");
+    tr.doc.check();
+    expect(docToHtml(tr.doc)).toBe("<ul><li>a</li></ul><p>b</p>");
   });
 });
 

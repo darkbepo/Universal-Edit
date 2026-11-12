@@ -140,6 +140,18 @@ NORMALISE = [
     "<pre><b><i>c</i></b><b><i>d</i></b></pre>",
     # spaces after empty links (badges whose pictures were dropped) are kept
     '<p><a href="a"></a> <a href="b"></a> <a href="c"></a> Hello</p><p>a <a href="u"></a>  b</p>',
+    # a second pass changes nothing: a space left by merging, white space starting an item
+    '<p><b>z </b><b></b> </p><p><a href="u">z </a><a href="u"></a> x</p>',
+    "<ol><li><sub>\t</sub><b>x</b></li><li>\t</li><li><p>a</p>\t</li><li>a\t<p>b</p></li></ol>",
+    "<ul><li>a\t<ul><li>b</li></ul></li><li>c<i>\t</i><code></code><ol><li>d</li></ol></li></ul>",
+    # nesting deeper than MAX_NESTING (100) is flattened, the same way in both apps
+    "<blockquote>" * 102 + "<p>a <b>b</b></p>",
+    "<ul><li>" * 102 + "a<p>b</p>c",
+    "<table><tr><td>" * 101 + "<p>a</p><p>b</p>",
+    "<ul>" * 103 + "<li>a</li>",
+    "<div>" * 300 + 'a<div>b</div>c<img src="img/1.png"><br>d',
+    "<p>" + '<span style="color:red">' * 105 + "a<br>b",
+    "<ol><li>" * 60 + "<table><tr><td>" * 45 + "x",
 ]
 
 FENCE_MD = (

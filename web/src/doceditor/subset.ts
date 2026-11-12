@@ -163,43 +163,58 @@ function tagOf(node: Node): string | null {
 }
 const elements = (node: Element): Element[] => Array.from(node.children);
 
+/** Collapse white space (outside <pre>), trim the ends, merge repeated tags and serialise the
+ * tokens. Outside <pre> this repeats until nothing changes (merging can leave a space to trim or
+ * put a space after a space), so a second pass over the output changes nothing. */
 function finalise(tokens: Token[], pre = false, dropTrailingBr = false): string {
-  if (!pre) {
-    const out: Token[] = [];
-    let prevSpace = true;
-    for (const [kind, raw] of tokens) {
-      let text = raw;
-      if (kind === "T") {
-        text = collapseWs(text);
-        if (prevSpace && text.startsWith(" ")) text = text.slice(1);
-        if (!text) continue;
-        prevSpace = text.endsWith(" ");
-      } else if (kind === "V" || kind === "S") {
-        prevSpace = text === "<br>";
-      } else if (kind === "C" && out.length && out[out.length - 1][0] === "O" && text === "</a>") {
-        prevSpace = false; // an empty link (a badge without its picture) is content
-      }
-      out.push([kind, text]);
-    }
-    tokens = out;
-    if (dropTrailingBr) while (tokens.length && isBr(tokens[tokens.length - 1])) tokens.pop();
-    let i = tokens.length;
-    while (i > 0) {
-      const [kind, text] = tokens[i - 1];
-      if (kind === "C") i -= 1;
-      else if (kind === "S") {
-        tokens.splice(i - 1, 1);
-        i -= 1;
-      } else if (kind === "T" && text.endsWith(" ")) {
-        let end = text.length;
-        while (end > 0 && text[end - 1] === " ") end--;
-        tokens[i - 1] = [kind, text.slice(0, end)];
-        break;
-      } else break;
+  if (pre) tokens = mergeAdjacent(tokens);
+  else {
+    for (;;) {
+      const tidied = mergeAdjacent(tidy(tokens, dropTrailingBr));
+      if (sameTokens(tidied, tokens)) break;
+      tokens = tidied;
     }
   }
-  tokens = mergeAdjacent(tokens);
   return tokens.map(([k, t]) => (k === "T" ? escText(t) : t)).join("");
+}
+
+const sameTokens = (a: Token[], b: Token[]) =>
+  a.length === b.length && a.every((t, i) => t[0] === b[i][0] && t[1] === b[i][1]);
+
+/** Collapse white space and trim the ends (into a new list). */
+function tidy(tokens: Token[], dropTrailingBr: boolean): Token[] {
+  const out: Token[] = [];
+  let prevSpace = true;
+  for (const [kind, raw] of tokens) {
+    let text = raw;
+    if (kind === "T") {
+      text = collapseWs(text);
+      if (prevSpace && text.startsWith(" ")) text = text.slice(1);
+      if (!text) continue;
+      prevSpace = text.endsWith(" ");
+    } else if (kind === "V" || kind === "S") {
+      prevSpace = text === "<br>";
+    } else if (kind === "C" && out.length && out[out.length - 1][0] === "O" && text === "</a>") {
+      prevSpace = false; // an empty link (a badge without its picture) is content
+    }
+    out.push([kind, text]);
+  }
+  if (dropTrailingBr) while (out.length && isBr(out[out.length - 1])) out.pop();
+  let i = out.length;
+  while (i > 0) {
+    const [kind, text] = out[i - 1];
+    if (kind === "C") i -= 1;
+    else if (kind === "S") {
+      out.splice(i - 1, 1);
+      i -= 1;
+    } else if (kind === "T" && text.endsWith(" ")) {
+      let end = text.length;
+      while (end > 0 && text[end - 1] === " ") end--;
+      out[i - 1] = [kind, text.slice(0, end)];
+      break;
+    } else break;
+  }
+  return out;
 }
 
 /** `<b>x</b><b>y</b>` → `<b>xy</b>`: an inline tag closed and opened again right away is one
@@ -248,6 +263,8 @@ class Normaliser {
   /** A relative picture that couldn't be read (W_PICTURES). */
   lostPictures = false;
   private depth = 0;
+  /** A link inside a link is only its text (parsers split them). */
+  private inLink = false;
 
   constructor(
     private readonly reserved: Set<string>,
@@ -328,9 +345,11 @@ class Normaliser {
     } else if (tag === "a") {
       const href = pyStrip((attr(node, "href") ?? "").replace(/[\x00-\x1f\x7f]/g, ""));
       const parsed = href ? urlparse(href) : null;
-      if (parsed && SAFE_SCHEMES.has(parsed.scheme)) {
+      if (parsed && SAFE_SCHEMES.has(parsed.scheme) && !this.inLink) {
         toks.push(["O", `<a href="${escAttr(href)}">`]);
+        this.inLink = true;
         this.inlineChildren(node, toks);
+        this.inLink = false;
         toks.push(["C", "</a>"]);
       } else this.inlineChildren(node, toks);
     } else if (tag === "span" || tag === "font") {
@@ -462,11 +481,12 @@ class Normaliser {
         const text = restore((child as Text).data);
         if (!text) continue;
         if (!hasContent(text)) {
-          // White space beside a block (the newlines of a loose list) is dropped.
-          const toks = groups[groups.length - 1][0];
+          // White space before a paragraph (the newlines of a loose list) is dropped; elsewhere
+          // it is read like any text, so a second pass reads the item the same.
           let next = child.nextSibling;
           while (next && next.nodeType !== 1) next = next.nextSibling;
-          if (!toks.length || isBr(toks[toks.length - 1]) || (next && BLOCK.has(tagOf(next) as string))) continue;
+          const nextTag = next ? (tagOf(next) as string) : "";
+          if (BLOCK.has(nextTag) && !LISTS.has(nextTag)) continue;
         }
         add(groups, [["T", text]]);
         continue;
@@ -538,8 +558,8 @@ function separate(toks: Token[]): void {
 }
 
 /** End the item's current line where a paragraph starts or ends. White space before the
- * break is source formatting: dropped, so a blank span, "a <p>b" or "<b> </b><p>" leaves no
- * space and no empty wrapper. */
+ * break is source formatting: dropped (tabs too, as a second pass would), so a blank span,
+ * "a <p>b" or "<b> </b><p>" leaves no space and no empty wrapper. */
 function breakItemLine([toks, nested]: Group): void {
   if (nested.length) return;
   let i = toks.length;
@@ -549,7 +569,7 @@ function breakItemLine([toks, nested]: Group): void {
     else if (kind === "T") {
       const text = collapseWs(raw);
       let end = text.length;
-      while (end > 0 && text[end - 1] === " ") end--;
+      while (end > 0 && (text[end - 1] === " " || text[end - 1] === "\t")) end--;
       if (end) {
         toks[i - 1] = [kind, text.slice(0, end)];
         break;
@@ -616,6 +636,120 @@ function headingStyle(node: Element): string {
     if (m) return ` style="${[m[0], ...(style ? [style.slice(8, -1)] : [])].join(";")}"`;
   }
   return style;
+}
+
+// ----- nesting cap -------------------------------------------------------------------------
+
+/** Deepest element nesting kept as it is; deeper content is flattened (the same number on the
+ * desktop), so how deep a page may go never depends on the call stack. */
+export const MAX_NESTING = 100;
+const TABLE_PARTS = set("thead tbody tfoot");
+const STRUCTURE = set("table thead tbody tfoot tr ul ol");
+
+/** Flatten what is nested more than MAX_NESTING elements deep (the desktop does the same): each
+ * element there keeps only its text, line breaks and pictures. thead / tbody / tfoot don't
+ * count, because an HTML5 parser adds a tbody where libxml2 doesn't. */
+function capDepth(root: Element): void {
+  const stack: [Element, number][] = elements(root)
+    .reverse()
+    .map((c): [Element, number] => [c, 1]);
+  while (stack.length) {
+    const [el, depth] = stack.pop() as [Element, number];
+    const tag = tagOf(el) as string;
+    if (DROP.has(tag)) continue;
+    if (depth > MAX_NESTING) {
+      flatten(el);
+      continue;
+    }
+    const inner = TABLE_PARTS.has(tag) ? depth : depth + 1;
+    const kids = elements(el);
+    for (let i = kids.length - 1; i >= 0; i--) stack.push([kids[i], inner]);
+  }
+}
+
+type FlatItem = string | Element;
+type FlatEvent = ["text", string] | ["open", Element] | ["close"];
+
+/** The text, <br>s and pictures inside `el`, in order; a block inside it starts and ends a
+ * line (white space beside one is dropped). */
+function flatItems(el: Element): FlatItem[] {
+  const doc = el.ownerDocument;
+  const out: FlatItem[] = [];
+  let pending = false; // a block started or ended: the next content goes on a new line
+  const content = (item: FlatItem) => {
+    const last = out[out.length - 1];
+    if (pending && out.length && !(typeof last !== "string" && tagOf(last) === "br")) {
+      out.push(doc.createElement("br"));
+    }
+    pending = false;
+    out.push(item);
+  };
+  const stack: FlatEvent[] = [];
+  const pushChildren = (node: Element) => {
+    const events: FlatEvent[] = [];
+    for (const c of Array.from(node.childNodes)) {
+      if (c.nodeType === 3) events.push(["text", (c as Text).data]);
+      else if (c.nodeType === 1) events.push(["open", c as Element]);
+    }
+    for (let i = events.length - 1; i >= 0; i--) stack.push(events[i]);
+  };
+  pushChildren(el);
+  while (stack.length) {
+    const ev = stack.pop() as FlatEvent;
+    if (ev[0] === "text") {
+      const text = ev[1];
+      if (!text) continue;
+      if (!hasContent(text)) {
+        if (!pending) out.push(text);
+        continue;
+      }
+      content(text);
+    } else if (ev[0] === "close") pending = true;
+    else {
+      const node = ev[1];
+      const tag = tagOf(node) as string;
+      if (DROP.has(tag)) continue;
+      if (tag === "br") {
+        out.push(doc.createElement("br"));
+        pending = false;
+      } else if (tag === "img") {
+        const img = doc.createElement("img");
+        for (const name of node.getAttributeNames()) img.setAttribute(name, node.getAttribute(name) as string);
+        content(img);
+      } else {
+        if (BLOCK.has(tag)) {
+          pending = true;
+          stack.push(["close"]);
+        }
+        pushChildren(node);
+      }
+    }
+  }
+  return out;
+}
+
+/** Replace `el`'s content by its flat text (in an element its parent can hold). */
+function flatten(el: Element): void {
+  const items = flatItems(el);
+  const doc = el.ownerDocument;
+  const parent = el.parentNode as Element;
+  const ptag = parent.nodeType === 1 ? tagOf(parent) : null;
+  const tag = tagOf(el) as string;
+  let shell: string[];
+  if (ptag !== null && LISTS.has(ptag)) shell = tag === "li" ? [] : ["li"];
+  else if (ptag !== null && (ptag === "table" || TABLE_PARTS.has(ptag))) shell = ["tr", "td"];
+  else if (ptag === "tr") shell = tag === "td" || tag === "th" ? [] : ["td"];
+  else shell = STRUCTURE.has(tag) ? ["div"] : [];
+  let target: Element = el;
+  if (shell.length) {
+    const outer = doc.createElement(shell[0]);
+    target = shell.length === 1 ? outer : outer.appendChild(doc.createElement(shell[1]));
+    parent.replaceChild(outer, el);
+  } else {
+    while (el.firstChild) el.removeChild(el.firstChild);
+  }
+  for (const item of items) target.appendChild(typeof item === "string" ? doc.createTextNode(item) : item);
+  target.normalize(); // one text node per run, as in the desktop's tree
 }
 
 // ----- parsing -----------------------------------------------------------------------------
@@ -740,6 +874,7 @@ export function normaliseHtmlReport(
   const root = parseBody(html);
   if (root === null) return { html: "", images: new Map(), warnings: [] };
   const warnings = lostParts(root.ownerDocument); // the whole page, <head> included
+  capDepth(root);
   const reserved = new Set<string>();
   for (const el of allElements(root)) {
     const src = tagOf(el) === "img" ? pyStrip(attr(el, "src") ?? "") : "";

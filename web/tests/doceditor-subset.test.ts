@@ -83,11 +83,10 @@ test("unreadable input throws a plain error", () => {
   expect(normaliseHtml("  \n")).toEqual({ html: "", images: new Map() });
 });
 
-// Slow in jsdom (its parser takes quadratic time on deep nesting); the desktop fails here too.
-test("too deeply nested input throws a plain error", { timeout: 60000 }, () => {
-  expect(() => normaliseHtml("<div>".repeat(11000) + "x")).toThrow(
-    new Error("This file couldn't be read as HTML."),
-  );
+// Slow in jsdom (its parser takes quadratic time on deep nesting). Past MAX_NESTING the
+// content is flattened, the same way as on the desktop, never an error.
+test("very deep nesting is flattened", { timeout: 60000 }, () => {
+  expect(normaliseHtml("<div>".repeat(11000) + "x").html).toBe("<p>x</p>");
 });
 
 test("images: data: kept, remote dropped, resolveImage used for relative paths, never for \\\\host or //host or C: or /abs", () => {
@@ -281,3 +280,4 @@ describe("relative pictures", () => {
     expect(normaliseHtmlReport('<p><img src="img/1.png"></p>').warnings).toEqual([]);
   });
 });
+

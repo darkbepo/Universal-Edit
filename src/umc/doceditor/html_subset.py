@@ -167,6 +167,9 @@ _WS = re.compile(r"[ \t]*[\r\n\f][ \t\r\n\f]*| {2,}")
 _XML_DECL = re.compile(r"^\s*<\?xml[^>]*\?>", re.I)
 # Deepest paragraph indent: 20 levels of 36 pt (huge values used to print as "1e+27pt").
 _MAX_INDENT = 20
+# Deepest element nesting kept as it is; deeper content is flattened (the same number on the
+# website), so how deep a page may go never depends on the call stack.
+MAX_NESTING = 100
 _BR = ("V", "<br>")
 
 # A token is (kind, text): T = text, O = opening tag, C = closing tag, V = void tag,
@@ -290,42 +293,54 @@ def _tag(node: etree._Element) -> str | None:
 
 
 def _finalise(tokens: list[_Token], *, pre: bool = False, drop_trailing_br: bool = False) -> str:
-    """Collapse whitespace (outside <pre>), trim the ends and serialise the tokens."""
-    if not pre:
-        out: list[_Token] = []
-        prev_space = True
-        for kind, text in tokens:
-            if kind == "T":
-                text = _WS.sub(" ", text)
-                if prev_space and text.startswith(" "):
-                    text = text[1:]
-                if not text:
-                    continue
-                prev_space = text.endswith(" ")
-            elif kind in ("V", "S"):
-                prev_space = text == "<br>"
-            elif kind == "C" and out and out[-1][0] == "O" and text == "</a>":
-                prev_space = False  # an empty link (a badge without its picture) is content
-            out.append((kind, text))
-        tokens = out
-        if drop_trailing_br:
-            while tokens and tokens[-1] == _BR:
-                tokens.pop()
-        i = len(tokens)
-        while i > 0:  # skip closing tags at the end, then trim the last text
-            kind, text = tokens[i - 1]
-            if kind == "C":
-                i -= 1
-            elif kind == "S":
-                del tokens[i - 1]
-                i -= 1
-            elif kind == "T" and text.endswith(" "):
-                tokens[i - 1] = (kind, text.rstrip(" "))
+    """Collapse whitespace (outside <pre>), trim the ends, merge repeated tags and serialise the
+    tokens. Outside <pre> this repeats until nothing changes (merging can leave a space to trim
+    or put a space after a space), so a second pass over the output changes nothing."""
+    if pre:
+        tokens = _merge_adjacent(tokens)
+    else:
+        while True:
+            tidy = _merge_adjacent(_tidy(tokens, drop_trailing_br))
+            if tidy == tokens:
                 break
-            else:
-                break
-    tokens = _merge_adjacent(tokens)
+            tokens = tidy
     return "".join(_html.escape(t, quote=False) if k == "T" else t for k, t in tokens)
+
+
+def _tidy(tokens: list[_Token], drop_trailing_br: bool) -> list[_Token]:
+    """Collapse whitespace and trim the ends (into a new list)."""
+    out: list[_Token] = []
+    prev_space = True
+    for kind, text in tokens:
+        if kind == "T":
+            text = _WS.sub(" ", text)
+            if prev_space and text.startswith(" "):
+                text = text[1:]
+            if not text:
+                continue
+            prev_space = text.endswith(" ")
+        elif kind in ("V", "S"):
+            prev_space = text == "<br>"
+        elif kind == "C" and out and out[-1][0] == "O" and text == "</a>":
+            prev_space = False  # an empty link (a badge without its picture) is content
+        out.append((kind, text))
+    if drop_trailing_br:
+        while out and out[-1] == _BR:
+            out.pop()
+    i = len(out)
+    while i > 0:  # skip closing tags at the end, then trim the last text
+        kind, text = out[i - 1]
+        if kind == "C":
+            i -= 1
+        elif kind == "S":
+            del out[i - 1]
+            i -= 1
+        elif kind == "T" and text.endswith(" "):
+            out[i - 1] = (kind, text.rstrip(" "))
+            break
+        else:
+            break
+    return out
 
 
 def _merge_adjacent(tokens: list[_Token]) -> list[_Token]:
@@ -370,6 +385,7 @@ class _Normaliser:
         self.names: dict[tuple[bytes, str], str] = {}  # one picture used twice keeps one name
         self.reserved = reserved
         self.lost_pictures = False  # a relative picture that couldn't be read (W_PICTURES)
+        self.in_link = False  # a link inside a link is only its text (parsers split them)
 
     # ----- pictures -----------------------------------------------------
     def _add_image(self, data: bytes, ext: str) -> str:
@@ -451,9 +467,11 @@ class _Normaliser:
         elif tag == "a":
             href = re.sub(r"[\x00-\x1f\x7f]", "", node.get("href") or "").strip()
             scheme = _link_scheme(href) if href else None
-            if scheme in _SAFE_SCHEMES:
+            if scheme in _SAFE_SCHEMES and not self.in_link:
                 toks.append(("O", f'<a href="{_attr(href)}">'))
+                self.in_link = True
                 self._inline_children(node, toks)
+                self.in_link = False
                 toks.append(("C", "</a>"))
             else:
                 self._inline_children(node, toks)
@@ -639,8 +657,8 @@ class _Normaliser:
     @staticmethod
     def _break_line(group: tuple[list[_Token], list[str]]) -> None:
         """End the item's current line where a paragraph starts or ends. White space before
-        the break is source formatting: dropped, so a blank span, "a <p>b" or "<b> </b><p>"
-        leaves no space and no empty wrapper."""
+        the break is source formatting: dropped (tabs too, as a second pass would), so a blank
+        span, "a <p>b" or "<b> </b><p>" leaves no space and no empty wrapper."""
         toks, nested = group
         if nested:
             return
@@ -650,7 +668,7 @@ class _Normaliser:
             if kind == "C":
                 i -= 1
             elif kind == "T":
-                text = _WS.sub(" ", text).rstrip(" ")
+                text = _WS.sub(" ", text).rstrip(" \t")
                 if text:
                     toks[i - 1] = (kind, text)
                     break
@@ -688,14 +706,15 @@ class _Normaliser:
         text: str | None,
         following: etree._Element | None,
     ) -> None:
-        """Text inside an item. White space beside a block (the newlines of a loose list) is
-        dropped, so a paragraph never starts or doubles a line break."""
+        """Text inside an item. White space before a paragraph (the newlines of a loose list)
+        is dropped, so a paragraph never starts or doubles a line break; elsewhere it is read
+        like any text, so a second pass reads the item the same (spaces collapse at the ends
+        of its line, a tab stays)."""
         if not text:
             return
-        if not text.strip(" \t\r\n\f"):
-            toks = groups[-1][0]
-            if not toks or toks[-1] == _BR or (following is not None and _tag(following) in _BLOCK):
-                return
+        blank = not text.strip(" \t\r\n\f")
+        if blank and following is not None and _tag(following) in _BLOCK - _LISTS:
+            return
         self._add(groups, [("T", text)])
 
     def _table(self, node: etree._Element, out: list[str]) -> None:
@@ -748,6 +767,115 @@ class _Normaliser:
 
 
 _UNREADABLE = "This file couldn't be read as HTML."
+_TABLE_PARTS = frozenset({"thead", "tbody", "tfoot"})
+_STRUCTURE = frozenset({"table", "thead", "tbody", "tfoot", "tr", "ul", "ol"})
+
+
+def _cap_depth(root: etree._Element) -> None:
+    """Flatten what is nested more than MAX_NESTING elements deep (the website does the same):
+    each element there keeps only its text, line breaks and pictures. thead / tbody / tfoot
+    don't count, because an HTML5 parser adds a tbody where libxml2 doesn't."""
+    stack = [(c, 1) for c in reversed(root)]
+    while stack:
+        el, depth = stack.pop()
+        tag = _tag(el)
+        if tag is None or tag in _DROP:
+            continue
+        if depth > MAX_NESTING:
+            _flatten(el)
+            continue
+        inner = depth if tag in _TABLE_PARTS else depth + 1
+        stack.extend((c, inner) for c in reversed(el))
+
+
+def _flat_items(el: etree._Element) -> list[str | etree._Element]:
+    """The text, <br>s and pictures inside ``el``, in order; a block inside it starts and ends
+    a line (white space beside one is dropped)."""
+    out: list[str | etree._Element] = []
+    pending = False  # a block started or ended: the next content goes on a new line
+
+    def content(item: str | etree._Element) -> None:
+        nonlocal pending
+        if pending and out and not (isinstance(out[-1], etree._Element) and _tag(out[-1]) == "br"):
+            out.append(el.makeelement("br", {}))
+        pending = False
+        out.append(item)
+
+    stack: list[tuple[str, object]] = []
+
+    def push_children(node: etree._Element) -> None:
+        events: list[tuple[str, object]] = [("text", node.text)]
+        for c in node:
+            events += [("open", c), ("text", c.tail)]
+        stack.extend(reversed(events))
+
+    push_children(el)
+    while stack:
+        kind, item = stack.pop()
+        if kind == "text":
+            text = item if isinstance(item, str) else ""
+            if not text:
+                continue
+            if not text.strip(" \t\r\n\f"):
+                if not pending:
+                    out.append(text)
+                continue
+            content(text)
+        elif kind == "close":
+            pending = True
+        else:
+            node = item
+            assert isinstance(node, etree._Element)
+            tag = _tag(node)
+            if tag is None or tag in _DROP:
+                continue
+            if tag == "br":
+                out.append(node.makeelement("br", {}))
+                pending = False
+            elif tag == "img":
+                content(node.makeelement("img", dict(node.attrib)))
+            else:
+                if tag in _BLOCK:
+                    pending = True
+                    stack.append(("close", node))
+                push_children(node)
+    return out
+
+
+def _flatten(el: etree._Element) -> None:
+    """Replace ``el``'s content by its flat text (an element its parent can hold)."""
+    items = _flat_items(el)
+    parent = el.getparent()
+    ptag, tag = _tag(parent) if parent is not None else None, _tag(el)
+    if ptag in _LISTS:
+        shell = [] if tag == "li" else ["li"]
+    elif ptag in ("table", "thead", "tbody", "tfoot"):
+        shell = ["tr", "td"]
+    elif ptag == "tr":
+        shell = [] if tag in ("td", "th") else ["td"]
+    else:
+        shell = ["div"] if tag in _STRUCTURE else []
+    if shell:
+        new = el.makeelement(shell[0], {})
+        target = new if len(shell) == 1 else etree.SubElement(new, shell[1])
+        new.tail = el.tail
+        assert parent is not None
+        parent.replace(el, new)
+    else:
+        target = el
+        target.text = None
+        for c in list(el):
+            el.remove(c)
+    last: etree._Element | None = None
+    for item in items:
+        if isinstance(item, str):
+            if last is None:
+                target.text = (target.text or "") + item
+            else:
+                last.tail = (last.tail or "") + item
+        else:
+            target.append(item)
+            last = item
 
 
 def _parse(html: str) -> etree._Element | None:
@@ -830,6 +958,7 @@ def normalise_html_report(
     if root is None:
         return "", {}, []
     warnings = _lost_parts(html) if report else []
+    _cap_depth(root)
     reserved = {
         src for img in root.iter("img") if _CANON_IMG.match(src := (img.get("src") or "").strip())
     }

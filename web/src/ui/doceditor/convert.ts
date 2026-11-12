@@ -23,10 +23,14 @@ const marks = docSchema.marks;
 
 // ----- subset HTML → document ------------------------------------------------------------
 
+/** One tag around an inline leaf: "a", "b", "i", "u", "s", or a span's properties by record
+ * letter (f font, z size, c colour, h highlight) with their values. */
+type WrapToken = string | Map<string, string | number>;
+
 /** The tags around an inline leaf: its marks and their nesting, outermost first. */
 interface InlineCtx {
   marks: readonly Mark[];
-  tokens: string[]; // "a", "b", "i", "u", "s", or "span:" + the letters of its properties
+  tokens: WrapToken[];
   leaf?: readonly Mark[]; // marks + the `nest` record, made on first use
 }
 
@@ -39,11 +43,27 @@ const SPAN_PROPS: [string, string][] = [
   ["h", "highlight"],
 ];
 
+/** The `nest` record of `tokens`: "b a", "span:z,c". A span property that a span inside it sets
+ * again carries its own value ("span:c=%23000000 span:c"), since the leaf's mark holds only the
+ * inner one. */
+function nestOrder(tokens: WrapToken[]): string {
+  return tokens
+    .map((tok, i) => {
+      if (typeof tok === "string") return tok;
+      const parts = [...tok].map(([letter, value]) => {
+        const again = tokens.slice(i + 1).some((t) => typeof t !== "string" && t.has(letter));
+        return again ? `${letter}=${encodeURIComponent(String(value))}` : letter;
+      });
+      return `span:${parts.join(",")}`;
+    })
+    .join(" ");
+}
+
 function leafMarks(ctx: InlineCtx): readonly Mark[] {
   if (!ctx.leaf) {
     ctx.leaf =
       ctx.tokens.length >= 2
-        ? marks.nest.create({ order: ctx.tokens.join(" ") }).addToSet(ctx.marks)
+        ? marks.nest.create({ order: nestOrder(ctx.tokens) }).addToSet(ctx.marks)
         : ctx.marks;
   }
   return ctx.leaf;
@@ -53,7 +73,7 @@ function leafMarks(ctx: InlineCtx): readonly Mark[] {
 function enterInline(el: Element, ctx: InlineCtx): InlineCtx | null {
   const tag = el.localName;
   const found: Mark[] = [];
-  let token = tag;
+  let token: WrapToken = tag;
   if (Object.hasOwn(SIMPLE_TAGS, tag)) found.push(marks[SIMPLE_TAGS[tag]].create());
   else if (tag === "a") {
     const href = attr(el, "href");
@@ -65,11 +85,12 @@ function enterInline(el: Element, ctx: InlineCtx): InlineCtx | null {
     const pt = css.has("font-size") ? points(css.get("font-size") as string) : null;
     const fg = css.has("color") ? colour(css.get("color") as string) : null;
     const bg = css.has("background-color") ? colour(css.get("background-color") as string) : null;
-    token = "span:";
-    if (family) (found.push(marks.font.create({ family })), (token += "f"));
-    if (pt !== null && pt > 0 && pt <= 1000) (found.push(marks.size.create({ pt })), (token += "z"));
-    if (fg) (found.push(marks.color.create({ rgb: fg })), (token += "c"));
-    if (bg) (found.push(marks.highlight.create({ rgb: bg })), (token += "h"));
+    const props = new Map<string, string | number>();
+    if (family) (found.push(marks.font.create({ family })), props.set("f", family));
+    if (pt !== null && pt > 0 && pt <= 1000) (found.push(marks.size.create({ pt })), props.set("z", pt));
+    if (fg) (found.push(marks.color.create({ rgb: fg })), props.set("c", fg));
+    if (bg) (found.push(marks.highlight.create({ rgb: bg })), props.set("h", bg));
+    token = props;
   }
   if (!found.length) return null;
   let set = ctx.marks;
@@ -163,13 +184,17 @@ function span(el: Element, name: string): number {
   return n > 1 && n <= 1000 ? n : 1;
 }
 
+const isListNode = (n: PMNode) => n.type === nodes.bullet_list || n.type === nodes.ordered_list;
+
 /** A list item frame: its own line (before the first nested list) is the first paragraph. */
 function itemFrame(li: Element): Frame {
   const all = Array.from(li.childNodes);
   let cut = all.findIndex(isList);
   if (cut < 0) cut = all.length;
   const line = nodes.paragraph.create(readBlockAttrs(li as HTMLElement), inlineNodes(all.slice(0, cut)));
-  return frame("item", all.slice(cut), (kids) => [nodes.list_item.create(null, kids)], [line]);
+  // only nested lists can follow the line (anything else isn't subset HTML)
+  const make = (kids: PMNode[]) => [nodes.list_item.create(null, kids.filter((k, i) => i === 0 || isListNode(k)))];
+  return frame("item", all.slice(cut), make, [line]);
 }
 
 /** Read one child of a frame: a finished block goes into `top.kids`, a container is returned. */
@@ -275,13 +300,13 @@ function wrapsFor(set: readonly Mark[], stack: Wrap[]): Wrap[] {
     else if (Object.hasOwn(MARK_TAG, name)) simple.add(MARK_TAG[name]);
   }
   const link = (): Wrap => ({ name: "a", open: `<a href="${escAttr(href as string)}">`, close: "</a>" });
-  const spanOf = (letters: string[]): Wrap | null => {
-    const has = (l: string) => letters.includes(l) && props[l] != null;
+  /** A span with these properties (a value, or null for none). */
+  const spanOf = (v: Record<string, unknown>): Wrap | null => {
     const style = spanStyleText(
-      has("f") ? String(props.f) : null,
-      has("z") ? Number(props.z) : null,
-      has("c") ? String(props.c) : null,
-      has("h") ? String(props.h) : null,
+      v.f != null ? String(v.f) : null,
+      v.z != null ? Number(v.z) : null,
+      v.c != null ? String(v.c) : null,
+      v.h != null ? String(v.h) : null,
     );
     return style ? { name: "span", open: `<span style="${escAttr(style)}">`, close: "</span>" } : null;
   };
@@ -292,9 +317,16 @@ function wrapsFor(set: readonly Mark[], stack: Wrap[]): Wrap[] {
       let w: Wrap | null = null;
       if (tok === "a" && href !== null) w = link();
       else if (tok.startsWith("span:")) {
-        const letters = [...tok.slice(5)].filter((l) => props[l] != null);
-        w = letters.length ? spanOf(letters) : null;
-        for (const l of letters) used.add(l);
+        // a letter alone takes the mark's value; "c=%23000000" its own (an outer span's colour
+        // that an inner one overrides), while the leaf still has that kind of mark
+        const values: Record<string, unknown> = {};
+        for (const part of tok.slice(5).split(",")) {
+          const letter = part[0];
+          if (!letter || props[letter] == null) continue;
+          values[letter] = part.length > 2 ? decodeURIComponent(part.slice(2)) : props[letter];
+          used.add(letter);
+        }
+        w = spanOf(values);
       } else if (simple.has(tok)) w = SIMPLE_WRAPS[tok];
       if (w) {
         first.push(w);
@@ -304,8 +336,9 @@ function wrapsFor(set: readonly Mark[], stack: Wrap[]): Wrap[] {
   }
   const rest: Wrap[] = [];
   if (href !== null && !used.has("a")) rest.push(link());
-  const left = SPAN_PROPS.map(([l]) => l).filter((l) => props[l] != null && !used.has(l));
-  const sp = left.length ? spanOf(left) : null;
+  const left: Record<string, unknown> = {};
+  for (const [l] of SPAN_PROPS) if (props[l] != null && !used.has(l)) left[l] = props[l];
+  const sp = spanOf(left);
   if (sp) rest.push(sp);
   for (const t of ["b", "i", "u", "s"]) if (simple.has(t) && !used.has(t)) rest.push(SIMPLE_WRAPS[t]);
   if (order === null) {
@@ -443,8 +476,7 @@ export function docToHtml(doc: PMNode): string {
       case nodes.table_row:
         container(item, "<tr>", "</tr>");
         break;
-      case nodes.table_cell:
-      case nodes.table_header: {
+      case nodes.table_cell: {
         let spans = "";
         if (item.attrs.colspan > 1) spans += ` colspan="${item.attrs.colspan}"`;
         if (item.attrs.rowspan > 1) spans += ` rowspan="${item.attrs.rowspan}"`;

@@ -1,4 +1,6 @@
 import py from "../../src/umc/doceditor/types.py?raw";
+import pySubset from "../../src/umc/doceditor/html_subset.py?raw";
+import { MAX_NESTING } from "../src/doceditor/subset";
 import { expect, test } from "vitest";
 import {
   TOO_LARGE,
@@ -33,4 +35,8 @@ test("nextImageName", () => {
   images.set("img/1.png", new Uint8Array());
   images.set("img/2.jpg", new Uint8Array());
   expect(nextImageName(images, "png")).toBe("img/3.png");
+});
+
+test("the normaliser's nesting cap matches the desktop", () => {
+  expect(pySubset).toContain(`\nMAX_NESTING = ${MAX_NESTING}\n`);
 });

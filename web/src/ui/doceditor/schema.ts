@@ -5,14 +5,15 @@
  * Blocks: `paragraph` / `heading` (1–3) with alignment, indent (`margin-left: 36·n pt`) and a
  * page break before; `blockquote` (any blocks, also none); `code_block` (one `<pre>`, every
  * character kept, inline formatting, line breaks and pictures allowed); lists (`list_item` =
- * its own line as a paragraph, then nested lists); prosemirror-tables nodes (`table.borderless`
+ * its own line as a paragraph, then only nested lists); prosemirror-tables nodes (`table.borderless`
  * = `<table style="border:none">`, cells with colspan / rowspan); `horizontal_rule`.
  * Inline: `text`, `hard_break`, `image` {src, width, height} and `empty_inline` — an inline tag
  * with nothing in it (`<a href="u"></a>`, a badge whose picture was dropped, or `<b></b>`): its
  * marks say which tags it is, since ProseMirror marks need content.
  * Marks: link, font, size, color, highlight (one `<span style>` in the subset), bold, italic,
  * underline, strike, and `nest` — how the source nested a leaf's tags, outermost first ("b a",
- * "span:zc"), because a mark set has a fixed order but the subset keeps the source's.
+ * "span:z,c"; an outer span's value that an inner span overrides is kept in it, "span:c=%23000000
+ * span:c"), because a mark set has a fixed order but the subset keeps the source's.
  *
  * The parse rules here also read pasted HTML; `convert.ts` reads the subset itself.
  */
@@ -148,9 +149,10 @@ const nodes: Record<string, NodeSpec> = {
     parseDOM: [{ tag: "ol" }],
     toDOM: (): DOMOutputSpec => ["ol", 0],
   },
-  // Its first paragraph is the item's own line (its style is the <li>'s), then nested lists.
+  // Its first paragraph is the item's own line (its style is the <li>'s), then nested lists:
+  // the only shape the subset has, so pasting or inserting other blocks puts them after the list.
   list_item: {
-    content: "paragraph block*",
+    content: "paragraph (bullet_list | ordered_list)*",
     defining: true,
     parseDOM: [{ tag: "li" }],
     toDOM: (): DOMOutputSpec => ["li", 0],
@@ -165,9 +167,13 @@ const nodes: Record<string, NodeSpec> = {
       ["tbody", 0],
     ],
   },
-  table_row: tables.table_row,
-  table_cell: tables.table_cell,
-  table_header: tables.table_header,
+  // No header cells (the subset writes every cell as <td>) and no empty rows.
+  table_row: { ...tables.table_row, content: "table_cell+" },
+  table_cell: {
+    ...tables.table_cell,
+    // a pasted <th> becomes a plain cell (same attributes)
+    parseDOM: [...(tables.table_cell.parseDOM ?? []), ...(tables.table_header.parseDOM ?? [])],
+  },
   horizontal_rule: {
     group: "block",
     parseDOM: [{ tag: "hr" }],
