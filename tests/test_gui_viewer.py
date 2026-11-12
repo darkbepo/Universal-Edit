@@ -141,8 +141,18 @@ def test_a_second_start_hands_its_file_over(qtbot, tmp_path):
     # a second normal start must not take over (it would cut the first one off)
     second = InstanceServer(name=name, lock_path=lock)
     assert not second.start()
-    assert send_to_running({"view": "/x/y.png"}, name=name)
-    qtbot.waitUntil(lambda: got == [{"view": "/x/y.png"}], timeout=3000)
+    # sent from another thread, like another program would: on Windows a named pipe written
+    # from the thread that also serves it can't finish (that thread is blocked writing)
+    import threading
+
+    sent = []
+    t = threading.Thread(
+        target=lambda: sent.append(send_to_running({"view": "/x/y.png"}, name=name))
+    )
+    t.start()
+    qtbot.waitUntil(lambda: got == [{"view": "/x/y.png"}], timeout=5000)
+    t.join(5)
+    assert sent == [True]
     assert not send_to_running({"view": "z"}, name=name + "-nobody")
 
 
