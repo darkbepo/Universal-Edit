@@ -834,7 +834,13 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       add-ons folder. CI installs the built add-ons before `--self-test` ("editor add-ons
       installed and loading"). Tests simulate the built app with `UMC_ADDONS_TEST=1` +
       `UMC_ADDONS_DIR`.
-11. Ideas: presets, batch queue.
+11. **First public release** (owner, Nov 2026: wait until more editors are ready). Push a
+    `v<__version__>` tag (bump `umc/__init__.py` first; the workflow checks they match): the
+    Windows build then publishes the .exe zip, the installer and the editor add-on zips as a
+    GitHub release. Until that release exists the in-app "Install" buttons can't download
+    anything (only the installer adds editors). Before it: pin `softprops/action-gh-release`
+    to a commit SHA and make the installer report a failed `--install-addon`.
+12. Ideas: presets, batch queue.
 
 ## Handoff — read this first (for the next Claude account)
 
@@ -913,5 +919,6 @@ line here, exactly like the converter features.
   Word with layout (all desktop-only, listed in the README table).
 - Code signing for the .exe (owner's decision; SignPath.io is free for open source) — the real fix
   for antivirus false positives.
-- Item 11 ideas: installer for the app itself (Inno Setup), presets, batch queue, PWA/offline.
+- No release published yet (roadmap 11): in-app editor downloads need one.
+- Item 12 ideas: presets, batch queue, PWA/offline.
 
