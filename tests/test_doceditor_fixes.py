@@ -478,3 +478,40 @@ def test_markdown_without_dropped_formats_does_not_warn(tmp_path):
     (tmp_path / "x.png").write_bytes(PNG_1PX)  # a missing picture would warn (W_PICTURES)
     p.write_text("```\n`not a span`\n#### in code\n```\n\n### Ok \\`tick\\` ![](x.png)\n")
     assert open_document(p).warnings == []
+
+
+# ----- Task 5d fix round: canonical inline tags, spaces around empty links ----------------
+
+
+@pytest.mark.parametrize(
+    ("html", "out"),
+    [
+        ("<p><b>x</b><b>y</b></p>", "<p><b>xy</b></p>"),  # the same tag twice in a row is one
+        ("<p><b><i>x</i></b><b>y</b></p>", "<p><b><i>x</i>y</b></p>"),
+        ('<p><a href="u">x</a><a href="u">y</a></p>', '<p><a href="u">xy</a></p>'),
+        ("<pre><b>a</b><b>b</b></pre>", "<pre><b>ab</b></pre>"),
+        # ... but an empty link stays its own link (a badge row)
+        ('<p><a href="u"></a><a href="u">t</a></p>', '<p><a href="u"></a><a href="u">t</a></p>'),
+        ("<p><b>x</b> <b>y</b></p>", "<p><b>x</b> <b>y</b></p>"),
+    ],
+)
+def test_adjacent_identical_inline_tags_merge(html, out):
+    assert normalise_html(html)[0] == out
+    assert normalise_html(out)[0] == out
+
+
+@pytest.mark.parametrize(
+    ("html", "out"),
+    [
+        ('<p>a <a href="u"></a> b</p>', '<p>a <a href="u"></a> b</p>'),
+        (
+            '<p><a href="a"></a> <a href="b"></a> <a href="c"></a> Hello</p>',
+            '<p><a href="a"></a> <a href="b"></a> <a href="c"></a> Hello</p>',
+        ),
+        ('<p><a href="u"></a>   x</p>', '<p><a href="u"></a> x</p>'),
+        ("<p>a <b>b</b> c</p>", "<p>a <b>b</b> c</p>"),
+    ],
+)
+def test_spaces_around_empty_links_are_kept(html, out):
+    assert normalise_html(html)[0] == out
+    assert normalise_html(out)[0] == out

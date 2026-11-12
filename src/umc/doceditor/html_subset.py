@@ -304,6 +304,8 @@ def _finalise(tokens: list[_Token], *, pre: bool = False, drop_trailing_br: bool
                 prev_space = text.endswith(" ")
             elif kind in ("V", "S"):
                 prev_space = text == "<br>"
+            elif kind == "C" and out and out[-1][0] == "O" and text == "</a>":
+                prev_space = False  # an empty link (a badge without its picture) is content
             out.append((kind, text))
         tokens = out
         if drop_trailing_br:
@@ -322,7 +324,31 @@ def _finalise(tokens: list[_Token], *, pre: bool = False, drop_trailing_br: bool
                 break
             else:
                 break
+    tokens = _merge_adjacent(tokens)
     return "".join(_html.escape(t, quote=False) if k == "T" else t for k, t in tokens)
+
+
+def _merge_adjacent(tokens: list[_Token]) -> list[_Token]:
+    """``<b>x</b><b>y</b>`` → ``<b>xy</b>``: an inline tag closed and opened again right away
+    is one (so the subset is canonical). An empty element stays its own (two links in a row
+    where the first is an empty badge)."""
+    out: list[_Token] = []
+    stack: list[str] = []  # the opening tags still open
+    closed: tuple[str, bool] | None = None  # the element out[-1] closed, and was it empty
+    for kind, text in tokens:
+        if kind == "O" and closed is not None and closed[0] == text and not closed[1]:
+            out.pop()  # reopen it instead
+            stack.append(text)
+            closed = None
+            continue
+        closed = None
+        if kind == "O":
+            stack.append(text)
+        elif kind == "C" and stack:
+            opener = stack.pop()
+            closed = (opener, bool(out) and out[-1] == ("O", opener))
+        out.append((kind, text))
+    return out
 
 
 def _is_plain_relative(base_dir: Path, rel: str) -> bool:

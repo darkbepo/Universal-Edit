@@ -132,6 +132,11 @@ NORMALISE = [
     '<h3 align="right"><p align="left">r</p></h3>',
     # a cell right after an empty row gets its own row (no text is lost)
     "<table><tr><td>a</td><tr></tr><td>b</td></tr><tr><td>c</td></tr></table>",
+    # the same inline tag closed and opened again is one; an empty link stays its own
+    '<p><b>x</b><b>y</b> <b><i>i</i></b><b>j</b> <a href="u">a</a><a href="u">b</a></p>'
+    '<pre><b>c</b><b>d</b></pre><p><a href="u"></a><a href="u">t</a></p>',
+    # spaces after empty links (badges whose pictures were dropped) are kept
+    '<p><a href="a"></a> <a href="b"></a> <a href="c"></a> Hello</p><p>a <a href="u"></a>  b</p>',
 ]
 
 FENCE_MD = (
@@ -193,6 +198,8 @@ MARKDOWN = [
     {"md": '<div align="center">\n<h1>T</h1>\n</div>\n'},
     {"md": '<div align="center">\n\n# T\n\n</div>\n'},
     {"md": '<div style="text-align:right">\n\nx\n\n</div>\n'},
+    # a badge row whose pictures were dropped keeps its spaces
+    {"md": "[![a](https://x/a.svg)](https://a) [![b](https://x/b.svg)](https://b) Hello\n"},
     # a new marker starts a new nested list: two in a row stay two
     {"md": "- a\n    - b\n    * e\n\n1. x\n    1. y\n    1) z\n    1. w\n"},
     # links markdown-it would rewrite (spaces, non-ASCII, entities) keep their exact address

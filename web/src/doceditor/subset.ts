@@ -176,6 +176,8 @@ function finalise(tokens: Token[], pre = false, dropTrailingBr = false): string 
         prevSpace = text.endsWith(" ");
       } else if (kind === "V" || kind === "S") {
         prevSpace = text === "<br>";
+      } else if (kind === "C" && out.length && out[out.length - 1][0] === "O" && text === "</a>") {
+        prevSpace = false; // an empty link (a badge without its picture) is content
       }
       out.push([kind, text]);
     }
@@ -196,7 +198,34 @@ function finalise(tokens: Token[], pre = false, dropTrailingBr = false): string 
       } else break;
     }
   }
+  tokens = mergeAdjacent(tokens);
   return tokens.map(([k, t]) => (k === "T" ? escText(t) : t)).join("");
+}
+
+/** `<b>x</b><b>y</b>` → `<b>xy</b>`: an inline tag closed and opened again right away is one
+ * (so the subset is canonical). An empty element stays its own (two links in a row where the
+ * first is an empty badge). */
+function mergeAdjacent(tokens: Token[]): Token[] {
+  const out: Token[] = [];
+  const stack: string[] = []; // the opening tags still open
+  let closed: [string, boolean] | null = null; // the element out[-1] closed, and was it empty
+  for (const [kind, text] of tokens) {
+    if (kind === "O" && closed !== null && closed[0] === text && !closed[1]) {
+      out.pop(); // reopen it instead
+      stack.push(text);
+      closed = null;
+      continue;
+    }
+    closed = null;
+    if (kind === "O") stack.push(text);
+    else if (kind === "C" && stack.length) {
+      const opener = stack.pop()!;
+      const last = out[out.length - 1];
+      closed = [opener, last !== undefined && last[0] === "O" && last[1] === opener];
+    }
+    out.push([kind, text]);
+  }
+  return out;
 }
 
 

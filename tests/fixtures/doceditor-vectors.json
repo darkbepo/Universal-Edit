@@ -350,6 +350,16 @@
    "in": "<table><tr><td>a</td><tr></tr><td>b</td></tr><tr><td>c</td></tr></table>",
    "out": "<table><tr><td><p>a</p></td></tr><tr><td><p>b</p></td></tr><tr><td><p>c</p></td></tr></table>",
    "warnings": []
+  },
+  {
+   "in": "<p><b>x</b><b>y</b> <b><i>i</i></b><b>j</b> <a href=\"u\">a</a><a href=\"u\">b</a></p><pre><b>c</b><b>d</b></pre><p><a href=\"u\"></a><a href=\"u\">t</a></p>",
+   "out": "<p><b>xy</b> <b><i>i</i>j</b> <a href=\"u\">ab</a></p><pre><b>cd</b></pre><p><a href=\"u\"></a><a href=\"u\">t</a></p>",
+   "warnings": []
+  },
+  {
+   "in": "<p><a href=\"a\"></a> <a href=\"b\"></a> <a href=\"c\"></a> Hello</p><p>a <a href=\"u\"></a>  b</p>",
+   "out": "<p><a href=\"a\"></a> <a href=\"b\"></a> <a href=\"c\"></a> Hello</p><p>a <a href=\"u\"></a> b</p>",
+   "warnings": []
   }
  ],
  "markdown": [
@@ -590,6 +600,16 @@
     "footnotes and other Markdown extras"
    ],
    "md_out": "x\n"
+  },
+  {
+   "md": "[![a](https://x/a.svg)](https://a) [![b](https://x/b.svg)](https://b) Hello\n",
+   "html": "<p><a href=\"https://a\"></a> <a href=\"https://b\"></a> Hello</p>",
+   "front_matter": "",
+   "warnings": [
+    "pictures from the web",
+    "inline code, small headings, picture descriptions, comments and table alignment"
+   ],
+   "md_out": "[](https://a) [](https://b) Hello\n"
   },
   {
    "md": "- a\n    - b\n    * e\n\n1. x\n    1. y\n    1) z\n    1. w\n",
