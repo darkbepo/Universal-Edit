@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QDragEnterEvent, QDropEvent, QMouseEvent
+from PySide6.QtGui import QDragEnterEvent, QDropEvent, QMouseEvent, QPainter
 from PySide6.QtWidgets import QBoxLayout, QFileDialog, QFrame, QLabel, QSizePolicy, QVBoxLayout
 
 from umc.gui import icons, theme
+from umc.gui.widgets.orbit import Orbit
 
 SUBTITLE = "Images, video, audio, documents, 3D models, fonts and more"
 
@@ -35,6 +36,8 @@ class DropZone(QFrame):
             w.setAlignment(Qt.AlignmentFlag.AlignCenter)
             self._row.addWidget(w, 0, Qt.AlignmentFlag.AlignCenter)
         self.compact = False
+        # file-type badges orbiting the text while the box is big and empty
+        self.orbit = Orbit(self, lambda: [self.icon, self.title, self.subtitle])
         self.set_compact(False)
 
     def set_compact(self, compact: bool) -> None:
@@ -48,6 +51,7 @@ class DropZone(QFrame):
             QBoxLayout.Direction.LeftToRight if compact else QBoxLayout.Direction.TopToBottom
         )
         self._row.setSpacing(8 if compact else 6)
+        self.orbit.set_active(not compact)
         self.title.setText("Add more files" if compact else "Drop files here or click to browse")
         if compact:
             self.setMinimumHeight(48)
@@ -64,7 +68,31 @@ class DropZone(QFrame):
         name, size = ("plus", 18) if self.compact else ("upload", 34)
         self.icon.setPixmap(icons.pixmap(name, size, pal["accent"]))
 
+    def paintEvent(self, event) -> None:  # noqa: N802
+        super().paintEvent(event)  # the frame (stylesheet); the text labels draw on top
+        p = QPainter(self)
+        self.orbit.paint(p)
+        p.end()
+
+    def showEvent(self, event) -> None:  # noqa: N802
+        super().showEvent(event)
+        self.orbit.update_timer()
+
+    def hideEvent(self, event) -> None:  # noqa: N802
+        super().hideEvent(event)
+        self.orbit.update_timer()
+
+    def drop_with_burst(self, done) -> None:
+        """A drop on the big empty box: the badges burst outward, then ``done``."""
+        self._set_hover(False)
+        self.orbit.set_pull(False)
+        if self.compact:
+            done()
+        else:
+            self.orbit.burst_then(done)
+
     def _set_hover(self, on: bool) -> None:
+        self.orbit.set_pull(on)
         self.setProperty("hover", on)
         self.style().unpolish(self)
         self.style().polish(self)
@@ -87,5 +115,5 @@ class DropZone(QFrame):
         self._set_hover(False)
         paths = [u.toLocalFile() for u in event.mimeData().urls() if u.isLocalFile()]
         if paths:
-            self.files_dropped.emit(paths)
             event.acceptProposedAction()
+            self.drop_with_burst(lambda: self.files_dropped.emit(paths))

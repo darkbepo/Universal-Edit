@@ -1,0 +1,100 @@
+{
+ "badges": [
+  [
+   "photo",
+   "JPG",
+   "#ec6f9c"
+  ],
+  [
+   "movie",
+   "MP4",
+   "#ef6b4a"
+  ],
+  [
+   "music",
+   "MP3",
+   "#f0a43a"
+  ],
+  [
+   "pdf",
+   "PDF",
+   "#e5534b"
+  ],
+  [
+   "document",
+   "DOCX",
+   "#4f8ef7"
+  ],
+  [
+   "cube",
+   "STL",
+   "#2bb3a3"
+  ],
+  [
+   "font",
+   "TTF",
+   "#9b7bf2"
+  ],
+  [
+   "archive",
+   "ZIP",
+   "#c9a227"
+  ],
+  [
+   "subtitle",
+   "SRT",
+   "#4cbf73"
+  ],
+  [
+   "vector",
+   "SVG",
+   "#2fb5d6"
+  ],
+  [
+   "gif",
+   "GIF",
+   "#d96fd1"
+  ],
+  [
+   "table",
+   "XLSX",
+   "#3fae5a"
+  ]
+ ],
+ "rings": [
+  {
+   "radius": 1.0,
+   "tilt": 62,
+   "roll": -10,
+   "period": 40,
+   "direction": 1,
+   "phase": 0.0,
+   "count": 5
+  },
+  {
+   "radius": 0.84,
+   "tilt": 56,
+   "roll": 14,
+   "period": 32,
+   "direction": -1,
+   "phase": 0.1,
+   "count": 4
+  },
+  {
+   "radius": 0.68,
+   "tilt": 68,
+   "roll": 3,
+   "period": 26,
+   "direction": 1,
+   "phase": 0.3,
+   "count": 3
+  }
+ ],
+ "pad": 34,
+ "pullIn": 0.45,
+ "pullSpeed": 2.5,
+ "burstOut": 1.6,
+ "burstMs": 420,
+ "clear": 0.45,
+ "stretch": 1.8
+}

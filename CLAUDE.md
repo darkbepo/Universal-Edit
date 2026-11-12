@@ -137,7 +137,9 @@ See `web/README.md` for commands and deployment.
   Start screen: `.editor-hub`, `.editor-tile[data-editor]` (their accessible names contain
   "editor", so match "Edit" with `exact: true`), `dialog.new-picture` (`#np-size/-width/-height`).
   Properties: button "Properties" (exact), `.properties-pane`, `.prop-file` (file picker),
-  `.prop-card[data-title]` with `dt` / `dd` rows.
+  `.prop-card[data-title]` with `dt` / `dd` rows. Drop zone badges: `.drop canvas.orbit`
+  (`data-moving`). A real `drop` event on the empty page waits `burstMs` (420 ms) before the
+  files are added (the burst); `setInputFiles` and reduce-motion add at once.
   Tiles are hidden while Settings is open: tests choose formats with the `pick()` helper (strip →
   tile → cog again if Settings was open), never by clicking a tile directly.
   Playwright's own Chromium isn't always installed locally; `npx playwright test -c
@@ -853,6 +855,16 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       have no mode switch ("← Back to Convert"), so Properties is reached from the converter
       page. Next steps (owner's go-ahead given): change photo details (lossless EXIF segment
       swap), music tags (mutagen, GPL-2.0+, approved), video, PDF / Office, file name + dates.
+   14. Orbiting drop-zone badges (both apps): 12 file-type badges (icon + type, own colour,
+      dimmed to 62 %) on three tilted rings around the empty drop zone's text, smaller / fainter
+      on the far side, faded near the text. Dragging a file over pulls them in and speeds them up;
+      a drop on the empty page bursts them outward, then adds the files. Model `core/orbit.py`
+      (`layout`, Qt-free) → `web/src/ui/orbit.json` (`python -m umc.core.orbit`), port
+      `web/src/ui/orbit.ts` (canvas behind the text, `requestAnimationFrame`); desktop
+      `gui/widgets/orbit.py` (`Orbit` paints in `DropZone.paintEvent`, 60 fps timer only while
+      visible + empty). Both check `tests/fixtures/orbit_cases.json`. Reduce motion (web
+      `prefers-reduced-motion`; Windows "Animation effects" via SPI_GETCLIENTAREAANIMATION;
+      `UMC_REDUCE_MOTION=1/0` overrides) = still badges, no burst delay.
 11. **First public release** (owner, Nov 2026: wait until more editors are ready). Push a
     `v<__version__>` tag (bump `umc/__init__.py` first; the workflow checks they match): the
     Windows build then publishes the .exe zip, the installer and the editor add-on zips as a

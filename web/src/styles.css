@@ -155,6 +155,9 @@ h1 { font-size: 15px; font-weight: 650; margin: 0; letter-spacing: -0.005em; whi
 .drop .icon { color: var(--accent); line-height: 0; }
 .drop .title { font-size: 15px; font-weight: 600; }
 .drop .sub { color: var(--muted); max-width: 320px; }
+.drop { position: relative; overflow: hidden; }
+.drop > :not(.orbit) { position: relative; z-index: 1; }
+.drop canvas.orbit { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; }
 .drop.compact { min-height: 48px; flex-direction: row; gap: 8px; padding: 10px; border-width: 1px; border-radius: 14px; }
 .drop.compact .sub { display: none; }
 .drop.compact .title { font-size: 14px; font-weight: 500; color: var(--accent); }

@@ -10,6 +10,7 @@ import type { InputFile, OutputFile, Target } from "../core/types";
 import { ConversionClient, JobCancelled } from "../worker/client";
 import { editorHub, newPictureDialog } from "./hub";
 import { groupIcon, icon } from "./icons";
+import { Orbit } from "./orbit";
 import { PropertiesPane } from "./properties";
 import { fmtSize, Queue } from "./queue";
 import { SettingsForm } from "./settings";
@@ -69,6 +70,8 @@ export function mountApp(root: HTMLElement): void {
     h("div", { class: "icon" }, icon("upload", 34)), dropTitle,
     h("div", { class: "sub" }, "Images, video, audio, documents, 3D models, fonts and more"));
   const note = h("div", { class: "note", hidden: true });
+  // file-type badges orbiting the text while the box is empty
+  const orbit = new Orbit(drop, [...drop.querySelectorAll<HTMLElement>(".icon, .title, .sub")]);
 
   const resultsLabel = h("span");
   const zipBtn = h("button", { class: "link", hidden: true }, icon("download", 16), "Download all (.zip)");
@@ -166,15 +169,23 @@ export function mountApp(root: HTMLElement): void {
     if (busy || !e.dataTransfer?.types.includes("Files")) return;
     e.preventDefault();
     drop.classList.add("hover");
+    orbit.setPull(true);
   });
   document.body.addEventListener("dragleave", (e) => {
-    if (e.relatedTarget === null) drop.classList.remove("hover");
+    if (e.relatedTarget === null) {
+      drop.classList.remove("hover");
+      orbit.setPull(false);
+    }
   });
   document.body.addEventListener("drop", (e) => {
     drop.classList.remove("hover");
+    orbit.setPull(false);
     if (busy || !e.dataTransfer?.files.length) return;
     e.preventDefault();
-    void addFiles(e.dataTransfer.files);
+    const dropped = [...e.dataTransfer.files];
+    // on the empty page the badges burst outward first, then the file list appears
+    if (!files.length && !editing) void orbit.burst().then(() => addFiles(dropped));
+    else void addFiles(dropped);
   });
 
   queue.onRemove = (i) => {
@@ -322,6 +333,7 @@ export function mountApp(root: HTMLElement): void {
     workspace.classList.toggle("empty", !has);
     drop.classList.toggle("compact", has);
     hub.hidden = has;
+    orbit.setActive(!has);
     dropTitle.textContent = has ? "Add more files" : "Drop files here or click to browse";
     drop.querySelector(".icon")!.replaceChildren(icon(has ? "plus" : "upload", has ? 18 : 34));
     filesCard.hidden = !has;

@@ -857,10 +857,20 @@ class MainWindow(QMainWindow):
     def dragEnterEvent(self, event) -> None:  # noqa: N802
         if event.mimeData().hasUrls() and not self.busy:
             event.acceptProposedAction()
+            if self._current_editor() is None:
+                self.drop.orbit.set_pull(True)  # the badges come closer
+
+    def dragLeaveEvent(self, event) -> None:  # noqa: N802
+        self.drop.orbit.set_pull(False)
+        super().dragLeaveEvent(event)
 
     def dropEvent(self, event) -> None:  # noqa: N802
         paths = [u.toLocalFile() for u in event.mimeData().urls() if u.isLocalFile()]
-        if paths:
+        if not paths:
+            return
+        if self._current_editor() is None and not self.busy:
+            self.drop.drop_with_burst(lambda: self.handle_drop(paths))  # empty page: burst first
+        else:
             self.handle_drop(paths)
 
     def handle_drop(self, paths: list[str]) -> None:
