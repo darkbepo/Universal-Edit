@@ -701,6 +701,22 @@ Everything found while reviewing Task 7, in one round (owner rule).
 
 ---
 
+### Task 8a: Task 8 follow-up — find never freezes, colours, bar details
+
+Everything found while reviewing Task 8, in one round (owner rule).
+- **Critical: the tab freezes** when the search text starts with an emoji / non-BMP character: with the `u` flag a `lastIndex` inside a surrogate pair snaps back, so `index + 1` loops (prosemirror-search's `findPrev`; our whole-word Replace all loop). Step by the code point's length; do backward search with our own per-block regex instead of `SearchQuery.findPrev`. Tests: backward find and whole-word Replace all on emoji, plus a guard that every find loop always advances. Check the desktop find bar for the same case (Qt) and fix it there too if it hangs.
+- **Forward find misses a match that contains the cursor** (wrap uses `findNext(state, 0, from)`, which cuts the block at `from`): wrap with no limit, like the desktop.
+- **Colour pickers:** black can't be chosen (input starts at #000000, `change` doesn't fire), the highlight picker starts at black (desktop: yellow), a cancelled pick never resolves and leaves a hidden `<input>` per click. Start at a value that isn't an accidental pick / listen to `input`, resolve on blur or focus return, remove the input, highlight starts at #ffff00.
+- **Style and font boxes** use `change`, so choosing the entry already shown (mixed selection) does nothing — handle the choice like the desktop's `activated` (or show a blank entry for mixed selections).
+- **Table menu:** Esc closes a menu opened with the mouse; arrow keys move through its items (`role=menu`).
+- **Find bar:** Enter / Esc ignore `e.isComposing` (IME); close button gets `aria-label="Close"`.
+- **Spec:** state the deliberate differences — size box is a list (desktop is editable), whole word next to an empty link, × close button, no match highlighting.
+
+**Files:** `web/src/ui/doceditor/findbar.ts`, `formatbar.ts`, tests, spec (and `src/umc/gui/doceditor/find_bar.py` only if the desktop hangs too).
+- [ ] Tests that fail first → fix → `tsc`, `npm test`, e2e (Edge config) → commit `Keep the website editor's find and colour pickers safe`.
+
+---
+
 ### Task 9: Document editor page
 
 **Files:**
