@@ -39,15 +39,18 @@ def _server_address(name: str) -> str:
     return QDir.tempPath().rstrip("/") + "/" + name
 
 
-def _exchange(address: str, data: bytes, timeout_s: float) -> bytes:
-    """Send ``data`` and return the reply line (b"" if none). Plain Python on purpose: no Qt
-    socket, so it works from any thread and never holds up a server in the same process."""
+def _exchange(address: str, data: bytes, timeout_s: float) -> tuple[bool, bytes]:
+    """Send ``data``; returns (connected, reply line — b"" if none came in time). Plain Python
+    on purpose: no Qt socket, so it works from any thread and never holds up a server in the
+    same process. Not connected = nobody listens (yet); that's answered at once."""
     if sys.platform == "win32":
+        connected = threading.Event()
         result: list[bytes] = []
 
         def talk() -> None:
             try:
                 with open(address, "r+b", buffering=0) as pipe:  # noqa: PTH123 (a named pipe)
+                    connected.set()
                     pipe.write(data)
                     reply = b""
                     while b"\n" not in reply:
@@ -62,31 +65,43 @@ def _exchange(address: str, data: bytes, timeout_s: float) -> bytes:
         t = threading.Thread(target=talk, daemon=True)  # a pipe read has no timeout of its own
         t.start()
         t.join(timeout_s)
-        return result[0] if result else b""
+        return connected.is_set(), (result[0] if result else b"")
     import socket
 
-    try:
-        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
-            sock.settimeout(timeout_s)
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+        sock.settimeout(timeout_s)
+        try:
             sock.connect(address)
+        except OSError:
+            return False, b""
+        reply = b""
+        try:
             sock.sendall(data)
-            reply = b""
             while b"\n" not in reply:
                 chunk = sock.recv(64)
                 if not chunk:
                     break
                 reply += chunk
-            return reply
-    except OSError:
-        return b""
+        except OSError:
+            pass
+        return True, reply
 
 
-def send_to_running(message: dict, name: str | None = None, timeout_ms: int = 3000) -> bool:
-    """True if a running Universal Edit took the message (it answers "ok" once it has read it;
-    hanging up right after writing could lose the message on Windows)."""
+def _offer(message: dict, name: str | None, timeout_s: float) -> str:
+    """ "ok" (a running copy took it), "absent" (nobody listens) or "silent" (connected, but
+    no answer in time)."""
     data = (json.dumps(message) + "\n").encode("utf-8")
-    reply = _exchange(_server_address(name or server_name()), data, timeout_ms / 1000)
-    return reply.startswith(ACK)
+    connected, reply = _exchange(_server_address(name or server_name()), data, timeout_s)
+    if not connected:
+        return "absent"
+    return "ok" if reply.startswith(ACK) else "silent"
+
+
+def send_to_running(message: dict, name: str | None = None, timeout_ms: int = 8000) -> bool:
+    """True if a running Universal Edit took the message (it answers "ok" once it has read it;
+    hanging up right after writing could lose the message on Windows). A copy that is still
+    starting up can take a few seconds to answer, hence the long wait once connected."""
+    return _offer(message, name, timeout_ms / 1000) == "ok"
 
 
 def default_lock_path(name: str) -> str:
@@ -112,9 +127,12 @@ def claim(
         return False, lock
     deadline = time.monotonic() + wait_s
     while time.monotonic() < deadline:
-        if send_to_running(message, name, timeout_ms=1000):
+        answer = _offer(message, name, max(1.0, deadline - time.monotonic()))
+        if answer == "ok":
             return True, None
-        time.sleep(0.1)
+        if answer == "silent":  # it got our connection but never answered: don't send twice
+            break
+        time.sleep(0.1)  # nobody listens yet: the copy with the lock is still starting
     return False, None
 
 
