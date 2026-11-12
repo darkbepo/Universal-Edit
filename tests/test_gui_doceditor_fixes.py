@@ -325,3 +325,28 @@ def test_empty_table_cells_stay_one_paragraph(qtbot, page, tmp_path):
     cells = docx.Document(p).tables[0]._cells
     assert [len(c.paragraphs) for c in cells] == [1, 1, 1, 1]
     assert open_document(p).html == original
+
+
+@pytest.mark.parametrize(
+    "html",
+    [
+        '<h2 style="page-break-before:always">H</h2><pre>code</pre>',
+        "<pre>a</pre><pre>b</pre><p>x</p>",
+    ],
+)
+def test_code_saved_as_markdown_comes_back_the_same_in_the_editor(qtbot, tmp_path, html):
+    """Markdown reads a code block with a final line break (``<pre>code\n</pre>``); the editor
+    shows it as the same lines again, and the file doesn't change on later saves."""
+    from umc.doceditor.save import save_document
+
+    v = DocTextView()
+    qtbot.addWidget(v)
+    v.load(OpenedDocument(html, {}, "docx"))
+    first = v.content()
+    p = tmp_path / "a.md"
+    save_document(first, p, "md")
+    saved = p.read_bytes()
+    v.load(open_document(p))
+    assert v.content().html == first.html == html
+    save_document(v.content(), p, "md")
+    assert p.read_bytes() == saved
