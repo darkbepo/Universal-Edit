@@ -131,6 +131,8 @@ export async function saveDocument(
   opts: SaveOptions = {},
 ): Promise<{ blob: Blob; name: string }> {
   fmt = fmt.toLowerCase().replace(/^\.+/, "");
+  // Characters file names can't hold (and "\", which would make a saved ZIP unreadable here).
+  stem = stem.replace(/[\\/:*?"<>|]/g, "_");
   const named = (data: Uint8Array | string, ext = fmt) => ({
     blob: blobOf(data, ext),
     name: `${stem}.${ext}`,

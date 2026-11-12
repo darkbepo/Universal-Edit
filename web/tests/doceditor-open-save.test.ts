@@ -430,6 +430,15 @@ describe("Markdown ZIP saved by the website", () => {
     }
   });
 
+  test("a download name never has \\ / : * ? \" < > | in it, so a saved ZIP reopens", async () => {
+    const html = '<p><img src="img/1.png"></p>';
+    const zip = await saveDocument({ ...base, html, images: new Map([["img/1.png", PNG]]) }, "md", 'a\\b/c:d*e?f"g<h>i|j', noConvert);
+    expect(zip.name).toBe("a_b_c_d_e_f_g_h_i_j.zip");
+    expect(isEditableMarkdownZip(await blobBytes(zip.blob))).toBe(true);
+    const out = await saveDocument({ ...base, html: "<p>x</p>", images: new Map() }, "html", "a\\b:c", noConvert);
+    expect(out.name).toBe("a_b_c.html");
+  });
+
   test("a root .md with a backslash in its name is not editable", () => {
     expect(isEditableMarkdownZip(zipSync({ "a\\b.md": enc("x") }))).toBe(false);
     expect(isEditableMarkdownZip(zipSync({ "..\\a.md": enc("x"), "..\\a_files/1.png": PNG }))).toBe(false);
