@@ -225,6 +225,14 @@ def test_copies_started_together_end_up_in_one(qtbot, tmp_path):
     got = []
     server.message_received.connect(got.append)
     assert server.start(held)  # the first one now listens
-    qtbot.waitUntil(lambda: got == [{"convert": ["b"]}], timeout=8000)
+    # keep this (the window's) event loop running until the other copy has its answer
+    qtbot.waitUntil(lambda: bool(got == [{"convert": ["b"]}] and results), timeout=10000)
     t.join(5)
     assert results and results[0][0] is True
+
+
+def test_where_the_running_copy_listens(monkeypatch):
+    from umc.gui import single_instance as si
+
+    monkeypatch.setattr(si.sys, "platform", "win32")
+    assert si._server_address("UniversalEdit-me") == r"\\.\pipe\UniversalEdit-me"

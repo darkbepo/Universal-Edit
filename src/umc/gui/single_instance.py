@@ -9,11 +9,16 @@ import getpass
 import json
 import logging
 import re
+import sys
+import threading
+import time
 
 from PySide6.QtCore import QLockFile, QObject, Signal
-from PySide6.QtNetwork import QLocalServer, QLocalSocket
+from PySide6.QtNetwork import QLocalServer
 
 log = logging.getLogger(__name__)
+
+ACK = b"ok\n"
 
 
 def server_name() -> str:
@@ -24,19 +29,64 @@ def server_name() -> str:
     return "UniversalEdit-" + re.sub(r"[^A-Za-z0-9_-]", "_", user)[:40]
 
 
-def send_to_running(message: dict, name: str | None = None, timeout_ms: int = 500) -> bool:
-    """True if a running Universal Edit took the message."""
-    sock = QLocalSocket()
-    sock.connectToServer(name or server_name())
-    if not sock.waitForConnected(timeout_ms):
-        return False
-    sock.write((json.dumps(message) + "\n").encode("utf-8"))
-    sock.flush()  # usually sends it all at once
-    ok = sock.bytesToWrite() == 0 or sock.waitForBytesWritten(2000)
-    sock.disconnectFromServer()
-    if sock.state() != QLocalSocket.LocalSocketState.UnconnectedState:
-        sock.waitForDisconnected(1000)
-    return ok
+def _server_address(name: str) -> str:
+    """Where QLocalServer listens: a named pipe on Windows, a socket file in Qt's temp folder
+    elsewhere (QLocalServer.fullServerName for a plain name)."""
+    if sys.platform == "win32":
+        return "\\\\.\\pipe\\" + name
+    from PySide6.QtCore import QDir
+
+    return QDir.tempPath().rstrip("/") + "/" + name
+
+
+def _exchange(address: str, data: bytes, timeout_s: float) -> bytes:
+    """Send ``data`` and return the reply line (b"" if none). Plain Python on purpose: no Qt
+    socket, so it works from any thread and never holds up a server in the same process."""
+    if sys.platform == "win32":
+        result: list[bytes] = []
+
+        def talk() -> None:
+            try:
+                with open(address, "r+b", buffering=0) as pipe:  # noqa: PTH123 (a named pipe)
+                    pipe.write(data)
+                    reply = b""
+                    while b"\n" not in reply:
+                        chunk = pipe.read(64)
+                        if not chunk:
+                            break
+                        reply += chunk
+                    result.append(reply)
+            except OSError:
+                pass
+
+        t = threading.Thread(target=talk, daemon=True)  # a pipe read has no timeout of its own
+        t.start()
+        t.join(timeout_s)
+        return result[0] if result else b""
+    import socket
+
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+            sock.settimeout(timeout_s)
+            sock.connect(address)
+            sock.sendall(data)
+            reply = b""
+            while b"\n" not in reply:
+                chunk = sock.recv(64)
+                if not chunk:
+                    break
+                reply += chunk
+            return reply
+    except OSError:
+        return b""
+
+
+def send_to_running(message: dict, name: str | None = None, timeout_ms: int = 3000) -> bool:
+    """True if a running Universal Edit took the message (it answers "ok" once it has read it;
+    hanging up right after writing could lose the message on Windows)."""
+    data = (json.dumps(message) + "\n").encode("utf-8")
+    reply = _exchange(_server_address(name or server_name()), data, timeout_ms / 1000)
+    return reply.startswith(ACK)
 
 
 def claim(
@@ -48,7 +98,6 @@ def claim(
     moment, before any of them listens: the one that gets the lock becomes the window, the
     others keep offering their file until it listens (up to ``wait_s``). (False, None) = no
     copy answered in time: open a window of our own."""
-    import time
 
     if send_to_running(message, name):
         return True, None
@@ -58,7 +107,7 @@ def claim(
         return False, lock
     deadline = time.monotonic() + wait_s
     while time.monotonic() < deadline:
-        if send_to_running(message, name, timeout_ms=200):
+        if send_to_running(message, name, timeout_ms=1000):
             return True, None
         time.sleep(0.1)
     return False, None
@@ -120,9 +169,12 @@ class InstanceServer(QObject):
                     except ValueError:
                         continue
                     if isinstance(msg, dict):
+                        sock.write(ACK)  # the sender waits for this before hanging up
+                        sock.flush()
                         self.message_received.emit(msg)
 
             sock.readyRead.connect(read)
+            # the sender only hangs up after our "ok", so everything has been read by then
             sock.disconnected.connect(sock.deleteLater)
             if sock.bytesAvailable():
                 read()

@@ -799,7 +799,10 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       `unregister_*`, which scans for our verb / ProgID everywhere (older versions' extensions).
       `single_instance.claim`: copies started together (a multi-file right-click while the app
       is closed) race for the QLockFile; the winner becomes the window, the others keep
-      offering their file for up to 8 s. The installer's [Run] writes each switch as ticked and
+      offering their file for up to 8 s. The sender is plain Python (`_exchange`: the named
+      pipe `\\.\pipe\<name>` on Windows, Qt's socket file elsewhere) and waits for the
+      window's "ok" before hanging up — closing right after writing lost the message on
+      Windows, and a Qt socket on a helper thread crashed Qt. The installer's [Run] writes each switch as ticked and
       its [Code] starts an upgrade's ticks from the current registry state (Settings window).
       Next (step 5): editors as downloadable add-ons, chosen in the installer / Install tiles.
 11. Ideas: presets, batch queue.

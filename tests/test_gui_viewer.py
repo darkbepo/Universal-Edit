@@ -150,7 +150,7 @@ def test_a_second_start_hands_its_file_over(qtbot, tmp_path):
         target=lambda: sent.append(send_to_running({"view": "/x/y.png"}, name=name))
     )
     t.start()
-    qtbot.waitUntil(lambda: got == [{"view": "/x/y.png"}], timeout=5000)
+    qtbot.waitUntil(lambda: bool(got == [{"view": "/x/y.png"}] and sent), timeout=8000)
     t.join(5)
     assert sent == [True]
     assert not send_to_running({"view": "z"}, name=name + "-nobody")
