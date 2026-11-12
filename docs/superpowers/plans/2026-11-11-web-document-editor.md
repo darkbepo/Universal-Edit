@@ -731,6 +731,12 @@ Everything found while reviewing Task 8, in one round (owner rule).
     - `open(file: InputFile): Promise<boolean>`, `lastError(): string`, `show()`, `hide()`, `maybeLeave(): boolean`, `dropFiles(files: InputFile[]): Promise<void>`, `save()`, `saveAs()`;
     - `el` with test hooks: `.doc-page` (the editable page), `.doc-banner`, `.doc-status`, `.doc-message`, buttons named "Back to Convert", "Undo", "Redo", "Save", "Save as", "Save to a file…".
 
+**Found in Task 8a re-review (do here first, each with a failing test):**
+- Forward find of a self-overlapping search (`aa` in `aaa`, cursor after the first a) skips the overlapping match: start the first block's scan at the cursor offset (`scanMatches` start offset), like the desktop.
+- File picks: drop the window-focus fallback for files (Chrome can fire `change` > 300 ms after focus returns, silently losing the picture); use `cancel` + "a new pick replaces the old one".
+- Colour picks: in the cancel/focus paths a `latest` equal to the starting value counts as no choice; start the highlight picker at `#ffff01` so pure yellow can be chosen.
+- Real-browser check (Task 11 e2e): the colour picker's cancel/focus detection.
+
 Known limit to list (both apps, by design): typed spaces and a final Shift+Enter at the end of a block are trimmed on save.
 
 **Found in Task 7 review (do here):** dropping a picture file on the editor must not navigate the browser away (handleDrop inserts it as a picture, plus a page-level drop guard). Link dialog relies on the command's link check (Task 7a); no Ctrl+click opening of unchecked links.
