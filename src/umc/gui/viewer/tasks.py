@@ -6,12 +6,15 @@ after the user moved on to the next file.
 
 Two lanes: "pool" (2 threads: pictures, thumbnails, text, 3D) and "pdf" (1 thread) for everything
 that touches PyMuPDF — MuPDF has one shared context and isn't safe on two threads at once, even
-for different documents (PDF pages, documents turned into PDFs, which also use it)."""
+for different documents (PDF pages, documents turned into PDFs, which also use it). Every
+runner's "pdf" jobs also take one process-wide lock, so two windows (the viewer, the converter's
+Properties panel) never use it together."""
 
 from __future__ import annotations
 
 import contextlib
 import logging
+import threading
 from collections.abc import Callable
 from typing import Any
 
@@ -20,6 +23,8 @@ from PySide6.QtCore import QObject, QThreadPool, Signal
 from umc.core.errors import ConversionError
 
 log = logging.getLogger(__name__)
+
+PDF_LOCK = threading.Lock()  # PyMuPDF: one thread at a time in the whole process
 
 
 class _Bridge(QObject):
@@ -64,7 +69,11 @@ class TaskRunner(QObject):
                     bridge.finished.emit(ticket, False, "")
                 return
             try:
-                ok, result = True, fn()
+                if lane == "pdf":
+                    with PDF_LOCK:
+                        ok, result = True, fn()
+                else:
+                    ok, result = True, fn()
             except ConversionError as exc:
                 ok, result = False, str(exc)
             except Exception:

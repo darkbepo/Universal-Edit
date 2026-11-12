@@ -38,6 +38,7 @@ describe("properties readers (no engine)", async () => {
   it("dates", () => {
     expect(r.pdfDate("D:20261112140300")).toBe("2026-11-12 14:03");
     expect(r.pdfDate("nonsense")).toBeUndefined();
+    expect(r.pdfDate("D:20260230120000")).toBeUndefined(); // no 30 February (the desktop agrees)
     expect(r.pdfDate("D:20261112140300Z")).toBe(fmt.date(new Date(Date.UTC(2026, 10, 12, 14, 3))));
     expect(r.pdfDate("D:20261112140300+01'00'")).toBe(fmt.date(new Date(Date.UTC(2026, 10, 12, 13, 3))));
     expect(r.exifDate("2026:11:12 14:03:27")).toBe("2026-11-12 14:03");

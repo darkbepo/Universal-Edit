@@ -71,7 +71,7 @@ export function pictureSections(p: Facts): Section[] {
   if (frames > 1) pic.add("Frames", `${fmt.count(frames)} (animated)`);
   const dpi = p.dpi as number[] | undefined;
   if (dpi && dpi[0] && dpi[1]) {
-    const x = Math.round(dpi[0]), y = Math.round(dpi[1]);
+    const x = fmt.roundEven(dpi[0]), y = fmt.roundEven(dpi[1]);
     pic.add("Resolution", x === y ? `${x} dpi` : `${x} × ${y} dpi`);
   }
   pic.add("Orientation", ORIENTATION[int(p.orientation) || 1]);
@@ -101,7 +101,7 @@ function locationSection(d: Facts): Section {
   const loc = section("Location");
   if (d.lat !== null && d.lat !== undefined && d.lon !== null && d.lon !== undefined) {
     loc.add("Coordinates", fmt.location(Number(d.lat), Number(d.lon)));
-    if (d.altitude !== null && d.altitude !== undefined) loc.add("Altitude", `${Math.round(Number(d.altitude))} m`);
+    if (d.altitude !== null && d.altitude !== undefined) loc.add("Altitude", `${fmt.roundEven(Number(d.altitude))} m`);
   }
   return loc;
 }

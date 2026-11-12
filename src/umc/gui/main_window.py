@@ -525,10 +525,10 @@ class MainWindow(QMainWindow):
             return
         kind = self.edit_kind()
         if kind is None or self.busy:
-            self.convert_mode.setChecked(True)
+            self._check_mode_button()
             return
         if not self._editor_ready(kind):
-            self.convert_mode.setChecked(True)
+            self._check_mode_button()
             return
         page = self._page(kind)
         if kind == "document":
@@ -542,7 +542,7 @@ class MainWindow(QMainWindow):
             page.view.setFocus()
             return
         if not page.open_paths([f.path for f in self.files]):
-            self.convert_mode.setChecked(True)
+            self._check_mode_button()
             self.input_error.setText(page.message.text())
             self.input_error.setVisible(True)
             return
@@ -619,6 +619,10 @@ class MainWindow(QMainWindow):
             return
         if self._leave_editor():
             self._set_mode("properties")
+
+    def _check_mode_button(self) -> None:
+        """The switch shows the mode still on (Edit was refused or not possible)."""
+        (self.properties_mode if self.mode == "properties" else self.convert_mode).setChecked(True)
 
     def _set_mode(self, mode: str, refresh: bool = True) -> None:
         self.mode = mode

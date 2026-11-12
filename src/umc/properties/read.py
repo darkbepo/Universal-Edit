@@ -7,6 +7,7 @@ single PyMuPDF thread)."""
 from __future__ import annotations
 
 import logging
+import math
 import re
 import zipfile
 from datetime import UTC, datetime
@@ -36,7 +37,12 @@ NOTE = "Some details of this file couldn't be read."
 
 
 def describe(f: DetectedFile) -> list[Section]:
-    return build(read_facts(f))
+    facts = read_facts(f)
+    try:
+        return build(facts)
+    except Exception:  # an odd value in a file: still show what the file is
+        log.warning("properties: couldn't show the details of %s", f.path, exc_info=True)
+        return build({"file": facts.get("file") or {}, "note": NOTE})
 
 
 def read_facts(f: DetectedFile) -> dict:
@@ -126,9 +132,10 @@ def _num(v: object) -> float | None:
     if isinstance(v, tuple | list):
         v = v[0] if v else None
     try:
-        return float(v) if v is not None else None  # type: ignore[arg-type]
+        x = float(v) if v is not None else None  # type: ignore[arg-type]
     except (TypeError, ValueError, ZeroDivisionError):
         return None
+    return x if x is not None and math.isfinite(x) else None  # EXIF 0/0 reads as nan
 
 
 def _dms(v: object) -> float | None:
@@ -136,7 +143,8 @@ def _dms(v: object) -> float | None:
         d, m, s = (float(x) for x in v)  # type: ignore[union-attr]
     except (TypeError, ValueError, ZeroDivisionError):
         return None
-    return d + m / 60 + s / 3600
+    value = d + m / 60 + s / 3600
+    return value if math.isfinite(value) else None
 
 
 def _picture(f: DetectedFile) -> tuple[str, dict]:
@@ -217,11 +225,26 @@ def iso6709(text: str) -> tuple[float, float] | None:
     return (float(m[1]), float(m[2])) if m else None
 
 
+def clockwise(stream: dict) -> int:
+    """How far a player turns the picture, clockwise (what the browser reports too). ffprobe's
+    display-matrix "rotation" is counter-clockwise; an old "rotate" tag is clockwise."""
+    for sd in stream.get("side_data_list") or []:
+        if "rotation" in sd:
+            try:
+                return int(round(-float(sd["rotation"]))) % 360
+            except (TypeError, ValueError):
+                return 0
+    try:
+        return int(round(float((stream.get("tags") or {}).get("rotate") or 0))) % 360
+    except (TypeError, ValueError):
+        return 0
+
+
 def media_facts(data: dict, size: int) -> dict:
     """ffprobe JSON → media facts (also used by the tests with hand-made JSON)."""
     streams = data.get("streams") or []
     fmt_info = data.get("format") or {}
-    from umc.tools.ffmpeg import _parse_rate, _rotation
+    from umc.tools.ffmpeg import _parse_rate
 
     m: dict = {"duration": float(fmt_info.get("duration") or 0), "size": size}
     pictures = [s for s in streams if (s.get("disposition") or {}).get("attached_pic")]
@@ -233,7 +256,7 @@ def media_facts(data: dict, size: int) -> dict:
             "height": int(video.get("height") or 0),
             "fps": _parse_rate(video.get("avg_frame_rate"))
             or _parse_rate(video.get("r_frame_rate")),
-            "rotation": _rotation(video),
+            "rotation": clockwise(video),
         }
     audio = [s for s in streams if s.get("codec_type") == "audio"]
     m["audio"] = [

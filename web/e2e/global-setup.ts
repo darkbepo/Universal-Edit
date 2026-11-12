@@ -179,4 +179,11 @@ export default async function globalSetup() {
       console.warn("ffmpeg not found: video and audio e2e tests will be skipped");
     }
   }
+  if (!existsSync(`${FIXTURES}turned.mp4`) && existsSync(`${FIXTURES}clip.mp4`)) {
+    try { // shown turned 90° anticlockwise (= 270° clockwise), like a phone clip
+      execFileSync("ffmpeg", ["-loglevel", "error", "-y", "-display_rotation", "90", "-i", `${FIXTURES}clip.mp4`, "-c", "copy", `${FIXTURES}turned.mp4`]);
+    } catch {
+      // older ffmpeg without -display_rotation: the rotation check is skipped
+    }
+  }
 }

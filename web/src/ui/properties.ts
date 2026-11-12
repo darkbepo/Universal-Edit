@@ -1,11 +1,12 @@
 // The right column in Properties mode: "About this file" for one of the added files. A picker
-// on top when there are several; the facts are read in the conversion worker (hidden
-// "properties-info" converter) and the newest request wins.
+// on top when there are several. The facts are read by the hidden "properties-info" converter in
+// a worker of its own (so a slow read never holds up a conversion); picking another file stops
+// a read still running.
 import { PROPERTIES_TARGET } from "../converters/properties";
 import type { InputFile } from "../core/types";
 import { build, type Facts, type Section } from "../properties/info";
 import { fileFacts } from "../properties/read";
-import type { ConversionClient } from "../worker/client";
+import { ConversionClient } from "../worker/client";
 import { icon } from "./icons";
 
 const h = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> & { class?: string } = {}, ...children: (Node | string)[]) => {
@@ -25,9 +26,11 @@ export class PropertiesPane {
   private files: InputFile[] = [];
   private current: InputFile | null = null;
   private ticket = 0;
+  private reading = false;
+  private readonly client = new ConversionClient(); // its worker starts on the first read
   sections: Section[] = [];
 
-  constructor(private readonly client: ConversionClient) {
+  constructor() {
     this.el = h("section", { class: "pane properties-pane", hidden: true, ariaLabel: "Properties" },
       h("div", { class: "pane-head" }, h("span", { class: "pane-icon" }, icon("info-circle", 18)), h("h2", {}, "About this file"), h("div", { class: "spacer" }), this.picker),
       h("div", { class: "pane-body" }, this.status, this.body));
@@ -59,12 +62,16 @@ export class PropertiesPane {
     this.render(build({ file: base })); // the file's own facts at once, the rest when read
     this.status.textContent = `Reading ${f.name}…`;
     this.status.hidden = false;
+    if (this.reading) this.client.cancel(); // the older read is no use any more
     let facts: Facts = {};
+    this.reading = true;
     try {
       const out = await this.client.run(PROPERTIES_TARGET, [f], {}, () => {});
       facts = JSON.parse(new TextDecoder().decode(out[0].data));
     } catch {
       facts = { note: "Some details of this file couldn't be read." };
+    } finally {
+      if (ticket === this.ticket) this.reading = false;
     }
     if (ticket !== this.ticket) return; // the user moved on
     this.status.hidden = true;

@@ -107,7 +107,7 @@ export function mountApp(root: HTMLElement): void {
   const settingsPane = h("section", { class: "pane settings-pane", hidden: true, ariaLabel: "Settings" },
     h("div", { class: "pane-head" }, h("span", { class: "pane-icon" }, icon("settings", 18)), settingsTitle, h("div", { class: "spacer" }), resetBtn),
     h("div", { class: "pane-body" }, form.el));
-  const properties = new PropertiesPane(client);
+  const properties = new PropertiesPane();
   const right = h("div", { class: "right", hidden: true }, strip, convertPane, settingsPane, properties.el);
 
   const workspace = h("div", { class: "workspace empty" }, left, right);

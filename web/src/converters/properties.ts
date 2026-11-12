@@ -69,12 +69,14 @@ async function media(f: InputFile): Promise<Facts> {
     const tags = await input.getMetadataTags();
     const track = tags.trackNumber ? (tags.tracksTotal ? `${tags.trackNumber}/${tags.tracksTotal}` : String(tags.trackNumber)) : undefined;
     const disc = tags.discNumber ? (tags.discsTotal ? `${tags.discNumber}/${tags.discsTotal}` : String(tags.discNumber)) : undefined;
+    const raw = (tags.raw ?? {}) as Record<string, unknown>;
+    const rawText = (...keys: string[]) => keys.map((k) => raw[k]).find((v): v is string => typeof v === "string" && v.trim() !== "");
     m.tags = clean({
       title: tags.title, artist: tags.artist, album: tags.album, album_artist: tags.albumArtist, track, disc,
-      date: tags.date ? String(tags.date.getUTCFullYear()) : undefined, genre: tags.genre, comment: tags.comment ?? tags.description,
+      date: tags.date ? String(tags.date.getUTCFullYear()) : undefined, genre: tags.genre,
+      composer: rawText("TCOM", "©wrt", "COMPOSER", "composer"), comment: tags.comment ?? tags.description,
     });
     m.cover = Boolean(tags.images?.length);
-    const raw = (tags.raw ?? {}) as Record<string, unknown>;
     const where = ["location", "©xyz", "com.apple.quicktime.location.ISO6709"].map((k) => raw[k]).find((v) => typeof v === "string") as string | undefined;
     const ll = where ? iso6709(where) : null;
     if (ll) [m.lat, m.lon] = ll;

@@ -73,6 +73,14 @@ test("video and music: codecs, size and tags", async ({ page }) => {
   expect(await card(page, "Tags")).toEqual({ Title: "Song", Artist: "Band", Year: "2019" });
 });
 
+test("a turned video says how far it's turned, clockwise like the desktop app", async ({ page }) => {
+  test.skip(!existsSync(`${FIXTURES}turned.mp4`), "ffmpeg missing: no sample");
+  await page.goto("./");
+  await add(page, ["turned.mp4"]);
+  await propertiesButton(page).click();
+  expect(await card(page, "Video")).toMatchObject({ Rotation: "270°", Dimensions: "320 × 240 px" });
+});
+
 test("fonts, Word documents and 3D models", async ({ page }) => {
   await page.goto("./");
   await add(page, ["DejaVuSans.woff2", "report.docx", "box.stl"]);

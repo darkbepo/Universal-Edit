@@ -40,7 +40,8 @@ export function pdfDate(text: string): string | undefined {
   const m = /^D?:?(\d{4})(\d\d)?(\d\d)?(\d\d)?(\d\d)?(\d\d)?([Zz+-])?(\d\d)?'?(\d\d)?/.exec(text || "");
   if (!m) return undefined;
   const [y, mo, d, h, mi, s] = [1, 2, 3, 4, 5, 6].map((i, k) => (m[i] ? Number(m[i]) : [0, 1, 1, 0, 0, 0][k]));
-  if (mo < 1 || mo > 12 || d < 1 || d > 31 || h > 23 || mi > 59 || s > 59) return undefined;
+  const check = new Date(Date.UTC(y, mo - 1, d, h, mi, s)); // Feb 30 rolls over: refuse it, like Python
+  if (check.getUTCMonth() !== mo - 1 || check.getUTCDate() !== d || h > 23 || mi > 59 || s > 59) return undefined;
   const sign = m[7];
   if (sign === "+" || sign === "-") {
     const off = (Number(m[8] ?? 0) * 60 + Number(m[9] ?? 0)) * (sign === "+" ? 1 : -1);

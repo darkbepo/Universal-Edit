@@ -223,6 +223,10 @@ def test_video_and_music(tmp_path):
     assert r["Tags"]["Title"] == "Holiday"
     assert r["Location"]["Coordinates"] == "55.67610, 12.56830"
 
+    turned = tmp_path / "turned.mp4"
+    ff("-display_rotation", "90", "-i", str(video), "-c", "copy", str(turned))  # 90° anticlockwise
+    assert rows(describe(detect(turned)))["Video"]["Rotation"] == "270°"  # = the web's clockwise
+
     song = tmp_path / "song.mp3"
     ff("-f", "lavfi", "-i", "sine=duration=3", "-ac", "2", "-metadata", "title=Song",
        "-metadata", "artist=Band", "-metadata", "date=2019-05-01", str(song))  # fmt: skip
@@ -230,6 +234,41 @@ def test_video_and_music(tmp_path):
     assert r["Audio"]["Length"] == "3 s"
     assert r["Audio"]["Channels"] == "Stereo"
     assert r["Tags"] == {"Title": "Song", "Artist": "Band", "Year": "2019"}
+
+
+def test_exif_zero_over_zero_is_left_out(tmp_path):
+    """0/0 rationals (common in GPS tags) read as nan in Pillow: skipped, never "f/nan"."""
+    from PIL import Image
+    from PIL.TiffImagePlugin import IFDRational as R
+
+    exif = Image.Exif()
+    exif[0x0110] = "Phone"
+    sub = exif.get_ifd(0x8769)
+    sub[0x829A] = R(0, 0)
+    sub[0x829D] = R(0, 0)
+    sub[0x8827] = 100
+    gps = exif.get_ifd(0x8825)
+    gps[2] = (R(0, 0), R(0, 0), R(0, 0))
+    gps[4] = (R(0, 0), R(0, 0), R(0, 0))
+    gps[6] = R(0, 0)
+    p = tmp_path / "zero.jpg"
+    Image.new("RGB", (8, 8)).save(p, exif=exif.tobytes())
+    r = rows(describe(detect(p)))
+    assert r["Camera"] == {"Camera": "Phone", "ISO": "100"}
+    assert "Location" not in r
+
+
+def test_a_value_the_builder_trips_on_still_shows_the_file(tmp_path, monkeypatch):
+    from umc.properties import read
+
+    p = tmp_path / "x.png"
+    p.write_bytes(b"\x89PNG")
+    odd = {"file": {"name": "x.png"}, "picture": {"iso": "x"}}
+    monkeypatch.setattr(read, "read_facts", lambda f: odd)
+    assert rows(describe(detect(p))) == {
+        "File": {"Name": "x.png"},
+        "Note": {"": "Some details of this file couldn't be read."},
+    }
 
 
 def test_unreadable_file_still_shows_the_file(tmp_path):
@@ -311,6 +350,34 @@ def test_clearing_files_leaves_properties(qtbot, window, media):
     assert w.mode == "convert"
     assert w.convert_mode.isChecked()
     assert not w.properties_mode.isEnabled()
+    _settle(qtbot, w)
+
+
+def test_edit_refused_keeps_properties_on(qtbot, window, media, tmp_path):
+    w = window
+    w.add_files([str(media / "tall.jpg"), str(media / "notes.txt")])  # a mix: nothing to edit
+    w.enter_properties()
+    w.edit_mode.setChecked(True)  # as a click does, before enter_edit finds nothing to edit
+    w.enter_edit()
+    assert w.mode == "properties"
+    assert w.properties_mode.isChecked() and not w.convert_mode.isChecked()
+    assert w.right.currentWidget() is w.properties_panel
+    _settle(qtbot, w)
+
+
+def test_failed_read_shows_the_file(qtbot, window, media, monkeypatch):
+    from umc.gui.properties import panel as panel_mod
+
+    def boom(_f):
+        raise RuntimeError("unexpected")
+
+    monkeypatch.setattr(panel_mod, "describe", boom)
+    w = window
+    w.add_files([str(media / "tall.jpg")])
+    w.enter_properties()
+    r = _wait_rows(qtbot, w, "Note")
+    assert w.properties_panel.rows()["File"]["Name"] == "tall.jpg"
+    assert r == {"": "Some details of this file couldn't be read."}
     _settle(qtbot, w)
 
 

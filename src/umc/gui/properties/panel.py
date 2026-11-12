@@ -20,9 +20,8 @@ from PySide6.QtWidgets import (
 from umc.core.detect import DetectedFile
 from umc.gui import icons, theme
 from umc.gui.viewer.tasks import TaskRunner
-from umc.properties.info import Section
-from umc.properties.read import describe, uses_pdf_engine
-
+from umc.properties.info import Section, build
+from umc.properties.read import NOTE, describe, file_facts, uses_pdf_engine
 
 LABEL_W = 110
 
@@ -119,8 +118,13 @@ class PropertiesPanel(QWidget):
         self._show(sections)
 
     def _failed(self, message: str) -> None:
-        self.status.setText(message or "The details of this file couldn't be read.")
-        self._show([])
+        """(``describe`` itself never fails; this is for the unexpected.) Show what the file is,
+        so a later refresh doesn't read it again and again."""
+        self.status.clear()
+        self.status.setVisible(False)
+        f = self.current
+        facts = {"file": file_facts(f) if f else {}, "note": message or NOTE}
+        self._show(build(facts))
 
     # ------------------------------------------------------------------ drawing
     def _show(self, sections: list[Section]) -> None:
