@@ -116,7 +116,7 @@ jobs:
       - name: Test the installer (silent install, check Windows integration, uninstall)
         run: |
           $p = Start-Process installer\UniversalEdit-setup.exe -Wait -PassThru -ArgumentList `
-                '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/TASKS="contextmenu,openwith"', '/COMPONENTS="main,image,model"', "/LOG=$PWD\install.log"
+                '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/TASKS="contextmenu,openwith"', '/COMPONENTS="main,image,model,audio"', "/LOG=$PWD\install.log"
           if ($p.ExitCode -ne 0) { Get-Content install.log; exit 1 }
           $dir = "$env:LOCALAPPDATA\Programs\Universal Edit"
           if (-not (Test-Path "$dir\UniversalEdit.exe")) { throw "not installed in $dir" }
