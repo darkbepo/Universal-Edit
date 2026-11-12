@@ -113,6 +113,7 @@ def test_word_look_kept_through_the_editor(qtbot, page, tmp_path):
 # ----- Important 4: pasted pictures are kept ----------------------------------------------
 import base64  # noqa: E402
 import io  # noqa: E402
+import zipfile  # noqa: E402
 
 from PIL import Image  # noqa: E402
 from PySide6.QtCore import QMimeData, QUrl  # noqa: E402
@@ -610,9 +611,17 @@ def test_pasted_empty_items_leave_no_placeholder(qtbot, pasted):
 def test_copied_html_has_no_nesting_marks_or_placeholders(qtbot, tmp_path):
     v = _view_keeps(qtbot, tmp_path, "**[x](https://u)** a [](https://v)b\n")
     v.selectAll()
-    html = v.createMimeDataFromSelection().html()
-    assert "umc-wrap" not in html and "⁣" not in html
-    assert "<a href=" in html  # still a link
+    mime = v.createMimeDataFromSelection()
+    assert "<a href=" in mime.html()  # still a link
+    assert "[](https://v)" in bytes(mime.data("text/markdown")).decode("utf-8")
+    for fmt in mime.formats():  # every format: text, HTML, Markdown, ODF (a zip) ...
+        data = bytes(mime.data(fmt))
+        parts = [data]
+        if data.startswith(b"PK"):
+            with zipfile.ZipFile(io.BytesIO(data)) as z:
+                parts = [z.read(name) for name in z.namelist()]
+        for part in parts:
+            assert b"umc-wrap" not in part and "⁣".encode() not in part, fmt
 
 
 def test_empty_links_survive_copy_and_paste_in_the_editor(qtbot, tmp_path):
@@ -652,6 +661,11 @@ def test_find_matches_across_an_empty_link(qtbot):
     assert v.textCursor().selectedText().replace("⁣", "") == "a  b"
     assert bar.find("A  B") and not bar.find("A  B", case=True)
     assert bar.replace_all("now", "then") == 1
+    v = _code_view(qtbot, '<p>category <a href="u"></a>cat</p>')
+    bar = FindBar(v)
+    assert bar.find("cat", whole=True)
+    assert v.textCursor().selectionStart() == len("category ") + 1  # not in "category"
+    assert not FindBar(_code_view(qtbot, "<p>category</p>")).find("cat", whole=True)
 
 
 def test_status_counts_leave_out_empty_links(qtbot, tmp_path):

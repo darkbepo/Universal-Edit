@@ -663,9 +663,16 @@ class DocTextView(QTextEdit):
         )
 
     def createMimeDataFromSelection(self):  # noqa: N802 (Qt override)
-        """Copied text and HTML without the invisible LINK_PLACEHOLDER (an empty link stays an
-        empty <a> in the HTML, which pasting here turns back into one)."""
+        """Every copied format without the invisible LINK_PLACEHOLDER (an empty link stays an
+        empty <a> in the HTML, which pasting here turns back into one). Qt's OpenDocument copy
+        is dropped: it is a zip that would carry it too, and HTML covers rich pasting."""
         mime = super().createMimeDataFromSelection()
+        for fmt in mime.formats():
+            if fmt.startswith("application/vnd.oasis.opendocument"):
+                mime.removeFormat(fmt)
+            elif fmt == "text/markdown":
+                data = bytes(mime.data(fmt)).decode("utf-8", "replace")
+                mime.setData(fmt, data.replace(LINK_PLACEHOLDER, "").encode("utf-8"))
         if mime.hasHtml():
             html = _COPIED_EMPTY_LINK.sub(r"\1\2", mime.html())
             mime.setHtml(html.replace(LINK_PLACEHOLDER, ""))
