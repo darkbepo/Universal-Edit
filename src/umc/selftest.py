@@ -219,6 +219,29 @@ def _logo_check(d: Path) -> list[Path]:
     return [out]
 
 
+def _viewer_check(d: Path) -> list[Path]:
+    """The viewer: Qt Multimedia (PySide6-Addons) with its FFmpeg backend is bundled, the
+    single-instance socket module loads, and the folder rules work."""
+    import importlib
+
+    from PySide6.QtCore import QLibraryInfo
+
+    from umc.viewer import files as vf
+
+    for mod in ("PySide6.QtMultimedia", "PySide6.QtMultimediaWidgets", "PySide6.QtNetwork"):
+        importlib.import_module(mod)
+    importlib.import_module("umc.gui.viewer.viewer_window")
+    plugins = Path(QLibraryInfo.path(QLibraryInfo.LibraryPath.PluginsPath)) / "multimedia"
+    if not any("ffmpeg" in p.name.lower() for p in plugins.glob("*")):
+        raise RuntimeError(f"Qt's FFmpeg media plugin is missing in {plugins}")
+    d.mkdir(parents=True, exist_ok=True)
+    for name in ("b.png", "a.mp4", "c.pdf"):
+        (d / name).write_bytes(b"x")
+    if [p.name for p in vf.folder_items(d / "b.png")] != ["a.mp4", "b.png", "c.pdf"]:
+        raise RuntimeError("viewer folder list is wrong")
+    return []
+
+
 def _icon_check(d: Path) -> list[Path]:
     """Convert screen icons: Tabler SVG markup rendered by QtSvg (needs the QtSvg module)."""
     from PySide6.QtCore import QByteArray, QRectF, Qt
@@ -349,6 +372,7 @@ def run(report: Path) -> int:
             ("editor: layers -> ora -> png/jpg", lambda: _editor_check(d / "editor")),
             ("convert screen icons (QtSvg)", lambda: _icon_check(d / "icons")),
             ("app logo / window icon", lambda: _logo_check(d / "logo")),
+            ("viewer (Qt Multimedia + FFmpeg plugin)", lambda: _viewer_check(d / "viewer")),
             ("document editor", lambda: _doc_editor_check(d / "doceditor")),
             ("3D viewer (model + Qt OpenGL)", lambda: _viewer3d_check(d / "viewer3d")),
             ("mp4 -> webm", lambda: _convert([out / "img0 slideshow.mp4"], "webm", out)),

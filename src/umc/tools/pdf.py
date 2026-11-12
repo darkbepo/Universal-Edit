@@ -387,6 +387,12 @@ def page_to_svg(src: Path, index: int, text_as_paths: bool) -> str:
         return doc[index].get_svg_image(text_as_path=text_as_paths)
 
 
+def page_sizes(src: Path) -> list[tuple[float, float]]:
+    """Every page's (width, height) in points — for the viewer's page list."""
+    with open_document(src) as doc:
+        return [(page.rect.width, page.rect.height) for page in doc]
+
+
 def render_page(src: Path, index: int, width_px: int, default_dpi: int, alpha: bool):
     """Render one page to a PIL image, ``width_px`` wide (0 = at ``default_dpi``)."""
     from PIL import Image

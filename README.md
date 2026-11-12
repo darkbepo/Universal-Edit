@@ -96,6 +96,7 @@ The browser version's source is in [`web/`](web/README.md).
 | **Document editor**: Convert \| Edit for one DOCX, ODT, RTF, DOC, Markdown, TXT or HTML file · headings, fonts, colours, highlight, lists, tables, pictures, links, page breaks · find & replace · undo · save back or as PDF and every document format | ✅ | 🔜 |
 | **3D viewer**: Convert \| Edit for 3D models (STL, OBJ, 3MF, PLY, GLB, OFF, STEP, IGES) · rotate / pan / zoom, front / top / side / 3D views, shaded / edges / wireframe, print-bed grid · size in mm, triangles, parts, watertight check, volume | ✅ | ✅ (no OFF) |
 | **Start screen editor tiles**: open the image editor (with a new picture: size presets, white / transparent / black) or the 3D viewer without a file · video, audio and document editor tiles show "Coming soon" | ✅ | ✅ |
+| **Viewer** (`UniversalEdit.exe --view FILE`, for "Open with"): pictures (zoom / pan, animated GIFs), video and music with sound, PDF / EPUB / SVG pages, Word / Excel / PowerPoint / EPS / DXF as pages (converted in the background), text, 3D models · the folder's other files beside it (← / →) · **Convert** / **Edit** move the file into the converter or editor · one window: a second "Open with" reuses it | ✅ | — |
 | Files never leave your computer | ✅ | ✅ |
 | No install needed | ❌ | ✅ |
 | Save straight into a folder | ✅ | ✅ Chrome/Edge · ❌ Firefox/Safari (zip instead) |

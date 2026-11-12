@@ -188,7 +188,7 @@ See `web/README.md` for commands and deployment.
 ## Tech stack
 
 - **Language:** Python 3.11+
-- **GUI:** PySide6-Essentials (Qt 6) — Fusion style + `gui/style.qss` with `@token` colours filled from `gui/theme.py`
+- **GUI:** PySide6-Essentials (Qt 6) + PySide6-Addons (only Qt Multimedia, for the viewer) — Fusion style + `gui/style.qss` with `@token` colours filled from `gui/theme.py`
 - **Images:** Pillow (+ `pillow-heif` for HEIC; AVIF is native in Pillow ≥ 11.3)
 - **Video / GIF / slideshow / audio:** FFmpeg (bundled binary, invoked via `subprocess`; progress parsed from `-progress pipe:1`)
 - **PDF:** PyMuPDF (`pymupdf`) for PDF → images/text, page ranges, EPUB/XPS → PDF, and future splitting.
@@ -220,7 +220,10 @@ src/umc/
                          #   text_view (QTextEdit), format_bar, find_bar, formatting (merge/toggle
                          #   helpers), html_export (QTextDocument → HTML subset)
     editor3d/            # 3D viewer: ViewerPage (top bar, info panel, loads on a QThread), gl_view
+    viewer/              # "Open with" viewer: ViewerWindow, views (image/media/pages/text), tasks
+    launcher.py          # AppController: converter windows + the viewer; single_instance.py
   editor3d/              # 3D viewer model — mesh.py (load + measurements), camera.py (orbit); no Qt
+  viewer/                # viewer model — files.py (view kinds, folder list), preview.py; no Qt
   doceditor/             # document editor model — pure Python, no Qt
     types.py             # SaveContent / OpenedDocument, "parts that will be lost" warnings, limits
     html_subset.py       # the small HTML the editor shows and saves (sanitise, picture names)
@@ -750,6 +753,22 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       (`files_chosen` / `onOpen` add the models to the queue like a drop). Tiles hide once files
       are added. Later steps (owner, Nov 2026): own viewer for "Open with", Windows installer with
       optional editors + "Convert" context menu, editors as downloadable add-ons on desktop.
+   10. ✅ Viewer (desktop): `UniversalEdit --view FILE` (what "Open with" will run, step 4). Model
+      `viewer/files.py` (view kind per file: image / video / audio / pages (PyMuPDF opens it) /
+      convert (doc:pdf, vec:pdf, cad:pdf into a `umc-view-*` temp dir first) / text / model /
+      other; `folder_items` = the folder's viewable files, natural sort, hidden skipped;
+      `editor_for` follows `core/editors.py`) + `viewer/preview.py`. Window `gui/viewer/`:
+      `ViewerWindow` (stage, side list with lazy thumbnails, bottom bar Convert / Edit; ← → PgUp
+      PgDn Home End, F11, Space), `views.py` (ImageCanvas with QMovie for animations, MediaView =
+      QMediaPlayer + QVideoWidget, PagesView renders only visible pages, TextView, InfoView),
+      `tasks.py` (`TaskRunner`: own QThreadPool, a newer job in a group drops older results;
+      `shutdown()` on close). Playback = Qt Multimedia from **PySide6-Addons** (LGPL; its own
+      LGPL FFmpeg ~25 MB in the build; `--self-test` checks the plugin is bundled). `app.py` →
+      `gui/launcher.AppController` holds every window (converter windows import lazily so the
+      viewer opens fast); `gui/single_instance.py`: every GUI run listens on a local socket
+      named after the user, `--view` first hands its file to a running copy. PyMuPDF is warmed up
+      in the background (its first import takes ~1 s). Offscreen Qt has no GL / audio device:
+      the 3D view shows a message there, video is checked by counting frames on `videoSink()`.
 11. Ideas: installer for the app itself (Inno Setup), presets, batch queue.
 
 ## Handoff — read this first (for the next Claude account)
@@ -813,9 +832,9 @@ converters for saving/exporting. Suggested order (most value first), one task pe
    start, transitions, volume). Rendering = one FFmpeg `filter_complex` (trim/setpts, concat,
    overlay, xfade, amix, drawtext/ass) — reuse `converters/slideshow.py`, `video.py`,
    `subtitles.py`. Preview: thumbnails/filmstrip via FFmpeg; real playback needs
-   `PySide6.QtMultimedia`, which `packaging/umc.spec` currently **excludes** (and is not in
-   PySide6-Essentials — needs PySide6-Addons, check size/licence) — or play low-res proxy frames
-   rendered by FFmpeg. Web: Mediabunny + WebCodecs for decoding/preview/export.
+   `PySide6.QtMultimedia` — now bundled for the viewer (PySide6-Addons, LGPL, roadmap 10.10), so
+   the timeline can reuse `gui/viewer/views.MediaView` — or play low-res proxy frames rendered by
+   FFmpeg. Web: Mediabunny + WebCodecs for decoding/preview/export.
 4. **Text / document editing** (✅ desktop first version, see roadmap 10.6; the website is next): rich-text editing of DOCX/ODT/MD/TXT/HTML (`QTextEdit` reads and
    writes HTML and Markdown; round-trip DOCX through Pandoc/LibreOffice via the document route
    planner). Web: a contenteditable/ProseMirror-style editor (MIT) + pandoc-wasm for import/export.

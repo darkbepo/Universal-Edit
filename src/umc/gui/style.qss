@@ -276,6 +276,52 @@ QPushButton#Primary[danger="true"] {
     background: @danger;
 }
 
+/* ---------- viewer (gui/viewer) */
+QPushButton#Secondary {
+    background: @surface;
+    border: 1px solid @border_strong;
+    font-size: 14px;
+    font-weight: 600;
+    padding: 9px 24px;
+    border-radius: 12px;
+}
+QPushButton#Secondary:hover {
+    border-color: @accent;
+    color: @accent;
+}
+QStackedWidget#ViewerStage, QWidget#ViewerCanvas, QScrollArea#ViewerPages,
+QWidget#ViewerPagesHolder {
+    background: @bg;
+}
+QLabel#ViewerPage {
+    background: #ffffff;
+    border: 1px solid @border;
+}
+QListWidget#ViewerList {
+    background: @surface;
+    border: none;
+    border-left: 1px solid @border;
+    outline: none;
+    padding: 6px;
+}
+QListWidget#ViewerList::item {
+    border-radius: 8px;
+    padding: 2px 4px;
+}
+QListWidget#ViewerList::item:selected {
+    background: @accent_soft;
+    color: @accent;
+}
+QFrame#ViewerControls {
+    background: @surface;
+    border-top: 1px solid @border;
+}
+QPlainTextEdit#ViewerText {
+    background: @surface;
+    border: none;
+    padding: 12px;
+}
+
 QPushButton#Link, QToolButton#Link {
     background: transparent;
     border: none;

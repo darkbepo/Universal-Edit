@@ -64,9 +64,9 @@ a = Analysis(
     pathex=[str(ROOT / "src")],
     binaries=binaries,
     datas=datas,
-    hiddenimports=["pillow_heif", "rawpy", "cascadio", "py7zr", "pyzipper", "brotli", "vtracer", "pdf2docx", "docx", "ezdxf", "onnxruntime", "mammoth", "markdown", "markdown.extensions.tables", "markdown.extensions.fenced_code", "markdown.extensions.sane_lists", "markdown.extensions.toc", *collect_submodules("fontTools.ttLib.tables"), "umc.gui", "umc.converters", "PySide6.QtSvg", "PySide6.QtOpenGL", "PySide6.QtOpenGLWidgets"],
+    hiddenimports=["pillow_heif", "rawpy", "cascadio", "py7zr", "pyzipper", "brotli", "vtracer", "pdf2docx", "docx", "ezdxf", "onnxruntime", "mammoth", "markdown", "markdown.extensions.tables", "markdown.extensions.fenced_code", "markdown.extensions.sane_lists", "markdown.extensions.toc", *collect_submodules("fontTools.ttLib.tables"), "umc.gui", "umc.converters", "PySide6.QtSvg", "PySide6.QtOpenGL", "PySide6.QtOpenGLWidgets", "PySide6.QtNetwork", "PySide6.QtMultimedia", "PySide6.QtMultimediaWidgets"],
     excludes=["tkinter", "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets", "PySide6.Qt3DCore",
-              "PySide6.QtQuick", "PySide6.QtQml", "PySide6.QtMultimedia", "PySide6.QtPdf",
+              "PySide6.QtQuick", "PySide6.QtQml", "PySide6.QtPdf",
               "pymupdf4llm", "pytest"],
     noarchive=False,
 )

@@ -69,15 +69,17 @@ def main(argv: list[str] | None = None) -> int:
         setup_logging()
         return run(Path(args[1] if len(args) > 1 else "umc-selftest.txt"))
 
+    view_path = None
+    if args[:1] == ["--view"]:  # "Open with → Universal Edit" runs this
+        view_path = str(Path(args[1]).resolve()) if len(args) > 1 else None
+
     from PySide6.QtWidgets import QApplication
 
     from umc.gui import branding, theme
-    from umc.gui.main_window import MainWindow
 
     log_path = setup_logging()
     logging.getLogger(__name__).info("starting v%s, log at %s", __version__, log_path)
     _log_migration()
-    _start_cleanup()
 
     branding.set_windows_app_id()
     app = QApplication(sys.argv if argv is None else argv)
@@ -85,16 +87,26 @@ def main(argv: list[str] | None = None) -> int:
     app.setOrganizationName(branding.ORG_NAME)
     app.setApplicationVersion(__version__)
     app.setWindowIcon(branding.app_icon())
+
+    if view_path is not None:
+        from umc.gui.single_instance import send_to_running
+
+        if send_to_running({"view": view_path}):
+            return 0  # the running window shows it
+    _start_cleanup()
     branding.migrate_settings()
     app.setStyle("Fusion")
     app.setStyleSheet(theme.stylesheet())
     app.styleHints().colorSchemeChanged.connect(lambda _: app.setStyleSheet(theme.stylesheet()))
 
-    window = MainWindow()
-    files = [a for a in app.arguments()[1:] if Path(a).exists()]
-    if files:  # "Open with…" / drag onto the .exe
-        window.add_files(files)
-    window.show()
+    from umc.gui.launcher import AppController
+
+    controller = AppController()
+    if view_path is not None:
+        controller.view(view_path)
+    else:
+        files = [a for a in app.arguments()[1:] if Path(a).exists()]
+        controller.show_main(files)  # "Open with…" / drag onto the .exe
     return app.exec()
 
 

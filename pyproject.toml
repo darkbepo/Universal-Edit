@@ -12,6 +12,7 @@ license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = [
     "PySide6-Essentials>=6.6",
+    "PySide6-Addons>=6.6",  # Qt Multimedia (LGPL): video / music playback in the viewer
     "Pillow>=11.3",
     "numpy>=1.26",
     "pillow-heif>=0.18",
