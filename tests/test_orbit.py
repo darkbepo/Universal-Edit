@@ -105,3 +105,40 @@ def test_reduced_motion_keeps_them_still_and_drops_at_once(qtbot, monkeypatch, m
     w.drop.drop_with_burst(lambda: w.handle_drop([str(media / "tall.jpg")]))
     assert w.files  # no waiting
     qtbot.waitUntil(lambda: not w.file_list.thumbnails_pending(), timeout=10000)
+
+
+def test_a_drop_that_adds_nothing_brings_the_badges_back(qtbot, window, tmp_path):
+    junk = tmp_path / "notes.xyz"
+    junk.write_text("?", encoding="utf-8")
+    o = window.drop.orbit
+    window.drop.drop_with_burst(lambda: window.handle_drop([str(junk)]))
+    assert o.burst_start is not None
+    qtbot.waitUntil(lambda: o.burst_start is None, timeout=3000)
+    assert not window.files and o.active and o.timer.isActive()
+    assert any(s.alpha > 0 for s in o.spots())
+
+
+def test_a_drop_of_links_only_lets_go_of_the_pull(window):
+    from PySide6.QtCore import QMimeData, QUrl
+
+    class FakeDrop:
+        def __init__(self) -> None:
+            self._m = QMimeData()
+            self._m.setUrls([QUrl("https://example.com/a.png")])
+
+        def mimeData(self):  # noqa: N802
+            return self._m
+
+    window.drop.orbit.set_pull(True)
+    window.dropEvent(FakeDrop())
+    assert window.drop.orbit.pull_target == 0
+    assert not window.files
+
+
+def test_no_animation_while_minimised(qtbot, window):
+    o = window.drop.orbit
+    assert o.timer.isActive()
+    window.showMinimized()
+    qtbot.waitUntil(lambda: not o.timer.isActive(), timeout=3000)
+    window.showNormal()
+    qtbot.waitUntil(lambda: o.timer.isActive(), timeout=3000)

@@ -90,7 +90,8 @@ class Orbit(QObject):
     # ------------------------------------------------------------------ state
     @property
     def moving(self) -> bool:
-        return self.active and not self.still and self.widget.isVisible()
+        w = self.widget
+        return self.active and not self.still and w.isVisible() and not w.window().isMinimized()
 
     def set_active(self, on: bool) -> None:
         self.active = on
@@ -108,10 +109,15 @@ class Orbit(QObject):
             done()
             return
         self.burst_start = self._now()
-        QTimer.singleShot(model.BURST_MS, self.widget, done)
+
+        def finished() -> None:
+            self.burst_start = None  # back in orbit if the drop added nothing
+            done()
+
+        QTimer.singleShot(model.BURST_MS, self.widget, finished)
 
     def update_timer(self) -> None:
-        """Call from the widget's show / hide events too."""
+        """Call from the widget's show / hide events and the window's state changes too."""
         if self.moving and not self.timer.isActive():
             self._last = self._now()
             self.timer.start()

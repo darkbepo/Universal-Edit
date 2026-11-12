@@ -111,7 +111,6 @@ export class Orbit {
   setActive(on: boolean): void {
     this.active = on;
     this.canvas.hidden = !on;
-    if (!on) this.burstStart = null;
     this.kick();
   }
 
@@ -121,16 +120,22 @@ export class Orbit {
     this.kick();
   }
 
+  /** Animating: active, on screen (not behind an editor page), tab visible, motion allowed. */
   get moving(): boolean {
-    return this.active && !this.still.matches && document.visibilityState === "visible";
+    return this.active && !this.still.matches && document.visibilityState === "visible" && this.host.clientWidth > 0;
   }
 
   /** The drop burst; resolves when it's over (at once when nothing moves). */
   burst(): Promise<void> {
-    if (!this.moving || !this.badges.length) return Promise.resolve();
+    if (!this.moving) return Promise.resolve();
     this.burstStart = performance.now();
+    this.canvas.dataset.burst = "true";
     this.kick();
-    return new Promise((done) => setTimeout(done, data.burstMs));
+    return new Promise((done) => setTimeout(() => {
+      this.burstStart = null; // back in orbit if the drop added nothing
+      delete this.canvas.dataset.burst;
+      done();
+    }, data.burstMs));
   }
 
   private kick(): void {
@@ -142,8 +147,13 @@ export class Orbit {
 
   private step(now: number): void {
     this.frame = 0;
-    if (!this.active || !this.badges.length) return;
     const moving = this.moving;
+    this.canvas.dataset.moving = String(moving);
+    if (!this.active) return;
+    if (!this.badges.length) {
+      if (moving) this.frame = requestAnimationFrame((t) => this.step(t)); // still drawing them
+      return;
+    }
     const dt = Math.min((now - this.last) / 1000, 0.05);
     this.last = now;
     if (moving) {

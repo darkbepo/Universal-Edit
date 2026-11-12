@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QSettings, QSize, Qt, QUrl
+from PySide6.QtCore import QEvent, QSettings, QSize, Qt, QUrl
 from PySide6.QtGui import QAction, QDesktopServices, QGuiApplication, QKeySequence
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -165,7 +165,8 @@ class MainWindow(QMainWindow):
         left.setContentsMargins(0, 0, 0, 0)
         left.setSpacing(12)
         self.drop = DropZone()
-        self.drop.files_dropped.connect(self.add_files)
+        # through handle_drop: a burst's delayed drop may arrive after an editor opened
+        self.drop.files_dropped.connect(self.handle_drop)
         left.addWidget(self.drop)
         self.hub = EditorHub()  # editor tiles, only while no files are added
         self.hub.editor_chosen.connect(self.open_editor)
@@ -864,7 +865,13 @@ class MainWindow(QMainWindow):
         self.drop.orbit.set_pull(False)
         super().dragLeaveEvent(event)
 
+    def changeEvent(self, event) -> None:  # noqa: N802
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.WindowStateChange:
+            self.drop.orbit.update_timer()  # no animation while minimised
+
     def dropEvent(self, event) -> None:  # noqa: N802
+        self.drop.orbit.set_pull(False)  # Qt sends no drag-leave after a drop
         paths = [u.toLocalFile() for u in event.mimeData().urls() if u.isLocalFile()]
         if not paths:
             return

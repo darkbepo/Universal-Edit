@@ -218,6 +218,7 @@ export function mountApp(root: HTMLElement): void {
     viewer?.hide();
     appMain.hidden = false;
     bar.hidden = false;
+    orbit.setActive(!files.length); // back on screen: the badges move again
     setMode("convert");
   }
   /** Convert or Properties, on the converter page. */
@@ -265,6 +266,7 @@ export function mountApp(root: HTMLElement): void {
     editing = true;
     appMain.hidden = true;
     bar.hidden = true;
+    orbit.setActive(false); // no animation behind an editor
     convertMode.setAttribute("aria-pressed", "false");
     editMode.setAttribute("aria-pressed", "true");
     propertiesMode.setAttribute("aria-pressed", "false");
@@ -333,7 +335,7 @@ export function mountApp(root: HTMLElement): void {
     workspace.classList.toggle("empty", !has);
     drop.classList.toggle("compact", has);
     hub.hidden = has;
-    orbit.setActive(!has);
+    orbit.setActive(!has && !editing);
     dropTitle.textContent = has ? "Add more files" : "Drop files here or click to browse";
     drop.querySelector(".icon")!.replaceChildren(icon(has ? "plus" : "upload", has ? 18 : 34));
     filesCard.hidden = !has;

@@ -110,6 +110,7 @@ class DropZone(QFrame):
 
     def dragLeaveEvent(self, event) -> None:  # noqa: N802
         self._set_hover(False)
+        super().dragLeaveEvent(event)
 
     def dropEvent(self, event: QDropEvent) -> None:  # noqa: N802
         self._set_hover(False)
