@@ -48,6 +48,9 @@ _KEPT_TAGS = frozenset(
         "h1",
         "h2",
         "h3",
+        "blockquote",
+        "div",
+        "hr",
         "ul",
         "ol",
         "li",
@@ -65,7 +68,9 @@ _KEPT_TAGS = frozenset(
         "strong",
         "i",
         "em",
+        "cite",
         "u",
+        "ins",
         "s",
         "del",
         "strike",
@@ -75,6 +80,17 @@ _KEPT_TAGS = frozenset(
     ]
 )
 _ANY_TAG = re.compile(r"</?([A-Za-z][A-Za-z0-9-]*)")
+# A div with alignment or an indent keeps it only for its own text (it becomes a paragraph):
+# blocks inside it, or Markdown after it when it doesn't close in the same piece of HTML, lose
+# it. markdown.ts has the same patterns.
+_STYLED_DIV = re.compile(
+    r"<div\b[^>]*?(?:\balign\s*=|\bstyle\s*=\s*[\"'][^\"']*(?:text-align|margin-left))", re.I
+)
+_BLOCK_TAG = re.compile(
+    r"<(?:p|h[1-6]|ul|ol|li|dl|table|pre|blockquote|div|hr|center|section|article|header"
+    r"|footer|nav|aside|main|figure|address)\b",
+    re.I,
+)
 
 
 def md_to_html(text: str) -> str:
@@ -102,15 +118,27 @@ def split_front_matter(text: str) -> tuple[str, str]:
     return "", text
 
 
+def _div_loses_style(html: str) -> bool:
+    """A styled div (see _STYLED_DIV) whose alignment or indent would be lost."""
+    for m in _STYLED_DIV.finditer(html):
+        rest = html[m.end() :]
+        end = rest.lower().find("</div")
+        if end < 0 or _BLOCK_TAG.search(rest, 0, end):
+            return True
+    return False
+
+
 def _drops_raw_html(text: str) -> bool:
     """Raw HTML anywhere (blocks and inline, also in quotes and lists: markdown-it's
-    html_block / html_inline tokens) with a tag the editor doesn't keep; the writer's own
-    forms (alignment, indent, tables) use only kept tags."""
+    html_block / html_inline tokens) with a tag the editor doesn't keep, or a div whose
+    alignment it loses; the writer's own forms (alignment, indent, tables) use only kept
+    tags."""
     stack = list(_MD.parse(text))
     while stack:
         token = stack.pop()
-        if token.type in ("html_block", "html_inline") and any(
-            name.lower() not in _KEPT_TAGS for name in _ANY_TAG.findall(token.content)
+        if token.type in ("html_block", "html_inline") and (
+            any(name.lower() not in _KEPT_TAGS for name in _ANY_TAG.findall(token.content))
+            or _div_loses_style(token.content)
         ):
             return True
         stack.extend(token.children or ())

@@ -386,19 +386,39 @@ function hasAlignRow(text: string): boolean {
 
 // Tags raw HTML may use without losing anything (what md-writer writes, and synonyms).
 const KEPT_TAGS = new Set(
-  "p h1 h2 h3 ul ol li table thead tbody tfoot tr td th pre code br b strong i em u s del strike a img span".split(" "),
+  (
+    "p h1 h2 h3 blockquote div hr ul ol li table thead tbody tfoot tr td th pre code br " +
+    "b strong i em cite u ins s del strike a img span"
+  ).split(" "),
 );
 const ANY_TAG = /<\/?([A-Za-z][A-Za-z0-9-]*)/g;
+// A div with alignment or an indent keeps it only for its own text (it becomes a paragraph):
+// blocks inside it, or Markdown after it when it doesn't close in the same piece of HTML, lose
+// it. io.py has the same patterns.
+const STYLED_DIV = /<div\b[^>]*?(?:\balign\s*=|\bstyle\s*=\s*["'][^"']*(?:text-align|margin-left))/gi;
+const BLOCK_TAG =
+  /<(?:p|h[1-6]|ul|ol|li|dl|table|pre|blockquote|div|hr|center|section|article|header|footer|nav|aside|main|figure|address)\b/i;
+
+/** A styled div (see STYLED_DIV) whose alignment or indent would be lost. */
+function divLosesStyle(html: string): boolean {
+  for (const m of html.matchAll(STYLED_DIV)) {
+    const rest = html.slice(m.index! + m[0].length);
+    const end = rest.toLowerCase().indexOf("</div");
+    if (end < 0 || BLOCK_TAG.test(rest.slice(0, end))) return true;
+  }
+  return false;
+}
 
 /** Raw HTML anywhere (blocks and inline, also in quotes and lists: markdown-it's html_block /
- * html_inline tokens) with a tag the editor doesn't keep; the writer's own forms (alignment,
- * indent, tables) use only kept tags. */
+ * html_inline tokens) with a tag the editor doesn't keep, or a div whose alignment it loses;
+ * the writer's own forms (alignment, indent, tables) use only kept tags. */
 function dropsRawHtml(text: string): boolean {
   const stack = MD.parse(text, {});
   while (stack.length) {
     const token = stack.pop()!;
     if (token.type === "html_block" || token.type === "html_inline") {
       for (const t of token.content.matchAll(ANY_TAG)) if (!KEPT_TAGS.has(t[1].toLowerCase())) return true;
+      if (divLosesStyle(token.content)) return true;
     }
     if (token.children) stack.push(...token.children);
   }

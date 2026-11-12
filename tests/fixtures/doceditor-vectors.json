@@ -558,6 +558,40 @@
    "md_out": "> <p align=\"center\">c</p>\n\n- <span style=\"color:#ff0000\">r</span> **b**\n"
   },
   {
+   "md": "a\n\n<hr>\n\n<blockquote>q</blockquote>\n\n<div align=\"center\">x <b>y</b></div>\n\n<div>d</div>\n\n<p><ins>i</ins> <cite>c</cite></p>\n",
+   "html": "<p>a</p><hr><blockquote><p>q</p></blockquote><p style=\"text-align:center\">x <b>y</b></p><p>d</p><p><u>i</u> <i>c</i></p>",
+   "front_matter": "",
+   "warnings": [],
+   "md_out": "a\n\n---\n\n> q\n\n<p align=\"center\">x <b>y</b></p>\n\nd\n\n<u>i</u> *c*\n"
+  },
+  {
+   "md": "<div align=\"center\">\n<h1>T</h1>\n</div>\n",
+   "html": "<h1>T</h1>",
+   "front_matter": "",
+   "warnings": [
+    "footnotes and other Markdown extras"
+   ],
+   "md_out": "# T\n"
+  },
+  {
+   "md": "<div align=\"center\">\n\n# T\n\n</div>\n",
+   "html": "<h1>T</h1>",
+   "front_matter": "",
+   "warnings": [
+    "footnotes and other Markdown extras"
+   ],
+   "md_out": "# T\n"
+  },
+  {
+   "md": "<div style=\"text-align:right\">\n\nx\n\n</div>\n",
+   "html": "<p>x</p>",
+   "front_matter": "",
+   "warnings": [
+    "footnotes and other Markdown extras"
+   ],
+   "md_out": "x\n"
+  },
+  {
    "md": "- a\n    - b\n    * e\n\n1. x\n    1. y\n    1) z\n    1. w\n",
    "html": "<ul><li>a<ul><li>b</li></ul><ul><li>e</li></ul></li></ul><ol><li>x<ol><li>y</li></ol><ol><li>z</li></ol><ol><li>w</li></ol></li></ol>",
    "front_matter": "",

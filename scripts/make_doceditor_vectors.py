@@ -184,6 +184,15 @@ MARKDOWN = [
     {"md": "- <video src=x>\n"},
     {"md": "Press <kbd>Ctrl</kbd> now\n"},
     {"md": '> <p align="center">c</p>\n\n- <span style="color:red">r</span> <b>b</b>\n'},
+    # tags the editor keeps or maps without loss don't warn ...
+    {
+        "md": 'a\n\n<hr>\n\n<blockquote>q</blockquote>\n\n<div align="center">x <b>y</b></div>\n\n'
+        "<div>d</div>\n\n<p><ins>i</ins> <cite>c</cite></p>\n"
+    },
+    # ... a centred div around blocks or Markdown loses its alignment and does
+    {"md": '<div align="center">\n<h1>T</h1>\n</div>\n'},
+    {"md": '<div align="center">\n\n# T\n\n</div>\n'},
+    {"md": '<div style="text-align:right">\n\nx\n\n</div>\n'},
     # a new marker starts a new nested list: two in a row stay two
     {"md": "- a\n    - b\n    * e\n\n1. x\n    1. y\n    1) z\n    1. w\n"},
     # links markdown-it would rewrite (spaces, non-ASCII, entities) keep their exact address

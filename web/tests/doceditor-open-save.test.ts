@@ -167,7 +167,9 @@ describe("markdown warnings", () => {
     expect(hasDroppedFormats("text `x`\n")).toBe(true);
     expect(hasMarkdownExtras("```\n<div>\n[^1]\n```\n")).toBe(false);
     expect(hasMarkdownExtras("`[^1]` and \\[^2]\n")).toBe(false);
-    expect(hasMarkdownExtras("<div>x</div>\n")).toBe(true);
+    expect(hasMarkdownExtras("<center>x</center>\n")).toBe(true);
+    expect(hasMarkdownExtras("<div>x</div>\n")).toBe(false); // a div becomes a paragraph
+    expect(hasMarkdownExtras('<div align="center">\n\n# T\n\n</div>\n')).toBe(true); // loses it
     // any raw tag the editor doesn't keep counts, wherever it is; its own forms don't
     expect(hasMarkdownExtras("<divx>\n")).toBe(true);
     expect(hasMarkdownExtras("> <details>x</details>\n")).toBe(true);
@@ -419,7 +421,7 @@ describe("Markdown ZIP saved by the website", () => {
       expect(doc.html).toBe(html);
       expect(doc.warnings).toEqual([]);
     }
-    for (const md of ["<details><summary>s</summary>\nx\n</details>\n\n<p>ok</p>\n", '<p align="center">ok</p>\n\n<div>d</div>\n']) {
+    for (const md of ["<details><summary>s</summary>\nx\n</details>\n\n<p>ok</p>\n", '<p align="center">ok</p>\n\n<center>d</center>\n']) {
       expect((await openDocument(fileOf(md, "a.md"), noConvert)).warnings).toContain(W_MDEXTRA);
     }
   });

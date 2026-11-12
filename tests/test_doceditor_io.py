@@ -313,6 +313,18 @@ def test_our_own_raw_html_gives_no_extras_warning(tmp_path, html):
         ("Press <kbd>Ctrl</kbd> now\n", True),
         ('> <p align="center">c</p>\n', False),
         ('- <span style="color:red">r</span> <b>b</b>\n', False),
+        # tags the editor keeps or maps without loss
+        ("a\n\n<hr>\n\nb\n", False),
+        ("<blockquote>q</blockquote>\n", False),
+        ('<div align="center">x <b>y</b> <img src="a.png"></div>\n', False),
+        ("<div>d</div>\n", False),
+        ("<p><ins>a</ins> <cite>c</cite></p>\n", False),
+        # ... but a centred div around blocks, or around Markdown, loses its alignment
+        ('<div align="center">\n<h1>T</h1>\n</div>\n', True),
+        ('<div align="center">\n\n# T\n\n</div>\n', True),
+        ('<div style="text-align:right">\n\nx\n\n</div>\n', True),
+        ("<center>c</center>\n", True),
+        ("#### small\n", False),  # W_MDFORMAT ("small headings") instead
     ],
 )
 def test_raw_html_anywhere_warns_only_when_dropped(tmp_path, md, warns):
@@ -325,7 +337,7 @@ def test_raw_html_the_editor_drops_still_warns(tmp_path):
     p = tmp_path / "a.md"
     p.write_text("<details><summary>s</summary>\nx\n</details>\n\n<p>ok</p>\n", encoding="utf-8")
     assert W_MDEXTRA in open_document(p).warnings
-    p.write_text('<p align="center">ok</p>\n\n<div>d</div>\n', encoding="utf-8")
+    p.write_text('<p align="center">ok</p>\n\n<center>d</center>\n', encoding="utf-8")
     assert W_MDEXTRA in open_document(p).warnings
 
 
