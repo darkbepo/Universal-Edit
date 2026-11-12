@@ -681,6 +681,12 @@ Everything found while reviewing Task 7, in one round (owner rule).
     - Built on `prosemirror-search` (`SearchQuery`, `findNext`, `replaceNext`, `replaceAll`).
     - Statuses are "No matches." and "Replaced N.".
     - Esc closes, Enter = next, Shift+Enter = previous.
+**Found in Task 7a re-review (do here first, each with a failing test):**
+- Plain text pasted inside formatted text loses the formatting (regression from 7a): build the pasted text with the marks at the cursor (`$from.marks()`) in `textSlice` / `clipboardTextParser`, like the desktop's `insertText`.
+- Stale `pasteFailed` flag: a failed drop goes through `transformPasted` without `handlePaste`, so the next normal paste goes in as plain text — reset the flag at the start of `transformPasted`.
+- `ensureLine` after deleting a selection leaves an empty `<ol></ol>` and puts the line after the next block: when the deletion leaves an empty list/container there, create the line in it before falling back to `Selection.findFrom`.
+- Tab with a cell selection returns false and the browser moves focus out: return true (or put the tab in the first cell).
+
 - [ ] **Step 1: Tests.**
   - The bar's bold button reflects the cursor.
   - The size select applies once.
