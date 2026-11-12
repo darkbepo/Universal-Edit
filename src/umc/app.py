@@ -98,6 +98,9 @@ def main(argv: list[str] | None = None) -> int:
     app.setOrganizationName(branding.ORG_NAME)
     app.setApplicationVersion(__version__)
     app.setWindowIcon(branding.app_icon())
+    from umc.gui.clipboard_owner import release_clipboard
+
+    app.aboutToQuit.connect(release_clipboard)  # else a copied picture crashes the exit
 
     lock = None
     if view_path is not None or convert_paths:

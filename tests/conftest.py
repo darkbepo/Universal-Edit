@@ -116,3 +116,15 @@ def convert(paths, target_id: str, out_dir: Path, **option_values):
         output_dir=out_dir,
     )
     return target.converter.run(job)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _release_clipboard_at_the_end():
+    """The app does this on quit: without it, a picture the image editor tests copied crashes
+    the test run's exit (Python-made clipboard data handed over after Python shut down)."""
+    yield
+    try:
+        from umc.gui.clipboard_owner import release_clipboard
+    except ImportError:  # no Qt
+        return
+    release_clipboard()

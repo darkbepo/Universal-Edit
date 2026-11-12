@@ -58,6 +58,7 @@ from umc.editor.tools.text import (
     text_layer_at,
 )
 from umc.gui import icons, theme
+from umc.gui.clipboard_owner import CLIP_MIME  # ours: the picture + where it came from
 from umc.gui.editor.canvas import EditorCanvas, pil_to_qimage, qimage_to_pil
 from umc.gui.editor.crop_bar import CropBar
 from umc.gui.editor.dialogs import (
@@ -97,8 +98,7 @@ ADJUST_DIALOGS = {
     "looks": (LooksDialog, "Look"),
     "background_blur": (BackgroundBlurDialog, "Background blur"),
 }
-# Marks a clipboard image as ours and remembers where on the canvas it was copied from.
-CLIP_MIME = "application/x-umc-editor-clip"
+
 EXT_ALIASES = {"jpeg": "jpg", "tif": "tiff", "heif": "heic"}
 
 

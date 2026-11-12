@@ -89,6 +89,12 @@ def send_to_running(message: dict, name: str | None = None, timeout_ms: int = 30
     return reply.startswith(ACK)
 
 
+def default_lock_path(name: str) -> str:
+    from umc.core.paths import app_data_dir
+
+    return str(app_data_dir() / f"{name}.lock")
+
+
 def claim(
     message: dict, name: str | None = None, lock_path: str | None = None, wait_s: float = 8.0
 ) -> tuple[bool, QLockFile | None]:
@@ -101,8 +107,7 @@ def claim(
 
     if send_to_running(message, name):
         return True, None
-    server = InstanceServer(name=name, lock_path=lock_path)
-    lock = QLockFile(server.lock_file())
+    lock = QLockFile(lock_path or default_lock_path(name or server_name()))
     if lock.tryLock(0):
         return False, lock
     deadline = time.monotonic() + wait_s
@@ -134,11 +139,7 @@ class InstanceServer(QObject):
         self.server.newConnection.connect(self._on_connection)
 
     def lock_file(self) -> str:
-        if self.lock_path is not None:
-            return self.lock_path
-        from umc.core.paths import app_data_dir
-
-        return str(app_data_dir() / f"{self.name}.lock")
+        return self.lock_path or default_lock_path(self.name)
 
     def start(self, lock: QLockFile | None = None) -> bool:
         """True if this copy now answers later starts (``lock``: already taken by ``claim``)."""
