@@ -82,6 +82,27 @@ def test_unsafe_names_are_refused(addon_env, monkeypatch):
     assert not (addon_env / "evil.py").exists()
 
 
+def test_links_inside_are_refused(addon_env, monkeypatch):
+    zip_path, _ = _fake_addon(monkeypatch, addon_env)
+    with zipfile.ZipFile(zip_path, "a") as zf:
+        link = zipfile.ZipInfo("umc/gui/fakeaddon/link")
+        link.external_attr = 0o120777 << 16  # a symbolic link
+        zf.writestr(link, "/etc/passwd")
+    digest = hashlib.sha256(zip_path.read_bytes()).hexdigest()
+    with pytest.raises(ConversionError, match="links"):
+        addons.install_from_zip("fake", zip_path, digest)
+
+
+def test_a_zip_without_description_is_refused(addon_env, monkeypatch):
+    _fake_addon(monkeypatch, addon_env)
+    bad = addon_env / "bad.zip"
+    with zipfile.ZipFile(bad, "w") as zf:
+        zf.writestr("umc/gui/fakeaddon/__init__.py", "")
+    digest = hashlib.sha256(bad.read_bytes()).hexdigest()
+    with pytest.raises(ConversionError, match="damaged"):
+        addons.install_from_zip("fake", bad, digest)
+
+
 def test_an_add_on_for_another_version_is_refused(addon_env, monkeypatch):
     zip_path, digest = _fake_addon(monkeypatch, addon_env, version="0.0.1")
     with pytest.raises(ConversionError, match="version"):
@@ -110,6 +131,31 @@ def test_download_from_the_release(addon_env, monkeypatch):
         assert addons.installed("fake") and seen and seen[-1] == 1.0
     finally:
         server.shutdown()
+
+
+def test_cancelling_a_download_installs_nothing(addon_env, monkeypatch):
+    zip_path, digest = _fake_addon(monkeypatch, addon_env)
+    info = {"fake": {"file": zip_path.name, "sha256": digest, "size": zip_path.stat().st_size}}
+    monkeypatch.setattr(addons, "known_downloads", lambda: info)
+    handler = partial(SimpleHTTPRequestHandler, directory=str(addon_env))
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        monkeypatch.setenv("UMC_ADDONS_URL", f"http://127.0.0.1:{server.server_port}")
+        cancel = threading.Event()
+        cancel.set()
+        from umc.core.errors import ConversionCancelled
+
+        with pytest.raises(ConversionCancelled):
+            addons.download("fake", cancel=cancel)
+        assert not addons.installed("fake")
+    finally:
+        server.shutdown()
+
+
+def test_installer_command_usage(addon_env):
+    assert addons.run_cli(["--install-addon"]) == 2
+    assert addons.run_cli(["--install-addon", "nope", str(addon_env / "x.zip")]) == 1
 
 
 def test_a_build_without_downloads_says_so(addon_env, monkeypatch):
@@ -148,6 +194,9 @@ def test_build_script_makes_a_checked_zip(tmp_path):
         assert json.loads(zf.read("addon.json"))["version"] == __version__
     assert "umc/gui/editor3d/viewer_page.py" in names
     assert not any("__pycache__" in n for n in names)
+    # the same sources give the same zip: a later build can use an earlier release's add-on
+    again = build_addons.build(tmp_path / "again", only=["model"], hashes_file=tmp_path / "h2.json")
+    assert again["model"]["sha256"] == info["sha256"]
 
 
 # --------------------------------------------------------------------------- screens

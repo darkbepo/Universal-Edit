@@ -72,7 +72,8 @@ class EditorTile(QPushButton):
 
     @property
     def needs_install(self) -> bool:
-        return self.info.available and not addons.installed(self.info.id)
+        info = self.info
+        return info.available and addons.is_addon(info.id) and not addons.installed(info.id)
 
     def refresh_install_state(self) -> None:
         if not self.info.available:

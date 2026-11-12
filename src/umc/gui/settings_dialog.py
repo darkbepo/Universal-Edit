@@ -122,9 +122,9 @@ class SettingsDialog(QDialog):
             error = install_with_progress(self, addon_id)
             self.message.setText("" if not error or error == "cancelled" else error)
         self._refresh_addons()
-        parent = self.parent()
-        if parent is not None and hasattr(parent, "hub"):
-            parent.hub.refresh_install_state()
+        from umc.gui.addon_install import refresh_all_windows
+
+        refresh_all_windows()
 
     def _toggle(self, key: str, on: bool) -> None:
         try:

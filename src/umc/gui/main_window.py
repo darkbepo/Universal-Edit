@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from umc.core import addons
 from umc.core import options as opts
 from umc.core.detect import DetectedFile, MediaFamily, detect
 from umc.core.job import ConversionJob, file_fractions
@@ -537,10 +538,10 @@ class MainWindow(QMainWindow):
 
     def _editor_ready(self, kind: str) -> bool:
         """An editor that's an add-on (desktop build) is offered for download first."""
-        from umc.gui.addon_install import ensure_installed
+        from umc.gui.addon_install import ensure_installed, refresh_all_windows
 
         ok = ensure_installed(self, kind)
-        self.hub.refresh_install_state()
+        refresh_all_windows()
         return ok
 
     def open_editor(self, kind: str) -> bool:
@@ -548,7 +549,7 @@ class MainWindow(QMainWindow):
         of a new picture first). False if nothing was opened."""
         if self._current_editor() is not None or self.busy:
             return False
-        if kind in ("image", "model") and not self._editor_ready(kind):
+        if addons.is_addon(kind) and not self._editor_ready(kind):
             return False
         if kind == "image":
             dialog = NewPictureDialog(self)

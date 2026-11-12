@@ -54,6 +54,13 @@ def _files_of_package(name: str) -> list[tuple[Path, str]]:
     ]
 
 
+def _put(zf: zipfile.ZipFile, name: str, data: bytes) -> None:
+    info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+    info.compress_type = zipfile.ZIP_DEFLATED
+    info.external_attr = 0o644 << 16
+    zf.writestr(info, data, compresslevel=9)
+
+
 def build(out: Path, only: list[str] | None = None, hashes_file: Path | None = None) -> dict:
     out.mkdir(parents=True, exist_ok=True)
     hashes = {}
@@ -65,10 +72,12 @@ def build(out: Path, only: list[str] | None = None, hashes_file: Path | None = N
         files = [f for m in addon.modules for f in _files_of_module(m)]
         files += [f for pkg in addon.packages for f in _files_of_package(pkg)]
         manifest = {"id": addon.id, "version": __version__, "title": addon.title}
-        with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
-            zf.writestr(MANIFEST, json.dumps(manifest, indent=2))
+        # deterministic: fixed dates and modes, so the same sources always give the same zip (and
+        # SHA-256) — a later build can install an earlier release's add-on of its version
+        with zipfile.ZipFile(dest, "w") as zf:
+            _put(zf, MANIFEST, json.dumps(manifest, indent=2, sort_keys=True).encode())
             for src, arc in files:
-                zf.write(src, arc)
+                _put(zf, arc, src.read_bytes())
         hashes[addon.id] = {"file": name, "sha256": sha256_of(dest), "size": dest.stat().st_size}
         print(f"{name}: {dest.stat().st_size / 1e6:.1f} MB, {len(files)} files")
     target = hashes_file or SRC / "umc" / "addon_hashes.json"

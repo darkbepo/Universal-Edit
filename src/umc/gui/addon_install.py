@@ -65,6 +65,16 @@ def install_with_progress(parent: QWidget | None, addon_id: str) -> str:
     return state["error"] or ""
 
 
+def refresh_all_windows() -> None:
+    """Every open converter window's editor tiles (another window may have installed one)."""
+    from PySide6.QtWidgets import QApplication
+
+    for w in QApplication.topLevelWidgets():
+        hub = getattr(w, "hub", None)
+        if hub is not None and hasattr(hub, "refresh_install_state"):
+            hub.refresh_install_state()
+
+
 def ensure_installed(parent: QWidget | None, editor_id: str) -> bool:
     """True if the editor can open now — asking to install it first when it's an add-on that
     isn't installed yet."""

@@ -130,9 +130,7 @@ def activate(addon_id: str) -> None:
         root = addon_dir(addon_id)
         site = root / "site"
         if site.is_dir() and str(site) not in sys.path:
-            sys.path.insert(0, str(site))
-            if sys.platform == "win32":  # native libraries next to their packages
-                os.add_dll_directory(str(site))
+            sys.path.insert(0, str(site))  # (native libraries load from beside their .pyd)
         for module in ADDONS[addon_id].modules:
             parent_name, _, _ = module.rpartition(".")
             parent = importlib.import_module(parent_name)
@@ -188,8 +186,21 @@ def _safe_members(zf: zipfile.ZipFile) -> list[zipfile.ZipInfo]:
     return members
 
 
+_install_locks: dict[str, threading.Lock] = {}
+
+
 def install_from_zip(addon_id: str, zip_path: Path, expected_sha256: str | None = None) -> None:
-    """Check, unpack into the add-ons folder (replacing an older copy), switch on."""
+    """Check, unpack into the add-ons folder (replacing an older copy), switch on. One install
+    of an add-on at a time (two windows may ask together); a finished one wins."""
+    with _lock:
+        lock = _install_locks.setdefault(addon_id, threading.Lock())
+    with lock:
+        if installed(addon_id) and addon_dir(addon_id).exists() and addon_id in _activated:
+            return  # another window just installed it
+        _install(addon_id, zip_path, expected_sha256)
+
+
+def _install(addon_id: str, zip_path: Path, expected_sha256: str | None) -> None:
     if addon_id not in ADDONS:
         raise ConversionError(f"There's no add-on called {addon_id!r}.")
     expected = expected_sha256 or known_downloads().get(addon_id, {}).get("sha256")
@@ -206,7 +217,14 @@ def install_from_zip(addon_id: str, zip_path: Path, expected_sha256: str | None 
         with zipfile.ZipFile(zip_path) as zf:
             members = _safe_members(zf)
             zf.extractall(staging, members)
-        data = json.loads((staging / MANIFEST).read_text(encoding="utf-8"))
+        try:
+            data = json.loads((staging / MANIFEST).read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise ConversionError(
+                "The add-on download is damaged (no add-on description)."
+            ) from exc
+        if not isinstance(data, dict):
+            raise ConversionError("The add-on download is damaged (no add-on description).")
         if data.get("id") != addon_id or data.get("version") != __version__:
             raise ConversionError(
                 f"That add-on is for version {data.get('version')}, not {__version__}."
