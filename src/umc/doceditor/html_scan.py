@@ -74,6 +74,9 @@ _TAG_START = re.compile(r"<(?:(!--)|(/?)([A-Za-z][^\t\n\f\r />]*))")
 _HTML_SPACE = "\t\n\f\r "
 # An end tag "</br>" (any case, attributes allowed): HTML5 reads it as <br>, libxml2 drops it.
 _BR_END = re.compile(r"</br(?=[\t\n\f\r />])", re.I)
+# Headings: a <p> inside one is part of it in HTML5 (written <div>, which libxml2 keeps there).
+_HEADING_TAGS = frozenset({"h1", "h2", "h3", "h4", "h5", "h6"})
+_HEADING_START = re.compile(r"<h[1-6](?=[\t\n\f\r />])", re.I)
 
 
 def _tag_end(html: str, i: int) -> tuple[int, bool]:
@@ -122,10 +125,12 @@ def html5_text(html: str) -> str:
         and "/>" not in html
         and not _SPECIAL_START.search(html)
         and not _BR_END.search(html)
+        and not _HEADING_START.search(html)
     ):
         return html
     out: list[str] = []
     pos = i = 0
+    heading = False  # inside a heading, where HTML5 keeps a <p> as part of it
     while (m := _TAG_START.search(html, i)) is not None:
         if m.group(1):  # a comment, up to "-->" (an unclosed one runs to the end)
             end = html.find("-->", m.end())
@@ -136,6 +141,12 @@ def html5_text(html: str) -> str:
             break
         i = gt + 1
         name = m.group(3).lower()
+        if name in _HEADING_TAGS:
+            heading = not m.group(2)
+        elif name == "p" and heading:  # HTML5 keeps it inside; libxml2 would end the heading
+            out.append(_num_refs(html[pos : m.start()]))
+            out.append(f"<{m.group(2)}div")
+            pos = m.end()
         if m.group(2) and name == "br":
             out.append(_num_refs(html[pos : m.start()]))
             out.append("<br>")

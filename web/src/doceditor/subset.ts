@@ -363,7 +363,8 @@ class Normaliser {
   private leaf(tag: string, node: Element): string {
     const toks: Token[] = [];
     this.inlineChildren(node, toks);
-    return `<${tag}${blockStyle(node)}>${finalise(toks)}</${tag}>`;
+    const style = Object.hasOwn(HEADINGS, tag) ? headingStyle(node) : blockStyle(node);
+    return `<${tag}${style}>${finalise(toks)}</${tag}>`;
   }
 
   private block(node: Element, tag: string, out: string[]): void {
@@ -571,6 +572,19 @@ function blockStyle(node: Element): string {
   const brk = (css.get("page-break-before") || css.get("break-before") || "").toLowerCase();
   if (brk === "always" || brk === "page") parts.push("page-break-before:always");
   return parts.length ? ` style="${parts.join(";")}"` : "";
+}
+
+/** A heading's style; without its own alignment it takes that of the first block inside it that
+ * has one (`<h1><p align="center">`: the paragraph is part of the heading). */
+function headingStyle(node: Element): string {
+  const style = blockStyle(node);
+  if (style.includes("text-align:")) return style;
+  for (const child of Array.from(node.children)) {
+    if (!BLOCK.has(child.localName.toLowerCase())) continue;
+    const m = /text-align:[a-z]+/.exec(blockStyle(child));
+    if (m) return ` style="${[m[0], ...(style ? [style.slice(8, -1)] : [])].join(";")}"`;
+  }
+  return style;
 }
 
 // ----- parsing -----------------------------------------------------------------------------

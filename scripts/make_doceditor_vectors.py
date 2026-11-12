@@ -124,6 +124,14 @@ NORMALISE = [
     # "</br>" (a common README habit) is a line break, as in browsers and on GitHub
     "<p>a</br>b</p>",
     "<p>a</BR >b</br class=x>c</p><p title='</br>'>d</brx>e</p>",
+    # a newline written as a reference right after <pre> is kept, like a typed one
+    "<pre>&#10;x</pre><pre>&#x0A;y</pre><pre>&#10</pre>"
+    "<table><tr><td><pre>&#10;z</pre></td></tr></table>",
+    # a paragraph inside a heading becomes part of it and gives it its alignment
+    '<h1><p align="center">x<br/>T</p></h1><h2>a<p>b</p>c</h2>'
+    '<h3 align="right"><p align="left">r</p></h3>',
+    # a cell right after an empty row gets its own row (no text is lost)
+    "<table><tr><td>a</td><tr></tr><td>b</td></tr><tr><td>c</td></tr></table>",
 ]
 
 FENCE_MD = (
@@ -169,6 +177,8 @@ MARKDOWN = [
         "<tr><td>c</td></tr></table>\n\n"
         "<table><tr><td><pre>x\ny</pre></td><td><h2>h</h2></td></tr></table>\n"
     },
+    # code in a raw table that starts with an empty line keeps it
+    {"md": "<table><tr><td><pre>&#10;x&#10;&#10;y</pre></td></tr></table>\n"},
     # a new marker starts a new nested list: two in a row stay two
     {"md": "- a\n    - b\n    * e\n\n1. x\n    1. y\n    1) z\n    1. w\n"},
     # links markdown-it would rewrite (spaces, non-ASCII, entities) keep their exact address

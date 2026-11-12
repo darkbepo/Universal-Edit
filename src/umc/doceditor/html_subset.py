@@ -529,7 +529,23 @@ class _Normaliser:
     def _leaf(self, tag: str, node: etree._Element) -> str:
         toks: list[_Token] = []
         self._inline_children(node, toks)
-        return f"<{tag}{self._block_style(node)}>{_finalise(toks)}</{tag}>"
+        style = self._heading_style(node) if tag in _HEADINGS else self._block_style(node)
+        return f"<{tag}{style}>{_finalise(toks)}</{tag}>"
+
+    @classmethod
+    def _heading_style(cls, node: etree._Element) -> str:
+        """A heading's style; without its own alignment it takes that of the first block inside
+        it that has one (``<h1><p align="center">``: the paragraph is part of the heading)."""
+        style = cls._block_style(node)
+        if "text-align:" in style:
+            return style
+        for child in node:
+            if _tag(child) not in _BLOCK:
+                continue
+            m = re.search(r"text-align:[a-z]+", cls._block_style(child))
+            if m:
+                return f' style="{";".join([m.group(0)] + ([style[8:-1]] if style else []))}"'
+        return style
 
     def _block(self, node: etree._Element, tag: str, out: list[str]) -> None:
         if tag == "p":
@@ -656,14 +672,22 @@ class _Normaliser:
         self._add(groups, [("T", text)])
 
     def _table(self, node: etree._Element, out: list[str]) -> None:
-        rows: list[etree._Element] = []
+        rows: list[list[etree._Element]] = []
         captions: list[etree._Element] = []
 
         def collect(parent: etree._Element) -> None:
-            for c in parent:
+            loose: list[etree._Element] | None = None  # cells outside a row (libxml2 leaves
+            for c in parent:  # them there; HTML5 puts them in a new row)
                 t = _tag(c)
+                if t in ("td", "th"):
+                    if loose is None:
+                        loose = []
+                        rows.append(loose)
+                    loose.append(c)
+                    continue
+                loose = None
                 if t == "tr":
-                    rows.append(c)
+                    rows.append(list(c))
                 elif t in ("thead", "tbody", "tfoot"):
                     collect(c)
                 elif t == "caption":

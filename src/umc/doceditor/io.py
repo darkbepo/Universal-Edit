@@ -49,6 +49,41 @@ _BLOCK_HTML = re.compile(
     r"|video|audio|svg)\b",
     re.I | re.M,
 )
+# Tags raw HTML blocks may use without losing anything (what md_writer writes, and synonyms).
+_KEPT_TAGS = frozenset(
+    [
+        "p",
+        "h1",
+        "h2",
+        "h3",
+        "ul",
+        "ol",
+        "li",
+        "table",
+        "thead",
+        "tbody",
+        "tfoot",
+        "tr",
+        "td",
+        "th",
+        "pre",
+        "code",
+        "br",
+        "b",
+        "strong",
+        "i",
+        "em",
+        "u",
+        "s",
+        "del",
+        "strike",
+        "a",
+        "img",
+        "span",
+    ]
+)
+_ANY_TAG = re.compile(r"</?([A-Za-z][A-Za-z0-9-]*)")
+_BLANK_LINE = re.compile(r"\n[ \t]*\r?(?:\n|$)")
 
 
 def md_to_html(text: str) -> str:
@@ -76,10 +111,25 @@ def split_front_matter(text: str) -> tuple[str, str]:
     return "", text
 
 
+def _drops_block_html(text: str) -> bool:
+    """A block of raw HTML (from its first line up to a blank line) with a tag the editor
+    doesn't keep; the writer's own blocks (alignment, indent, tables) use only kept tags."""
+    pos = 0
+    while (m := _BLOCK_HTML.search(text, pos)) is not None:
+        blank = _BLANK_LINE.search(text, m.start())
+        stop = blank.start() if blank else len(text)
+        if any(
+            t.group(1).lower() not in _KEPT_TAGS for t in _ANY_TAG.finditer(text, m.start(), stop)
+        ):
+            return True
+        pos = max(stop, m.end())
+    return False
+
+
 def _has_markdown_extras(text: str) -> bool:
-    """Footnotes or block-level raw HTML, outside code."""
+    """Footnotes or block-level raw HTML the editor drops, outside code."""
     text = _CODE_SPAN.sub("", _FENCED.sub("", text))
-    return _FOOTNOTE.search(text) is not None or _BLOCK_HTML.search(text) is not None
+    return _FOOTNOTE.search(text) is not None or _drops_block_html(text)
 
 
 def _has_dropped_formats(text: str) -> bool:

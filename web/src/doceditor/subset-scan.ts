@@ -156,6 +156,8 @@ export function html5Refs(html: string): string {
 // Marks the <p> start tags of the source, so the empty paragraph HTML5 makes for a stray </p>
 // (libxml2 ignores it) can be told apart and removed.
 export const P_MARK = "data-umc-p";
+// A numeric reference to a line feed at the start of a text.
+const LF_REF = /^&#(?:0*10(?![0-9])|[xX]0*[aA](?![0-9a-fA-F]))/;
 
 /** Make an HTML5 parser read `html` the way libxml2 does where they differ. */
 export function libxmlLike(html: string): string {
@@ -184,7 +186,8 @@ export function libxmlLike(html: string): string {
     closeTag.lastIndex = t.end;
     const end = closeTag.exec(html)?.index ?? html.length;
     const kept = keepCarriageReturns(html.slice(t.end, end));
-    parts.push(html.slice(from, t.end), kept.startsWith("\n") ? "\n" : "", kept);
+    // (also a newline written as a reference: HTML5 drops that one too)
+    parts.push(html.slice(from, t.end), kept.startsWith("\n") || LF_REF.test(kept) ? "\n" : "", kept);
     from = end;
     t = nextTag(html, end);
   }

@@ -18,6 +18,7 @@ import {
   type OpenedDocument,
   type SaveContent,
   TOO_LARGE,
+  W_MDEXTRA,
   W_PICTURES,
 } from "../src/doceditor/types";
 
@@ -401,6 +402,22 @@ describe("Markdown ZIP saved by the website", () => {
     await expect(openDocument(fileOf(zipSync({ "a.md": enc("x"), "b.md": enc("y") }), "a.zip"), noConvert)).rejects.toThrow(
       CANT_EDIT,
     );
+  });
+
+  test("our own raw HTML gives no extras warning; raw HTML the editor drops still does", async () => {
+    for (const html of [
+      '<p style="text-align:center">a</p><h2 style="margin-left:36pt">h</h2>',
+      "<table><tr><td><ol><li>x</li></ol></td><td><pre>a\nb</pre></td></tr></table>",
+      '<ul><li style="text-align:right"><b>r</b> <a href="a b">l</a></li></ul>',
+    ]) {
+      const out = await saveDocument({ ...base, html, images: new Map() }, "md", "a", noConvert);
+      const doc = await openDocument(fileOf(await blobBytes(out.blob), out.name), noConvert);
+      expect(doc.html).toBe(html);
+      expect(doc.warnings).toEqual([]);
+    }
+    for (const md of ["<details><summary>s</summary>\nx\n</details>\n\n<p>ok</p>\n", '<p align="center">ok</p>\n\n<div>d</div>\n']) {
+      expect((await openDocument(fileOf(md, "a.md"), noConvert)).warnings).toContain(W_MDEXTRA);
+    }
   });
 
   test("a picture used twice keeps one name from the first save on (md, docx)", async () => {

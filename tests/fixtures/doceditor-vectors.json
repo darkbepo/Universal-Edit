@@ -335,6 +335,21 @@
    "in": "<p>a</BR >b</br class=x>c</p><p title='</br>'>d</brx>e</p>",
    "out": "<p>a<br>b<br>c</p><p>de</p>",
    "warnings": []
+  },
+  {
+   "in": "<pre>&#10;x</pre><pre>&#x0A;y</pre><pre>&#10</pre><table><tr><td><pre>&#10;z</pre></td></tr></table>",
+   "out": "<pre>\nx</pre><pre>\ny</pre><pre>\n</pre><table><tr><td><pre>\nz</pre></td></tr></table>",
+   "warnings": []
+  },
+  {
+   "in": "<h1><p align=\"center\">x<br/>T</p></h1><h2>a<p>b</p>c</h2><h3 align=\"right\"><p align=\"left\">r</p></h3>",
+   "out": "<h1 style=\"text-align:center\">x<br>T</h1><h2>a<br>b<br>c</h2><h3 style=\"text-align:right\">r</h3>",
+   "warnings": []
+  },
+  {
+   "in": "<table><tr><td>a</td><tr></tr><td>b</td></tr><tr><td>c</td></tr></table>",
+   "out": "<table><tr><td><p>a</p></td></tr><tr><td><p>b</p></td></tr><tr><td><p>c</p></td></tr></table>",
+   "warnings": []
   }
  ],
  "markdown": [
@@ -479,8 +494,7 @@
    "html": "<h1 style=\"text-align:center\"><br>Title</h1><p style=\"text-align:center\"><b>Fast</b> &amp; <i>small</i></p><p style=\"margin-left:72pt;page-break-before:always\">x</p><ul><li style=\"text-align:right\">r</li></ul><blockquote><p style=\"text-align:right\">q</p></blockquote>",
    "front_matter": "",
    "warnings": [
-    "pictures in a format the editor can't show",
-    "footnotes and other Markdown extras"
+    "pictures in a format the editor can't show"
    ],
    "md_out": "<h1 align=\"center\"><br>Title</h1>\n\n<p align=\"center\"><b>Fast</b> &amp; <i>small</i></p>\n\n<p style=\"margin-left:72pt;page-break-before:always\">x</p>\n\n<ul><li align=\"right\">r</li></ul>\n\n> <p align=\"right\">q</p>\n"
   },
@@ -498,10 +512,15 @@
    "md": "<table><tr><td><ol><li><a href=\"./d/a b.md\">A</a></li></ol></td><td>\n\n**b**\n\n</td></tr></table>\n\n<table border=\"0\"><tr><td colspan=\"2\"><p>a</p><p align=\"center\">b</p></td></tr><tr><td>c</td></tr></table>\n\n<table><tr><td><pre>x\ny</pre></td><td><h2>h</h2></td></tr></table>\n",
    "html": "<table><tr><td><ol><li><a href=\"./d/a b.md\">A</a></li></ol></td><td><p><b>b</b></p></td></tr></table><table style=\"border:none\"><tr><td colspan=\"2\"><p>a</p><p style=\"text-align:center\">b</p></td></tr><tr><td><p>c</p></td></tr></table><table><tr><td><pre>x\ny</pre></td><td><h2>h</h2></td></tr></table>",
    "front_matter": "",
-   "warnings": [
-    "footnotes and other Markdown extras"
-   ],
+   "warnings": [],
    "md_out": "<table><tr><td><ol><li><a href=\"./d/a b.md\">A</a></li></ol></td><td><p><b>b</b></p></td></tr></table>\n\n<table style=\"border:none\"><tr><td colspan=\"2\"><p>a</p><p align=\"center\">b</p></td></tr><tr><td><p>c</p></td></tr></table>\n\n<table><tr><td><pre>x&#10;y</pre></td><td><h2>h</h2></td></tr></table>\n"
+  },
+  {
+   "md": "<table><tr><td><pre>&#10;x&#10;&#10;y</pre></td></tr></table>\n",
+   "html": "<table><tr><td><pre>\nx\n\ny</pre></td></tr></table>",
+   "front_matter": "",
+   "warnings": [],
+   "md_out": "<table><tr><td><pre>&#10;x&#10;&#10;y</pre></td></tr></table>\n"
   },
   {
    "md": "- a\n    - b\n    * e\n\n1. x\n    1. y\n    1) z\n    1. w\n",

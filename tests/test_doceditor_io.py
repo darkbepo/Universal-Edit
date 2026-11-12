@@ -14,6 +14,7 @@ from umc.doceditor.routes import convert_file
 from umc.doceditor.types import (
     W_COMMENTS,
     W_HEADERS,
+    W_MDEXTRA,
     W_PICTURES,
     next_image_name,
     warning_text,
@@ -65,13 +66,43 @@ def test_normalise_unicode_as_characters():
 
 
 def test_normalise_images(tmp_path):
+    import io
+
+    from PIL import Image
+
+    blue = io.BytesIO()
+    Image.new("RGB", (1, 1), (0, 0, 255)).save(blue, "PNG")  # a second, different picture
     (tmp_path / "pic.png").write_bytes(PNG_1PX)
     html, imgs = normalise_html(
-        f'<p><img src="pic.png" width="10"><img src="data:image/png;base64,{b64(PNG_1PX[::-1])}">'
+        f'<p><img src="pic.png" width="10"><img src="data:image/png;base64,{b64(blue.getvalue())}">'
         '<img src="https://example.com/x.png"></p>',
         base_dir=tmp_path,
     )
     assert list(imgs) == ["img/1.png", "img/2.png"] and "example.com" not in html
+
+
+@pytest.mark.parametrize(
+    ("html", "want"),
+    [
+        # a paragraph inside a heading becomes part of it, with its alignment (as HTML5 reads it)
+        (
+            '<h1><p align="center">x<br/>T</p></h1>',
+            '<h1 style="text-align:center">x<br>T</h1>',
+        ),
+        ("<h2>a<p>b</p>c</h2>", "<h2>a<br>b<br>c</h2>"),
+        ('<h3 align="right"><p align="left">r</p></h3>', '<h3 style="text-align:right">r</h3>'),
+        # a cell right after an empty row gets its own row
+        (
+            "<table><tr><td>a</td><tr></tr><td>b</td></tr><tr><td>c</td></tr></table>",
+            "<table><tr><td><p>a</p></td></tr><tr><td><p>b</p></td></tr>"
+            "<tr><td><p>c</p></td></tr></table>",
+        ),
+        # a newline written as a reference right after <pre> is kept, like a typed one
+        ("<pre>&#10;x</pre>", "<pre>\nx</pre>"),
+    ],
+)
+def test_normaliser_reads_like_html5(html, want):
+    assert normalise_html(html)[0] == want
 
 
 def test_images_never_read_outside_base_dir(tmp_path):
@@ -254,6 +285,32 @@ def test_picture_used_twice_keeps_one_name_in_other_formats(tmp_path, fmt):
     doc = open_document(p)
     assert list(doc.images) == ["img/1.png"]
     assert doc.html.count('src="img/1.png"') == 2
+
+
+@pytest.mark.parametrize(
+    "html",
+    [
+        '<p style="text-align:center">a</p><h2 style="margin-left:36pt">h</h2>',
+        "<table><tr><td><ol><li>x</li></ol></td><td><pre>a\nb</pre></td></tr></table>",
+        '<ul><li style="text-align:right"><b>r</b> <a href="a b">l</a></li></ul>',
+    ],
+)
+def test_our_own_raw_html_gives_no_extras_warning(tmp_path, html):
+    from umc.doceditor.save import save_document
+    from umc.doceditor.types import SaveContent
+
+    p = tmp_path / "a.md"
+    save_document(SaveContent(html, {}), p, "md")
+    doc = open_document(p)
+    assert doc.html == html and doc.warnings == []
+
+
+def test_raw_html_the_editor_drops_still_warns(tmp_path):
+    p = tmp_path / "a.md"
+    p.write_text("<details><summary>s</summary>\nx\n</details>\n\n<p>ok</p>\n", encoding="utf-8")
+    assert W_MDEXTRA in open_document(p).warnings
+    p.write_text('<p align="center">ok</p>\n\n<div>d</div>\n', encoding="utf-8")
+    assert W_MDEXTRA in open_document(p).warnings
 
 
 def test_loose_list_is_plain_items(tmp_path):
