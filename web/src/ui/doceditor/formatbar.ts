@@ -6,7 +6,8 @@
  * `Asker`, so tests can answer them.
  */
 
-import type { Command } from "prosemirror-state";
+import type { Node as PMNode } from "prosemirror-model";
+import type { Command, EditorState } from "prosemirror-state";
 import {
   activeState,
   changeIndent,
@@ -15,6 +16,7 @@ import {
   insertPageBreak,
   insertRule,
   insertTable,
+  selectedTextblocks,
   setAlign,
   setBlockStyle,
   setColor,
@@ -100,6 +102,43 @@ const PICTURE_EXTS: Record<string, string> = { png: "png", jpg: "jpg", jpeg: "jp
 export const NOT_A_PICTURE = "This file isn't a picture the editor can add (PNG, JPG, GIF, BMP or WebP).";
 const MAX_PICTURE_BYTES = 50 * 1024 * 1024;
 
+/** The style a textblock shows in the style box (as `activeState`: a quote first). */
+function styleOf(b: { node: PMNode; quoted: boolean }): string {
+  if (b.quoted) return "quote";
+  if (b.node.type === docSchema.nodes.heading) return `h${Math.min(Math.max(Number(b.node.attrs.level), 1), 3)}`;
+  return b.node.type === docSchema.nodes.code_block ? "code" : "normal";
+}
+
+/** Whether a selection covers lines of different styles (list lines aside: the style box leaves
+ * them alone). */
+function mixedStyles(state: EditorState): boolean {
+  if (state.selection.empty) return false;
+  const seen = new Set<string>();
+  for (const b of selectedTextblocks(state)) {
+    if (b.parent === docSchema.nodes.list_item) continue;
+    seen.add(styleOf(b));
+    if (seen.size > 1) return true;
+  }
+  return false;
+}
+
+/** Whether a selection holds text in different fonts (or some text with none). */
+function mixedFonts(state: EditorState): boolean {
+  const sel = state.selection;
+  if (sel.empty) return false;
+  let first: string | undefined;
+  let mixed = false;
+  state.doc.nodesBetween(sel.from, sel.to, (node) => {
+    if (mixed) return false;
+    if (!node.isText) return true;
+    const family = String(docSchema.marks.font.isInSet(node.marks)?.attrs.family ?? "");
+    if (first === undefined) first = family;
+    else if (family !== first) mixed = true;
+    return false;
+  });
+  return mixed;
+}
+
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text = ""): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
   if (cls) e.className = cls;
@@ -139,10 +178,16 @@ export class FormatBar {
     this.el.setAttribute("role", "toolbar");
     this.el.setAttribute("aria-label", "Formatting");
 
+    // a hidden blank entry shows a selection of mixed styles, so choosing any style applies it
+    const mixed = new Option("", "");
+    mixed.hidden = true;
+    this.styleBox.append(mixed);
     for (const [key, label] of STYLES) this.styleBox.append(new Option(label, key));
     this.styleBox.title = "Paragraph style";
     this.styleBox.setAttribute("aria-label", "Paragraph style");
-    this.styleBox.addEventListener("change", () => this.apply(setBlockStyle(this.styleBox.value as BlockStyle)));
+    this.styleBox.addEventListener("change", () => {
+      if (this.styleBox.value) this.apply(setBlockStyle(this.styleBox.value as BlockStyle));
+    });
 
     this.fontBox.title = "Font";
     this.fontBox.setAttribute("aria-label", "Font");
@@ -200,18 +245,40 @@ export class FormatBar {
     const outside = (e: Event) => {
       if (!this.tableMenu.contains(e.target as Node)) this.tableMenu.open = false;
     };
+    // its keys, listened to on the whole page while it is open (opened with the mouse, the
+    // focus may still be in the page): Esc closes it, the arrows / Home / End move through it
+    const keys = (e: KeyboardEvent) => {
+      const all = [...this.tableMenu.querySelectorAll<HTMLButtonElement>(".menu-item:not(:disabled)")];
+      const at = all.indexOf(document.activeElement as HTMLButtonElement);
+      let next = -1;
+      if (e.key === "Escape") {
+        this.tableMenu.open = false;
+        closed();
+        view.focus();
+      } else if (e.key === "ArrowDown") next = (at + 1) % all.length;
+      else if (e.key === "ArrowUp") next = (at - 1 + all.length) % all.length;
+      else if (e.key === "Home") next = 0;
+      else if (e.key === "End") next = all.length - 1;
+      else return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (next >= 0) all[next]?.focus();
+    };
+    const opened = () => {
+      document.addEventListener("pointerdown", outside, true);
+      document.addEventListener("keydown", keys, true);
+      this.tableMenu.querySelector<HTMLButtonElement>(".menu-item:not(:disabled)")?.focus();
+    };
+    const closed = () => {
+      document.removeEventListener("pointerdown", outside, true);
+      document.removeEventListener("keydown", keys, true);
+    };
     this.tableMenu.addEventListener("toggle", () => {
       if (this.tableMenu.open && this.tableMenu.classList.contains("disabled")) this.tableMenu.open = false;
-      if (this.tableMenu.open) document.addEventListener("pointerdown", outside, true);
-      else document.removeEventListener("pointerdown", outside, true);
+      if (this.tableMenu.open) opened();
+      else closed();
     });
     summary.addEventListener("mousedown", (e) => e.preventDefault());
-    this.tableMenu.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && this.tableMenu.open) {
-        this.tableMenu.open = false;
-        view.focus();
-      }
-    });
     add(this.tableMenu);
 
     add(
@@ -247,8 +314,9 @@ export class FormatBar {
 
   private fillFonts(used: string[]): void {
     const current = this.fontBox.value;
+    const shown = this.fontBox.options[0]?.text ?? "Default font";
     const names = [...new Set([...FONTS, ...used])].sort((a, b) => a.localeCompare(b));
-    const blank = new Option("Default font", "");
+    const blank = new Option(shown, "");
     blank.hidden = true;
     this.fontBox.replaceChildren(blank, ...names.map((n) => new Option(n, n)));
     this.fontBox.value = current;
@@ -304,10 +372,14 @@ export class FormatBar {
     for (const [key] of ALIGNS) press(key, s.align === key);
     press("bullet", s.list === "bullet");
     press("number", s.list === "number");
-    this.styleBox.value = s.style;
+    const state = this.view.view.state;
+    this.styleBox.value = mixedStyles(state) ? "" : s.style;
 
-    const font = s.font ?? "";
+    // mixed fonts show blank, text with no font of its own "Default font" (the hidden "" entry)
+    const mixedFont = mixedFonts(state);
+    const font = mixedFont ? "" : (s.font ?? "");
     if (font && ![...this.fontBox.options].some((o) => o.value === font)) this.fontBox.append(new Option(font, font));
+    this.fontBox.options[0].text = mixedFont ? "" : "Default font";
     this.fontBox.value = font;
 
     // the box shows the size at the cursor; a hidden "" entry stands for the page's own size, so
@@ -332,19 +404,45 @@ export class FormatBar {
 
 // ----- the browser's own dialogs -----------------------------------------------------------------
 
-/** An input element the user picks with (a colour or a file); resolves on pick or cancel. */
+/** The picker waiting for an answer (a new pick ends it, as cancelled). */
+let pending: (() => void) | null = null;
+/** After the window gets the focus back, how long a pick may still arrive (a file input's
+ * `change` can come after the focus). */
+const RETURN_GRACE_MS = 300;
+
+/** An input element the user picks with (a colour or a file). Resolves with what was chosen
+ * (`change`; a colour's last `input` counts too), or null when the picker closes without one:
+ * its `cancel`, the window getting the focus back, or another pick starting. The input is
+ * always removed. */
 function pick<T>(input: HTMLInputElement, read: () => T | null): Promise<T | null> {
+  pending?.();
   return new Promise((resolve) => {
     input.style.position = "fixed";
     input.style.opacity = "0";
     input.style.pointerEvents = "none";
     document.body.append(input);
+    let latest: T | null = null;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const done = (value: T | null) => {
+      if (pending !== cancel) return; // already answered
+      pending = null;
+      clearTimeout(timer);
+      window.removeEventListener("focus", back);
       input.remove();
       resolve(value);
     };
-    input.addEventListener("change", () => done(read()), { once: true });
-    input.addEventListener("cancel", () => done(null), { once: true });
+    const cancel = () => done(null);
+    const back = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => done(latest), RETURN_GRACE_MS);
+    };
+    pending = cancel;
+    input.addEventListener("input", () => {
+      latest = read();
+    });
+    input.addEventListener("change", () => done(read()));
+    input.addEventListener("cancel", () => done(latest));
+    window.addEventListener("focus", back);
     input.click();
   });
 }
@@ -356,6 +454,9 @@ export const browserAsker: Asker = {
     const input = el("input");
     input.type = "color";
     if (label) input.title = label;
+    // highlight starts at yellow (the desktop's); text one step from black, so that choosing
+    // black is a change the input reports
+    input.value = label === "Highlight colour" ? "#ffff00" : "#010101";
     return pick(input, () => input.value);
   },
   file: (accept) => {

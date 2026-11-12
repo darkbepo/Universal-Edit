@@ -6,8 +6,8 @@ import { undo } from "prosemirror-history";
 import { describe, expect, test } from "vitest";
 import type { OpenedDocument } from "../src/doceditor/types";
 import * as cmds from "../src/ui/doceditor/commands";
-import { FindBar } from "../src/ui/doceditor/findbar";
-import { FormatBar, type Asker } from "../src/ui/doceditor/formatbar";
+import { FindBar, scanMatches } from "../src/ui/doceditor/findbar";
+import { FormatBar, browserAsker, type Asker } from "../src/ui/doceditor/formatbar";
 import { DocView } from "../src/ui/doceditor/view";
 
 const opened = (html: string): OpenedDocument => ({
@@ -56,7 +56,7 @@ describe("FormatBar", () => {
     for (const key of ["bold", "italic", "underline", "strike", "left", "center", "right", "justify", "bullet", "number"]) {
       expect(bar.buttons[key], key).toBeInstanceOf(HTMLButtonElement);
     }
-    expect([...bar.styleBox.options].map((o) => o.text)).toEqual(["Normal", "Heading 1", "Heading 2", "Heading 3", "Quote", "Code"]);
+    expect([...bar.styleBox.options].filter((o) => !o.hidden).map((o) => o.text)).toEqual(["Normal", "Heading 1", "Heading 2", "Heading 3", "Quote", "Code"]);
     const sizes = [...bar.sizeBox.options].filter((o) => !o.hidden).map((o) => Number(o.value));
     expect(sizes[0]).toBe(8);
     expect(sizes[sizes.length - 1]).toBe(72);
@@ -369,5 +369,153 @@ describe("FindBar", () => {
     expect(undoDepth(many)).toBe(1);
     many.run(undo);
     expect(out(many)).toBe(viewOf(line.repeat(40)).content().html);
+  });
+});
+
+describe("Task 8a: find never freezes", () => {
+  const E = String.fromCodePoint(0x1f600);
+
+  test("backward find and whole-word Replace all on an emoji", () => {
+    const h = `<p>a${E}b ${E} x${E}</p>`;
+    let v = viewOf(h);
+    let bar = new FindBar(v);
+    select(v, 1);
+    expect(bar.find(E, { backward: true })).toBe(true);
+    expect(selected(v)).toBe(E);
+    const last = v.view.state.selection.from;
+    expect(bar.find(E, { backward: true })).toBe(true);
+    expect(v.view.state.selection.from).toBeLessThan(last);
+    expect(bar.find(E)).toBe(true);
+    // the emoji between letters and after "x" are inside words
+    expect(bar.replaceAll(E, "Z", { wholeWord: true })).toBe(1);
+    expect(out(v)).toBe(`<p>a${E}b Z x${E}</p>`);
+    v = viewOf(h);
+    bar = new FindBar(v);
+    expect(bar.find(`${E}b`, { wholeWord: true, backward: true })).toBe(false);
+    expect(bar.find(`${E}b`, { wholeWord: true })).toBe(false);
+    expect(bar.replaceAll(E, `${E}${E}`)).toBe(3);
+    expect(new FindBar(viewOf(`<p>${E}${E}${E}</p>`)).replaceAll(`${E}${E}`, "x")).toBe(1);
+  });
+
+  test("every scan advances, whatever it refuses", () => {
+    const lone = String.fromCharCode(0xd83d);
+    const texts = [`${E}${E}`, `a${E}${lone}b${lone}`, `${lone}${lone}x`, "", "aaa"];
+    const patterns = [E, `${E}*`, lone, "a*", "", "."];
+    for (const text of texts) {
+      for (const pattern of patterns) {
+        for (const flags of ["gu", "giu"]) {
+          let calls = 0;
+          const all = scanMatches(text, pattern, flags, () => {
+            calls++;
+            return false; // refuse every match
+          });
+          expect(all).toEqual([]);
+          expect(calls, `${pattern} in ${text}`).toBeLessThanOrEqual(text.length + 1);
+          const taken = scanMatches(text, pattern, flags, () => true);
+          for (let i = 1; i < taken.length; i++) expect(taken[i][0]).toBeGreaterThanOrEqual(taken[i - 1][1]);
+        }
+      }
+    }
+  });
+
+  test("forward find finds the match the cursor is in (wrapping without a limit)", () => {
+    const v = viewOf("<p>xhello y</p>");
+    const bar = new FindBar(v);
+    select(v, 4);
+    expect(bar.find("hello")).toBe(true);
+    expect(selected(v)).toBe("hello");
+    select(v, 4);
+    expect(bar.find("hello", { backward: true })).toBe(true);
+    expect(selected(v)).toBe("hello");
+  });
+
+  test("Enter and Esc while composing (IME) are left alone; Close has a name", () => {
+    const v = viewOf("<p>a cat. A cat.</p>");
+    const bar = new FindBar(v);
+    bar.open(false);
+    bar.findInput.value = "cat";
+    select(v, 1);
+    const key = (k: string) => {
+      const e = new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true, isComposing: true });
+      bar.findInput.dispatchEvent(e);
+    };
+    key("Enter");
+    expect(v.view.state.selection.from).toBe(1);
+    key("Escape");
+    expect(bar.el.hidden).toBe(false);
+    expect(bar.el.querySelector(".doc-find-close")?.getAttribute("aria-label")).toBe("Close");
+  });
+});
+
+describe("Task 8a: colour pickers and bar details", () => {
+  const inputs = () => document.body.querySelectorAll('input[type="color"]');
+
+  test("highlight starts at yellow, text colour lets black be chosen", async () => {
+    const hl = browserAsker.color("Highlight colour");
+    const a = inputs()[inputs().length - 1] as HTMLInputElement;
+    expect(a.value).toBe("#ffff00");
+    a.value = "#00ff00";
+    a.dispatchEvent(new Event("input")); // dragging in the picker
+    window.dispatchEvent(new Event("focus")); // closed: the last colour counts
+    expect(await hl).toBe("#00ff00");
+    expect(inputs().length).toBe(0);
+    const text = browserAsker.color("Text colour");
+    const b = inputs()[0] as HTMLInputElement;
+    expect(b.value).not.toBe("#000000");
+    b.value = "#000000";
+    b.dispatchEvent(new Event("change"));
+    expect(await text).toBe("#000000");
+  });
+
+  test("a cancelled pick resolves and leaves no input behind", async () => {
+    const first = browserAsker.color("Text colour");
+    const second = browserAsker.color("Text colour"); // a new pick ends the old one
+    expect(await first).toBe(null);
+    expect(inputs().length).toBe(1);
+    window.dispatchEvent(new Event("focus")); // the picker closed, nothing chosen
+    expect(await second).toBe(null);
+    expect(inputs().length).toBe(0);
+  });
+
+  test("a mixed selection shows a blank style and font, so any choice applies", () => {
+    const v = viewOf('<p>aa</p><h1>bb</h1><p><span style="font-family:Arial">cc</span>dd</p>');
+    const bar = new FormatBar(v, asker());
+    select(v, 2, 6);
+    expect(bar.styleBox.value).toBe("");
+    bar.styleBox.value = "h1";
+    bar.styleBox.dispatchEvent(new Event("change"));
+    expect(out(v).startsWith("<h1>aa</h1><h1>bb</h1>")).toBe(true);
+    const size = v.view.state.doc.content.size;
+    select(v, size - 5, size - 1);
+    expect(bar.fontBox.value).toBe("");
+    bar.fontBox.dispatchEvent(new Event("focus"));
+    bar.fontBox.value = "Arial";
+    bar.fontBox.dispatchEvent(new Event("change"));
+    expect(out(v)).toContain('<span style="font-family:Arial">ccdd</span>');
+    select(v, 2);
+    expect(bar.styleBox.value).toBe("h1");
+  });
+
+  test("the table menu: Esc closes it, arrow keys move through its items", () => {
+    const v = viewOf("<table><tr><td><p>a</p></td></tr></table>");
+    const bar = new FormatBar(v, asker());
+    document.body.append(bar.el);
+    select(v, 3);
+    const items = [...bar.tableMenu.querySelectorAll<HTMLButtonElement>(".menu-item")];
+    bar.tableMenu.open = true;
+    bar.tableMenu.dispatchEvent(new Event("toggle"));
+    expect(document.activeElement).toBe(items[0]);
+    const key = (k: string) =>
+      document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true }));
+    key("ArrowDown");
+    expect(document.activeElement).toBe(items[1]);
+    key("ArrowUp");
+    key("ArrowUp");
+    expect(document.activeElement).toBe(items[items.length - 1]);
+    // opened with the mouse, the focus may still be elsewhere: Esc anywhere closes it
+    (document.activeElement as HTMLElement).blur();
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    expect(bar.tableMenu.open).toBe(false);
+    bar.el.remove();
   });
 });

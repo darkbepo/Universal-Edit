@@ -232,6 +232,14 @@ columns when done.
     only holds its line and nested lists.
   - Paragraph styles (headings, quote, code) leave list lines as they are. The desktop applies
     them, but its export writes the list item anyway, so the saved file is the same.
+  - The font size box is a list (8–72, plus the size at the cursor when it isn't one of them);
+    the desktop's box is editable, so any size can be typed there.
+  - "Whole word" looks past an empty link: in `ab<a href="u"></a>cd`, "ab" isn't a whole word
+    on the website (the letters go on after the empty link), while on the desktop the empty
+    link's placeholder character ends the word.
+  - The find bar has a × close button (Esc closes it in both apps; the desktop has no button).
+  - Matches aren't all highlighted in either app; on the website, marking every match redrew
+    the page on each keystroke, which took seconds on long documents.
 
 ## Docs
 

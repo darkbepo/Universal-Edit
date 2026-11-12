@@ -1,6 +1,6 @@
 /**
  * The website document editor's find & replace bar (the desktop's `gui/doceditor/find_bar.py`),
- * built on prosemirror-search's `SearchQuery`. As on the desktop:
+ * reading text the way prosemirror-search does (a leaf is one character). As on the desktop:
  * - a search matches across an empty link (an invisible `empty_inline`), never across a picture
  *   or a line break, and a space also finds a no-break space;
  * - "Whole word" wants no letter or digit right before and after the match;
@@ -8,12 +8,13 @@
  *   one undo step. Esc closes, Enter finds the next match, Shift+Enter the previous one.
  * - Matches aren't all marked (nor on the desktop): marking them redraws on every keystroke,
  *   which took seconds on a long document.
+ * The search is its own, one block at a time (`scanMatches`): prosemirror-search's `findPrev`
+ * and its retry after a refused match step by one code unit, which never ends on an emoji.
  */
 
 import { Fragment, Mark, type Node as PMNode } from "prosemirror-model";
-import { Selection, TextSelection, type EditorState, type Transaction } from "prosemirror-state";
+import { Selection, TextSelection, type Transaction } from "prosemirror-state";
 import { closeHistory } from "prosemirror-history";
-import { SearchQuery } from "prosemirror-search";
 import { BULK_MIN, COMMAND_META, rebuildBlocks } from "./commands";
 import { docSchema } from "./schema";
 import type { DocView } from "./view";
@@ -74,15 +75,6 @@ function goodIn(block: PMNode, a: number, b: number, whole: boolean): boolean {
   return !WORD_END.test(textNear(block, a, -1)) && !WORD_START.test(textNear(block, b, 1));
 }
 
-/** `goodIn` as prosemirror-search's filter. */
-function goodMatch(whole: boolean) {
-  return (state: EditorState, result: Match): boolean => {
-    const $from = state.doc.resolve(result.from);
-    const start = $from.start();
-    return goodIn($from.parent, result.from - start, result.to - start, whole);
-  };
-}
-
 /** A textblock's text as prosemirror-search reads it (a leaf is one character). */
 function blockText(block: PMNode): string {
   let out = "";
@@ -105,6 +97,67 @@ function replaceIn(block: PMNode, ranges: [number, number][], text: string): PMN
   }
   block.content.cut(at).forEach((n) => kids.push(n));
   return block.copy(Fragment.fromArray(kids));
+}
+
+/** The matches of `pattern` (regexp `flags`, with "g") in `text`, as [start, end) offsets, each
+ * starting after the previous one; `accept` may refuse a match, which is then retried one
+ * character on. Every step moves on by a whole character (a surrogate pair is one): with the "u"
+ * flag a `lastIndex` inside a pair is moved back to its start, so stepping by one code unit
+ * would find the same match forever. Empty matches are never taken. */
+export function scanMatches(
+  text: string,
+  pattern: string,
+  flags: string,
+  accept: (start: number, end: number) => boolean,
+): [number, number][] {
+  const out: [number, number][] = [];
+  let re: RegExp;
+  try {
+    re = new RegExp(pattern, flags);
+  } catch {
+    return out;
+  }
+  let from = 0;
+  while (from <= text.length) {
+    re.lastIndex = from;
+    const m = re.exec(text);
+    if (!m) break;
+    const start = m.index;
+    const end = start + m[0].length;
+    if (end > start && start >= from && accept(start, end)) {
+      out.push([start, end]);
+      from = end;
+    } else {
+      const cp = text.codePointAt(Math.max(start, from)) ?? 0;
+      from = Math.max(start, from) + (cp > 0xffff ? 2 : 1);
+    }
+  }
+  return out;
+}
+
+/** The text of a textblock, and where a textblock is (`pos` = before it). */
+interface Block {
+  node: PMNode;
+  pos: number;
+}
+
+/** Visit the textblocks of `doc` that end after `from` (forward) or start before it
+ * (backward, last first), until `visit` returns true. */
+function walkBlocks(doc: PMNode, from: number, backward: boolean, visit: (b: Block) => boolean): boolean {
+  const walk = (node: PMNode, start: number): boolean => {
+    const kids: [PMNode, number][] = [];
+    node.forEach((child, offset) => {
+      const pos = start + offset;
+      if (child.isLeaf) return;
+      if (backward ? pos < from : pos + child.nodeSize > from) kids.push([child, pos]);
+    });
+    if (backward) kids.reverse();
+    for (const [child, pos] of kids) {
+      if (child.inlineContent ? visit({ node: child, pos }) : walk(child, pos + 1)) return true;
+    }
+    return false;
+  };
+  return walk(doc, 0);
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text = ""): HTMLElementTagNameMap[K] {
@@ -145,6 +198,7 @@ export class FindBar {
     const all = this.button("Replace all", () => this.replaceAll(this.findInput.value, this.replaceInput.value, this.options()));
     const close = this.button("Close", () => this.close());
     close.textContent = "×";
+    close.setAttribute("aria-label", "Close");
     close.classList.add("doc-find-close");
     this.replaceWidgets.push(this.replaceInput, replace, all);
     this.el.append(
@@ -161,6 +215,7 @@ export class FindBar {
     );
     for (const input of [this.findInput, this.replaceInput]) {
       input.addEventListener("keydown", (e) => {
+        if (e.isComposing) return; // the key belongs to the input method
         if (e.key === "Escape") {
           e.preventDefault();
           this.close();
@@ -212,28 +267,35 @@ export class FindBar {
 
   // ----- searching ----------------------------------------------------------------------------
 
-  private query(text: string, opts: FindOptions): SearchQuery {
-    return new SearchQuery({
-      search: findPattern(text),
-      regexp: true,
-      caseSensitive: !!opts.matchCase,
-      wholeWord: !!opts.wholeWord,
-      filter: goodMatch(!!opts.wholeWord),
-    });
+  /** The good matches in `block` (content offsets), for `text` with `opts`. */
+  private blockMatches(block: PMNode, text: string, opts: FindOptions): [number, number][] {
+    const whole = !!opts.wholeWord;
+    return scanMatches(blockText(block), findPattern(text), opts.matchCase ? "gu" : "giu", (a, b) =>
+      goodIn(block, a, b, whole),
+    );
   }
 
-  /** The next (or previous) match from the selection, wrapping around; the only match, already
-   * selected, is found again (as on the desktop). */
-  private next(query: SearchQuery, backward: boolean): Match | null {
-    const state = this.view.view.state;
-    const { from, to } = state.selection;
-    const end = state.doc.content.size;
-    const found = backward
-      ? (query.findPrev(state, from) ?? query.findPrev(state, end, to))
-      : (query.findNext(state, to) ?? query.findNext(state, 0, from));
-    if (found) return found;
-    const same = from < to ? query.findNext(state, from, to) : null;
-    return same && same.from === from && same.to === to ? same : null;
+  /** The first match (document positions) starting at or after `from`, or the last one starting
+   * before it (`backward`); null when there is none. */
+  private matchFrom(text: string, opts: FindOptions, from: number, backward: boolean): Match | null {
+    let found: Match | null = null;
+    walkBlocks(this.view.view.state.doc, from, backward, ({ node, pos }) => {
+      const start = pos + 1;
+      const ranges = this.blockMatches(node, text, opts).map(([a, b]) => ({ from: start + a, to: start + b }));
+      found = (backward ? ranges.filter((r) => r.from < from).pop() : ranges.find((r) => r.from >= from)) ?? null;
+      return found !== null;
+    });
+    return found;
+  }
+
+  /** The next (or previous) match from the selection, wrapping around with no limit (as on the
+   * desktop: a match the cursor is in, or the only match already selected, is found again). */
+  private next(text: string, opts: FindOptions): Match | null {
+    const { from, to } = this.view.view.state.selection;
+    const end = this.view.view.state.doc.content.size;
+    return opts.backward
+      ? (this.matchFrom(text, opts, from, true) ?? this.matchFrom(text, opts, end + 1, true))
+      : (this.matchFrom(text, opts, to, false) ?? this.matchFrom(text, opts, 0, false));
   }
 
   private selectMatch(match: Match): void {
@@ -243,7 +305,7 @@ export class FindBar {
 
   /** Select the next (or previous) match, wrapping around. */
   find(text: string, opts: FindOptions = {}): boolean {
-    const match = text ? this.next(this.query(text, opts), !!opts.backward) : null;
+    const match = text ? this.next(text, opts) : null;
     if (match) this.selectMatch(match);
     this.status.textContent = match ? "" : "No matches.";
     return match !== null;
@@ -254,14 +316,19 @@ export class FindBar {
   replace(text: string, replacement: string, opts: FindOptions = {}): boolean {
     if (!text) return false;
     const state = this.view.view.state;
-    const { from, to } = state.selection;
-    const match = from < to ? this.query(text, opts).findNext(state, from) : null;
-    if (!match || match.from !== from || match.to !== to) {
+    const { from, to, $from } = state.selection;
+    const start = $from.start();
+    const isMatch =
+      from < to &&
+      $from.parent.inlineContent &&
+      state.selection.$to.parent === $from.parent &&
+      this.blockMatches($from.parent, text, opts).some(([a, b]) => start + a === from && start + b === to);
+    if (!isMatch) {
       this.find(text, opts);
       return false;
     }
     const tr = state.tr;
-    const marks = state.doc.resolve(from).marksAcross(state.doc.resolve(to)) ?? Mark.none;
+    const marks = $from.marksAcross(state.selection.$to) ?? Mark.none;
     if (replacement) tr.replaceWith(from, to, docSchema.text(replacement, marks));
     else tr.delete(from, to);
     tr.setSelection(TextSelection.create(tr.doc, tr.mapping.map(to)));
@@ -279,23 +346,8 @@ export class FindBar {
     const byBlock = new Map<number, [number, number][]>();
     let count = 0;
     if (text) {
-      // the matches prosemirror-search's replaceAll would take: its pattern and flags, each match
-      // after the previous one, a refused match retried one character on
-      const re = new RegExp(findPattern(text), opts.matchCase ? "gu" : "giu");
-      const whole = !!opts.wholeWord;
-      state.doc.descendants((node, pos) => {
-        if (!node.inlineContent) return true;
-        const content = blockText(node);
-        const ranges: [number, number][] = [];
-        re.lastIndex = 0;
-        for (let m = re.exec(content); m; m = re.exec(content)) {
-          const end = m.index + m[0].length;
-          if (end === m.index || !goodIn(node, m.index, end, whole)) {
-            re.lastIndex = m.index + 1;
-            continue;
-          }
-          ranges.push([m.index, end]);
-        }
+      walkBlocks(state.doc, 0, false, ({ node, pos }) => {
+        const ranges = this.blockMatches(node, text, opts);
         if (ranges.length) {
           byBlock.set(pos, ranges);
           count += ranges.length;
