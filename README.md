@@ -27,7 +27,8 @@ conversion needs them.
 
 Get it from **Actions → Build Windows executable** → latest successful run → download
 **`UniversalEdit-setup`** and run `UniversalEdit-setup.exe` (installs for your user only, no
-administrator rights needed). During setup you can add **"Convert with Universal Edit"** to the
+administrator rights needed). Setup lets you choose which editors to install (they can also be
+installed later from the app). During setup you can add **"Convert with Universal Edit"** to the
 right-click menu and put Universal Edit in **"Open with"**; both can be switched later in the
 app (cog, top left). To make the viewer your default for pictures or videos, pick it once in
 Windows' *Default apps* (setup offers a shortcut there). Prefer no installer? Download
@@ -103,6 +104,7 @@ The browser version's source is in [`web/`](web/README.md).
 | **Start screen editor tiles**: open the image editor (with a new picture: size presets, white / transparent / black) or the 3D viewer without a file · video, audio and document editor tiles show "Coming soon" | ✅ | ✅ |
 | **Viewer** (`UniversalEdit.exe --view FILE`, for "Open with"): pictures (zoom / pan, animated GIFs), video and music with sound, PDF / EPUB / SVG pages, Word / Excel / PowerPoint / EPS / DXF as pages (converted in the background), text, 3D models · the folder's other files beside it (← / →) · **Convert** / **Edit** move the file into the converter or editor · one window: a second "Open with" reuses it | ✅ | — |
 | **Windows installer** (per user, no admin) · right-click **"Convert with Universal Edit"** (several files → one window) · **"Open with"** → viewer · switches in the app's Settings (cog) | ✅ | — |
+| **Editors as add-ons**: the app is the converter + viewer; the image editor (≈ 24 MB, incl. background removal) and the 3D viewer are installed when first used (tile shows **Install**), picked in the installer, or managed in Settings · downloads are checked against fingerprints built into the app | ✅ | — |
 | Files never leave your computer | ✅ | ✅ |
 | No install needed | ❌ | ✅ |
 | Save straight into a folder | ✅ | ✅ Chrome/Edge · ❌ Firefox/Safari (zip instead) |

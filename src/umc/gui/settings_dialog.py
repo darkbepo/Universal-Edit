@@ -9,12 +9,14 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
     QDialogButtonBox,
+    QHBoxLayout,
     QLabel,
     QPushButton,
     QVBoxLayout,
     QWidget,
 )
 
+from umc.core import addons
 from umc.tools import shell_integration as shell
 
 log = logging.getLogger(__name__)
@@ -69,9 +71,60 @@ class SettingsDialog(QDialog):
             self.default_apps.setEnabled(False)
             self.message.setObjectName("Help")
             self.message.setText("These settings are only available on Windows.")
+        lay.addSpacing(10)
+        lay.addWidget(QLabel("Editors", objectName="CardTitle"))
+        self.addon_rows: dict[str, tuple[QLabel, QPushButton]] = {}
+        for addon in addons.ADDONS.values():
+            row = QHBoxLayout()
+            state = QLabel()
+            button = QPushButton(objectName="Small")
+            button.clicked.connect(lambda _c=False, a=addon.id: self._addon_clicked(a))
+            row.addWidget(QLabel(addon.title))
+            row.addWidget(state, 1)
+            row.addWidget(button)
+            lay.addLayout(row)
+            self.addon_rows[addon.id] = (state, button)
+        self._refresh_addons()
+
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         buttons.rejected.connect(self.reject)
         lay.addWidget(buttons)
+
+    def _refresh_addons(self) -> None:
+        for addon_id, (state, button) in self.addon_rows.items():
+            if addons.from_source():
+                state.setText("included (running from source)")
+                button.setText("Remove")
+                button.setEnabled(False)
+            elif addons.installed(addon_id):
+                state.setText("installed")
+                button.setText("Remove")
+                button.setEnabled(True)
+            else:
+                size = addons.download_size(addon_id)
+                state.setText(
+                    f"not installed ({size / 1e6:.0f} MB)" if size >= 1e6 else "not installed"
+                )
+                button.setText("Install")
+                button.setEnabled(True)
+            state.setObjectName("Help")
+
+    def _addon_clicked(self, addon_id: str) -> None:
+        from umc.gui.addon_install import install_with_progress
+
+        if addons.installed(addon_id):
+            addons.remove(addon_id)
+            self.message.setText(
+                f"The {addons.ADDONS[addon_id].title.lower()} is removed. If it was open, it "
+                "closes for good when Universal Edit restarts."
+            )
+        else:
+            error = install_with_progress(self, addon_id)
+            self.message.setText("" if not error or error == "cancelled" else error)
+        self._refresh_addons()
+        parent = self.parent()
+        if parent is not None and hasattr(parent, "hub"):
+            parent.hub.refresh_install_state()
 
     def _toggle(self, key: str, on: bool) -> None:
         try:

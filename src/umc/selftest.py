@@ -266,6 +266,23 @@ def _viewer_check(d: Path, video: Path) -> list[Path]:
     return []
 
 
+def _addons_check(d: Path) -> list[Path]:
+    """Every editor add-on is installed (CI installs them from the built zips first) and its
+    code loads inside the built app — proves the app kept what the add-ons import."""
+    import importlib
+
+    from umc.core import addons
+
+    for addon in addons.ADDONS.values():
+        if not addons.installed(addon.id):
+            raise RuntimeError(f"add-on {addon.id!r} isn't installed")
+        addons.activate(addon.id)
+        importlib.import_module(addon.entry)
+        for package in addon.packages:
+            importlib.import_module(package)
+    return []
+
+
 def _icon_check(d: Path) -> list[Path]:
     """Convert screen icons: Tabler SVG markup rendered by QtSvg (needs the QtSvg module)."""
     from PySide6.QtCore import QByteArray, QRectF, Qt
@@ -396,6 +413,7 @@ def run(report: Path) -> int:
             ("editor: layers -> ora -> png/jpg", lambda: _editor_check(d / "editor")),
             ("convert screen icons (QtSvg)", lambda: _icon_check(d / "icons")),
             ("app logo / window icon", lambda: _logo_check(d / "logo")),
+            ("editor add-ons installed and loading", lambda: _addons_check(d / "addons")),
             ("document editor", lambda: _doc_editor_check(d / "doceditor")),
             ("3D viewer (model + Qt OpenGL)", lambda: _viewer3d_check(d / "viewer3d")),
             ("mp4 -> webm", lambda: _convert([out / "img0 slideshow.mp4"], "webm", out)),

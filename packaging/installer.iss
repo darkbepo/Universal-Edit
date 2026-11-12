@@ -11,6 +11,9 @@
 #ifndef SourceDir
   #define SourceDir "..\dist\UniversalEdit"
 #endif
+#ifndef AddonsDir
+  #define AddonsDir "..\dist\addons"
+#endif
 #ifndef OutputDir
   #define OutputDir "..\installer"
 #endif
@@ -46,6 +49,16 @@ ChangesAssociations=yes
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
+[Types]
+Name: "full"; Description: "Converter and every editor"
+Name: "converter"; Description: "Converter only"
+Name: "custom"; Description: "Choose"; Flags: iscustom
+
+[Components]
+Name: "main"; Description: "Universal Edit (converter and viewer)"; Types: full converter custom; Flags: fixed
+Name: "image"; Description: "Image editor (layers, retouching, background removal; about 24 MB)"; Types: full
+Name: "model"; Description: "3D viewer"; Types: full
+
 [Tasks]
 Name: "contextmenu"; Description: "Add ""Convert with Universal Edit"" to the right-click menu"; GroupDescription: "Windows:"
 Name: "openwith"; Description: "Show Universal Edit in ""Open with"" for pictures, video, music, documents and 3D models"; GroupDescription: "Windows:"
@@ -53,6 +66,9 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; editor add-ons: copied to a temporary folder, then installed (checked) by the app itself
+Source: "{#AddonsDir}\UniversalEdit-addon-image-*.zip"; DestDir: "{tmp}\addons"; Components: image; Flags: deleteafterinstall
+Source: "{#AddonsDir}\UniversalEdit-addon-model-*.zip"; DestDir: "{tmp}\addons"; Components: model; Flags: deleteafterinstall
 
 [InstallDelete]
 ; files of an older version that a new one no longer has (the folder is ours alone)
@@ -63,6 +79,7 @@ Name: "{autoprograms}\Universal Edit"; Filename: "{app}\UniversalEdit.exe"
 Name: "{autodesktop}\Universal Edit"; Filename: "{app}\UniversalEdit.exe"; Tasks: desktopicon
 
 [Run]
+Filename: "{app}\UniversalEdit.exe"; Parameters: "--install-addon all ""{tmp}\addons"""; Components: image or model; StatusMsg: "Installing the editors…"; Flags: runhidden waituntilterminated
 ; each switch is written as chosen (--register also clears what an older version registered)
 Filename: "{app}\UniversalEdit.exe"; Parameters: "--register context-menu"; Tasks: contextmenu; Flags: runhidden waituntilterminated
 Filename: "{app}\UniversalEdit.exe"; Parameters: "--unregister context-menu"; Tasks: not contextmenu; Flags: runhidden waituntilterminated
@@ -70,6 +87,10 @@ Filename: "{app}\UniversalEdit.exe"; Parameters: "--register open-with"; Tasks: 
 Filename: "{app}\UniversalEdit.exe"; Parameters: "--unregister open-with"; Tasks: not openwith; Flags: runhidden waituntilterminated
 Filename: "ms-settings:defaultapps"; Description: "Choose Universal Edit as the default app for pictures and videos (opens Windows settings)"; Tasks: openwith; Flags: postinstall shellexec skipifsilent unchecked
 Filename: "{app}\UniversalEdit.exe"; Description: "Start Universal Edit"; Flags: postinstall nowait skipifsilent
+
+[UninstallDelete]
+; the editors installed as add-ons (the app's settings and tools there are kept)
+Type: filesandordirs; Name: "{localappdata}\UniversalEdit\addons"
 
 [UninstallRun]
 Filename: "{app}\UniversalEdit.exe"; Parameters: "--unregister all"; Flags: runhidden waituntilterminated; RunOnceId: "UnregisterShell"

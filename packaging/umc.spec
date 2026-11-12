@@ -46,10 +46,25 @@ if sys.platform == "win32":  # the version-resource helpers need pefile (Windows
         ],
     )
 
+# Editor add-ons: their modules and their own third-party packages are left out of the app;
+# addon_hashes.json (scripts/build_addons.py, run before this) holds their fingerprints.
+sys.path.insert(0, str(ROOT / "src"))
+from umc.core.addons import ADDONS  # noqa: E402
+
+ADDON_EXCLUDES = [m for a in ADDONS.values() for m in (*a.modules, *a.packages)]
+# every own module except the add-ons' (code only the editors imported must stay: bgremove, …)
+APP_MODULES = collect_submodules(
+    "umc", filter=lambda n: not any(n == m or n.startswith(m + ".") for m in ADDON_EXCLUDES)
+)
+ADDON_HASHES = ROOT / "src" / "umc" / "addon_hashes.json"
+if not ADDON_HASHES.is_file():
+    raise SystemExit("Run scripts/build_addons.py first (it writes src/umc/addon_hashes.json).")
+
 binaries = [(str(p), "bin") for p in BIN.glob("*") if p.is_file()] if BIN.is_dir() else []
 datas = [
     (str(ROOT / "src" / "umc" / "gui" / "style.qss"), "umc/gui"),
     (str(ROOT / "src" / "umc" / "gui" / "logo.svg"), "umc/gui"),  # window / taskbar icon
+    (str(ADDON_HASHES), "umc"),  # the editor add-ons' SHA-256 fingerprints
     (str(ROOT / "LICENSE"), "."),
 ]
 datas += collect_data_files("pymupdf")
@@ -64,8 +79,9 @@ a = Analysis(
     pathex=[str(ROOT / "src")],
     binaries=binaries,
     datas=datas,
-    hiddenimports=["pillow_heif", "rawpy", "cascadio", "py7zr", "pyzipper", "brotli", "vtracer", "pdf2docx", "docx", "ezdxf", "onnxruntime", "mammoth", "markdown", "markdown.extensions.tables", "markdown.extensions.fenced_code", "markdown.extensions.sane_lists", "markdown.extensions.toc", *collect_submodules("fontTools.ttLib.tables"), "umc.gui", "umc.converters", "PySide6.QtSvg", "PySide6.QtOpenGL", "PySide6.QtOpenGLWidgets", "PySide6.QtNetwork", "PySide6.QtMultimedia", "PySide6.QtMultimediaWidgets"],
-    excludes=["tkinter", "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets", "PySide6.Qt3DCore",
+    hiddenimports=[*APP_MODULES, "pillow_heif", "rawpy", "cascadio", "py7zr", "pyzipper", "brotli", "vtracer", "pdf2docx", "docx", "ezdxf", "mammoth", "markdown", "markdown.extensions.tables", "markdown.extensions.fenced_code", "markdown.extensions.sane_lists", "markdown.extensions.toc", *collect_submodules("fontTools.ttLib.tables"), "umc.gui", "umc.converters", "PySide6.QtSvg", "PySide6.QtOpenGL", "PySide6.QtOpenGLWidgets", "PySide6.QtNetwork", "PySide6.QtMultimedia", "PySide6.QtMultimediaWidgets"],
+    # editors that ship as add-ons (core/addons.py, scripts/build_addons.py) stay out of the app
+    excludes=[*ADDON_EXCLUDES, "tkinter", "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets", "PySide6.Qt3DCore",
               "PySide6.QtQuick", "PySide6.QtQml", "PySide6.QtPdf",
               "pymupdf4llm", "pytest"],
     noarchive=False,

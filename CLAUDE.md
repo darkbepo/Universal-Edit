@@ -330,6 +330,7 @@ python scripts/fetch_ffmpeg.py                      # Windows: download FFmpeg i
 python -m umc                                       # run the app
 pytest                                              # run tests (needs ffmpeg/pandoc/soffice for all; else skips)
 ruff check . && ruff format .                       # lint + format
+python scripts/build_addons.py                      # editor add-on zips (before PyInstaller)
 pyinstaller packaging/umc.spec                      # build the executable into dist/
 UniversalEdit.exe --self-test report.txt  # headless smoke test of a build (exit 0 = OK)
 python scripts/convert_matrix.py --out matrix-out   # try EVERY conversion with defaults → report.md
@@ -379,6 +380,9 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
   signing — not set up yet (needs the owner's decision; SignPath.io is free for open source).
 - The installer is `packaging/installer.iss` (Inno Setup; roadmap 10.11), built and tested by the
   same workflow.
+- Editors are add-ons (roadmap 10.12): `python scripts/build_addons.py` must run before
+  `pyinstaller packaging/umc.spec`; a release needs a `v<version>` tag matching `umc.__version__`
+  so the app finds its add-on downloads.
 - The Windows build is produced by `.github/workflows/build-windows.yml` (Actions → "Build Windows
   executable" → Run workflow, or push a `v*` tag); download the zip from the run's artifacts.
 
@@ -810,7 +814,26 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       window's "ok" before hanging up — closing right after writing lost the message on
       Windows, and a Qt socket on a helper thread crashed Qt. The installer's [Run] writes each switch as ticked and
       its [Code] starts an upgrade's ticks from the current registry state (Settings window).
-      Next (step 5): editors as downloadable add-ons, chosen in the installer / Install tiles.
+   12. ✅ Editors as add-ons (desktop build only; from source everything is present).
+      `core/addons.py` `ADDONS` (ids = `core/editors.py`): image = `umc.gui.editor` + site
+      package `onnxruntime` (~24 MB zip); model = `umc.gui.editor3d.viewer_page` (the viewer's
+      3D preview `gl_view` and the Qt-free `umc.editor` / `umc.editor3d` stay in the app: the
+      converter (.ora), video text fonts, the hub and the viewer use them). Zips =
+      `addon.json` + `umc/…` + `site/…`, built by `scripts/build_addons.py`, which also writes
+      the git-ignored `src/umc/addon_hashes.json` the spec bundles (**run it before
+      PyInstaller**; the spec refuses otherwise and keeps every other `umc` module via
+      `collect_submodules`). Installed to `%LOCALAPPDATA%\UniversalEdit\addons\<id>` only if the
+      SHA-256 matches and the manifest's version is this app's; `activate` (no restart) puts
+      `site/` on `sys.path` and appends the add-on folder to the frozen parent package's
+      `__path__`; `app.py` calls `activate_all` (also for `--self-test`). Downloads come from the
+      GitHub release `v<__version__>` (`build-windows.yml` publishes it on a `v*` tag;
+      `UMC_ADDONS_URL` overrides). GUI: `gui/addon_install.ensure_installed` (asked by
+      `MainWindow._editor_ready` for tiles and Edit), tiles' "Install" badge, Settings
+      "Editors" (install / remove). Installer: [Components] image / model → copied to {tmp}
+      and installed by `UniversalEdit.exe --install-addon all <folder>`; uninstall deletes the
+      add-ons folder. CI installs the built add-ons before `--self-test` ("editor add-ons
+      installed and loading"). Tests simulate the built app with `UMC_ADDONS_TEST=1` +
+      `UMC_ADDONS_DIR`.
 11. Ideas: presets, batch queue.
 
 ## Handoff — read this first (for the next Claude account)

@@ -64,10 +64,18 @@ def _start_cleanup() -> None:
 def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv[1:]
     if args[:1] == ["--self-test"]:
+        from umc.core.addons import activate_all
         from umc.selftest import run
 
         setup_logging()
+        activate_all()
         return run(Path(args[1] if len(args) > 1 else "umc-selftest.txt"))
+
+    if args[:1] == ["--install-addon"]:  # the installer / CI: an editor from a local zip
+        from umc.core.addons import run_cli as install_addon
+
+        setup_logging()
+        return install_addon(args)
 
     if args[:1] in (["--register"], ["--unregister"]):  # the installer / uninstaller
         from umc.tools.shell_integration import run_cli
@@ -91,6 +99,9 @@ def main(argv: list[str] | None = None) -> int:
     log_path = setup_logging()
     logging.getLogger(__name__).info("starting v%s, log at %s", __version__, log_path)
     _log_migration()
+    from umc.core.addons import activate_all
+
+    activate_all()  # installed editor add-ons become importable
 
     branding.set_windows_app_id()
     app = QApplication(sys.argv if argv is None else argv)

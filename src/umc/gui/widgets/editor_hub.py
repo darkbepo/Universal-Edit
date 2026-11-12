@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from umc.core import addons
 from umc.core.editors import COMING_SOON, EDITORS, EditorInfo
 from umc.editor.blank import BACKGROUNDS, PRESETS
 from umc.editor.document import MAX_SIDE
@@ -55,9 +56,9 @@ class EditorTile(QPushButton):
         self.icon = QLabel()
         top.addWidget(self.icon)
         top.addStretch(1)
-        self.badge = QLabel(COMING_SOON, objectName="Badge") if not info.available else None
-        if self.badge is not None:
-            top.addWidget(self.badge)
+        # "Coming soon" (not ready) or "Install" (an add-on not downloaded yet)
+        self.badge = QLabel(COMING_SOON if not info.available else "Install", objectName="Badge")
+        top.addWidget(self.badge)
         lay.addLayout(top)
         self.title = QLabel(info.title, objectName="EditorTileTitle")
         self.blurb = QLabel(info.blurb, objectName="Muted")
@@ -65,9 +66,25 @@ class EditorTile(QPushButton):
         lay.addWidget(self.title)
         lay.addWidget(self.blurb, 1, Qt.AlignmentFlag.AlignTop)
         for w in (self.icon, self.title, self.blurb, self.badge):
-            if w is not None:  # clicks go to the button
-                w.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+            w.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)  # clicks: the button
+        self.refresh_install_state()
         self.retint()
+
+    @property
+    def needs_install(self) -> bool:
+        return self.info.available and not addons.installed(self.info.id)
+
+    def refresh_install_state(self) -> None:
+        if not self.info.available:
+            self.badge.setVisible(True)
+            return
+        self.badge.setVisible(self.needs_install)
+        if self.needs_install:
+            size = addons.download_size(self.info.id)
+            more = f" (about {size / 1e6:.0f} MB)" if size >= 1e6 else ""
+            self.setToolTip(f"Install the {self.info.title.lower()}{more}, then open it")
+        else:
+            self.setToolTip(f"Open the {self.info.title.lower()} without a file")
 
     def retint(self) -> None:
         pal = theme.palette()
@@ -108,6 +125,10 @@ class EditorHub(QFrame):
     def retint(self) -> None:
         for tile in self.tiles.values():
             tile.retint()
+
+    def refresh_install_state(self) -> None:
+        for tile in self.tiles.values():
+            tile.refresh_install_state()
 
 
 class NewPictureDialog(QDialog):

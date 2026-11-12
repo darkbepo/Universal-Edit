@@ -11,3 +11,6 @@ packaging/tessdata/
 packaging/fonts/
 *.log
 .claude/worktrees/
+
+# made by scripts/build_addons.py (bundled into the .exe)
+src/umc/addon_hashes.json

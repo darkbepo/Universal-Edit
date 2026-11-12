@@ -512,6 +512,9 @@ class MainWindow(QMainWindow):
         if kind is None or self.busy:
             self.convert_mode.setChecked(True)
             return
+        if not self._editor_ready(kind):
+            self.convert_mode.setChecked(True)
+            return
         page = self._page(kind)
         if kind == "document":
             page.open_path(self.files[0].path)
@@ -532,10 +535,20 @@ class MainWindow(QMainWindow):
         page.canvas.fit()
         page.canvas.setFocus()
 
+    def _editor_ready(self, kind: str) -> bool:
+        """An editor that's an add-on (desktop build) is offered for download first."""
+        from umc.gui.addon_install import ensure_installed
+
+        ok = ensure_installed(self, kind)
+        self.hub.refresh_install_state()
+        return ok
+
     def open_editor(self, kind: str) -> bool:
         """An editor tile: open that editor without files (the image editor asks for the size
         of a new picture first). False if nothing was opened."""
         if self._current_editor() is not None or self.busy:
+            return False
+        if kind in ("image", "model") and not self._editor_ready(kind):
             return False
         if kind == "image":
             dialog = NewPictureDialog(self)
