@@ -4,6 +4,7 @@
 // ODF), our own font reader, the 3D viewer's reader. What can't be read becomes a note.
 import { ConversionError, type Converter, type InputFile } from "../core/types";
 import type { Facts } from "../properties/info";
+import { canChange, readDetails } from "../properties/photo";
 import { BROWSER_NOTE, clean, dms, exifDate, fontFacts, iso6709, NOTE, ODF_EXTS, OFFICE_EXTS, odfFacts, officeFacts, pdfDate, rational } from "../properties/read";
 
 export const PROPERTIES_TARGET = { id: "properties", label: "Properties", ext: "json", group: "", converterId: "properties-info" };
@@ -12,7 +13,7 @@ async function picture(f: InputFile): Promise<Facts> {
   const { getMagick, readFrames } = await import("../engines/magick");
   const M = await getMagick();
   const bytes = new Uint8Array(await f.file.arrayBuffer());
-  return readFrames(M, bytes, f.ext, (imgs) => {
+  const p0 = readFrames(M, bytes, f.ext, (imgs) => {
     const img = imgs[0];
     const attr = (name: string) => {
       const v = img.getAttribute(`exif:${name}`);
@@ -31,8 +32,8 @@ async function picture(f: InputFile): Promise<Facts> {
     p.orientation = Number(attr("Orientation")) || 1;
     p.make = attr("Make");
     p.model = attr("Model");
-    p.description = attr("ImageDescription");
-    p.artist = attr("Artist");
+    p.title = attr("ImageDescription");
+    p.author = attr("Artist");
     p.copyright = attr("Copyright");
     p.taken = exifDate(attr("DateTimeOriginal") ?? attr("DateTime") ?? "");
     p.lens = attr("LensModel");
@@ -51,6 +52,15 @@ async function picture(f: InputFile): Promise<Facts> {
     }
     return clean(p);
   });
+  if (canChange(f.ext)) { // the details people change: read them like the form does
+    try {
+      const d = readDetails(bytes);
+      for (const key of ["title", "comment", "author", "copyright", "tags"] as const) p0[key] = d[key] || undefined;
+    } catch {
+      // unreadable details: keep what ImageMagick found
+    }
+  }
+  return clean(p0);
 }
 
 async function media(f: InputFile): Promise<Facts> {

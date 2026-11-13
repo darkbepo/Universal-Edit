@@ -90,9 +90,11 @@ export function pictureSections(p: Facts): Section[] {
   if (p.flash !== null && p.flash !== undefined) cam.add("Flash", int(p.flash) & 1 ? "Fired" : "Didn't fire");
 
   const det = section("Details");
-  det.add("Description", p.description);
-  det.add("Author", p.artist);
+  det.add("Title", p.title);
+  det.add("Comments", p.comment);
+  det.add("Author", p.author);
   det.add("Copyright", p.copyright);
+  det.add("Tags", p.tags);
 
   return [pic, cam, det, locationSection(p)];
 }

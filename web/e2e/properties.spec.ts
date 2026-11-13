@@ -37,7 +37,7 @@ test("a photo: camera, settings and location; Convert brings the formats back", 
     Camera: "Canon EOS R6", Lens: "RF 50mm F1.8 STM", Taken: "2026-11-12 14:03", Exposure: "1/120 s",
     Aperture: "f/1.8", ISO: "200", "Focal length": "50 mm", Flash: "Didn't fire",
   });
-  expect(await card(page, "Details")).toEqual({ Description: "Harbour at dusk", Author: "Ada Lovelace", Copyright: "CC BY 4.0" });
+  expect(await card(page, "Details")).toEqual({ Title: "Harbour at dusk", Author: "Ada Lovelace", Copyright: "CC BY 4.0" });
   expect(await card(page, "Location")).toEqual({ Coordinates: "55.67610, 12.56997", Altitude: "12 m" });
   await page.getByRole("button", { name: "Convert mode" }).click();
   await expect(page.locator(".properties-pane")).toBeHidden();
@@ -91,4 +91,85 @@ test("fonts, Word documents and 3D models", async ({ page }) => {
   await expect(page.locator('.prop-card[data-title="File"]')).toContainText("DOCX document");
   await page.locator(".prop-file").selectOption({ label: "box.stl" });
   expect(await card(page, "3D model")).toMatchObject({ Watertight: "Yes" });
+});
+
+test.describe("change photo details", () => {
+  test.skip(!existsSync(`${FIXTURES}camera.jpg`), "python3 missing: no sample photo");
+
+  test("change, download, and the queue keeps the changed picture", async ({ page }) => {
+    await page.goto("./");
+    await add(page, ["camera.jpg"]);
+    await propertiesButton(page).click();
+    const form = page.locator(".ph-form");
+    await expect(form).toBeVisible();
+    await expect(page.locator("#ph-title")).toHaveValue("Harbour at dusk");
+    await expect(page.locator("#ph-taken")).toHaveValue("2026-11-12 14:03");
+    await expect(page.locator("#ph-rotation")).toHaveValue("6");
+    const save = form.getByRole("button", { name: "Download with changes" });
+    await expect(save).toBeDisabled();
+    await page.locator("#ph-title").fill("Pier");
+    await page.locator("#ph-author").fill("Grace Hopper");
+    await page.locator("#ph-rotation").selectOption("1");
+    await page.locator("#ph-remove-location").check();
+    const download = page.waitForEvent("download");
+    await save.click();
+    const file = await download;
+    expect(file.suggestedFilename()).toBe("camera.jpg");
+    const saved = await file.path();
+    const { readDetails } = await import("../src/properties/photo");
+    const { readFileSync } = await import("node:fs");
+    const d = readDetails(new Uint8Array(readFileSync(saved)));
+    expect([d.title, d.author, d.orientation, d.has_location]).toEqual(["Pier", "Grace Hopper", 1, false]);
+    await expect(form).toContainText("Downloaded “camera.jpg”");
+    // "About this file" now shows the changed picture
+    await expect(page.locator('.prop-card[data-title="Details"]')).toContainText("Pier");
+    await expect(page.locator('.prop-card[data-title="Location"]')).toHaveCount(0);
+    // the desktop app reads the same details from it
+    const { execFileSync } = await import("node:child_process");
+    const out = execFileSync("python3", ["-c",
+      "import sys, json; sys.path.insert(0, sys.argv[1]); from dataclasses import asdict; " +
+      "from umc.properties.photo import read_details; print(json.dumps(asdict(read_details(open(sys.argv[2], 'rb').read()))))",
+      new URL("../../src", import.meta.url).pathname, saved]).toString();
+    expect(JSON.parse(out)).toEqual(d);
+  });
+
+  test("several pictures: apply to all, several values stay, a ZIP download", async ({ page }) => {
+    await page.goto("./");
+    await add(page, ["camera.jpg", "img0.png"]);
+    await propertiesButton(page).click();
+    await expect(page.locator(".ph-form")).toBeVisible();
+    await page.locator("#ph-apply-all").check();
+    await expect(page.locator("#ph-title")).toHaveValue("");
+    await expect(page.locator("#ph-title")).toHaveAttribute("placeholder", "Several values");
+    await page.locator("#ph-copyright").fill("CC0");
+    const download = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Download changed pictures (.zip)" }).click();
+    const file = await download;
+    expect(file.suggestedFilename()).toBe("pictures (changed details).zip");
+    const { unzipSync } = await import("fflate");
+    const { readFileSync } = await import("node:fs");
+    const { readDetails } = await import("../src/properties/photo");
+    const zip = unzipSync(new Uint8Array(readFileSync(await file.path())));
+    expect(Object.keys(zip).sort()).toEqual(["camera.jpg", "img0.png"]);
+    expect(readDetails(zip["camera.jpg"])).toMatchObject({ copyright: "CC0", title: "Harbour at dusk" });
+    expect(readDetails(zip["img0.png"])).toMatchObject({ copyright: "CC0", title: "" });
+  });
+
+  test("a bad date is refused in plain words", async ({ page }) => {
+    await page.goto("./");
+    await add(page, ["camera.jpg"]);
+    await propertiesButton(page).click();
+    await page.locator("#ph-taken").fill("12/11/2026");
+    await expect(page.locator("#ph-taken")).toHaveClass(/invalid/);
+    await page.getByRole("button", { name: "Download with changes" }).click();
+    await expect(page.locator(".ph-note")).toContainText("year-month-day");
+  });
+
+  test("no form for pictures it can't change", async ({ page }) => {
+    await page.goto("./");
+    await add(page, ["design.psd"]);
+    await propertiesButton(page).click();
+    await expect(page.locator('.prop-card[data-title="File"]')).toBeVisible();
+    await expect(page.locator(".ph-form")).toBeHidden();
+  });
 });

@@ -237,6 +237,7 @@ class MainWindow(QMainWindow):
         self.empty_hint = QLabel("Add files to see what they can become.", objectName="EmptyHint")
         self.empty_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.properties_panel = PropertiesPanel()
+        self.properties_panel.files_saved.connect(self._files_saved)
         self.right = QStackedWidget(objectName="RightColumn")
         self.right.addWidget(self.empty_hint)
         self.right.addWidget(self.tabs)
@@ -402,6 +403,11 @@ class MainWindow(QMainWindow):
     def _rebuild_list(self) -> None:
         self.file_list.set_files(self.files)
         self._update_left_sizes()
+
+    def _files_saved(self, paths: list) -> None:
+        """Properties changed these files' details: new previews (a rotation shows there)."""
+        self.file_list.forget_thumbnails([str(p) for p in paths])
+        self._rebuild_list()
 
     def _sync_order(self, *_args) -> None:
         by_path = {str(f.path): f for f in self.files}

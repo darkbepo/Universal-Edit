@@ -264,6 +264,11 @@ class FileQueue(QListWidget):
         if not self._pending:
             self._poll.stop()
 
+    def forget_thumbnails(self, paths: list[str]) -> None:
+        """Those files changed on disk (e.g. a new rotation): make their previews again."""
+        for p in paths:
+            self._thumbs.pop(p, None)
+
     def thumbnails_pending(self) -> bool:
         return bool(self._pending)
 

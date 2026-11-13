@@ -8,6 +8,7 @@ import { build, type Facts, type Section } from "../properties/info";
 import { fileFacts } from "../properties/read";
 import { ConversionClient } from "../worker/client";
 import { icon } from "./icons";
+import { PhotoForm } from "./photoform";
 
 const h = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> & { class?: string } = {}, ...children: (Node | string)[]) => {
   const el = document.createElement(tag);
@@ -29,11 +30,17 @@ export class PropertiesPane {
   private reading = false;
   private readonly client = new ConversionClient(); // its worker starts on the first read
   sections: Section[] = [];
+  readonly form: PhotoForm;
 
-  constructor() {
+  /** ``onChanged``: pictures whose details were changed (their bytes in the queue are new). */
+  constructor(private readonly onChanged: (files: InputFile[]) => void = () => {}) {
+    this.form = new PhotoForm((changed) => {
+      this.onChanged(changed);
+      if (this.current) void this.show(this.files.indexOf(this.current), true);
+    });
     this.el = h("section", { class: "pane properties-pane", hidden: true, ariaLabel: "Properties" },
       h("div", { class: "pane-head" }, h("span", { class: "pane-icon" }, icon("info-circle", 18)), h("h2", {}, "About this file"), h("div", { class: "spacer" }), this.picker),
-      h("div", { class: "pane-body" }, this.status, this.body));
+      h("div", { class: "pane-body" }, this.status, this.form.el, this.body));
     this.picker.addEventListener("change", () => void this.show(this.picker.selectedIndex));
   }
 
@@ -53,11 +60,12 @@ export class PropertiesPane {
     if (this.files[index] !== this.current || !this.sections.length) void this.show(index);
   }
 
-  async show(index: number): Promise<void> {
+  async show(index: number, keepNote = false): Promise<void> {
     const f = this.files[index];
     if (!f) return;
     this.current = f;
     const ticket = ++this.ticket;
+    void this.fillForm(f, ticket, keepNote);
     const base = fileFacts(f.file, f.name, f.ext, f.family);
     this.render(build({ file: base })); // the file's own facts at once, the rest when read
     this.status.textContent = `Reading ${f.name}…`;
@@ -76,6 +84,28 @@ export class PropertiesPane {
     if (ticket !== this.ticket) return; // the user moved on
     this.status.hidden = true;
     this.render(build({ ...facts, file: base }));
+  }
+
+  /** The "Change details" form, for JPG / PNG / WebP pictures. */
+  private async fillForm(f: InputFile, ticket: number, keepNote: boolean): Promise<void> {
+    const changeable = (g: InputFile) => ["jpg", "png", "webp"].includes(g.ext);
+    if (!changeable(f)) {
+      this.form.set(null, []);
+      return;
+    }
+    const photo = await import("../properties/photo");
+    const read = async (g: InputFile) => {
+      try {
+        return { file: g, details: photo.readDetails(new Uint8Array(await g.file.arrayBuffer())) };
+      } catch {
+        return null;
+      }
+    };
+    const everyone = (await Promise.all(this.files.filter(changeable).map(read))).filter((x) => x !== null);
+    if (ticket !== this.ticket) return;
+    const note = keepNote ? this.form.noteText : "";
+    this.form.set(everyone.find((x) => x.file === f) ?? null, everyone);
+    if (note) this.form.keepNote(note);
   }
 
   private render(sections: Section[]): void {

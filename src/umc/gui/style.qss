@@ -365,6 +365,10 @@ QComboBox:hover, QSpinBox:hover, QDoubleSpinBox:hover, QLineEdit:hover {
 QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus, QLineEdit:focus {
     border-color: @accent;
 }
+QLineEdit[invalid="true"] {
+    border-color: @danger;
+}
+
 QAbstractSpinBox::up-button, QAbstractSpinBox::down-button {
     width: 0;
     border: none;

@@ -15,7 +15,7 @@ different rules per kind of file. Both apps.
 ## Steps
 
 1. ✅ The switch and the read-only **About this file** panel (this step).
-2. Photos: title, description, author, copyright, tags, date taken, rotation flag; remove
+2. ✅ Photos: title, comments, author, copyright, tags, date taken, rotation flag; remove
    location / remove all hidden details. Lossless: only the EXIF / XMP segment is replaced
    (JPEG APP1, PNG eXIf / iTXt, WebP EXIF chunk), the picture bytes stay. Windows reads Title /
    Authors / Tags from the XP* tags (UTF-16), so they are written too. HEIC / RAW read-only.

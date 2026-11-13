@@ -897,8 +897,20 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       web e2e setup calls it). Web: no folder, no subtitle track list, Mediabunny can't read
       AVI / WMV / FLV (shows a "desktop app can" note). In both apps the editors' own top bars
       have no mode switch ("← Back to Convert"), so Properties is reached from the converter
-      page. Next steps (owner's go-ahead given): change photo details (lossless EXIF segment
-      swap), music tags (mutagen, GPL-2.0+, approved), video, PDF / Office, file name + dates.
+      page. Step 2 ✅ change photo details (JPG / PNG / WebP): `properties/exif.py` (TIFF parse
+      + *append* rewrite — originals stay at their offsets because maker notes point into them;
+      orphaned old directories / values / GPS are zeroed), `containers.py` (EXIF / XMP in JPEG
+      APP1, PNG eXIf + iTXt, WebP EXIF / XMP + VP8X made when missing), `xmp.py` (get / remove a
+      property; a changed field drops its XMP twin so it can't win), `photo.py` (fields → tags:
+      title = ImageDescription + XPTitle, author = Artist + XPAuthor, comments XPComment, tags
+      XPKeywords, taken DateTimeOriginal + Digitized; `save_file` = temp file + `os.replace`,
+      keeps mtime). Web ports `web/src/properties/{exif,containers,xmp,photo}.ts` write the SAME
+      BYTES: `tests/fixtures/photo_edit_cases.json` (regenerate on purpose with
+      `python scripts/make_photo_cases.py`). Forms: desktop `gui/properties/photo_form.py`
+      (Save changes asks once, QSettings `properties/ask_before_changing`; Save as copy =
+      `name (1).jpg`), web `ui/photoform.ts` (downloads; replaces the queue's File so later
+      conversions use it). e2e checks the desktop reader on a web-saved photo (python3).
+      Next steps: music tags (mutagen, GPL-2.0+, approved), video, PDF / Office, file name + dates.
    15. Orbiting drop-zone badges (both apps): 12 file-type badges (icon + type, own colour,
       dimmed to 62 %) on three tilted rings around the empty drop zone's text, smaller / fainter
       on the far side, faded near the text. Dragging a file over pulls them in and speeds them up;

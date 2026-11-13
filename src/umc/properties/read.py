@@ -15,6 +15,7 @@ from xml.etree import ElementTree as ET
 
 from umc.core.detect import DetectedFile, MediaFamily
 from umc.properties import format as fmt
+from umc.properties import photo
 from umc.properties.info import Section, build
 
 log = logging.getLogger(__name__)
@@ -182,8 +183,8 @@ def _picture(f: DetectedFile) -> tuple[str, dict]:
         p["orientation"] = int(exif.get(0x0112) or 1)
         p["make"] = _text(exif.get(0x010F))
         p["model"] = _text(exif.get(0x0110))
-        p["description"] = _text(exif.get(0x010E))
-        p["artist"] = _text(exif.get(0x013B))
+        p["title"] = _text(exif.get(0x010E))
+        p["author"] = _text(exif.get(0x013B))
         p["copyright"] = _text(exif.get(0x8298))
         sub = exif.get_ifd(0x8769)
         p["taken"] = exif_date(_text(sub.get(0x9003)) or _text(exif.get(0x0132)) or "")
@@ -202,6 +203,14 @@ def _picture(f: DetectedFile) -> tuple[str, dict]:
             alt = _num(gps.get(6))
             if alt is not None:
                 p["altitude"] = -alt if gps.get(5) in (1, b"\x01") else alt
+    if photo.can_change(f.ext):  # the details people change: read them like the form does
+        try:
+            d = photo.read_details(f.path.read_bytes())
+        except (OSError, ValueError):
+            d = None
+        if d is not None:
+            for key in ("title", "comment", "author", "copyright", "tags"):
+                p[key] = getattr(d, key) or None
     return "picture", {k: v for k, v in p.items() if v is not None}
 
 

@@ -568,3 +568,13 @@ body.no-select { user-select: none; -webkit-user-select: none; }
   .doc-scroll { padding: 12px 0; }
   .doc-page { width: 100%; min-height: 0; padding: 24px 16px; border-left: none; border-right: none; }
 }
+/* "Change details" (ui/photoform.ts) */
+.ph-form { margin-bottom: 10px; }
+.ph-grid { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 14px; align-items: center; }
+.ph-grid label { color: var(--muted); }
+.ph-grid input, .ph-grid select { font: inherit; padding: 5px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); min-width: 0; }
+.ph-grid input.invalid { border-color: var(--danger); }
+.ph-check { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.ph-note { margin-top: 8px; }
+.ph-note.error { color: var(--danger); }
+.ph-actions { display: flex; justify-content: flex-end; margin-top: 10px; }

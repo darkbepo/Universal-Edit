@@ -29,12 +29,14 @@
     "iso": 200,
     "focal": 50,
     "flash": 16,
-    "description": "Harbour at dusk",
-    "artist": "Ada Lovelace",
     "copyright": "CC BY 4.0",
     "lat": 55.6676,
     "lon": 12.5699,
-    "altitude": 12.4
+    "altitude": 12.4,
+    "title": "Harbour at dusk",
+    "author": "Ada Lovelace",
+    "comment": "From the pier",
+    "tags": "sea; boats"
    }
   },
   "sections": [
@@ -129,8 +131,12 @@
     "title": "Details",
     "rows": [
      [
-      "Description",
+      "Title",
       "Harbour at dusk"
+     ],
+     [
+      "Comments",
+      "From the pier"
      ],
      [
       "Author",
@@ -139,6 +145,10 @@
      [
       "Copyright",
       "CC BY 4.0"
+     ],
+     [
+      "Tags",
+      "sea; boats"
      ]
     ]
    },

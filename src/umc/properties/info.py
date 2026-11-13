@@ -10,7 +10,8 @@ Facts (every key optional):
   file:     name, type, size, modified, folder
   picture:  width, height, kind ("colour" | "greyscale" | "bw" | "cmyk"), alpha, frames, dpi
             [x, y], orientation (EXIF 1–8), and from EXIF: make, model, lens, taken, exposure,
-            fnumber, iso, focal, flash, description, artist, copyright, lat, lon, altitude
+            fnumber, iso, focal, flash, title, comment, author, copyright, tags, lat, lon,
+            altitude
   media:    duration, size, video {codec, width, height, fps, rotation}, audio [{codec,
             channels, sample_rate, language}], subtitles [{language}], tags {title, artist,
             album, album_artist, track, disc, date, genre, composer, comment}, cover, lat, lon,
@@ -163,9 +164,11 @@ def picture_sections(p: dict) -> list[Section]:
         cam.add("Flash", "Fired" if int(p["flash"]) & 1 else "Didn't fire")
 
     det = Section("Details")
-    det.add("Description", p.get("description"))
-    det.add("Author", p.get("artist"))
+    det.add("Title", p.get("title"))
+    det.add("Comments", p.get("comment"))
+    det.add("Author", p.get("author"))
     det.add("Copyright", p.get("copyright"))
+    det.add("Tags", p.get("tags"))
 
     return [pic, cam, det, _location(p)]
 
