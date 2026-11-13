@@ -22,6 +22,26 @@ export function findPython(): string | null {
   return null;
 }
 
+/** A 20 × 10 × 5 mm box as binary STL (12 triangles), away from the origin. */
+export function boxStl(path: string) {
+  const [w, d, h] = [20, 10, 5];
+  const c = (x: number, y: number, z: number) => [x * w + 40, y * d + 40, z * h + 40];
+  const quads = [
+    [[0, 0, 0], [0, 1, 0], [1, 1, 0], [1, 0, 0]], [[0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]],
+    [[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]], [[0, 1, 0], [0, 1, 1], [1, 1, 1], [1, 1, 0]],
+    [[0, 0, 0], [0, 0, 1], [0, 1, 1], [0, 1, 0]], [[1, 0, 0], [1, 1, 0], [1, 1, 1], [1, 0, 1]],
+  ];
+  const buf = Buffer.alloc(84 + 12 * 50);
+  buf.writeUInt32LE(12, 80);
+  let o = 84;
+  for (const q of quads) for (const tri of [[q[0], q[1], q[2]], [q[0], q[2], q[3]]]) {
+    o += 12; // normal (slicers recompute it)
+    for (const v of tri) for (const x of c(v[0], v[1], v[2])) { buf.writeFloatLE(x, o); o += 4; }
+    o += 2;
+  }
+  writeFileSync(path, buf);
+}
+
 export default async function globalSetup() {
   mkdirSync(FIXTURES, { recursive: true });
   const mupdf = await import("mupdf");
@@ -191,6 +211,7 @@ export default async function globalSetup() {
   }
   // STEP / IGES cubes (10 mm) shared with the desktop tests.
   for (const f of ["cube-10mm.stp", "cube-10mm.igs"]) copyFileSync(fileURLToPath(new URL(`../../tests/fixtures/${f}`, import.meta.url)), `${FIXTURES}${f}`);
+  boxStl(`${FIXTURES}box.stl`); // 3D viewer and Properties tests
   if (!existsSync(`${FIXTURES}noise.png`)) {
     const pix = new mupdf.Pixmap(mupdf.ColorSpace.DeviceRGB, [0, 0, 1200, 900], false);
     const px = pix.getPixels();

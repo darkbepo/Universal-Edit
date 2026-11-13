@@ -1,7 +1,6 @@
 // The 3D viewer: Convert | Edit for 3D models, measurements, views — in real Chromium (WebGL).
-import { writeFileSync } from "node:fs";
 import { expect, type Page, test } from "@playwright/test";
-import { FIXTURES } from "./global-setup";
+import { FIXTURES } from "./global-setup"; // box.stl is made there
 
 const fx = (name: string) => `${FIXTURES}${name}`;
 
@@ -18,26 +17,6 @@ declare global {
   }
 }
 
-/** A 20 × 10 × 5 mm box as binary STL (12 triangles), away from the origin. */
-function boxStl(path: string) {
-  const [w, d, h] = [20, 10, 5];
-  const c = (x: number, y: number, z: number) => [x * w + 40, y * d + 40, z * h + 40];
-  const quads = [
-    [[0, 0, 0], [0, 1, 0], [1, 1, 0], [1, 0, 0]], [[0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]],
-    [[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]], [[0, 1, 0], [0, 1, 1], [1, 1, 1], [1, 1, 0]],
-    [[0, 0, 0], [0, 0, 1], [0, 1, 1], [0, 1, 0]], [[1, 0, 0], [1, 1, 0], [1, 1, 1], [1, 0, 1]],
-  ];
-  const buf = Buffer.alloc(84 + 12 * 50);
-  buf.writeUInt32LE(12, 80);
-  let o = 84;
-  for (const q of quads) for (const tri of [[q[0], q[1], q[2]], [q[0], q[2], q[3]]]) {
-    o += 12; // normal (slicers recompute it)
-    for (const v of tri) for (const x of c(v[0], v[1], v[2])) { buf.writeFloatLE(x, o); o += 4; }
-    o += 2;
-  }
-  writeFileSync(path, buf);
-}
-
 async function openViewer(page: Page, files: string[]) {
   await page.goto("./?e2e");
   await page.locator('input[type="file"]').first().setInputFiles(files);
@@ -45,8 +24,6 @@ async function openViewer(page: Page, files: string[]) {
   await expect(page.locator(".viewer3d")).toBeVisible();
   await expect(page.locator(".viewer3d-info")).toContainText("Width (X)");
 }
-
-test.beforeAll(() => boxStl(fx("box.stl")));
 
 test("Edit opens 3D models in the viewer and shows their size", async ({ page }) => {
   await openViewer(page, [fx("box.stl")]);
