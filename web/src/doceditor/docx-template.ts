@@ -126,7 +126,7 @@ export const CORE =
 
 export const APP =
   `${XML_HEAD}<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties">` +
-  "<Application>Universal Media Converter</Application></Properties>";
+  "<Application>Universal Edit</Application></Properties>";
 
 const rel = (id: string, type: string, target: string) =>
   `<Relationship Id="${id}" Type="${type}" Target="${target}"/>`;
