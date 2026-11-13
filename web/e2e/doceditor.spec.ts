@@ -127,11 +127,62 @@ test("a press on the page's scrollbar scrolls and keeps the selection", async ({
     const r = el.getBoundingClientRect();
     return { x: r.left + el.clientLeft + el.clientWidth, w: r.right - (r.left + el.clientLeft + el.clientWidth), y: r.top + r.height / 2 };
   });
-  expect(bar.w).toBeGreaterThan(8);
+  test.skip(bar.w === 0, "this browser uses overlay scrollbars: nothing to press");
   const top = await page.locator(".doc-scroll").evaluate((el) => el.scrollTop);
   await page.mouse.move(bar.x + bar.w / 2, bar.y);
   await page.mouse.down();
   await page.mouse.up();
   expect(await sel()).toBe("Line 1");
   await expect.poll(() => page.locator(".doc-scroll").evaluate((el) => el.scrollTop)).toBeGreaterThan(top); // it scrolled
+});
+
+test("the page shows while a document opens (the converter's download visible there)", async ({ page }) => {
+  let release!: () => void;
+  const held = new Promise<void>((r) => (release = r));
+  await page.route(/pandoc-[^/]*\.wasm$/, async (route) => {
+    await held;
+    await route.continue();
+  });
+  await load(page, []);
+  await page.locator('input[type="file"]').first().setInputFiles([{ name: "memo.rtf", mimeType: "application/rtf", buffer: Buffer.from("{\rtf1\ansi Hello from RTF\par}") }]);
+  await editBtn(page).dblclick(); // a double click opens it once
+  await expect(page.locator(".doc-editor")).toBeVisible();
+  await expect(page.locator("main.app")).toBeHidden();
+  await expect(page.locator(".doc-editor .doc-message")).toContainText(/Opening|Downloading/);
+  release();
+  await expect(page.locator(".doc-editor .ProseMirror")).toContainText("Hello from RTF", { timeout: 120_000 });
+  await expect(page.locator(".doc-editor")).toHaveCount(1);
+});
+
+test("an open that fails goes back to Convert with the reason", async ({ page }) => {
+  await load(page, []);
+  await page.locator('input[type="file"]').first().setInputFiles([{ name: "broken.docx", mimeType: "application/octet-stream", buffer: Buffer.from("not a zip at all") }]);
+  await editBtn(page).click();
+  await expect(page.locator(".note")).toBeVisible();
+  await expect(page.locator(".note")).not.toHaveText("");
+  await expect(page.locator(".doc-editor")).toBeHidden();
+  await expect(page.locator("main.app")).toBeVisible();
+  await expect(editBtn(page)).toBeEnabled();
+});
+
+test("the Convert and Properties mode buttons ask first with unsaved edits", async ({ page }) => {
+  await openDoc(page, fx("notes.txt"));
+  await page.locator(".doc-editor .ProseMirror").click();
+  await page.keyboard.type("changed ");
+  // the mode bar sits on the hidden converter page: press its buttons from script
+  const press = (sel: string) => page.locator(sel).evaluate((b: HTMLElement) => b.click());
+  for (const sel of ['button[aria-label="Convert mode"]', '.mode button:has-text("Properties")']) {
+    const asked: string[] = [];
+    page.once("dialog", (d) => {
+      asked.push(d.message());
+      void d.dismiss();
+    });
+    await press(sel);
+    await expect.poll(() => asked, sel).toEqual(["Discard unsaved changes to this document?"]);
+    await expect(page.locator(".doc-editor")).toBeVisible();
+  }
+  page.once("dialog", (d) => void d.accept());
+  await press('.mode button:has-text("Properties")');
+  await expect(page.locator(".doc-editor")).toBeHidden();
+  await expect(page.locator("main.app")).toBeVisible();
 });

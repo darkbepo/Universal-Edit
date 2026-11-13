@@ -239,7 +239,7 @@ export function mountApp(root: HTMLElement): void {
     markdownZips.set(f, false);
     if (f.file.size > MAX_FILE_BYTES) return;
     try {
-      const [{ isEditableMarkdownZip }, bytes] = await Promise.all([import("../doceditor/open"), f.file.arrayBuffer()]);
+      const [{ isEditableMarkdownZip }, bytes] = await Promise.all([import("../doceditor/mdzip"), f.file.arrayBuffer()]);
       markdownZips.set(f, isEditableMarkdownZip(new Uint8Array(bytes)));
     } catch (e) {
       console.error(`Couldn't look inside ${f.name}`, e);
@@ -289,9 +289,11 @@ export function mountApp(root: HTMLElement): void {
     if (editing) {
       if (editor && !editor.el.hidden && !editor.maybeLeave()) return;
       if (docEditor && !docEditor.el.hidden && !docEditor.maybeLeave()) return;
+      if (audio && !audio.el.hidden && !audio.maybeLeave()) return;
       editing = false;
       editor?.hide();
       viewer?.hide();
+      audio?.hide();
       docEditor?.hide();
       appMain.hidden = false;
       bar.hidden = false;
@@ -323,7 +325,7 @@ export function mountApp(root: HTMLElement): void {
     page.show();
   }
   async function enterEdit() {
-    if (editing || busy || !canEdit()) return;
+    if (editing || busy || opening || !canEdit()) return;
     if (editKind() === "model") {
       const v = await ensureViewer();
       await v.open(files);
@@ -331,16 +333,34 @@ export function mountApp(root: HTMLElement): void {
       return;
     }
     if (editKind() === "document") {
-      const d = await ensureDocEditor();
+      // the page shows straight away, with "Opening…" and the converter's download progress
+      const f = files[0];
+      opening = true;
       editMode.disabled = true;
-      const ok = await d.open(files[0]);
-      editMode.disabled = !canEdit();
-      if (!ok) {
-        note.textContent = d.lastError();
-        note.hidden = false;
-        return;
+      try {
+        let d: import("./doceditor/page").DocEditorPage;
+        try {
+          d = await ensureDocEditor();
+        } catch (e) {
+          console.error("Couldn't load the document editor", e);
+          docEditorP = null; // try again next time
+          note.textContent = "Couldn't load the document editor. Check the internet connection and try again.";
+          note.hidden = false;
+          return;
+        }
+        showPage(d);
+        const ok = await d.open(f);
+        const why = d.lastError();
+        // an empty reason: a later open (a drop) took over, so the page stays
+        if (!ok && why && !d.el.hidden) {
+          showConverter();
+          note.textContent = why;
+          note.hidden = false;
+        }
+      } finally {
+        opening = false;
+        editMode.disabled = !canEdit();
       }
-      showPage(d);
       return;
     }
     if (editKind() === "audio") {
