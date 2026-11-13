@@ -1029,9 +1029,9 @@ def export_dialog(qtbot, vmedia):
     from umc.gui.videoedit.dialogs import ExportDialog
     from umc.videoedit.media import new_project
 
-    # QSettings() needs organisation / application names (app.py sets them; tests don't)
-    QCoreApplication.setOrganizationName("umc-test")
-    QCoreApplication.setApplicationName("umc-test-vedit")
+    # QSettings() needs an organisation name (app.py sets it; tests use their own)
+    old_org = QCoreApplication.organizationName()
+    QCoreApplication.setOrganizationName("UMC-tests")
     QSettings().remove("videoedit/export")
     project, _ = new_project([vmedia / "red.mp4"])
     dlg = ExportDialog(project)
@@ -1040,8 +1040,7 @@ def export_dialog(qtbot, vmedia):
     yield dlg
     QSettings().remove("videoedit/export")
     QSettings().sync()
-    QCoreApplication.setOrganizationName("")
-    QCoreApplication.setApplicationName("")
+    QCoreApplication.setOrganizationName(old_org)
 
 
 def _pick_container(dlg, container):
@@ -1110,3 +1109,135 @@ def test_export_dialog_remembers_options(export_dialog, qtbot, vmedia):
     qtbot.addWidget(again)
     assert again.settings.values()["container"] == "mkv"
     assert again.path_edit.text().endswith(".mkv")
+
+
+@needs_ffmpeg
+@pytest.mark.parametrize("how", ["reject", "escape", "close"])
+def test_export_dialog_close_while_running_cancels_then_closes(export_dialog, qtbot, tmp_path, how):
+    from PySide6.QtCore import Qt
+
+    dlg = export_dialog
+    dest = tmp_path / "out.mp4"
+    dlg.path_edit.setText(str(dest))
+    dlg.export_button.click()
+    assert dlg.running
+    if how == "reject":
+        dlg.reject()
+    elif how == "escape":
+        qtbot.keyClick(dlg, Qt.Key.Key_Escape)
+    else:
+        dlg.close()
+    assert dlg.isVisible()  # refused while the export thread runs: no blocking wait
+    assert dlg.message.text() == "Cancelling…"
+    qtbot.waitUntil(lambda: not dlg.isVisible(), timeout=30_000)  # closes by itself
+    assert dlg._thread is None and not dlg.running
+    assert list(tmp_path.iterdir()) == []  # no output, no .part file
+
+
+@needs_ffmpeg
+def test_export_dialog_typed_path_gets_the_container_extension(export_dialog, qtbot, tmp_path):
+    dlg = export_dialog
+    dlg.path_edit.setText(str(tmp_path / "out"))
+    dlg.export_button.click()
+    assert dlg.running
+    assert dlg._worker.dest == tmp_path / "out.mp4"
+    dlg.cancel_button.click()
+    qtbot.waitUntil(lambda: not dlg.running, timeout=30_000)
+
+
+@needs_ffmpeg
+def test_export_dialog_container_change_keeps_names(export_dialog, tmp_path):
+    dlg = export_dialog
+    dlg.path_edit.setText(str(tmp_path / "my.clip"))
+    _pick_container(dlg, "webm")
+    assert Path(dlg.path_edit.text()) == tmp_path / "my.clip.webm"
+    _pick_container(dlg, "mkv")
+    assert Path(dlg.path_edit.text()) == tmp_path / "my.clip.mkv"
+    root = str(Path(tmp_path.anchor))
+    dlg.path_edit.setText(root)
+    _pick_container(dlg, "mov")  # a folder: left alone, never raises
+    assert dlg.path_edit.text() == root
+
+
+class _FakeExport:
+    def __init__(self, page, log):
+        self.page, self.log = page, log
+
+    def __call__(self, project, parent):
+        self.log.append(project)
+        return self
+
+    def exec(self):
+        self.log.append(self.page.player.is_playing)
+        return 0
+
+    def deleteLater(self):  # noqa: N802
+        pass
+
+
+@needs_ffmpeg
+def test_export_includes_an_unpushed_inspector_change(vpage, monkeypatch):
+    import umc.gui.videoedit.editor_page as ep
+
+    log = []
+    monkeypatch.setattr(ep, "ExportDialog", _FakeExport(vpage, log))
+    vpage.timeline.set_selected(_main_ids(vpage)[0])
+    vpage.inspector.panel.field_widget("speed").setValue(2.0)  # not pushed yet
+    vpage.export()
+    assert log[0].main[0].speed == 2.0
+    assert vpage.history.project is log[0]
+
+
+@needs_ffmpeg
+def test_export_stops_playback(vpage, qtbot, silent, monkeypatch):
+    import umc.gui.videoedit.editor_page as ep
+
+    log = []
+    monkeypatch.setattr(ep, "ExportDialog", _FakeExport(vpage, log))
+    got = _count_frames(vpage)
+    vpage.preview.play_button.click()
+    qtbot.waitUntil(lambda: bool(got), timeout=5000)
+    vpage.export()
+    assert log[1] is False  # the player was stopped before the window opened
+    assert not vpage.player.is_playing and not vpage.preview.playing
+
+
+@needs_ffmpeg
+def test_export_window_is_deleted_after_closing(vpage, monkeypatch):
+    from PySide6.QtCore import QCoreApplication, QEvent
+
+    from umc.gui.videoedit.dialogs import ExportDialog
+
+    monkeypatch.setattr(ExportDialog, "exec", lambda self: 0)
+    vpage.export()
+    vpage.export()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)
+    assert vpage.findChildren(ExportDialog) == []
+
+
+def test_straggler_thread_is_kept_until_it_ends(qtbot):
+    import threading
+
+    from PySide6.QtCore import QObject, QThread, Slot
+
+    from umc.gui.videoedit.threads import keep_until_finished, stragglers
+
+    gate = threading.Event()
+
+    class Blocker(QObject):
+        @Slot()
+        def run(self):
+            gate.wait(10)
+
+    thread = QThread()
+    worker = Blocker()
+    worker.moveToThread(thread)
+    thread.started.connect(worker.run)
+    thread.start()
+    thread.quit()  # ends once run() returns
+    before = stragglers()
+    keep_until_finished(thread, worker)
+    del thread, worker
+    assert stragglers() == before + 1
+    gate.set()
+    qtbot.waitUntil(lambda: stragglers() == before, timeout=5000)

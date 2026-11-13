@@ -116,6 +116,7 @@ class VideoEditorPage(QWidget):
         self._last_save_ok = False
         self._save_thread: QThread | None = None
         self._save_worker: _SaveWorker | None = None
+        self._save_target: tuple[Any, Project, Path] | None = None
         self._pending: tuple[Project, str] | None = None  # inspector edit not pushed yet
         self._view_version = 0  # bumped whenever the shown project changes (still cache key)
         self._tmp: tempfile.TemporaryDirectory | None = tempfile.TemporaryDirectory(
@@ -602,8 +603,11 @@ class VideoEditorPage(QWidget):
         """Export… opens the export window for the current project."""
         if self.history is None:
             return
-        self.preview.set_playing(False)
-        ExportDialog(self.history.project, self).exec()
+        self._flush_pending()  # an inspector change still being made is part of the export
+        self._stop_playback(still=False)
+        dialog = ExportDialog(self.history.project, self)
+        dialog.exec()  # returns only once its export thread has ended (it refuses to close before)
+        dialog.deleteLater()
 
     def on_shown(self) -> None:
         self._request_still()
@@ -670,28 +674,41 @@ class VideoEditorPage(QWidget):
         worker = _SaveWorker(snapshot, path)
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
+        # Bound methods of this page: Qt queues them onto the GUI thread (a lambda or a local
+        # function would run on the worker thread).
+        worker.succeeded.connect(self._save_succeeded)
+        worker.failed.connect(self._save_failed)
+        worker.succeeded.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        # Kept until QThread.finished (CLAUDE.md); the worker is let go in _save_finished, on
+        # the GUI thread, never through deleteLater (see gui/videoedit/threads.py).
+        thread.finished.connect(self._save_finished)
+        thread.finished.connect(thread.deleteLater)
+        self._save_thread, self._save_worker = thread, worker
+        self._save_target = (history, snapshot, path)
+        thread.start()
 
-        def ok(p: str) -> None:
-            self._last_save_ok = True
+    @Slot(str)
+    def _save_succeeded(self, p: str) -> None:
+        self._last_save_ok = True
+        if self._save_target is not None:
+            history, snapshot, path = self._save_target
             if self.history is history:
                 self.project_path = path
                 if history.project is snapshot:
                     history.mark_saved()
-            self.show_message(f"Saved “{Path(p).name}”.")
+        self.show_message(f"Saved “{Path(p).name}”.")
 
-        worker.succeeded.connect(ok)
-        worker.failed.connect(lambda msg: self.show_message(msg, error=True))
-        worker.succeeded.connect(thread.quit)
-        worker.failed.connect(thread.quit)
-        thread.finished.connect(self._save_finished)  # drops the references first…
-        thread.finished.connect(worker.deleteLater)  # …then Qt deletes both
-        thread.finished.connect(thread.deleteLater)
-        self._save_thread, self._save_worker = thread, worker
-        thread.start()
+    @Slot(str)
+    def _save_failed(self, message: str) -> None:
+        self.show_message(message, error=True)
 
+    @Slot()
     def _save_finished(self) -> None:
-        # References are kept until QThread.finished (see CLAUDE.md).
-        self._save_thread, self._save_worker = None, None
+        if self._save_thread is not None:
+            self._save_thread.wait()  # finished comes just before the thread really ends
+        # Dropping the worker deletes it here, on the GUI thread.
+        self._save_thread, self._save_worker, self._save_target = None, None, None
         self.saving = False
         self._update_buttons()
         self.save_done.emit()

@@ -17,6 +17,7 @@ from PySide6.QtGui import QImage
 
 from umc.gui.videoedit import qt_audio_out
 from umc.gui.videoedit.preview_view import rgb_image
+from umc.gui.videoedit.threads import keep_until_finished
 from umc.videoedit import preview
 from umc.videoedit.project import Project, Source, length
 
@@ -285,7 +286,6 @@ class MediaScanner(QObject):
         self._scan.connect(self._worker.scan)
         self._worker.thumbs.connect(self._got_thumbs)
         self._worker.wave.connect(self._got_wave)
-        self._thread.finished.connect(self._worker.deleteLater)
         self._thread.start()
 
     def want(self, sources) -> None:
@@ -328,9 +328,4 @@ class MediaScanner(QObject):
         self._thread.quit()
         if not self._thread.wait(300):
             log.warning("Thumbnail thread didn't stop quickly; letting it finish")
-            entry = (self._thread, self._worker)
-            self._thread.setParent(None)
-            _STRAGGLERS.append(entry)
-            self._thread.finished.connect(lambda: _forget(entry))
-            if self._thread.isFinished():  # finished before the connection was made
-                _forget(entry)
+            keep_until_finished(self._thread, self._worker)

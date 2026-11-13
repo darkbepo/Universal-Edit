@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
 
 from umc.core.errors import ConversionCancelled, ConversionError
 from umc.core.job import unique_path
-from umc.core.options import build
+from umc.core.options import build, option_specs
 from umc.gui.widgets.settings_panel import SettingsPanel
 from umc.videoedit.export import ExportOptions, run_export
 from umc.videoedit.project import Project
@@ -35,6 +35,22 @@ from umc.videoedit.projectfile import MissingSource
 log = logging.getLogger(__name__)
 
 _SETTINGS_KEY = "videoedit/export"
+_CONTAINERS = frozenset(
+    str(value)
+    for spec in option_specs(ExportOptions)
+    if spec.name == "container"
+    for value, _label in spec.choices
+)
+
+
+def with_container(path: Path, container: str) -> Path:
+    """``path`` ending in ``.container``: a known container extension is replaced, any other
+    one kept (``my.clip`` → ``my.clip.mp4``). A drive root (no name) is returned as is."""
+    if not path.name:
+        return path
+    if path.suffix.lower().lstrip(".") in _CONTAINERS:
+        return path.with_suffix(f".{container}")
+    return path.with_name(f"{path.name}.{container}")
 
 
 class LocateDialog(QDialog):
@@ -135,6 +151,7 @@ class ExportDialog(QDialog):
         self._thread: QThread | None = None
         self._worker: _ExportWorker | None = None
         self._result: Path | None = None
+        self._close_when_done = False
 
         root = QVBoxLayout(self)
         self.settings = SettingsPanel()
@@ -208,7 +225,9 @@ class ExportDialog(QDialog):
     def _container_changed(self) -> None:
         text = self.path_edit.text().strip()
         if text:
-            self.path_edit.setText(str(Path(text).with_suffix(f".{self.container}")))
+            new = with_container(Path(text), self.container)
+            if new != Path(text):
+                self.path_edit.setText(str(new))
 
     def _browse(self) -> None:
         ext = self.container
@@ -220,7 +239,7 @@ class ExportDialog(QDialog):
             options=QFileDialog.Option.DontConfirmOverwrite,
         )
         if path:
-            self.path_edit.setText(str(Path(path).with_suffix(f".{ext}")))
+            self.path_edit.setText(str(with_container(Path(path), ext)))
 
     def _confirm_replace(self, path: Path) -> bool:
         answer = QMessageBox.question(
@@ -256,7 +275,11 @@ class ExportDialog(QDialog):
         if not text:
             self._show_message("Choose where to save the video.", error=True)
             return
-        dest = Path(text)
+        dest = with_container(Path(text), self.container)
+        if not dest.name or dest.is_dir():
+            self._show_message("Choose a file name for the video.", error=True)
+            return
+        self.path_edit.setText(str(dest))
         if dest.exists() and not self._confirm_replace(dest):
             return
         self.remember()
@@ -276,8 +299,10 @@ class ExportDialog(QDialog):
         worker.failed.connect(self._on_failed)
         for sig in (worker.succeeded, worker.cancelled, worker.failed):
             sig.connect(thread.quit)
-        thread.finished.connect(self._thread_finished)  # drops the references first…
-        thread.finished.connect(worker.deleteLater)  # …then Qt deletes both
+        # References are kept until QThread.finished (CLAUDE.md). The worker is never given to
+        # deleteLater: that would delete it on the worker thread while the GUI thread drops the
+        # last Python reference (two deletions racing). _thread_finished runs on the GUI thread.
+        thread.finished.connect(self._thread_finished)
         thread.finished.connect(thread.deleteLater)
         self._thread, self._worker = thread, worker
         thread.start()
@@ -300,10 +325,16 @@ class ExportDialog(QDialog):
         self.progress.hide()
         self._show_message(message, error=True)
 
+    @Slot()
     def _thread_finished(self) -> None:
-        # References are kept until QThread.finished (see CLAUDE.md).
+        if self._thread is not None:
+            self._thread.wait()  # finished comes just before the thread really ends
+        # Dropping the worker deletes it here, on the GUI thread (see gui/videoedit/threads.py).
         self._thread, self._worker = None, None
         self._set_running(False)
+        if self._close_when_done:
+            self._close_when_done = False
+            self.reject()
 
     def _cancel(self) -> None:
         if self._worker is not None:
@@ -316,7 +347,10 @@ class ExportDialog(QDialog):
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._result.parent)))
 
     def done(self, result: int) -> None:  # noqa: N802
-        if self._thread is not None:  # closed mid-export: stop it and wait for the clean-up
+        if self._thread is not None:
+            # Closed (×, Esc) mid-export: never block or leave the thread running behind a
+            # hidden window. Cancel, and _thread_finished closes the window once it has ended.
+            self._close_when_done = True
             self._cancel()
-            self._thread.wait(30_000)
+            return
         super().done(result)

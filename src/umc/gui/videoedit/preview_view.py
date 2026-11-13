@@ -12,6 +12,7 @@ from PySide6.QtGui import QColor, QImage, QPainter
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QSizePolicy, QVBoxLayout, QWidget
 
 from umc.core.errors import ConversionCancelled, ConversionError
+from umc.gui.videoedit.threads import keep_until_finished
 from umc.videoedit import preview
 from umc.videoedit.project import Project, output_fps
 
@@ -188,7 +189,6 @@ class FrameService(QObject):
         self._render.connect(self._worker.render)
         self._worker.done.connect(self._done)
         self._worker.failed.connect(self.failed)
-        self._thread.finished.connect(self._worker.deleteLater)
         self._thread.start()
         self._closed = False
 
@@ -247,16 +247,4 @@ class FrameService(QObject):
             # Still inside FFmpeg: never destroy a running QThread. Detach it from this object and
             # keep it alive until it finishes.
             log.warning("Preview thread didn't stop within 10 s; letting it finish")
-            thread, worker = self._thread, self._worker
-            thread.setParent(None)
-            _STRAGGLERS.append((thread, worker))
-            thread.finished.connect(lambda: _forget(thread))
-            if thread.isFinished():  # finished before the connection was made
-                _forget(thread)
-
-
-_STRAGGLERS: list[tuple[QThread, QObject]] = []  # still-running preview threads
-
-
-def _forget(thread: QThread) -> None:
-    _STRAGGLERS[:] = [s for s in _STRAGGLERS if s[0] is not thread]
+            keep_until_finished(self._thread, self._worker)
