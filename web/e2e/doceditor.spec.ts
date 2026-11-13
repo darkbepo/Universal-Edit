@@ -21,6 +21,8 @@ async function openDoc(page: Page, file: string) {
   await load(page, [file]);
   await editBtn(page).click();
   await expect(page.locator(".doc-editor")).toBeVisible();
+  // the page shows straight away ("Opening…"), so wait for the document itself
+  await expect.poll(() => opening(page), { timeout: 120_000 }).toBe(0);
 }
 
 /** Drop `names` (fixture files) on `selector` the way the browser does. */
@@ -141,6 +143,9 @@ test("a press on the page's scrollbar scrolls and keeps the selection", async ({
 /** Holds Pandoc's wasm download until `release()`; `held()` counts the requests caught, so a
  * test can prove the download really waited. */
 async function holdPandoc(page: Page): Promise<{ release: () => void; held: () => number }> {
+  // On the live site the service worker (coi-serviceworker) fetches the engine, and Playwright's
+  // page.route never sees service-worker requests, so these tests only run against a local build.
+  test.skip(!!process.env.E2E_BASE_URL, "page.route can't hold requests made by the live site's service worker");
   let release!: () => void;
   const gate = new Promise<void>((r) => (release = r));
   let hits = 0;

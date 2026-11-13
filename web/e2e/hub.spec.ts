@@ -78,6 +78,8 @@ test("a short, narrow window scrolls to the tiles instead of cutting them off", 
 });
 
 test("pressing Convert while a tile's editor is still loading doesn't let a second tile open too", async ({ page }) => {
+  // the live site's service worker fetches the chunks, and page.route never sees those requests
+  test.skip(!!process.env.E2E_BASE_URL, "page.route can't hold requests made by the live site's service worker");
   await page.goto("./?e2e");
   let release!: () => void;
   const gate = new Promise<void>((r) => (release = r));
