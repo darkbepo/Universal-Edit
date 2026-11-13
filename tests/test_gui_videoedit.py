@@ -1413,3 +1413,104 @@ def test_straggler_thread_is_kept_until_it_ends(qtbot):
     assert stragglers() == before + 1
     gate.set()
     qtbot.waitUntil(lambda: stragglers() == before, timeout=5000)
+
+
+# ------------------------------------------------------------------ ship-gate fixes
+
+
+def _font_project(font):
+    return _project(text=((TextItem("t1", text="Hello", font=font),),))
+
+
+def test_inspector_keeps_a_font_that_is_not_installed(qtbot, monkeypatch):
+    from PySide6.QtGui import QFont
+
+    from umc.gui.videoedit.inspector import Inspector
+
+    insp = Inspector()
+    qtbot.addWidget(insp)
+    missing = "No Such Font Umc 123"
+    insp.show_item(_font_project(missing), "t1")
+    assert insp.font_box.currentFont().family() != missing  # Qt shows a substitute
+    got = []
+    insp.changed.connect(got.append)
+    insp.panel.field_widget("text").setPlainText("Hi")
+    assert got and got[-1] == {"text": "Hi"}
+    assert insp.changes() == {"text": "Hi"}
+    # choosing a font in the box is still a change (offscreen Qt lists one font, so the
+    # pick is stood in for: the box now shows another family and says so)
+    picked = QFont("Picked Font Umc")
+    monkeypatch.setattr(insp.font_box, "currentFont", lambda: picked)
+    got.clear()
+    insp.font_box.currentFontChanged.emit(picked)
+    assert got and got[-1] == {"font": picked.family(), "text": "Hi"}
+
+
+class _DyingOut:
+    """A sound device that fails 0.2 s in: its clock stops there; a feeder still writing
+    after that would be busy until playback stops (a long project being decoded)."""
+
+    silent = False
+
+    def __init__(self):
+        import time
+
+        self._time = time
+        self._t0 = None
+        self._written = 0
+        self._closed = False
+
+    @property
+    def dead(self):
+        return self._t0 is not None and self._time.monotonic() - self._t0 > 0.2
+
+    def write(self, chunk):
+        from umc.videoedit.audio_out import FRAME_BYTES, SAMPLE_RATE
+
+        if self._t0 is None:
+            self._t0 = self._time.monotonic()
+        self._written += len(chunk) // FRAME_BYTES
+        # alive: wait while 0.5 s is queued (like a device); dead: busy until closed
+        while not self._closed and (
+            self.dead or self._written / SAMPLE_RATE - self.played_seconds() > 0.5
+        ):
+            self._time.sleep(0.01)
+
+    def played_seconds(self):
+        if self._t0 is None:
+            return 0.0
+        return min(0.2, self._time.monotonic() - self._t0)
+
+    def close(self):
+        self._closed = True
+
+
+@needs_ffmpeg
+def test_playback_keeps_moving_after_the_sound_device_fails(vpage, qtbot, monkeypatch):
+    from umc.gui.videoedit import qt_audio_out
+
+    monkeypatch.setattr(qt_audio_out, "open_qt_output", lambda: _DyingOut())
+    vpage.preview.play_button.click()
+    qtbot.waitUntil(lambda: vpage.playhead > 0.8, timeout=5000)
+    vpage.preview.play_button.click()
+
+
+def test_dead_sink_drops_sound_instead_of_queueing_it():
+    from PySide6.QtMultimedia import QtAudio
+
+    from umc.gui.videoedit.qt_audio_out import QtAudioOut, _Feed
+
+    class Sink:
+        def error(self):
+            return QtAudio.Error.IOError
+
+    feed = _Feed()
+    out = QtAudioOut._for_test(feed)
+    assert not out.dead
+    out._sink = Sink()
+    out._on_state(QtAudio.State.StoppedState)
+    out._sink = None
+    assert out.dead
+    for _ in range(10):
+        out.write(bytes(48000 * 4))  # 1 s each: returns at once and keeps nothing
+    assert feed.queued_bytes() == 0

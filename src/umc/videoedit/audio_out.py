@@ -17,6 +17,7 @@ MAX_QUEUED = 0.5  # seconds; write() blocks while more than this is waiting
 
 class AudioOut(Protocol):
     silent: bool
+    dead: bool  # the device failed mid-play: nothing plays, writes are dropped
 
     def write(self, chunk: bytes) -> None: ...
 
@@ -29,6 +30,7 @@ class NullAudioOut:
     """Plays nothing; the clock runs from the first ``write``."""
 
     silent = True
+    dead = False
 
     def __init__(self) -> None:
         self._started: float | None = None

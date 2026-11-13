@@ -95,8 +95,8 @@ class _Run:
     def _feed(self) -> None:
         try:
             for chunk in self.streams.audio():
-                if self.stop.is_set():
-                    return
+                if self.stop.is_set() or self._out_dead():
+                    return  # a dead device plays nothing: stop decoding sound
                 self.out.write(chunk)
         except Exception:
             if not self.stop.is_set():
@@ -106,14 +106,18 @@ class _Run:
             self.feeder_done = True
             _forget(threading.current_thread())
 
+    def _out_dead(self) -> bool:
+        return bool(getattr(self.out, "dead", False))
+
     def clock(self) -> float:
         """Where playback is: the sound's clock; once no more sound comes (the end of the
-        stream, a failure) the clock goes on by itself, since a device clock stops then."""
+        stream, a failure, a lost device) the clock goes on by itself, since a device clock
+        stops then."""
         audio = self.t0 + self.out.played_seconds()
         now = time.monotonic()
         if audio > self._last + 1e-9:
             self._last, self._moved = audio, now
-        if self.feeder_done:
+        if self.feeder_done or self._out_dead():
             return max(audio, self._last + (now - self._moved))
         return audio
 

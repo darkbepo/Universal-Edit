@@ -128,10 +128,15 @@ class QtAudioOut(QObject):
             self._dead = True
             self._feed.wake()
 
+    @property
+    def dead(self) -> bool:
+        """The device failed: nothing is played any more and ``write`` drops the sound."""
+        return self._dead
+
     def write(self, chunk: bytes) -> None:
         limit = int(MAX_QUEUED * SAMPLE_RATE) * FRAME_BYTES
         self._feed.wait_below(limit, lambda: self._closed or self._dead)
-        if not self._closed:
+        if not self._closed and not self._dead:
             self._feed.push(chunk)
 
     def played_seconds(self) -> float:

@@ -102,6 +102,7 @@ class Inspector(QWidget):
         self.target: Any = None
         self._cls: type | None = None
         self._values: dict[str, Any] = {}
+        self._shown_font = ""  # the family the font box shows for the stored font
         self._loading = False
 
     def show_item(self, project: Project | None, item_id: str | None) -> None:
@@ -128,6 +129,8 @@ class Inspector(QWidget):
             self.font_row.setVisible(cls is TextItem)
             if cls is TextItem:
                 self.font_box.setCurrentFont(QFont(values["font"]))
+                # a font that isn't installed shows as a substitute; that is no change
+                self._shown_font = self.font_box.currentFont().family()
         finally:
             self._loading = False
         self.item_id, self.target, self._cls, self._values = item_id, target, cls, values
@@ -136,7 +139,9 @@ class Inspector(QWidget):
         """Fields that differ from the shown item."""
         now = dict(self.panel.values())
         if self._cls is TextItem:
-            now["font"] = self.font_box.currentFont().family()
+            family = self.font_box.currentFont().family()
+            if family != self._shown_font:  # the user picked a font
+                now["font"] = family
         return {k: v for k, v in now.items() if k in self._values and v != self._values[k]}
 
     def _panel_changed(self) -> None:
