@@ -54,11 +54,10 @@ def test_folder_items(tmp_path):
 
 
 def test_edit_button_follows_the_editor_tiles():
-    for kind in (vf.IMAGE, vf.MODEL, vf.AUDIO):
+    for kind in (vf.IMAGE, vf.MODEL, vf.AUDIO, vf.VIDEO):
         assert vf.editor_for(kind).available
     for kind in (vf.PAGES, vf.CONVERT, vf.TEXT):
         assert vf.editor_for(kind).id == "document" and vf.editor_for(kind).available
-    assert not vf.editor_for(vf.VIDEO).available  # "coming soon"
     assert vf.editor_for(vf.OTHER) is None
 
 
@@ -68,7 +67,7 @@ def test_edit_only_what_the_editor_can_open():
     assert not vf.can_edit(vf.PAGES, Path("a.pdf"))
     assert not vf.can_edit(vf.PAGES, Path("a.epub"))
     assert vf.can_edit(vf.IMAGE, Path("a.png"))
-    assert not vf.can_edit(vf.VIDEO, Path("a.mp4"))  # coming soon
+    assert vf.can_edit(vf.VIDEO, Path("a.mp4"))
     assert not vf.can_edit(vf.OTHER, Path("a.bin"))
 
 

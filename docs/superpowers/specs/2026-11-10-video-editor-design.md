@@ -2,6 +2,8 @@
 
 Date: 2026-11-10 · Roadmap item 10.3 · Status: approved design, awaiting spec review
 
+**2026-11-13:** preview sound now uses Qt Multimedia's QAudioSink (bundled with the app since the viewer); `sounddevice` was removed. Mentions of `sounddevice` / "no QtMultimedia" below are the original plan.
+
 ## Goal
 
 When a video is added to the app, the user can choose **Convert | Edit**. Convert is the

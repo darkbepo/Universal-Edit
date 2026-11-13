@@ -210,6 +210,10 @@ See `web/README.md` for commands and deployment.
   `file_list.thumbnails_pending()`). Clipboard data we made must go through
   `gui/clipboard_owner.release_clipboard` before quitting (app `aboutToQuit`), else exit crashes.
   (After quitting, the clip pastes as a plain picture: centred, no longer "in place".)
+  Cyclic garbage collection runs only on the GUI thread (`gui/gc_guard.py`, installed in `app.py`
+  and `tests/conftest.py`): a collection inside a worker thread freed PySide objects and crashed.
+  `gui/videoedit/threads.py`: never connect `worker.deleteLater` to `QThread.finished` — it runs on
+  the worker thread while the GUI thread drops the last Python reference (double delete).
 
 Primary target platform is **Windows** (`.exe`); keep code cross-platform (macOS/Linux) where it costs nothing.
 
@@ -232,6 +236,9 @@ src/umc/
     doceditor/           # document editor view: DocEditorPage (top bar, saving on a QThread),
                          #   text_view (QTextEdit), format_bar, find_bar, formatting (merge/toggle
                          #   helpers), html_export (QTextDocument → HTML subset)
+    videoedit/           # video editor view: EditorPage (top bar, saving / export on threads),
+                         #   timeline (painted rows), player + preview_view (frames + sound),
+                         #   qt_audio_out (Qt Multimedia sink), threads (worker helper), dialogs
     editor3d/            # 3D viewer: ViewerPage (top bar, info panel, loads on a QThread), gl_view
     viewer/              # "Open with" viewer: ViewerWindow, views (image/media/pages/text), tasks
     audioeditor/         # audio editor: AudioEditorPage (tool row, open/save on a QThread),
@@ -241,6 +248,10 @@ src/umc/
   viewer/                # viewer model — files.py (view kinds, folder list), preview.py; no Qt
   audioedit/             # audio editor model (numpy, no Qt) — document.py (AudioDoc, splice
                          #   undo), ops.py, peaks.py (waveform columns), wav.py, io.py (open/save)
+  videoedit/             # video editor model (no Qt) — project.py (frozen dataclasses), edits.py
+                         #   (pure edits), history.py (snapshot undo), projectfile.py (.umcvideo),
+                         #   media.py (probe, new_project), render.py (one filter_complex),
+                         #   window.py (360 p preview windows), export.py (groups of 16, GIF)
   doceditor/             # document editor model — pure Python, no Qt
     types.py             # SaveContent / OpenedDocument, "parts that will be lost" warnings, limits
     html_subset.py       # the small HTML the editor shows and saves (sanitise, picture names)
@@ -782,7 +793,7 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       Next: basic editing for 3D printing (plan in the session handoff / owner's go-ahead).
    9. ✅ Start screen = hub (both apps): editor tiles under the empty drop zone, listed in
       `core/editors.py` / `web/src/core/editors.ts` (same order and text; `available` False =
-      greyed "Coming soon" — only the video editor now; tests/test_editor_hub.py checks
+      greyed "Coming soon" — on desktop no editor is left (the website's video tile is, `WEB_LATER`); tests/test_editor_hub.py checks
       both lists). Image tile → "New picture" (`editor/blank.py` / `blank.ts`, presets in
       `web/src/editor/presets.ts` so the start page doesn't load the editor) → `MainWindow.new_picture`
       / `EditorPage.openBlank`; 3D tile → viewer `open_empty` / `openEmpty` with an "Open…" button
@@ -919,6 +930,16 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       `prefers-reduced-motion`; Windows "Animation effects" via SPI_GETCLIENTAREAANIMATION;
       `UMC_REDUCE_MOTION=1/0` overrides) = still badges, no burst delay.
       Kept calm on purpose (owner): laps of 72–100 s, pull 1.8× speed, 650 ms soft burst.
+   16. ✅ Video editor, first version (desktop) — spec `docs/superpowers/specs/2026-11-10-video-editor-design.md`.
+      Qt-free model `videoedit/`: frozen project dataclasses, `edits.py` pure edits, snapshot undo,
+      `.umcvideo` JSON (each source stored as path + relpath). One FFmpeg `filter_complex` per render
+      (`render.py`; the graph is written to a file and passed with `-/filter_complex`; text = a
+      generated ASS file + libass). Preview = 360 p windows (`window.py`) as raw frames + PCM through
+      pipes; sound through Qt Multimedia (`gui/videoedit/qt_audio_out.py`: PySide6 6.12 returns
+      `QtAudio` enums — compare with those, not `QAudio`). Export in groups of 16 for long projects.
+      Convert | Edit when a video is added; start-screen tile; desktop add-on "video"; self-test step
+      "video editor". Website: still "Coming soon" (`core/editors.WEB_LATER`).
+      Not yet: picture-in-picture, keyframes, the website editor.
 11. **First public release** (owner, Nov 2026: wait until more editors are ready). Push a
     `v<__version__>` tag (bump `umc/__init__.py` first; the workflow checks they match): the
     Windows build then publishes the .exe zip, the installer and the editor add-on zips as a
@@ -989,7 +1010,7 @@ converters for saving/exporting. Suggested order (most value first), one task pe
    PSD (Pillow can't write PSD; consider a ZIP of PNG layers + JSON, or OpenRaster `.ora`, an open
    standard GIMP/Krita read). Web: `web/src/editor/` on `OffscreenCanvas` in the worker, same
    command model; export through the existing converters.
-3. **Video timeline:** a model of tracks (video, images, audio, text) and clips (source, in/out,
+3. ✅ (desktop, see roadmap 10.16) **Video timeline:** a model of tracks (video, images, audio, text) and clips (source, in/out,
    start, transitions, volume). Rendering = one FFmpeg `filter_complex` (trim/setpts, concat,
    overlay, xfade, amix, drawtext/ass) — reuse `converters/slideshow.py`, `video.py`,
    `subtitles.py`. Preview: thumbnails/filmstrip via FFmpeg; real playback needs

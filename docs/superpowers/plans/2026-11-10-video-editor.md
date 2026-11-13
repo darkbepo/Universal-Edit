@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**2026-11-13:** preview sound now uses Qt Multimedia's QAudioSink (bundled with the app since the viewer); `sounddevice` was removed. Mentions of `sounddevice` / "no QtMultimedia" below are the original plan.
+
 **Goal:** A timeline video editor (cut & join, pictures + music, text, transitions & effects, preview with sound, export, project files) reached through the Convert | Edit switch when a video is added to the desktop app.
 
 **Architecture:** A Qt-free model in `src/umc/videoedit/`: frozen dataclasses for the project (so undo keeps whole snapshots), pure edit functions, and a renderer that turns a project into one FFmpeg `filter_complex`. Export runs that recipe at full size (in groups for long projects). The preview runs it at 360 p for a short window from the playhead, as raw frames + raw PCM through pipes, with sound played by `sounddevice`. The Qt page in `src/umc/gui/videoedit/` paints the timeline, shows frames and edits the project only through `edits.py`.
