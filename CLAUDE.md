@@ -956,6 +956,11 @@ LibreOffice-wasm). The owner hands the project over at this point; the next phas
    (7-Zip can unpack NSIS installers — 7-Zip is LGPL; needs its full `7z.exe` + `7z.dll`).
    LibreDWG's installer is new too and also needs a green live run. Until then EPS/PS and DWG
    work with a manually installed Ghostscript / LibreDWG (on PATH or the standard folders).
+5. **Keep the Actions list short (owner's rule):** after your pushes have finished their runs (and
+   you've read any failure logs you need), run `python scripts/prune_ci_runs.py` (dry run), then
+   `python scripts/prune_ci_runs.py --yes`. It keeps the newest 3 runs of every workflow plus the
+   newest successful "Build Windows executable" (its .exe download); never touches running ones.
+   Deleted runs lose their logs and artifacts for good, so don't prune while you still need them.
 
 ### Next phase: the Editor (roadmap item 10) — proposed plan
 Keep the converter untouched; the editor is a second mode of the same window and reuses the
