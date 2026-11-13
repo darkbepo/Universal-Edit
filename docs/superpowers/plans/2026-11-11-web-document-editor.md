@@ -863,3 +863,14 @@ Everything found while reviewing Task 10, in one round (owner rule).
   - in the repo: `.venv/Scripts/pytest tests/test_doceditor_vectors.py`, `ruff check . && ruff format --check .`;
   - `node web/scripts/convert-matrix.mjs matrix-out/samples --channel msedge`: no new failures in document targets.
 - [ ] **Step 4: Commit** `Add website document editor tests and document the editor`.
+
+---
+
+### Task 11a: Task 11 follow-up — make the e2e tests prove what they claim
+
+Everything found while reviewing Task 11, in one round (owner rule). Tests only.
+- The RTF sample isn't RTF (`\r`/`\a`/`\p` are JS escapes): use ``String.raw`{\rtf1\ansi Hello from RTF\par}` `` and check the opened text.
+- `holdPandoc` must prove it held the wasm request (count route hits, expect > 0 before release).
+- "big table stays responsive": warm the editor chunk first (open a small document) or time from "Opening…", and check the page answers during the open, not only after.
+- global-setup deletes `desktop.docx` / `desktop.html` before writing them, so a failed write skips the cross-app test instead of reusing stale files.
+- [ ] Fix → full e2e (Edge config) → commit `Make the website document editor tests prove what they claim`.
