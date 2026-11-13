@@ -1017,3 +1017,96 @@ def test_closing_the_window_shuts_the_video_editor_down(window):
     assert tmp.exists()
     window.close()
     assert not tmp.exists()
+
+
+# ------------------------------------------------------------------ export dialog
+
+
+@pytest.fixture
+def export_dialog(qtbot, vmedia):
+    from PySide6.QtCore import QCoreApplication, QSettings
+
+    from umc.gui.videoedit.dialogs import ExportDialog
+    from umc.videoedit.media import new_project
+
+    # QSettings() needs organisation / application names (app.py sets them; tests don't)
+    QCoreApplication.setOrganizationName("umc-test")
+    QCoreApplication.setApplicationName("umc-test-vedit")
+    QSettings().remove("videoedit/export")
+    project, _ = new_project([vmedia / "red.mp4"])
+    dlg = ExportDialog(project)
+    qtbot.addWidget(dlg)
+    dlg.show()
+    yield dlg
+    QSettings().remove("videoedit/export")
+    QSettings().sync()
+    QCoreApplication.setOrganizationName("")
+    QCoreApplication.setApplicationName("")
+
+
+def _pick_container(dlg, container):
+    combo = dlg.settings.field_widget("container")
+    combo.setCurrentIndex(combo.findData(container))
+
+
+@needs_ffmpeg
+def test_export_dialog_default_path(export_dialog, vmedia):
+    dlg = export_dialog
+    assert Path(dlg.path_edit.text()) == vmedia / "red_edit.mp4"
+    _pick_container(dlg, "webm")
+    assert Path(dlg.path_edit.text()) == vmedia / "red_edit.webm"
+
+
+@needs_ffmpeg
+def test_export_dialog_runs(export_dialog, qtbot, tmp_path):
+    from umc.tools import ffmpeg
+
+    dlg = export_dialog
+    dest = tmp_path / "out.mp4"
+    dlg.path_edit.setText(str(dest))
+    dlg.export_button.click()
+    qtbot.waitUntil(lambda: not dlg.running and dest.exists(), timeout=60_000)
+    assert dlg.progress.value() == 100
+    assert dlg.open_folder_button.isVisibleTo(dlg)
+    assert ffmpeg.stream_summary(dest)  # opens
+    assert not list(tmp_path.glob("*.part*"))
+
+
+@needs_ffmpeg
+def test_export_dialog_cancel(export_dialog, qtbot, tmp_path):
+    dlg = export_dialog
+    dest = tmp_path / "out.mp4"
+    dlg.path_edit.setText(str(dest))
+    dlg.export_button.click()
+    assert dlg.running
+    dlg.cancel_button.click()
+    qtbot.waitUntil(lambda: not dlg.running, timeout=30_000)
+    assert list(tmp_path.iterdir()) == []
+
+
+@needs_ffmpeg
+def test_export_dialog_existing_path_asks(export_dialog, qtbot, tmp_path, monkeypatch):
+    dlg = export_dialog
+    dest = tmp_path / "out.mp4"
+    dest.write_bytes(b"keep me")
+    asked = []
+    monkeypatch.setattr(dlg, "_confirm_replace", lambda p: asked.append(p) or False)
+    dlg.path_edit.setText(str(dest))
+    dlg.export_button.click()
+    assert asked == [dest]
+    assert not dlg.running
+    assert dest.read_bytes() == b"keep me"
+
+
+@needs_ffmpeg
+def test_export_dialog_remembers_options(export_dialog, qtbot, vmedia):
+    from umc.gui.videoedit.dialogs import ExportDialog
+    from umc.videoedit.media import new_project
+
+    _pick_container(export_dialog, "mkv")
+    export_dialog.remember()
+    project, _ = new_project([vmedia / "red.mp4"])
+    again = ExportDialog(project)
+    qtbot.addWidget(again)
+    assert again.settings.values()["container"] == "mkv"
+    assert again.path_edit.text().endswith(".mkv")

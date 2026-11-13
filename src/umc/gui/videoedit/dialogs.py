@@ -2,20 +2,39 @@
 
 from __future__ import annotations
 
+import json
+import logging
+import threading
 from pathlib import Path
 
+from PySide6.QtCore import QObject, QSettings, QThread, QUrl, Signal, Slot
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QFileDialog,
     QGridLayout,
+    QHBoxLayout,
     QLabel,
+    QLineEdit,
+    QMessageBox,
+    QProgressBar,
     QPushButton,
     QVBoxLayout,
     QWidget,
 )
 
+from umc.core.errors import ConversionCancelled, ConversionError
+from umc.core.job import unique_path
+from umc.core.options import build
+from umc.gui.widgets.settings_panel import SettingsPanel
+from umc.videoedit.export import ExportOptions, run_export
+from umc.videoedit.project import Project
 from umc.videoedit.projectfile import MissingSource
+
+log = logging.getLogger(__name__)
+
+_SETTINGS_KEY = "videoedit/export"
 
 
 class LocateDialog(QDialog):
@@ -70,3 +89,234 @@ class LocateDialog(QDialog):
         )
         if path:
             self.choose(m.source_id, Path(path))
+
+
+class _ExportWorker(QObject):
+    progress = Signal(float, str)
+    succeeded = Signal(str)
+    cancelled = Signal()
+    failed = Signal(str)
+
+    def __init__(self, project: Project, options: ExportOptions, dest: Path) -> None:
+        super().__init__()
+        self.project, self.options, self.dest = project, options, dest
+        self.cancel_event = threading.Event()
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            out = run_export(
+                self.project,
+                self.options,
+                self.dest,
+                on_progress=lambda pct, msg: self.progress.emit(pct, msg),
+                cancel_event=self.cancel_event,
+            )
+            self.succeeded.emit(str(out))
+        except ConversionCancelled:
+            self.cancelled.emit()
+        except ConversionError as exc:
+            log.error("video export failed: %s\n%s", exc, getattr(exc, "details", ""))
+            self.failed.emit(str(exc))
+        except Exception:
+            log.exception("video export failed")
+            self.failed.emit("Couldn't export the video. See the log for details.")
+
+
+class ExportDialog(QDialog):
+    """Export the project: format settings, where to save, progress. Never changes the project."""
+
+    def __init__(self, project: Project, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Export video")
+        self.setMinimumWidth(520)
+        self.project = project
+        self.running = False
+        self._thread: QThread | None = None
+        self._worker: _ExportWorker | None = None
+        self._result: Path | None = None
+
+        root = QVBoxLayout(self)
+        self.settings = SettingsPanel()
+        values = self._saved_values()
+        self.settings.set_schema(ExportOptions, values.get("container", "mp4"), values)
+        self.settings.changed.connect(self._container_changed)
+        root.addWidget(self.settings)
+
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Save as"))
+        self.path_edit = QLineEdit()
+        row.addWidget(self.path_edit, 1)
+        self.browse_button = QPushButton("Browse…", objectName="Small")
+        self.browse_button.clicked.connect(self._browse)
+        row.addWidget(self.browse_button)
+        root.addLayout(row)
+        self.path_edit.setText(str(self._default_path()))
+
+        self.progress = QProgressBar()
+        self.progress.setRange(0, 100)
+        self.progress.setValue(0)
+        self.progress.hide()
+        root.addWidget(self.progress)
+        self.message = QLabel("", objectName="Muted")
+        self.message.setWordWrap(True)
+        root.addWidget(self.message)
+
+        buttons = QHBoxLayout()
+        buttons.addStretch(1)
+        self.open_folder_button = QPushButton("Open folder")
+        self.open_folder_button.clicked.connect(self._open_folder)
+        self.open_folder_button.hide()
+        buttons.addWidget(self.open_folder_button)
+        self.close_button = QPushButton("Close")
+        self.close_button.clicked.connect(self.reject)
+        buttons.addWidget(self.close_button)
+        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button.clicked.connect(self._cancel)
+        self.cancel_button.hide()
+        buttons.addWidget(self.cancel_button)
+        self.export_button = QPushButton("Export", objectName="Primary")
+        self.export_button.setDefault(True)
+        self.export_button.clicked.connect(self.start)
+        buttons.addWidget(self.export_button)
+        root.addLayout(buttons)
+
+    # ------------------------------------------------------------ settings
+    @staticmethod
+    def _saved_values() -> dict:
+        try:
+            data = json.loads(str(QSettings().value(_SETTINGS_KEY, "") or "{}"))
+        except ValueError:
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def remember(self) -> None:
+        QSettings().setValue(_SETTINGS_KEY, json.dumps(self.settings.values()))
+
+    def options(self) -> ExportOptions:
+        return build(ExportOptions, self.settings.values())
+
+    @property
+    def container(self) -> str:
+        return str(self.settings.values().get("container", "mp4"))
+
+    # ------------------------------------------------------------ path
+    def _default_path(self) -> Path:
+        first = self.project.sources[0].path if self.project.sources else Path.home() / "video"
+        return unique_path(first.parent, f"{first.stem}_edit", self.container)
+
+    def _container_changed(self) -> None:
+        text = self.path_edit.text().strip()
+        if text:
+            self.path_edit.setText(str(Path(text).with_suffix(f".{self.container}")))
+
+    def _browse(self) -> None:
+        ext = self.container
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export as",
+            self.path_edit.text(),
+            f"{ext.upper()} (*.{ext})",
+            options=QFileDialog.Option.DontConfirmOverwrite,
+        )
+        if path:
+            self.path_edit.setText(str(Path(path).with_suffix(f".{ext}")))
+
+    def _confirm_replace(self, path: Path) -> bool:
+        answer = QMessageBox.question(
+            self,
+            "Replace file?",
+            f"Replace “{path.name}”?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        return answer == QMessageBox.StandardButton.Yes
+
+    # ------------------------------------------------------------ running
+    def _show_message(self, text: str, error: bool = False) -> None:
+        self.message.setObjectName("Error" if error else "Muted")
+        self.message.style().unpolish(self.message)
+        self.message.style().polish(self.message)
+        self.message.setText(text)
+
+    def _set_running(self, running: bool) -> None:
+        self.running = running
+        self.cancel_button.setVisible(running)
+        self.cancel_button.setEnabled(True)
+        self.export_button.setVisible(not running)
+        self.close_button.setEnabled(not running)
+        self.settings.setEnabled(not running)
+        self.path_edit.setEnabled(not running)
+        self.browse_button.setEnabled(not running)
+
+    def start(self) -> None:
+        if self.running:
+            return
+        text = self.path_edit.text().strip()
+        if not text:
+            self._show_message("Choose where to save the video.", error=True)
+            return
+        dest = Path(text)
+        if dest.exists() and not self._confirm_replace(dest):
+            return
+        self.remember()
+        self._result = None
+        self.open_folder_button.hide()
+        self.progress.setValue(0)
+        self.progress.show()
+        self._show_message("Starting…")
+        self._set_running(True)
+        thread = QThread(self)
+        worker = _ExportWorker(self.project, self.options(), dest)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.progress.connect(self._on_progress)
+        worker.succeeded.connect(self._on_done)
+        worker.cancelled.connect(self._on_cancelled)
+        worker.failed.connect(self._on_failed)
+        for sig in (worker.succeeded, worker.cancelled, worker.failed):
+            sig.connect(thread.quit)
+        thread.finished.connect(self._thread_finished)  # drops the references first…
+        thread.finished.connect(worker.deleteLater)  # …then Qt deletes both
+        thread.finished.connect(thread.deleteLater)
+        self._thread, self._worker = thread, worker
+        thread.start()
+
+    def _on_progress(self, percent: float, message: str) -> None:
+        self.progress.setValue(round(percent))
+        self._show_message(message)
+
+    def _on_done(self, path: str) -> None:
+        self._result = Path(path)
+        self.progress.setValue(100)
+        self._show_message(f"Saved “{self._result.name}”.")
+        self.open_folder_button.show()
+
+    def _on_cancelled(self) -> None:
+        self.progress.hide()
+        self._show_message("Export cancelled.")
+
+    def _on_failed(self, message: str) -> None:
+        self.progress.hide()
+        self._show_message(message, error=True)
+
+    def _thread_finished(self) -> None:
+        # References are kept until QThread.finished (see CLAUDE.md).
+        self._thread, self._worker = None, None
+        self._set_running(False)
+
+    def _cancel(self) -> None:
+        if self._worker is not None:
+            self._worker.cancel_event.set()
+            self.cancel_button.setEnabled(False)
+            self._show_message("Cancelling…")
+
+    def _open_folder(self) -> None:
+        if self._result is not None:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._result.parent)))
+
+    def done(self, result: int) -> None:  # noqa: N802
+        if self._thread is not None:  # closed mid-export: stop it and wait for the clean-up
+            self._cancel()
+            self._thread.wait(30_000)
+        super().done(result)

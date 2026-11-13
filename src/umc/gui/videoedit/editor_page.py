@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
 
 from umc.core.detect import AUDIO_EXTS, IMAGE_EXTS, VIDEO_EXTS
 from umc.core.errors import ConversionError
-from umc.gui.videoedit.dialogs import LocateDialog
+from umc.gui.videoedit.dialogs import ExportDialog, LocateDialog
 from umc.gui.videoedit.inspector import Inspector, change_label, target_of
 from umc.gui.videoedit.media_list import MediaList
 from umc.gui.videoedit.player import MediaScanner, Player
@@ -418,7 +418,7 @@ class VideoEditorPage(QWidget):
         enabled = h is not None and not self.saving
         self.save_button.setEnabled(enabled)
         self.save_as_button.setEnabled(enabled)
-        self.export_button.setEnabled(False)  # Export… arrives with the export dialog
+        self.export_button.setEnabled(h is not None)
 
     # ------------------------------------------------------------ inspector
     def _inspector_changed(self, changes: dict) -> None:
@@ -599,7 +599,11 @@ class VideoEditorPage(QWidget):
         self._request_still()
 
     def export(self) -> None:
-        """Export… (enabled with the export dialog)."""
+        """Export… opens the export window for the current project."""
+        if self.history is None:
+            return
+        self.preview.set_playing(False)
+        ExportDialog(self.history.project, self).exec()
 
     def on_shown(self) -> None:
         self._request_still()
