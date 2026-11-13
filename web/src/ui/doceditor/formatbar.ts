@@ -262,6 +262,11 @@ export class FormatBar {
       if (next >= 0) all[next]?.focus();
     };
     const opened = () => {
+      // fixed under its button: on phones the bar scrolls sideways and would clip the menu
+      const r = summary.getBoundingClientRect();
+      items.style.position = "fixed";
+      items.style.top = `${r.bottom + 4}px`;
+      items.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - items.offsetWidth - 8))}px`;
       document.addEventListener("pointerdown", outside, true);
       document.addEventListener("keydown", keys, true);
       this.tableMenu.querySelector<HTMLButtonElement>(".menu-item:not(:disabled)")?.focus();

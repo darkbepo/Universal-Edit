@@ -8,6 +8,7 @@ import type { InputFile } from "../../core/types";
 import { OrbitCamera, FOV, type Vec3 } from "../../editor3d/camera";
 import { describe, gridSpec, type ModelStats, type ViewModel } from "../../editor3d/mesh";
 import { JobCancelled, type ConversionClient } from "../../worker/client";
+import { backLabel } from "../back";
 
 const h = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> & { class?: string } = {}, ...children: (Node | string)[]) => {
   const el = document.createElement(tag);
@@ -19,6 +20,9 @@ const h = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLEle
 };
 
 export const HINT = "Drag to rotate · right-drag or Shift+drag to pan · wheel to zoom · double-click to fit";
+/** The same for touch screens (a phone or tablet without a mouse). */
+export const TOUCH_HINT = "Drag to rotate · pinch to zoom · two fingers to pan · double-tap to fit";
+const hint = () => (typeof matchMedia === "function" && matchMedia("(pointer: coarse) and (hover: none)").matches ? TOUCH_HINT : HINT);
 const VIEW_BUTTONS: [string, string][] = [["iso", "3D"], ["front", "Front"], ["top", "Top"], ["right", "Side"]];
 const STYLE_BUTTONS: [Style, string][] = [["shaded", "Shaded"], ["edges", "Edges"], ["wireframe", "Wireframe"]];
 const ORBIT_DEG_PER_PX = 0.4;
@@ -94,7 +98,7 @@ export class ViewerPage {
       picker.value = "";
     });
     const top = h("div", { class: "editor-top" },
-      btn("← Back to Convert", "Leave the 3D viewer", () => this.opts.onBack(), "link"),
+      backLabel(btn("← Back to Convert", "Leave the 3D viewer", () => this.opts.onBack(), "link")),
       h("span", { class: "gap" }),
       btn("Open…", "Open 3D models (STL, OBJ, 3MF, STEP, …)", () => picker.click()), picker,
       h("span", { class: "gap" }), this.fileBox,
@@ -108,7 +112,7 @@ export class ViewerPage {
     this.el = h("div", { class: "editor viewer3d", hidden: true },
       top,
       h("div", { class: "viewer3d-body" }, h("div", { class: "viewer3d-view" }, this.canvasHost, this.placeholder), side),
-      h("div", { class: "editor-status" }, this.message, h("div", {}, HINT)));
+      h("div", { class: "editor-status" }, this.message, h("div", {}, hint())));
 
     this.scene.add(this.modelGroup, this.gridGroup, this.key, this.fill, new THREE.HemisphereLight(0xffffff, 0x666670, 0.9));
     this.cam3.up.set(0, 0, 1);
@@ -342,13 +346,37 @@ export class ViewerPage {
   private installControls(): void {
     const el = this.canvasHost;
     el.addEventListener("contextmenu", (e) => e.preventDefault());
+    // touch: one finger orbits, two fingers pinch to zoom and move together to pan
+    const touches = new Map<number, { x: number; y: number }>();
+    let pinch: { dist: number; x: number; y: number } | null = null;
+    const pinchState = () => {
+      const [a, b] = [...touches.values()];
+      return { dist: Math.hypot(a.x - b.x, a.y - b.y) || 1, x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    };
     el.addEventListener("pointerdown", (e) => {
       el.setPointerCapture(e.pointerId);
+      if (e.pointerType === "touch") {
+        touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (touches.size >= 2) {
+          this.drag = null; // a second finger: pinch instead of orbiting
+          pinch = pinchState();
+          return;
+        }
+      }
       this.drag = { x: e.clientX, y: e.clientY, pan: e.button !== 0 || e.shiftKey, id: e.pointerId };
       el.classList.add("dragging");
       this.renderer?.domElement.focus();
     });
     el.addEventListener("pointermove", (e) => {
+      if (touches.has(e.pointerId)) touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pinch && touches.size >= 2) {
+        const now = pinchState();
+        this.camera.zoom(pinch.dist / now.dist);
+        this.camera.pan(now.x - pinch.x, now.y - pinch.y, el.clientHeight);
+        pinch = now;
+        this.requestRender();
+        return;
+      }
       if (!this.drag || e.pointerId !== this.drag.id) return;
       const dx = e.clientX - this.drag.x, dy = e.clientY - this.drag.y;
       this.drag.x = e.clientX;
@@ -357,7 +385,9 @@ export class ViewerPage {
       else this.camera.orbit(-dx * ORBIT_DEG_PER_PX, dy * ORBIT_DEG_PER_PX);
       this.requestRender();
     });
-    const end = () => {
+    const end = (e: PointerEvent) => {
+      touches.delete(e.pointerId);
+      if (touches.size < 2) pinch = null;
       this.drag = null;
       el.classList.remove("dragging");
     };

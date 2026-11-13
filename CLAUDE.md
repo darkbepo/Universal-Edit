@@ -147,6 +147,12 @@ See `web/README.md` for commands and deployment.
   The image editor is `editor/` (model, no DOM) + `ui/editor/` (page), imported on demand.
   The document editor is `doceditor/` (reader / writers / subset, DOM APIs but no UI) +
   `ui/doceditor/` (ProseMirror page, `window.__doceditor` with `?e2e`), imported on demand.
+- **Phones (≤ 560 px, `isPhone()` in `ui/back.ts`):** check new UI at 375 px wide. Editor top bars
+  show "← Back" (`backLabel`, `.back-long` hidden) and put secondary buttons in `.top-tools`
+  (`display: contents` on wide screens, a second row on phones; `.desk-only` hides). Image editor
+  windows become one bottom sheet at a time (`FloatingHost.onlyOnPhone`, tool options start
+  minimised); the document format bar is one sideways-scrolling row (its Table menu is
+  `position: fixed`). The 3D viewer takes pinch / two-finger pan (`TOUCH_HINT`).
 - **Cancel** = terminate the worker (kills FFmpeg's nested worker too); a new worker starts next run.
 - **Must be cross-origin isolated** (COOP/COEP): headers in `vite.config.ts` / `public/_headers`;
   where a host can't send them (GitHub Pages) `coi-serviceworker.js` (emitted by a plugin in

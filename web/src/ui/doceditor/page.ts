@@ -22,6 +22,7 @@ import { MAX_FILE_BYTES, WEB_EDITABLE_DOCUMENT_EXTS, warningText } from "../../d
 import type { ConversionClient } from "../../worker/client";
 import { FindBar } from "./findbar";
 import { FormatBar, browserAsker, type Asker } from "./formatbar";
+import { backLabel } from "../back";
 import { DocView, EDITOR_KEYS, NOT_A_PICTURE, pictureExt, plainText } from "./view";
 
 export const ONLY_ONE = "Only one document can be edited at a time.";
@@ -164,7 +165,7 @@ export class DocEditorPage {
     const gap = () => el("span", "gap");
     const top = el("div", "editor-top");
     top.append(
-      btn("← Back to Convert", "Leave the editor", () => this.back(), "link"),
+      backLabel(btn("← Back to Convert", "Leave the editor", () => this.back(), "link")),
       gap(),
       this.undoBtn,
       this.redoBtn,

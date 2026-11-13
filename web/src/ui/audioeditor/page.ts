@@ -15,6 +15,7 @@ import { defaults } from "../../core/options";
 import { converterById } from "../../core/registry";
 import type { InputFile } from "../../core/types";
 import { JobCancelled, type ConversionClient } from "../../worker/client";
+import { backLabel } from "../back";
 
 const h = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> & { class?: string } = {}, ...children: (Node | string)[]) => {
   const el = document.createElement(tag);
@@ -118,12 +119,14 @@ export class AudioEditorPage {
       picker.value = "";
     });
     const top = h("div", { class: "editor-top" },
-      btn("back", "← Back to Convert", "Leave the audio editor", () => this.back(), "link"),
-      h("span", { class: "gap" }),
-      btn("open", "Open…", "Open audio files (several are joined)", () => picker.click()), picker,
-      btn("undo", "Undo", "Undo (Ctrl+Z)", () => this.undo()),
-      btn("redo", "Redo", "Redo (Ctrl+Y)", () => this.redo()),
-      h("span", { class: "gap" }), this.title,
+      backLabel(btn("back", "← Back to Convert", "Leave the audio editor", () => this.back(), "link")),
+      // a second row on phones (styles.css .top-tools), invisible on wide screens
+      h("div", { class: "top-tools" },
+        h("span", { class: "gap" }),
+        btn("open", "Open…", "Open audio files (several are joined)", () => picker.click()), picker,
+        btn("undo", "Undo", "Undo (Ctrl+Z)", () => this.undo()),
+        btn("redo", "Redo", "Redo (Ctrl+Y)", () => this.redo()),
+        h("span", { class: "gap" }), this.title),
       h("div", { class: "spacer" }),
       btn("save_as", "Save as…", "Save as (Ctrl+Shift+S)", () => void this.saveAs()),
       btn("save", "Save", "Save (Ctrl+S)", () => void this.save(), "primary small"));

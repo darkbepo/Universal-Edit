@@ -438,7 +438,13 @@ export function mountApp(root: HTMLElement): void {
     }
   }
   editMode.addEventListener("click", () => void enterEdit());
-  propertiesMode.addEventListener("click", () => enterProperties());
+  propertiesMode.addEventListener("click", () => {
+    enterProperties();
+    // one column (phones, narrow windows): the panel is below the queue, so bring it on screen
+    if (mode === "properties" && matchMedia("(max-width: 900px)").matches) {
+      requestAnimationFrame(() => properties.el.scrollIntoView({ block: "start", behavior: "smooth" }));
+    }
+  });
   convertMode.addEventListener("click", () => {
     if (editing && editor && !editor.el.hidden && !editor.maybeLeave()) return;
     if (editing && audio && !audio.el.hidden && !audio.maybeLeave()) return;

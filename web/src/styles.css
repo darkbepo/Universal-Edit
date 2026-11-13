@@ -119,8 +119,13 @@ h1 { font-size: 15px; font-weight: 650; margin: 0; letter-spacing: -0.005em; whi
 @media (max-width: 560px) {
   h1 { font-size: 14px; }
   /* Phones: no room to centre the name beside Convert | Edit, so they share the row. */
-  .topbar { display: flex; justify-content: space-between; }
+  .topbar { display: flex; justify-content: space-between; gap: 10px; padding: 10px 12px; }
   .topbar-start { display: none; }
+  .mode .seg { padding: 5px 10px; min-width: 0; }
+}
+/* small phones: the logo alone, so Convert | Edit | Properties never covers the name */
+@media (max-width: 440px) {
+  .brand h1 { display: none; }
 }
 
 /* ---------------------------------------------------------------- drop zone */
@@ -140,8 +145,8 @@ h1 { font-size: 15px; font-weight: 650; margin: 0; letter-spacing: -0.005em; whi
 .editor-tile .tile-title { font-weight: 600; font-size: 14px; }
 .editor-tile .tile-blurb { font-size: 13px; color: var(--muted); line-height: 1.35; }
 @media (max-width: 560px) { .editor-tile { width: calc(50% - 5px); } }
-.new-picture .bg-choice { gap: 16px; margin: 0; flex-wrap: wrap; justify-content: flex-start; }
-.new-picture .bg-choice .check { flex: 0 0 auto; }
+.new-picture .bg-choice { gap: 8px 16px; margin: 0; flex-wrap: wrap; justify-content: flex-start; }
+.new-picture .bg-choice .check { flex: 0 0 auto; margin: 0; } /* not the dialog's indented checkbox row */
 
 .drop {
   background: var(--surface); border: 2px dashed var(--border-strong); border-radius: 18px;
@@ -328,7 +333,21 @@ h1 { font-size: 15px; font-weight: 650; margin: 0; letter-spacing: -0.005em; whi
   .bar-inner { flex-wrap: wrap; padding: 10px 16px 12px; gap: 8px 12px; }
   .status { flex: 1 1 100%; order: -1; }
   .progress { flex: 1; width: auto; }
-  .primary { flex: 1; }
+  .bar .primary { flex: 1; }
+  /* Convert to | Settings: tiles fill the row; the folded "Convert to" strip lies across the top */
+  .pane-body { padding: 0 10px 12px; }
+  .cat-card { padding: 8px 10px 10px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); }
+  .tile { min-width: 0; }
+  .right { flex-direction: column; }
+  .strip { width: auto; flex-direction: row; padding: 10px 14px; }
+  .strip-label { writing-mode: horizontal-tb; }
+  /* Properties: the file picker gets its own line under the heading */
+  .properties-pane .pane-head { flex-wrap: wrap; }
+  .properties-pane .pane-head h2 { white-space: nowrap; }
+  .properties-pane .pane-head .spacer { display: none; }
+  .right .properties-pane .prop-file { flex: 1 1 100%; max-width: 100%; min-width: 0; }
+  .prop-cards { columns: auto; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -438,15 +457,41 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 .editor-dialog .with-unit { display: flex; align-items: center; gap: 6px; }
 .editor-dialog .check { display: flex; align-items: center; gap: 6px; margin: 8px 0 8px 120px; }
 .editor-dialog .form { margin-top: 10px; }
+/* the editors' top bars: .top-tools only groups buttons for phones, where it is the second row */
+.editor-top .top-tools { display: contents; }
+@media (max-width: 560px) {
+  .editor-top { gap: 4px; padding: 6px 8px; }
+  .editor-top .gap, .editor-top .desk-only, .back-long { display: none; }
+  .editor-top .btn.small { padding: 5px 9px; }
+  .editor-top .primary.small { padding: 6px 14px; min-width: 0; }
+  .editor-top .link { padding: 3px 4px; }
+  .editor-top .top-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; order: 3; flex: 1 1 100%; min-width: 0; }
+}
 @media (max-width: 900px) {
-  .editor { position: fixed; overflow: auto; grid-template-rows: auto auto auto auto; }
-  .editor-body { grid-template-columns: 1fr; grid-template-rows: auto 60vh auto; }
+  /* one column: top bar, tools, picture (takes what is left), colours + layers, status */
+  .editor { position: fixed; overflow: hidden; grid-template-rows: auto minmax(0, 1fr) auto; }
+  .editor-body { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr) auto; }
   .tool-rail, .tool-rail.narrow { width: auto; flex-direction: row; align-items: center; overflow-x: auto; border-right: none; border-bottom: 1px solid var(--border); }
   .tool-rail .rail-group { font-size: 0; padding: 0; margin: 0 4px; border-left: 1px solid var(--border); align-self: stretch; }
   .tool-rail .rail-label, .tool-rail .rail-toggle { display: none; }
   .tool-rail .rail-item, .tool-rail.narrow .rail-item { width: auto; padding: 6px; }
   .tool-rail.narrow .rail-group { margin: 0 4px; border-top: none; border-left: 1px solid var(--border); align-self: stretch; }
-  .editor-side { border-left: none; border-top: 1px solid var(--border); }
+  .editor-side { border-left: none; border-top: 1px solid var(--border); max-height: 36vh; padding: 8px 12px; }
+  .editor-side .layers { max-height: 150px; }
+}
+@media (max-width: 560px) {
+  .editor-side > .section:first-child { display: none; } /* "Colours": the two swatches say it */
+  /* windows (tool options, Curves, …) become one sheet along the bottom of the picture, so the
+     picture and its live preview stay visible above; dragging can't move them here */
+  .editor .editor-dialog.floating, .editor .tool-options.floating {
+    left: 0 !important; right: 0 !important; top: auto !important; bottom: 0 !important;
+    width: auto; min-width: 0; max-width: none; max-height: 58%; border-radius: 12px 12px 0 0;
+    border-left: none; border-right: none; border-bottom: none;
+  }
+  .panel-title { cursor: default; }
+  .editor-dialog .field { grid-template-columns: 96px minmax(0, 1fr); }
+  .editor-dialog .check { margin-left: 0; }
+  .look-grid { grid-template-columns: repeat(3, 1fr); }
 }
 
 /* ---------- floating windows (editor): over the picture, movable, minimised into their icon */
@@ -516,6 +561,20 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 .audio-editor .editor-status .msg { flex: 1; }
 .audio-selection, .audio-info { white-space: nowrap; font-variant-numeric: tabular-nums; }
 @media (max-width: 700px) { .audio-editor .editor-status { flex-wrap: wrap; } }
+@media (max-width: 900px) {
+  /* the image editor's one-column rows don't fit here: the sound view takes what is left */
+  .audio-editor { grid-template-rows: auto minmax(0, 1fr) auto; }
+  /* the 3D viewer scrolls as a whole: the model, then its measurements */
+  .viewer3d { overflow: auto; grid-template-rows: auto auto auto; }
+}
+@media (max-width: 560px) {
+  .audio-body { padding: 6px 8px 4px; }
+  .audio-tools { gap: 6px 8px; }
+  .audio-tools .btn.small { padding: 5px 9px; }
+  .audio-volume-box { margin-left: 0; flex: 1 1 100%; order: 9; }
+  .audio-volume { flex: 1; }
+  .audio-editor .editor-top .top-tools > span:last-child { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
 
 /* ---------------------------------------------------------------- document editor */
 .doc-format, .doc-find { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; padding: 6px 12px; background: var(--surface); border-bottom: 1px solid var(--border); }
@@ -567,7 +626,17 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 .doc-save-dialog .row { flex-wrap: wrap; }
 .doc-save-dialog [hidden] { display: none; }
 @media (max-width: 900px) {
-  .doc-editor { grid-template-rows: auto 1fr auto; overflow: hidden; }
-  .doc-scroll { padding: 12px 0; }
-  .doc-page { width: 100%; min-height: 0; padding: 24px 16px; border-left: none; border-right: none; }
+  .doc-editor { grid-template-rows: auto minmax(0, 1fr) auto; overflow: hidden; }
+  /* the paper fills the screen's width and at least its height (no thin white strip) */
+  .doc-scroll { padding: 0; display: flex; flex-direction: column; }
+  .doc-page { flex: 1 0 auto; width: 100%; min-height: 0; margin: 0; padding: 20px 16px; border: none; box-shadow: none; }
+}
+@media (max-width: 560px) {
+  /* formatting: one row that scrolls sideways instead of five rows over the page */
+  .doc-editor { grid-template-columns: minmax(0, 1fr); }
+  .doc-body > * { min-width: 0; } /* else the long bar widens the page past the screen */
+  .doc-format { flex-wrap: nowrap; overflow-x: auto; padding: 6px 8px; scrollbar-width: thin; }
+  .doc-format > * { flex: none; }
+  .doc-format select { max-width: 130px; }
+  .doc-format .doc-size { width: 58px; }
 }
