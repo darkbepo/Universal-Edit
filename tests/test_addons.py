@@ -279,3 +279,16 @@ def test_settings_lists_the_editors(qtbot, addon_env, monkeypatch):
 def test_video_tile_is_available_on_desktop(window):
     tile = window.hub.tiles["video"]
     assert tile.isEnabled() and tile.badge.text() == "Install"
+
+
+def test_installer_and_ci_offer_every_addon():
+    """Each add-on is a component of the installer, copied, installed and checked by CI."""
+    iss = (ROOT / "packaging" / "installer.iss").read_text(encoding="utf-8")
+    workflow = (ROOT / ".github" / "workflows" / "build-windows.yml").read_text(encoding="utf-8")
+    ids = list(addons.ADDONS)
+    for addon_id in ids:
+        assert f'Name: "{addon_id}"; Description:' in iss
+        assert f"UniversalEdit-addon-{addon_id}-*.zip" in iss
+        assert f"Components: {addon_id};" in iss
+    assert "Components: " + " or ".join(ids) + ";" in iss
+    assert "foreach ($a in " + ", ".join(f'"{i}"' for i in ids) + ")" in workflow

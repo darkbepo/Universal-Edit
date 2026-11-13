@@ -195,7 +195,7 @@ See `web/README.md` for commands and deployment.
 ## Tech stack
 
 - **Language:** Python 3.11+
-- **GUI:** PySide6-Essentials (Qt 6) + PySide6-Addons (only Qt Multimedia, for the viewer) — Fusion style + `gui/style.qss` with `@token` colours filled from `gui/theme.py`
+- **GUI:** PySide6-Essentials (Qt 6) + PySide6-Addons (only Qt Multimedia, for the viewer and the video editor's sound) — Fusion style + `gui/style.qss` with `@token` colours filled from `gui/theme.py`
 - **Images:** Pillow (+ `pillow-heif` for HEIC; AVIF is native in Pillow ≥ 11.3)
 - **Video / GIF / slideshow / audio:** FFmpeg (bundled binary, invoked via `subprocess`; progress parsed from `-progress pipe:1`)
 - **PDF:** PyMuPDF (`pymupdf`) for PDF → images/text, page ranges, EPUB/XPS → PDF, and future splitting.
@@ -236,7 +236,7 @@ src/umc/
     doceditor/           # document editor view: DocEditorPage (top bar, saving on a QThread),
                          #   text_view (QTextEdit), format_bar, find_bar, formatting (merge/toggle
                          #   helpers), html_export (QTextDocument → HTML subset)
-    videoedit/           # video editor view: EditorPage (top bar, saving / export on threads),
+    videoedit/           # video editor view: VideoEditorPage (top bar, saving / export on threads),
                          #   timeline (painted rows), player + preview_view (frames + sound),
                          #   qt_audio_out (Qt Multimedia sink), threads (worker helper), dialogs
     editor3d/            # 3D viewer: ViewerPage (top bar, info panel, loads on a QThread), gl_view
@@ -855,7 +855,9 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       `core/addons.py` `ADDONS` (ids = `core/editors.py`): image = `umc.gui.editor` + site
       package `onnxruntime` (~24 MB zip); model = `umc.gui.editor3d.viewer_page` (the viewer's
       3D preview `gl_view` and the Qt-free `umc.editor` / `umc.editor3d` stay in the app: the
-      converter (.ora), video text fonts, the hub and the viewer use them). Zips =
+      converter (.ora), video text fonts, the hub and the viewer use them); audio =
+      `umc.gui.audioeditor`; video = `umc.gui.videoedit` (the Qt-free `umc.audioedit` /
+      `umc.videoedit` stay in the app). Zips =
       `addon.json` + `umc/…` + `site/…`, built by `scripts/build_addons.py`, which also writes
       the git-ignored `src/umc/addon_hashes.json` the spec bundles (**run it before
       PyInstaller**; the spec refuses otherwise and keeps every other `umc` module via
@@ -866,7 +868,7 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       GitHub release `v<__version__>` (`build-windows.yml` publishes it on a `v*` tag;
       `UMC_ADDONS_URL` overrides). GUI: `gui/addon_install.ensure_installed` (asked by
       `MainWindow._editor_ready` for tiles and Edit), tiles' "Install" badge, Settings
-      "Editors" (install / remove). Installer: [Components] image / model → copied to {tmp}
+      "Editors" (install / remove). Installer: [Components] image / model / audio / video → copied to {tmp}
       and installed by `UniversalEdit.exe --install-addon all <folder>`; uninstall deletes the
       add-ons folder. CI installs the built add-ons before `--self-test` ("editor add-ons
       installed and loading"). Tests simulate the built app with `UMC_ADDONS_TEST=1` +
