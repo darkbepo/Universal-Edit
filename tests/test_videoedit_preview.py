@@ -4,17 +4,15 @@ import gc
 import logging
 import shutil
 import subprocess
-import sys
 import threading
 import time
-import types
 
 import numpy as np
 import pytest
 
 from tests.conftest import needs_ffmpeg
 from umc.core.errors import ConversionCancelled
-from umc.videoedit import audio_out, preview
+from umc.videoedit import preview
 from umc.videoedit.audio_out import NullAudioOut, open_output
 from umc.videoedit.media import probe_source
 from umc.videoedit.preview import (
@@ -205,43 +203,6 @@ def test_open_output_without_audio(monkeypatch):
     assert isinstance(open_output(), NullAudioOut)
 
 
-def test_sounddevice_out_callback(monkeypatch):
-    """The callback plays queued bytes, then silence on an underrun (count stays)."""
-    made = {}
-
-    class FakeStream:
-        def __init__(self, **kw):
-            made.update(kw)
-
-        def start(self):
-            pass
-
-        def stop(self):
-            pass
-
-        def close(self):
-            pass
-
-    fake = types.SimpleNamespace(RawOutputStream=FakeStream)
-    monkeypatch.setitem(sys.modules, "sounddevice", fake)
-    out = audio_out.SoundDeviceOut()
-    assert made["samplerate"] == 48000 and made["channels"] == 2 and made["dtype"] == "int16"
-    assert out.silent is False
-    out.write(b"\x01\x00" * 2 * 100)  # 100 frames
-    buf = bytearray(60 * 4)
-    made["callback"](buf, 60, None, None)
-    assert bytes(buf) == b"\x01\x00" * 120
-    assert out.played_seconds() == pytest.approx(60 / 48000)
-    buf = bytearray(60 * 4)
-    made["callback"](buf, 60, None, None)
-    assert bytes(buf) == b"\x01\x00" * 80 + bytes(80)
-    assert out.played_seconds() == pytest.approx(100 / 48000)
-    out.close()
-
-
-# --- fix round 1 ---------------------------------------------------------------------------
-
-
 @needs_ffmpeg
 def test_playback_logs_a_failed_chunk(src, vmedia, tmp_path, caplog, monkeypatch):
     monkeypatch.setattr(preview, "CHUNK_SECONDS", 1.0)
@@ -361,48 +322,3 @@ def test_playback_seam_matches_stills(tmp_path, monkeypatch):
         assert _mean_diff(data, still(project, t, tmp)) < 6, k
     # and neighbouring frames really differ, so a skip or repeat would show
     assert _mean_diff(frames[14][1], frames[15][1]) > 6
-
-
-def test_sounddevice_out_latency_inactive_and_start_failure(monkeypatch):
-    made = {}
-
-    class FakeStream:
-        latency = 0.01
-        active = True
-        fail = False
-        closed = False
-
-        def __init__(self, **kw):
-            made.update(kw)
-            made["stream"] = self
-
-        def start(self):
-            if FakeStream.fail:
-                raise RuntimeError("no device")
-
-        def stop(self):
-            pass
-
-        def close(self):
-            FakeStream.closed = True
-
-    monkeypatch.setitem(
-        sys.modules, "sounddevice", types.SimpleNamespace(RawOutputStream=FakeStream)
-    )
-    out = audio_out.SoundDeviceOut()
-    out.write(bytes(4 * 960))  # 20 ms
-    assert out.played_seconds() == 0.0  # nothing played yet; never below 0
-    buf = bytearray(4 * 960)
-    made["callback"](buf, 960, None, None)
-    assert out.played_seconds() == pytest.approx(0.02 - 0.01)
-    made["stream"].active = False  # e.g. the device was unplugged
-    started = time.monotonic()
-    out.write(bytes(4 * 48000 * 2))  # 2 s: more than the queue limit
-    out.write(bytes(4 * 4800))
-    assert time.monotonic() - started < 1.0  # didn't wait for a dead stream
-    out.close()
-
-    FakeStream.fail = True
-    with pytest.raises(RuntimeError):
-        audio_out.SoundDeviceOut()
-    assert FakeStream.closed

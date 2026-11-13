@@ -671,9 +671,9 @@ class _LatencyOut:
 
 @pytest.fixture
 def device(monkeypatch):
-    from umc.videoedit import audio_out
+    from umc.gui.videoedit import qt_audio_out
 
-    monkeypatch.setattr(audio_out, "open_output", lambda: _LatencyOut())
+    monkeypatch.setattr(qt_audio_out, "open_qt_output", lambda: _LatencyOut())
 
 
 @needs_ffmpeg
@@ -768,3 +768,106 @@ def test_position_signals_are_throttled(vpage, qtbot, silent):
     qtbot.wait(500)
     vpage.preview.play_button.click()
     assert all(b - a >= 1 / 30 - 1e-6 for a, b in zip(seen, seen[1:], strict=False))
+
+
+# ------------------------------------------------------------------ Qt sound output
+
+
+def test_feed_reads_what_was_pushed():
+    from umc.gui.videoedit.qt_audio_out import _Feed
+
+    feed = _Feed()
+    assert feed.readData(100) == b""  # underrun: nothing, and nothing counted
+    data = bytes(range(256)) * 750  # 192000 bytes = 1 s of 48 kHz stereo s16
+    feed.push(data[:100000])
+    feed.push(data[100000:])
+    got = feed.readData(70000) + feed.readData(70000) + feed.readData(1_000_000)
+    assert got == data
+    assert feed.readData(10) == b""
+
+
+def test_feed_write_blocks_and_close_wakes_it():
+    import threading
+    import time
+
+    from umc.gui.videoedit.qt_audio_out import QtAudioOut, _Feed
+
+    feed = _Feed()
+    out = QtAudioOut._for_test(feed)
+    done = threading.Event()
+
+    def writer():
+        out.write(bytes(48000 * 4))  # 1 s: over the 0.5 s limit
+        out.write(bytes(4800))  # blocks: nothing drains
+        done.set()
+
+    th = threading.Thread(target=writer, daemon=True)
+    th.start()
+    time.sleep(0.2)
+    assert not done.is_set()
+    started = time.monotonic()
+    out.close()
+    assert done.wait(0.2)
+    assert time.monotonic() - started < 0.2
+    th.join(1)
+    out.close()  # idempotent
+    out.write(bytes(100))  # returns at once after close
+
+
+def test_open_qt_output_falls_back_without_device(monkeypatch, qtbot):
+    from PySide6.QtMultimedia import QMediaDevices
+
+    from umc.gui.videoedit import qt_audio_out
+    from umc.videoedit.audio_out import NullAudioOut
+
+    monkeypatch.setenv("UMC_NO_AUDIO", "1")
+    out = qt_audio_out.open_qt_output()
+    assert isinstance(out, NullAudioOut) and out.silent
+    monkeypatch.delenv("UMC_NO_AUDIO")
+
+    class _Null:
+        def isNull(self):  # noqa: N802
+            return True
+
+    monkeypatch.setattr(QMediaDevices, "defaultAudioOutput", staticmethod(lambda: _Null()))
+    out = qt_audio_out.open_qt_output()
+    assert isinstance(out, NullAudioOut) and out.silent
+
+
+def test_played_seconds_uses_heard_position():
+    from umc.gui.videoedit.qt_audio_out import QtAudioOut, _Feed
+
+    class Sink:
+        def __init__(self, processed, size, free):
+            self._p, self._s, self._f = processed, size, free
+
+        def processedUSecs(self):  # noqa: N802
+            return self._p
+
+        def bufferSize(self):  # noqa: N802
+            return self._s
+
+        def bytesFree(self):  # noqa: N802
+            return self._f
+
+    feed = _Feed()
+    out = QtAudioOut._for_test(feed)
+    # 1 s processed, 0.25 s (48000 bytes) still in the sink's buffer, 0.1 s in our own queue
+    out._sink = Sink(1_000_000, 100000, 52000)
+    feed.push(bytes(4800 * 4))
+    assert out.played_seconds() == pytest.approx(0.75, abs=1e-6)
+    out._sink = Sink(100_000, 100000, 0)  # more queued than processed: never negative
+    assert out.played_seconds() == 0.0
+    out._sink = None
+    assert out.played_seconds() == 0.0
+
+
+def test_sounddevice_is_gone():
+    import re
+
+    from umc.videoedit import audio_out
+
+    root = Path(__file__).resolve().parents[1]
+    assert "sounddevice" not in (root / "pyproject.toml").read_text(encoding="utf-8")
+    assert not hasattr(audio_out, "SoundDeviceOut")
+    assert not re.search(r"import sounddevice", Path(audio_out.__file__).read_text("utf-8"))

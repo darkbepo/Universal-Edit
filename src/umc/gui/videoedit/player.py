@@ -15,8 +15,9 @@ from pathlib import Path
 from PySide6.QtCore import QObject, QThread, QTimer, Signal, Slot
 from PySide6.QtGui import QImage
 
+from umc.gui.videoedit import qt_audio_out
 from umc.gui.videoedit.preview_view import rgb_image
-from umc.videoedit import audio_out, preview
+from umc.videoedit import preview
 from umc.videoedit.project import Project, Source, length
 
 log = logging.getLogger(__name__)
@@ -55,7 +56,7 @@ class _Run:
         self.streams = preview.PlaybackStreams(project, t0, tmp)
         self.size = self.streams.size
         try:
-            self.out = audio_out.open_output()
+            self.out = qt_audio_out.open_qt_output()
         except Exception:
             self.streams.close()
             raise

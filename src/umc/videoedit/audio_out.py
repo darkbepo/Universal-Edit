@@ -1,18 +1,13 @@
 """Sound output for the preview: 48 kHz stereo s16le. No Qt.
 
-``sounddevice`` is imported only when a real output is opened, so the editor still works
-(silently, on a wall clock) without it or without a sound card.
+The real output is in ``umc.gui.videoedit.qt_audio_out``; without a sound card the
+editor plays silently on a wall clock (``NullAudioOut``).
 """
 
 from __future__ import annotations
 
-import logging
-import os
-import threading
 import time
 from typing import Protocol
-
-log = logging.getLogger(__name__)
 
 SAMPLE_RATE = 48000
 CHANNELS = 2
@@ -56,93 +51,7 @@ class NullAudioOut:
         self._closed = True
 
 
-class SoundDeviceOut:
-    """The default output device through PortAudio (``sounddevice``)."""
-
-    silent = False
-
-    def __init__(self) -> None:
-        import sounddevice
-
-        self._buf = bytearray()
-        self._cond = threading.Condition()
-        self._played = 0  # frames really played
-        self._closed = False
-        self._latency = 0.0
-        self._stream = sounddevice.RawOutputStream(
-            samplerate=SAMPLE_RATE, channels=CHANNELS, dtype="int16", callback=self._callback
-        )
-        try:
-            self._stream.start()
-        except Exception:
-            try:
-                self._stream.close()
-            except Exception:
-                log.warning("Couldn't close the sound output", exc_info=True)
-            raise
-        latency = getattr(self._stream, "latency", 0.0)
-        self._latency = float(latency) if isinstance(latency, int | float) else 0.0
-
-    def _callback(self, outdata, frames, _time, _status) -> None:  # noqa: ANN001
-        need = frames * FRAME_BYTES
-        with self._cond:
-            take = min(need, len(self._buf))
-            take -= take % FRAME_BYTES
-            outdata[:take] = self._buf[:take]
-            del self._buf[:take]
-            self._played += take // FRAME_BYTES
-            self._cond.notify_all()
-        if take < need:  # underrun: silence, and the clock waits
-            outdata[take:need] = bytes(need - take)
-
-    def write(self, chunk: bytes) -> None:
-        limit = int(MAX_QUEUED * SAMPLE_RATE) * FRAME_BYTES
-        with self._cond:
-            while not self._closed and len(self._buf) > limit and self._active():
-                self._cond.wait(timeout=0.1)
-            if not self._closed:
-                self._buf += chunk
-
-    def _active(self) -> bool:
-        """False once the stream stopped (device gone): then nothing would drain the queue."""
-        return bool(getattr(self._stream, "active", True))
-
-    def played_seconds(self) -> float:
-        """Seconds actually heard: played frames minus what is still in the device's latency."""
-        with self._cond:
-            return max(0.0, self._played / SAMPLE_RATE - self._latency)
-
-    def close(self) -> None:
-        with self._cond:
-            if self._closed:
-                return
-            self._closed = True
-            self._buf.clear()
-            self._cond.notify_all()
-        try:
-            self._stream.stop()
-            self._stream.close()
-        except Exception:
-            log.warning("Couldn't close the sound output", exc_info=True)
-
-
 def open_output() -> AudioOut:
-    """A real sound output if possible, otherwise a silent one (the reason is logged)."""
-    if os.environ.get("UMC_NO_AUDIO"):
-        log.info("Sound output disabled (UMC_NO_AUDIO)")
-        return NullAudioOut()
-    try:
-        import sounddevice
-    except Exception:
-        log.warning("sounddevice is not available; preview plays without sound", exc_info=True)
-        return NullAudioOut()
-    try:
-        sounddevice.query_devices(kind="output")
-    except Exception:
-        log.warning("No sound output device; preview plays without sound", exc_info=True)
-        return NullAudioOut()
-    try:
-        return SoundDeviceOut()
-    except Exception:
-        log.warning("Couldn't open the sound output; preview plays without sound", exc_info=True)
-        return NullAudioOut()
+    """The fallback output: silent, on a wall clock. The real one is the Qt output
+    (``umc.gui.videoedit.qt_audio_out.open_qt_output``)."""
+    return NullAudioOut()
