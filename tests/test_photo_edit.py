@@ -294,6 +294,7 @@ def test_form_only_for_pictures_it_can_change(qtbot, window, media):
 def test_save_keeps_mode_and_follows_links(tmp_path):
     import os
     import stat
+    import sys
 
     p = write_test_photo(tmp_path / "private.jpg")
     os.chmod(p, 0o600)
@@ -303,7 +304,8 @@ def test_save_keeps_mode_and_follows_links(tmp_path):
     assert written == p.resolve()
     assert link.is_symlink()  # the link is still a link…
     assert photo.read_details(p.read_bytes()).title == "Via link"  # …and its target changed
-    assert stat.S_IMODE(p.stat().st_mode) == 0o600  # a private picture stays private
+    if sys.platform != "win32":  # Windows has no such mode bits (only "read-only")
+        assert stat.S_IMODE(p.stat().st_mode) == 0o600  # a private picture stays private
     assert not list(tmp_path.glob(photo.TEMP_PREFIX + "*"))
 
 
