@@ -19,9 +19,12 @@ class EditorInfo:
 EDITORS: tuple[EditorInfo, ...] = (
     EditorInfo("image", "Image editor", "Paint, layers, retouch and effects", "photo", True),
     EditorInfo("model", "3D viewer", "Look at and measure 3D models", "cube", True),
-    EditorInfo("video", "Video editor", "Trim, join and mix clips", "movie", False),
+    EditorInfo("video", "Video editor", "Trim, join and mix clips", "movie", True),
     EditorInfo("audio", "Audio editor", "Cut, fade and clean up sound", "music", True),
     EditorInfo("document", "Document editor", "Write and format documents", "document", True),
 )
 
 COMING_SOON = "Coming soon"
+
+# Editors the website doesn't have yet: its tile stays "Coming soon" (available false there).
+WEB_LATER: frozenset[str] = frozenset({"video"})

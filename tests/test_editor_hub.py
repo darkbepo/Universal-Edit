@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from umc.core.editors import EDITORS
+from umc.core.editors import EDITORS, WEB_LATER
 from umc.core.errors import ConversionError
 from umc.editor.blank import BACKGROUNDS, PRESETS, blank_document
 
@@ -28,7 +28,11 @@ def test_same_editors_and_presets_as_the_website():
     web = re.findall(
         r'id: "(\w+)", title: "([^"]+)", blurb: "([^"]+)", icon: "([\w-]+)", available: (\w+)', ts
     )
-    assert web == [(e.id, e.title, e.blurb, e.icon, str(e.available).lower()) for e in EDITORS]
+    # editors the website doesn't have yet keep a "Coming soon" tile there
+    assert web == [
+        (e.id, e.title, e.blurb, e.icon, "false" if e.id in WEB_LATER else str(e.available).lower())
+        for e in EDITORS
+    ]
     presets = (ROOT / "web" / "src" / "editor" / "presets.ts").read_text(encoding="utf-8")
     assert re.findall(r'\["([^"]+)", (\d+), (\d+)\]', presets) == [
         (label, str(w), str(h)) for label, w, h in PRESETS
@@ -65,8 +69,8 @@ def test_tiles_shown_until_files_are_added(window, media):
     hub = window.hub
     assert hub.isVisible()
     enabled = [t for t, tile in hub.tiles.items() if tile.isEnabled()]
-    assert enabled == ["image", "model", "audio", "document"]
-    assert hub.tiles["video"].badge is not None and hub.tiles["video"].badge.text() == "Coming soon"
+    assert enabled == ["image", "model", "video", "audio", "document"]
+    assert hub.tiles["video"].badge.isHidden()
     assert hub.tiles["document"].badge.isHidden()
     window.add_files([str(media / "img0.png")])
     assert not hub.isVisible()
@@ -74,8 +78,8 @@ def test_tiles_shown_until_files_are_added(window, media):
     assert hub.isVisible()
 
 
-def test_coming_soon_tiles_open_nothing(window):
-    assert window.open_editor("video") is False
+def test_unknown_editors_open_nothing(window):
+    assert window.open_editor("nothing") is False
     assert window.stack.currentIndex() == 0
 
 

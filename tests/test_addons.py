@@ -226,7 +226,7 @@ def _pretend_install(addon_id, progress=None, cancel=None):
 def test_tiles_say_install_until_installed(window, monkeypatch):
     tile = window.hub.tiles["model"]
     assert tile.needs_install and tile.badge.isVisible() and tile.badge.text() == "Install"
-    assert not window.hub.tiles["video"].needs_install  # "Coming soon" is something else
+    assert window.hub.tiles["video"].needs_install  # the video editor is an add-on too
     from PySide6.QtWidgets import QMessageBox
 
     monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.Yes)
@@ -274,3 +274,8 @@ def test_settings_lists_the_editors(qtbot, addon_env, monkeypatch):
     assert state.text() == "installed" and button.text() == "Remove"
     button.click()
     assert "not installed" in state.text() and "removed" in d.message.text()
+
+
+def test_video_tile_is_available_on_desktop(window):
+    tile = window.hub.tiles["video"]
+    assert tile.isEnabled() and tile.badge.text() == "Install"

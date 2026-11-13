@@ -154,6 +154,7 @@ class MainWindow(QMainWindow):
         self.doc_editor = None  # DocEditorPage, created on first use
         self.viewer3d = None  # ViewerPage (3D models), created on first use
         self.audio_editor = None  # AudioEditorPage, created on first use
+        self.video_editor = None  # VideoEditorPage, created on first use
         self._convert_size = None
 
         # ---------------------------------------------------------- body: two columns
@@ -455,7 +456,8 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------ Convert | Edit
     def edit_kind(self) -> str | None:
         """ "image" when every file is an image, "document" for one editable document,
-        "model" when every file is a 3D model, "audio" when every file is audio (joined)."""
+        "model" when every file is a 3D model, "audio" when every file is audio (joined),
+        "video" for videos mixed with pictures / sound, or one video project."""
         if not self.files:
             return None
         if all(f.family == MediaFamily.IMAGE for f in self.files):
@@ -464,6 +466,13 @@ class MainWindow(QMainWindow):
             return "model"
         if all(f.family == MediaFamily.AUDIO for f in self.files):
             return "audio"
+        if any(f.family == MediaFamily.VIDEO for f in self.files) and all(
+            f.family in (MediaFamily.VIDEO, MediaFamily.IMAGE, MediaFamily.AUDIO)
+            for f in self.files
+        ):
+            return "video"
+        if len(self.files) == 1 and self.files[0].family == MediaFamily.PROJECT:
+            return "video"
         if (
             len(self.files) == 1
             and self.files[0].family == MediaFamily.DOCUMENT
@@ -490,8 +499,10 @@ class MainWindow(QMainWindow):
             tip = "Open the images in the image editor (each image becomes a layer)"
         elif kind == "audio":
             tip = "Open the sound in the audio editor (several files are joined)"
+        elif kind == "video":
+            tip = "Open the files in the video editor"
         else:
-            tip = "Add images, audio, one text document, or 3D models to edit them"
+            tip = "Add images, videos, audio, one text document, or 3D models to edit them"
         self.edit_mode.setToolTip(tip)
 
     def open_settings(self) -> None:
@@ -500,8 +511,16 @@ class MainWindow(QMainWindow):
         SettingsDialog(self).exec()
 
     def _page(self, kind: str) -> QWidget:
-        """The editor page for ``kind`` ("image", "document", "model", "audio"), made on first
-        use."""
+        """The editor page for ``kind`` ("image", "document", "model", "audio", "video"), made on
+        first use."""
+        if kind == "video":
+            if self.video_editor is None:
+                from umc.gui.videoedit.editor_page import VideoEditorPage
+
+                self.video_editor = VideoEditorPage()
+                self.video_editor.back_requested.connect(self.leave_edit)
+                self.stack.addWidget(self.video_editor)
+            return self.video_editor
         if kind == "audio":
             if self.audio_editor is None:
                 from umc.gui.audioeditor.audio_editor_page import AudioEditorPage
@@ -541,6 +560,11 @@ class MainWindow(QMainWindow):
         self.edit_mode.setChecked(True)
         self.resize(max(self.width(), 1100), max(self.height(), 720))
 
+    def _show_video_page(self, page: QWidget) -> None:
+        self._show_page(page)
+        self.resize(max(self.width(), 1200), max(self.height(), 760))
+        page.on_shown()
+
     def enter_edit(self) -> None:
         if self._current_editor() is not None:
             return
@@ -567,6 +591,14 @@ class MainWindow(QMainWindow):
                 self._show_page(page)
             else:
                 self._check_mode_button()
+            return
+        if kind == "video":
+            if page.open_paths([f.path for f in self.files]):
+                self._show_video_page(page)
+                return
+            self._check_mode_button()
+            self.input_error.setText(page.message.text())
+            self.input_error.setVisible(True)
             return
         if not page.open_paths([f.path for f in self.files]):
             self._check_mode_button()
@@ -606,6 +638,12 @@ class MainWindow(QMainWindow):
             page = self._page("audio")
             page.open_empty()
             self._show_page(page)
+            return True
+        if kind == "video":
+            page = self._page("video")
+            if not page.open_empty():  # still saving
+                return False
+            self._show_video_page(page)
             return True
         if kind == "document":
             page = self._page("document")
@@ -921,6 +959,8 @@ class MainWindow(QMainWindow):
             self._drop_models(paths)
         elif page is not None and page is self.audio_editor:
             self.audio_editor.drop_paths([Path(p) for p in self._expand(paths)])
+        elif page is not None and page is self.video_editor:
+            self.video_editor.add_paths([Path(p) for p in self._expand(paths)])
         elif page is not None:
             self.editor.add_paths([Path(p) for p in self._expand(paths)])
         elif not self.busy:
@@ -942,6 +982,8 @@ class MainWindow(QMainWindow):
         if page is not None and not page.maybe_leave():
             event.ignore()
             return
+        if self.video_editor is not None:
+            self.video_editor.shutdown()  # an embedded page never gets its own closeEvent
         if self.editor is not None:
             self.editor.stop_background_removal()
         if self.viewer3d is not None:

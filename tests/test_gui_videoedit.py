@@ -932,3 +932,88 @@ def test_nothing_is_queued_after_close():
     feed.push(bytes(400))
     out.write(bytes(400))
     assert feed.queued_bytes() == 0
+
+
+# --------------------------------------------------------------------------- main window
+from tests.conftest import needs_ffmpeg  # noqa: E402
+
+
+@pytest.fixture
+def window(qtbot):
+    from PySide6.QtCore import QCoreApplication
+
+    QCoreApplication.setOrganizationName("UMC-tests")
+    from umc.gui.main_window import MainWindow
+    from umc.gui.videoedit.editor_page import VideoEditorPage
+
+    VideoEditorPage._ask_save_changes = lambda self: "discard"  # never block on a question
+    w = MainWindow()
+    qtbot.addWidget(w)
+    w.resize(1280, 800)
+    w.show()
+    return w
+
+
+@needs_ffmpeg
+def test_edit_kind_video(window, vmedia, tmp_path):
+    window.add_files([str(vmedia / "red.mp4")])
+    assert window.edit_kind() == "video"
+    window.add_files([str(vmedia / "pic.png"), str(vmedia / "music.wav")])
+    assert window.edit_kind() == "video"
+    window.clear_files()
+    window.add_files([str(vmedia / "pic.png")])
+    assert window.edit_kind() == "image"
+    window.clear_files()
+    window.add_files([str(vmedia / "music.wav")])
+    assert window.edit_kind() == "audio"
+    window.clear_files()
+    note = tmp_path / "a.txt"
+    note.write_text("hi")
+    window.add_files([str(vmedia / "red.mp4"), str(note)])
+    assert window.edit_kind() is None
+    window.clear_files()
+    proj = tmp_path / "x.umcvideo"
+    proj.write_text("{}")
+    window.add_files([str(proj)])
+    assert window.edit_kind() == "video"
+
+
+@needs_ffmpeg
+def test_edit_opens_video_editor_and_back(window, vmedia):
+    window.add_files([str(vmedia / "red.mp4")])
+    before = window.size()
+    window.enter_edit()
+    page = window.video_editor
+    assert window.stack.currentWidget() is page
+    assert window.width() >= 1200 and window.height() >= 760
+    assert len(page.history.project.main) == 1
+    window.leave_edit()
+    assert window.stack.currentIndex() == 0
+    assert window.size() == before
+
+
+def test_video_tile_opens_an_empty_editor(window):
+    assert window.open_editor("video")
+    page = window.video_editor
+    assert window.stack.currentWidget() is page
+    assert len(page.history.project.main) == 0
+    assert not page.history.dirty
+    assert window.width() >= 1200
+
+
+@needs_ffmpeg
+def test_drop_in_video_editor_adds_to_media_list(window, vmedia):
+    window.add_files([str(vmedia / "red.mp4")])
+    window.enter_edit()
+    page = window.video_editor
+    n = len(page.history.project.sources)
+    window.handle_drop([str(vmedia / "blue.mp4")])
+    assert len(page.history.project.sources) == n + 1
+
+
+def test_closing_the_window_shuts_the_video_editor_down(window):
+    window.open_editor("video")
+    tmp = window.video_editor.tmp
+    assert tmp.exists()
+    window.close()
+    assert not tmp.exists()

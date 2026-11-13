@@ -37,6 +37,7 @@ from umc.videoedit.media import PROJECT_SUFFIX, new_project, probe_source
 from umc.videoedit.project import (
     AudioClip,
     Project,
+    ProjectSettings,
     Source,
     TextItem,
     Transition,
@@ -279,6 +280,13 @@ class VideoEditorPage(QWidget):
         self.set_project(project, None)
         if messages:
             self.show_message(" ".join(messages), error=True)
+        return True
+
+    def open_empty(self) -> bool:
+        """An empty project (the start-screen tile). False only while a save is running."""
+        if self.saving:
+            return False
+        self.set_project(Project(ProjectSettings(), ()), None)
         return True
 
     def _open_project_file(self, path: Path) -> bool:
