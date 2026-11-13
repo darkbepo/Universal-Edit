@@ -279,13 +279,52 @@ def test_thumbnails_clamped_to_visible_area(make):
     t = make(_project([VideoClip("c1", "v", 0.0, 10.0)]))  # 800 px/s -> 8000 px wide
     t.pixels_per_second = 800.0
     img = QImage(64, 36, QImage.Format.Format_RGB32)
-    t.set_thumbnails("v", [img])
+    t.set_thumbnails(t.project.sources[0].key, [img])
     calls = []
     t._draw_thumb = lambda p, i, r: calls.append(r)
     t.grab()
     tile_w = calls[0].width()
     assert 0 < len(calls) <= t.width() // tile_w + 2
     assert max(r.left() for r in calls) <= t.width()
+
+
+def test_playhead_follow_scrolls_it_into_view(make):
+    from umc.gui.videoedit.timeline import HEADER_WIDTH
+
+    t = make(_project([VideoClip("c1", "v", 0.0, 10.0)]))
+    t.pixels_per_second = 400.0  # about 2 s visible
+    t.set_playhead(0.5, follow=True)
+    assert t.scroll_seconds == 0.0  # already in view: no jump
+    t.set_playhead(6.0)  # a plain set (seeking by hand) leaves the view alone
+    assert t.scroll_seconds == 0.0
+    t.set_playhead(6.0, follow=True)
+    assert HEADER_WIDTH <= t.x_for(6.0) < t.width()
+    t.set_playhead(1.0, follow=True)  # looped back to the start
+    assert HEADER_WIDTH <= t.x_for(1.0) < t.width()
+
+
+def test_thumbnails_follow_a_relinked_file(make):
+    import dataclasses
+
+    from PySide6.QtGui import QImage
+
+    project = _project([VideoClip("c1", "v", 0.0, 10.0)])
+    t = make(project)
+    img = QImage(64, 36, QImage.Format.Format_RGB32)
+    t.set_thumbnails(project.sources[0].key, [img])
+    t.set_waveform(project.sources[0].key, [0.5] * 50)
+    calls = []
+    t._draw_thumb = lambda p, i, r: calls.append(r)
+    waves = []
+    t._paint_wave = lambda *a: waves.append(1)
+    t.grab()
+    assert calls and waves
+    moved = dataclasses.replace(project.sources[0], path=Path("elsewhere/v.mp4"))
+    t.set_project(dataclasses.replace(project, sources=(moved, *project.sources[1:])))
+    calls.clear()
+    waves.clear()
+    t.grab()
+    assert calls == [] and waves == []  # the old file's pictures are not shown for the new one
 
 
 # ------------------------------------------------------------------ editor page
@@ -614,8 +653,16 @@ def test_loop_restarts(vpage, qtbot, silent):
 
 
 @needs_ffmpeg
+def test_playback_keeps_the_playhead_in_view(vpage):
+    vpage.timeline.pixels_per_second = 800.0
+    vpage._playing_position(1.8)
+    assert vpage.timeline.scroll_seconds > 0
+    assert vpage.timeline.x_for(1.8) < vpage.timeline.width()
+
+
+@needs_ffmpeg
 def test_thumbnails_arrive(vpage, qtbot):
-    red = next(s.id for s in vpage.history.project.sources if s.path.name == "red.mp4")
+    red = next(s.key for s in vpage.history.project.sources if s.path.name == "red.mp4")
     qtbot.waitUntil(lambda: bool(vpage.timeline._thumbs.get(red)), timeout=15_000)
     qtbot.waitUntil(lambda: bool(vpage.timeline._waves.get(red)), timeout=15_000)
 
@@ -758,6 +805,73 @@ def test_shutdown_during_scan_is_quick_and_leaves_nothing(qtbot, vmedia, monkeyp
     assert not tmp.exists()
     time.sleep(2.2)  # the abandoned scan ends: it must not bring the folder back
     assert not tmp.exists()
+
+
+def test_scanner_caches_per_file(qtbot, tmp_path, monkeypatch):
+    import dataclasses
+
+    from PySide6.QtGui import QImage
+
+    from umc.gui.videoedit.player import MediaScanner
+    from umc.videoedit import preview
+
+    def fake_thumbs(source, count, height, tmp, cancel=None):
+        out = tmp / f"{source.path.stem}.png"
+        img = QImage(8 if source.path.stem == "a" else 16, 8, QImage.Format.Format_RGB32)
+        img.fill(0)
+        img.save(str(out))
+        return [out]
+
+    monkeypatch.setattr(preview, "thumbnails", fake_thumbs)
+    monkeypatch.setattr(preview, "waveform", lambda source, n, cancel=None: [])
+    scanner = MediaScanner(tmp_path)
+    got = []
+    scanner.thumbnails.connect(lambda key, imgs: got.append((key, imgs[0].width())))
+    a = Source("v", tmp_path / "a.mp4", "video", 1.0, 8, 8, 30.0, False)
+    b = dataclasses.replace(a, path=tmp_path / "b.mp4")
+    try:
+        scanner.want([a])
+        qtbot.waitUntil(lambda: len(got) == 1, timeout=5000)
+        scanner.want([b])
+        qtbot.waitUntil(lambda: len(got) == 2, timeout=5000)
+        scanner.want([a])  # from the cache: a's own pictures, not b's
+        assert got == [(a.key, 8), (b.key, 16), (a.key, 8)]
+    finally:
+        scanner.close()
+
+
+@needs_ffmpeg
+def test_closing_during_a_slow_scan_stops_ffmpeg_in_time(qtbot, vmedia, monkeypatch):
+    import subprocess
+    import time
+
+    from umc.gui.videoedit.editor_page import VideoEditorPage
+    from umc.tools import ffmpeg
+
+    procs = []
+    real_popen = subprocess.Popen
+    real_bytes = ffmpeg.ffmpeg_bytes
+
+    def spy(*a, **kw):
+        procs.append(real_popen(*a, **kw))
+        return procs[-1]
+
+    def endless(args, **kw):  # the thumbnails call, but an FFmpeg that never ends
+        never_ends = ["-re", "-f", "lavfi", "-i", "sine=r=1000", "-f", "s16le", "pipe:1"]
+        return real_bytes(never_ends, **kw)
+
+    monkeypatch.setattr(ffmpeg.subprocess, "Popen", spy)
+    monkeypatch.setattr(ffmpeg, "ffmpeg_bytes", endless)
+    pg = VideoEditorPage()
+    qtbot.addWidget(pg)
+    assert pg.open_paths([vmedia / "red.mp4"])
+    qtbot.waitUntil(lambda: any(len(p.args) > 4 and "lavfi" in p.args for p in procs), timeout=5000)
+    thread = pg.scanner._thread
+    t0 = time.monotonic()
+    pg.shutdown()
+    assert time.monotonic() - t0 < 1.0
+    assert thread.isFinished()  # within close()'s own wait: nothing left running on exit
+    assert all(p.poll() is not None for p in procs)
 
 
 @needs_ffmpeg
@@ -1011,12 +1125,57 @@ def test_drop_in_video_editor_adds_to_media_list(window, vmedia):
     assert len(page.history.project.sources) == n + 1
 
 
+@needs_ffmpeg
+def test_cancelled_project_open_is_not_an_error(window, vmedia, tmp_path, monkeypatch):
+    import shutil
+
+    from umc.gui.videoedit import dialogs
+    from umc.videoedit import projectfile
+    from umc.videoedit.media import new_project
+
+    clip = tmp_path / "gone.mp4"
+    shutil.copy(vmedia / "red.mp4", clip)
+    project, _ = new_project([clip])
+    path = tmp_path / "p.umcvideo"
+    projectfile.save_project(project, path)
+    clip.unlink()
+    monkeypatch.setattr(dialogs.LocateDialog, "exec", lambda self: 0)  # the user cancels
+    window.add_files([str(path)])
+    window.enter_edit()
+    assert window.stack.currentIndex() == 0
+    assert not window.input_error.isVisible()
+
+
 def test_closing_the_window_shuts_the_video_editor_down(window):
     window.open_editor("video")
     tmp = window.video_editor.tmp
     assert tmp.exists()
     window.close()
     assert not tmp.exists()
+
+
+def test_a_reused_window_gets_a_working_video_editor(window, qtbot):
+    from PySide6.QtCore import QEvent, Qt
+    from PySide6.QtGui import QKeyEvent
+    from PySide6.QtWidgets import QApplication
+
+    window.open_editor("video")
+    old = window.video_editor
+    window.close()  # hidden, then reused by AppController.free_main
+    assert window.video_editor is None
+    assert window.stack.currentIndex() == 0
+    window.show()
+    assert window.open_editor("video")
+    page = window.video_editor
+    assert page is not old and window.stack.currentWidget() is page
+    assert page.tmp.exists()
+    assert not page.frames._closed and not page.scanner._closed
+    slider = QSlider(page.inspector)  # a field of the inspector
+    slider.show()
+    _focus(qtbot, window, slider)
+    event = QKeyEvent(QEvent.Type.ShortcutOverride, Qt.Key.Key_Left, Qt.KeyboardModifier.NoModifier)
+    QApplication.sendEvent(slider, event)
+    assert event.isAccepted()  # the app-wide key filter is back: the field keeps its keys
 
 
 # ------------------------------------------------------------------ export dialog
@@ -1095,6 +1254,19 @@ def test_export_dialog_existing_path_asks(export_dialog, qtbot, tmp_path, monkey
     assert asked == [dest]
     assert not dlg.running
     assert dest.read_bytes() == b"keep me"
+
+
+@needs_ffmpeg
+def test_export_dialog_refuses_a_source_file(export_dialog, vmedia, monkeypatch):
+    dlg = export_dialog
+    asked = []
+    monkeypatch.setattr(dlg, "_confirm_replace", lambda p: asked.append(p) or True)
+    before = (vmedia / "red.mp4").read_bytes()
+    dlg.path_edit.setText(str(vmedia / "red.mp4"))
+    dlg.export_button.click()
+    assert not dlg.running and asked == []  # not even offered to replace it
+    assert "one of the project's own files" in dlg.message.text()
+    assert (vmedia / "red.mp4").read_bytes() == before
 
 
 @needs_ffmpeg

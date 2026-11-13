@@ -322,3 +322,58 @@ def test_playback_seam_matches_stills(tmp_path, monkeypatch):
         assert _mean_diff(data, still(project, t, tmp)) < 6, k
     # and neighbouring frames really differ, so a skip or repeat would show
     assert _mean_diff(frames[14][1], frames[15][1]) > 6
+
+
+_ENDLESS = ["-re", "-f", "lavfi", "-i", "sine=r=1000"]  # real time, never ends on its own
+
+
+def _cancel_soon(delay: float = 0.3) -> threading.Event:
+    event = threading.Event()
+    threading.Timer(delay, event.set).start()
+    return event
+
+
+@needs_ffmpeg
+def test_cancelled_thumbnails_stop_ffmpeg(tmp_path, monkeypatch):
+    procs = []
+    real_popen = preview.ffmpeg.subprocess.Popen
+    real_bytes = preview.ffmpeg.ffmpeg_bytes
+
+    def spy_popen(*a, **kw):
+        procs.append(real_popen(*a, **kw))
+        return procs[-1]
+
+    def endless(args, **kw):  # same call, but an FFmpeg that would run for ever
+        return real_bytes([*_ENDLESS, "-f", "s16le", "pipe:1"], **kw)
+
+    monkeypatch.setattr(preview.ffmpeg.subprocess, "Popen", spy_popen)
+    monkeypatch.setattr(preview.ffmpeg, "ffmpeg_bytes", endless)
+    long = Source("v", tmp_path / "v.mp4", "video", 3600.0, 640, 360, 30.0, True)
+    t0 = time.monotonic()
+    with pytest.raises(ConversionCancelled):
+        thumbnails(long, 10, 40, tmp_path, cancel=_cancel_soon())
+    assert time.monotonic() - t0 < 3.0
+    assert procs and all(p.poll() is not None for p in procs)
+
+
+@needs_ffmpeg
+def test_cancelled_waveform_stops_ffmpeg(tmp_path, spawned, monkeypatch):
+    real = preview.ffmpeg.ffmpeg_popen  # the spy: every process lands in ``spawned``
+    monkeypatch.setattr(
+        preview.ffmpeg, "ffmpeg_popen", lambda args, **kw: real([*_ENDLESS, *args[2:]], **kw)
+    )
+    long = Source("a", tmp_path / "a.wav", "audio", 3600.0, 0, 0, 0.0, True)
+    t0 = time.monotonic()
+    with pytest.raises(ConversionCancelled):
+        waveform(long, 100, cancel=_cancel_soon())
+    assert time.monotonic() - t0 < 3.0
+    assert spawned and all(p.poll() is not None for p in spawned)
+
+
+def test_waveform_cancelled_before_start_runs_nothing(tmp_path, spawned):
+    event = threading.Event()
+    event.set()
+    long = Source("a", tmp_path / "a.wav", "audio", 3600.0, 0, 0, 0.0, True)
+    with pytest.raises(ConversionCancelled):
+        waveform(long, 100, cancel=event)
+    assert spawned == []

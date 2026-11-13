@@ -23,7 +23,7 @@ import numpy as np
 from PIL import ImageOps
 
 from umc.converters.imaging import open_image
-from umc.core.errors import ConversionError
+from umc.core.errors import ConversionCancelled, ConversionError
 from umc.tools import ffmpeg, process
 from umc.videoedit.export import GROUP_SIZE
 from umc.videoedit.project import Project, Source, layout, length, output_fps, output_size
@@ -89,6 +89,15 @@ def _stop(proc: subprocess.Popen) -> None:
     if proc.stdout is not None:
         with contextlib.suppress(OSError):
             proc.stdout.close()
+
+
+def _stop_on(event: threading.Event, proc: subprocess.Popen) -> None:
+    """Kill ``proc`` as soon as ``event`` is set (a blocked read then returns); ends with it."""
+    while proc.poll() is None:
+        if event.wait(0.05):
+            if proc.poll() is None:
+                process._kill(proc)  # the reader gets end-of-file; it closes the pipe itself
+            return
 
 
 def _tail(path: Path | None, lines: int = 6) -> str:
@@ -402,8 +411,13 @@ class PlaybackStreams:
         self._finalizer()
 
 
-def thumbnails(source: Source, count: int, height: int, tmp: Path) -> list[Path]:
-    """``count`` JPEG thumbnails spread over a video (one for a picture)."""
+def thumbnails(
+    source: Source, count: int, height: int, tmp: Path, cancel: threading.Event | None = None
+) -> list[Path]:
+    """``count`` JPEG thumbnails spread over a video (one for a picture).
+
+    Setting ``cancel`` stops FFmpeg and raises ``ConversionCancelled``.
+    """
     tmp = Path(tmp)
     tmp.mkdir(parents=True, exist_ok=True)
     stem = f"thumb_{uuid.uuid4().hex[:8]}"
@@ -423,7 +437,9 @@ def thumbnails(source: Source, count: int, height: int, tmp: Path) -> list[Path]
         args = ["-skip_frame", "nokey"] if key_frames_only else []
         args += ["-i", str(source.path), "-an", "-vf", f"fps={rate:.6f},scale=-2:{height}"]
         args += ["-frames:v", str(count), "-q:v", "5", "-y", f"{stem}_%03d.jpg"]
-        ffmpeg.ffmpeg_bytes(args, cwd=tmp, timeout=timeout, error_message=ERROR)
+        ffmpeg.ffmpeg_bytes(
+            args, cwd=tmp, timeout=timeout, cancel_event=cancel, error_message=ERROR
+        )
         return sorted(tmp.glob(f"{stem}_*.jpg"))
 
     found = run(True)
@@ -434,13 +450,16 @@ def thumbnails(source: Source, count: int, height: int, tmp: Path) -> list[Path]
     return found
 
 
-def waveform(source: Source, buckets: int) -> list[float]:
+def waveform(source: Source, buckets: int, cancel: threading.Event | None = None) -> list[float]:
     """Peak level (0 to 1) per bucket of the source's sound; ``[]`` without sound.
 
     Decoded at 1 kHz mono and read in pieces, so a long file never sits in memory whole.
+    Setting ``cancel`` stops FFmpeg (even mid-read) and raises ``ConversionCancelled``.
     """
     if not source.has_audio or source.kind == "image" or buckets <= 0:
         return []
+    if cancel is not None and cancel.is_set():
+        raise ConversionCancelled()
     args = ["-i", str(source.path), "-vn", "-ac", "1", "-ar", str(WAVEFORM_RATE)]
     args += ["-f", "s16le", "-acodec", "pcm_s16le", "pipe:1"]
     expected = max(1, round(source.duration * WAVEFORM_RATE))
@@ -448,8 +467,12 @@ def waveform(source: Source, buckets: int) -> list[float]:
     seen = 0
     carry = b""
     proc = ffmpeg.ffmpeg_popen(args)
+    if cancel is not None:
+        threading.Thread(target=_stop_on, args=(cancel, proc), daemon=True).start()
     try:
         while True:
+            if cancel is not None and cancel.is_set():
+                raise ConversionCancelled()
             block = _read(proc, 1 << 16)
             if not block:
                 break
@@ -463,6 +486,8 @@ def waveform(source: Source, buckets: int) -> list[float]:
         code = proc.wait(timeout=10)
     finally:
         _stop(proc)
+    if cancel is not None and cancel.is_set():
+        raise ConversionCancelled()
     if code != 0:
         log.warning("Waveform of %s failed (exit code %s)", source.path, code)
         raise ConversionError(ERROR, details=f"ffmpeg exit code {code}")

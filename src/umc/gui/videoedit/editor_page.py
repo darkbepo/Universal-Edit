@@ -113,6 +113,7 @@ class VideoEditorPage(QWidget):
         self.project_path: Path | None = None
         self.playhead = 0.0
         self.saving = False
+        self.open_cancelled = False  # the last open_paths was cancelled by the user
         self._last_save_ok = False
         self._save_thread: QThread | None = None
         self._save_worker: _SaveWorker | None = None
@@ -265,7 +266,9 @@ class VideoEditorPage(QWidget):
 
     # ------------------------------------------------------------ opening
     def open_paths(self, paths: list[Path]) -> bool:
-        """Start a project from files, or open a ``.umcvideo``. False when nothing usable opened."""
+        """Start a project from files, or open a ``.umcvideo``. False when nothing usable opened
+        (``open_cancelled`` then tells whether the user cancelled rather than it failing)."""
+        self.open_cancelled = False
         paths = [Path(p) for p in paths]
         is_project = any(p.suffix.lower() == PROJECT_SUFFIX for p in paths)
         try:
@@ -297,6 +300,7 @@ class VideoEditorPage(QWidget):
             dlg = LocateDialog(missing, self)
             if not dlg.exec():
                 self.show_message("Opening the project was cancelled.")
+                self.open_cancelled = True
                 return False
             for m in missing:
                 found = dlg.choices.get(m.source_id)
@@ -589,7 +593,7 @@ class VideoEditorPage(QWidget):
 
     def _playing_position(self, t: float) -> None:
         self.playhead = t
-        self.timeline.set_playhead(t)
+        self.timeline.set_playhead(t, follow=True)
         self.preview.set_time(t, self.player.total)  # no layout work per tick
 
     def _play_finished(self) -> None:

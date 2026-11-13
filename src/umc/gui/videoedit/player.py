@@ -15,6 +15,7 @@ from pathlib import Path
 from PySide6.QtCore import QObject, QThread, QTimer, Signal, Slot
 from PySide6.QtGui import QImage
 
+from umc.core.errors import ConversionCancelled
 from umc.gui.videoedit import qt_audio_out
 from umc.gui.videoedit.preview_view import rgb_image
 from umc.gui.videoedit.threads import keep_until_finished
@@ -243,35 +244,40 @@ def wave_buckets(source: Source) -> int:
 
 
 class _ScanWorker(QObject):
-    thumbs = Signal(str, object)  # source id, list of JPEG paths
-    wave = Signal(str, object)  # source id, peaks
+    thumbs = Signal(str, object)  # Source.key, list of JPEG paths
+    wave = Signal(str, object)  # Source.key, peaks
 
     def __init__(self, tmp: Path) -> None:
         super().__init__()
         self.tmp = tmp
-        self.closed = False
+        self.cancel = threading.Event()  # set by close(): stops a running FFmpeg at once
 
     @Slot(object)
     def scan(self, source: Source) -> None:
-        if self.closed or not self.tmp.exists():
+        if self.cancel.is_set() or not self.tmp.exists():
             return
         try:
             if source.kind in ("video", "image"):
-                paths = preview.thumbnails(source, thumb_count(source), THUMB_HEIGHT, self.tmp)
-                self.thumbs.emit(source.id, [str(p) for p in paths])
-            if source.kind in ("video", "audio") and not self.closed:
-                self.wave.emit(source.id, preview.waveform(source, wave_buckets(source)))
+                paths = preview.thumbnails(
+                    source, thumb_count(source), THUMB_HEIGHT, self.tmp, cancel=self.cancel
+                )
+                self.thumbs.emit(source.key, [str(p) for p in paths])
+            if source.kind in ("video", "audio") and not self.cancel.is_set():
+                peaks = preview.waveform(source, wave_buckets(source), cancel=self.cancel)
+                self.wave.emit(source.key, peaks)
+        except ConversionCancelled:
+            pass
         except Exception:
             log.warning("couldn't scan %s for the timeline", source.path, exc_info=True)
-        if self.closed:  # the page is gone: leave nothing behind in its folder
+        if self.cancel.is_set():  # the page is gone: leave nothing behind in its folder
             shutil.rmtree(self.tmp, ignore_errors=True)
 
 
 class MediaScanner(QObject):
     """Makes each source's thumbnails and waveform once, on a background thread."""
 
-    thumbnails = Signal(str, object)  # source id, list[QImage]
-    waveform = Signal(str, object)  # source id, list[float]
+    thumbnails = Signal(str, object)  # Source.key, list[QImage]
+    waveform = Signal(str, object)  # Source.key, list[float]
     _scan = Signal(object)
 
     def __init__(self, tmp: Path, parent: QObject | None = None) -> None:
@@ -289,21 +295,24 @@ class MediaScanner(QObject):
         self._thread.start()
 
     def want(self, sources) -> None:
-        """Scan the sources not seen before; scanned ones are re-sent from the cache."""
+        """Scan the sources not seen before; scanned ones are re-sent from the cache.
+
+        Everything is keyed by ``Source.key`` (id and file), so a relinked source is scanned
+        again and never shows the old file's pictures."""
         if self._closed:
             return
         for s in sources:
-            key = f"{s.id}|{s.path}"
+            key = s.key
             if key in self._seen:
-                if s.id in self._thumbs:
-                    self.thumbnails.emit(s.id, self._thumbs[s.id])
-                if s.id in self._waves:
-                    self.waveform.emit(s.id, self._waves[s.id])
+                if key in self._thumbs:
+                    self.thumbnails.emit(key, self._thumbs[key])
+                if key in self._waves:
+                    self.waveform.emit(key, self._waves[key])
                 continue
             self._seen.add(key)
             self._scan.emit(s)
 
-    def _got_thumbs(self, source_id: str, paths: list[str]) -> None:
+    def _got_thumbs(self, key: str, paths: list[str]) -> None:
         images = []
         for p in paths:
             img = QImage(p)
@@ -312,19 +321,19 @@ class MediaScanner(QObject):
             with contextlib.suppress(OSError):
                 Path(p).unlink()
         if images and not self._closed:
-            self._thumbs[source_id] = images
-            self.thumbnails.emit(source_id, images)
+            self._thumbs[key] = images
+            self.thumbnails.emit(key, images)
 
-    def _got_wave(self, source_id: str, peaks: list[float]) -> None:
+    def _got_wave(self, key: str, peaks: list[float]) -> None:
         if peaks and not self._closed:
-            self._waves[source_id] = peaks
-            self.waveform.emit(source_id, peaks)
+            self._waves[key] = peaks
+            self.waveform.emit(key, peaks)
 
     def close(self) -> None:
         if self._closed:
             return
         self._closed = True
-        self._worker.closed = True
+        self._worker.cancel.set()  # also stops the FFmpeg it may be running
         self._thread.quit()
         if not self._thread.wait(300):
             log.warning("Thumbnail thread didn't stop quickly; letting it finish")

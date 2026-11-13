@@ -113,6 +113,11 @@ class Source:
     fps: float
     has_audio: bool
 
+    @property
+    def key(self) -> str:
+        """Names this source *and* its file: a relinked source gets new thumbnails."""
+        return f"{self.id}|{self.path}"
+
 
 @dataclass(frozen=True)
 class Transition:

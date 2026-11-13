@@ -594,8 +594,9 @@ class MainWindow(QMainWindow):
             return
         if not page.open_paths([f.path for f in self.files]):
             self._check_mode_button()
-            self.input_error.setText(page.message.text())
-            self.input_error.setVisible(True)
+            if not getattr(page, "open_cancelled", False):  # a cancel is no error
+                self.input_error.setText(page.message.text())
+                self.input_error.setVisible(True)
             return
         if kind == "video":
             self._show_video_page(page)
@@ -993,4 +994,15 @@ class MainWindow(QMainWindow):
                 self._thread.wait(5000)
         if self.stack.currentIndex() == 0:
             self.settings.setValue("geometry", self.saveGeometry())
+        if self.video_editor is not None:
+            # shut down for good: a closed window can be reused (AppController.free_main),
+            # so the next Edit / tile builds a fresh page
+            page, self.video_editor = self.video_editor, None
+            if self.stack.currentWidget() is page:
+                self.stack.setCurrentIndex(0)
+                self._set_mode("convert")
+                if self._convert_size is not None:
+                    self.resize(self._convert_size)
+            self.stack.removeWidget(page)
+            page.deleteLater()
         super().closeEvent(event)

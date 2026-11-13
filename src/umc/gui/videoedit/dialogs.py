@@ -28,7 +28,7 @@ from umc.core.errors import ConversionCancelled, ConversionError
 from umc.core.job import unique_path
 from umc.core.options import build, option_specs
 from umc.gui.widgets.settings_panel import SettingsPanel
-from umc.videoedit.export import ExportOptions, run_export
+from umc.videoedit.export import OWN_FILE, ExportOptions, is_project_file, run_export
 from umc.videoedit.project import Project
 from umc.videoedit.projectfile import MissingSource
 
@@ -280,6 +280,9 @@ class ExportDialog(QDialog):
             self._show_message("Choose a file name for the video.", error=True)
             return
         self.path_edit.setText(str(dest))
+        if is_project_file(self.project, dest):
+            self._show_message(OWN_FILE, error=True)
+            return
         if dest.exists() and not self._confirm_replace(dest):
             return
         self.remember()

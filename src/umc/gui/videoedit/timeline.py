@@ -40,6 +40,7 @@ SNAP_PX = 8
 DRAG_PX = 3
 MIN_PPS, MAX_PPS, DEFAULT_PPS = 5.0, 800.0, 80.0
 ZOOM_STEP = 1.25
+FOLLOW_LEAD = 0.05  # after a page turn the playhead sits this far (of the view) from the left
 
 Part = Literal["body", "left", "right", "transition"]
 
@@ -95,8 +96,13 @@ class TimelineView(QWidget):
             self.set_selected(None)
         self.update()
 
-    def set_playhead(self, t: float) -> None:
+    def set_playhead(self, t: float, follow: bool = False) -> None:
+        """Move the playhead; ``follow`` (playback) pages the view when it leaves it."""
         self.playhead = max(0.0, t)
+        if follow:
+            span = max(0.0, (self.width() - HEADER_WIDTH) / self.pixels_per_second)
+            if not self.scroll_seconds <= self.playhead < self.scroll_seconds + span:
+                self.scroll_seconds = max(0.0, self.playhead - span * FOLLOW_LEAD)
         self.update()
 
     def set_selected(self, item_id: str | None) -> None:
@@ -105,12 +111,13 @@ class TimelineView(QWidget):
             self.selection_changed.emit(item_id)
             self.update()
 
-    def set_thumbnails(self, source_id: str, images: list[QImage]) -> None:
-        self._thumbs[source_id] = images
+    def set_thumbnails(self, key: str, images: list[QImage]) -> None:
+        """Thumbnails for the source whose ``Source.key`` (id and file) is ``key``."""
+        self._thumbs[key] = images
         self.update()
 
-    def set_waveform(self, source_id: str, peaks: list[float]) -> None:
-        self._waves[source_id] = peaks
+    def set_waveform(self, key: str, peaks: list[float]) -> None:
+        self._waves[key] = peaks
         self.update()
 
     def zoom_in(self) -> None:
@@ -503,13 +510,14 @@ class TimelineView(QWidget):
         p.drawRoundedRect(rect, 5, 5)
         p.save()
         p.setClipRect(rect)
-        source_id = getattr(item, "source", None)
-        if isinstance(item, (VideoClip, PictureClip)) and source_id in self._thumbs:
-            self._paint_thumbs(p, self._thumbs[source_id], rect)
-        if isinstance(item, (VideoClip, AudioClip)) and source_id in self._waves:
+        source = self._sources.get(getattr(item, "source", None))
+        key = source.key if source is not None else None
+        if isinstance(item, (VideoClip, PictureClip)) and key in self._thumbs:
+            self._paint_thumbs(p, self._thumbs[key], rect)
+        if isinstance(item, (VideoClip, AudioClip)) and key in self._waves:
             wave_h = WAVE_H if isinstance(item, VideoClip) else rect.height() - 12
             wave = QRect(rect.left(), rect.bottom() - wave_h, rect.width(), wave_h)
-            self._paint_wave(p, self._waves[source_id], wave, item)
+            self._paint_wave(p, self._waves[key], wave, item)
         f = QFont(p.font())
         f.setPixelSize(11)
         p.setFont(f)

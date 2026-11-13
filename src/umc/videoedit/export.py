@@ -299,6 +299,19 @@ def _make_gif(
     return outputs[0]
 
 
+OWN_FILE = "That's one of the project's own files — choose another name."
+
+
+def _same_file_key(path: Path) -> str:
+    return os.path.normcase(os.path.realpath(path))
+
+
+def is_project_file(project: Project, dest: Path) -> bool:
+    """True when ``dest`` is (resolves to) one of the files the project is made from."""
+    key = _same_file_key(Path(dest))
+    return any(_same_file_key(s.path) == key for s in project.sources)
+
+
 def run_export(
     project: Project,
     options: ExportOptions,
@@ -313,6 +326,8 @@ def run_export(
     gif = options.container == "gif"
     if dest.suffix.lower() != f".{options.container}":
         raise ConversionError(f"The file name must end in .{options.container}.")
+    if is_project_file(project, dest):
+        raise ConversionError(OWN_FILE)
     if not gif:  # check the codec choice before rendering anything
         codecs.resolve_video_codec(options.container, options.video_codec)
         if not options.remove_audio:
