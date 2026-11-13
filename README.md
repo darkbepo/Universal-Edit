@@ -6,9 +6,9 @@
 
 **Convert and edit pictures, video, music, documents, 3D models and more — on your own device.**
 
-Free and open source · nothing is uploaded · works in your browser or as a Windows app
+Free and open source · nothing is uploaded · works in your browser (a Windows app is on the way)
 
-### [▶ Open it in your browser](https://darkbepo.github.io/Universal-Edit/) &nbsp;·&nbsp; [⬇ Get the Windows app](#-the-windows-app)
+### [▶ Open it in your browser](https://darkbepo.github.io/Universal-Edit/) &nbsp;·&nbsp; [⬇ Windows app](https://github.com/darkbepo/Universal-Edit/releases)
 
 <img src="docs/images/start.jpg" alt="The Universal Edit start screen: a drop zone with file-type badges orbiting it, and tiles for the editors" width="900">
 
@@ -291,16 +291,23 @@ The website needs nothing installed and works on Windows, Mac, Linux and phones.
 desktop app** is for the heavy stuff: old Office formats (DOC, XLS, PPT, ODS, ODP), very large
 files, much faster video, the video editor and the "Open with" viewer.
 
-1. Go to **Actions → Build Windows executable** → the latest successful run.
-2. Download **`UniversalEdit-setup`** and run `UniversalEdit-setup.exe` — it installs for your
-   user only, no administrator rights needed.
+> **Not released yet.** The desktop app will be published on the
+> [Releases page](https://github.com/darkbepo/Universal-Edit/releases) once it's ready. Until
+> then, [use the website](https://darkbepo.github.io/Universal-Edit/) — or, if you're comfortable
+> with Python, [run it from source](#running-from-source).
+
+Once it's out:
+
+1. Open the [Releases page](https://github.com/darkbepo/Universal-Edit/releases) and download
+   the setup file from the newest release.
+2. Run it — it installs for your user only, no administrator rights needed.
 3. Pick which editors to install (you can add the rest later from the app), and whether to add
    **"Convert with Universal Edit"** to the right-click menu and Universal Edit to
    **"Open with"**. Both can be switched later in the app (cog, top left).
 
 To make the viewer your default for pictures or videos, pick it once in Windows' *Default apps*
-(setup offers a shortcut there). Prefer no installer? Download `UniversalEdit-windows`, extract
-it, and run `UniversalEdit.exe`.
+(setup offers a shortcut there). Each release also has a zip for those who prefer no installer:
+extract it and run `UniversalEdit.exe`.
 
 ## Running from source
 
@@ -321,8 +328,9 @@ The website's source is in [`web/`](web/README.md). The screenshots above are ma
 
 ## Building the Windows executable
 
-On GitHub: **Actions → Build Windows executable → Run workflow**, then download the zip from
-the finished run. Locally on Windows: `pyinstaller packaging/umc.spec` → `dist/UniversalEdit/`.
+For developers: on GitHub, **Actions → Build Windows executable → Run workflow** builds a test
+copy (download it from the finished run). Locally on Windows: `python scripts/build_addons.py`,
+then `pyinstaller packaging/umc.spec` → `dist/UniversalEdit/`.
 
 ## License
 

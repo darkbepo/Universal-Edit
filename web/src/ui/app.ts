@@ -30,7 +30,7 @@ const h = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLEle
 // Video encoding in the browser is capped at a few threads (engines/threads.ts), so point out
 // that the desktop app is much faster for these.
 const SLOW_IN_BROWSER = new Set(["video", "gif", "frames", "slideshow", "subtitles-video"]);
-const DESKTOP_URL = "https://github.com/darkbepo/Universal-Edit#desktop-app-for-the-heavy-stuff";
+const DESKTOP_URL = "https://github.com/darkbepo/Universal-Edit/releases";
 const MAX_RESULTS = 200;
 
 export function mountApp(root: HTMLElement): void {
