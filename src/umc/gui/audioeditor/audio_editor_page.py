@@ -10,7 +10,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
-from PySide6.QtCore import QEventLoop, QObject, Qt, QThread, Signal, Slot
+from PySide6.QtCore import QEventLoop, QObject, QSettings, Qt, QThread, Signal, Slot
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QComboBox,
@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollBar,
+    QSlider,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -36,7 +37,7 @@ from umc.audioedit.io import BITRATES, DEFAULT_BITRATE, SAVE_FORMATS, open_audio
 from umc.converters.audio import LOSSY_EXTS
 from umc.core.detect import AUDIO_EXTS, MediaFamily, detect
 from umc.core.errors import ConversionCancelled, ConversionError
-from umc.gui.audioeditor.player import Player
+from umc.gui.audioeditor.player import DEFAULT_VOLUME, Player
 from umc.gui.audioeditor.wave_view import WaveView
 from umc.gui.widgets.flow_layout import FlowLayout
 
@@ -45,6 +46,7 @@ log = logging.getLogger(__name__)
 EMPTY_TEXT = "Open a sound with “Open…”, or drop audio files here (MP3, WAV, FLAC, M4A, OGG, …)."
 HINT = "Click to place the cursor · drag to select · Ctrl+wheel to zoom · Space plays"
 SCROLL_STEPS = 1000  # the scroll bar works in 1/1000 of a screen
+VOLUME_KEY = "audioeditor/volume"  # QSettings: the volume slider, 0…100
 TOOL_GROUPS = (
     (
         ("cut", "Cut", "Cut the selection (Ctrl+X)"),
@@ -265,6 +267,20 @@ class AudioEditorPage(QWidget):
         self.stop_button.clicked.connect(self.stop)
         self.end_button = b(lay, "▶|", "Go to the end (End)")
         self.end_button.clicked.connect(lambda: self.go_to(self.doc.frames if self.doc else 0))
+        lay.addSpacing(8)
+        self.volume_slider = QSlider(Qt.Orientation.Horizontal, objectName="AudioVolume")
+        self.volume_slider.setRange(0, 100)
+        self.volume_slider.setFixedWidth(110)
+        self.volume_slider.setAccessibleName("Volume")
+        saved = QSettings().value(VOLUME_KEY, round(DEFAULT_VOLUME * 100), type=int)
+        self.volume_slider.setValue(saved)
+        self.volume_slider.valueChanged.connect(self._on_volume)
+        self.volume_label = QLabel(objectName="Muted")
+        self.volume_label.setMinimumWidth(36)
+        lay.addWidget(QLabel("Volume", objectName="Muted"))
+        lay.addWidget(self.volume_slider)
+        lay.addWidget(self.volume_label)
+        self._show_volume()
         self.edit_buttons: dict[str, QPushButton] = {}
         for items in TOOL_GROUPS:
             lay = group()
@@ -512,6 +528,16 @@ class AudioEditorPage(QWidget):
 
     def stop(self) -> None:
         self.player.stop()
+
+    def _show_volume(self) -> None:
+        value = self.volume_slider.value()
+        self.volume_label.setText(f"{value} %")
+        self.volume_slider.setToolTip(f"Playback volume ({value} %); saving is not affected")
+        self.player.set_volume(value / 100)
+
+    def _on_volume(self, value: int) -> None:
+        self._show_volume()
+        QSettings().setValue(VOLUME_KEY, value)
 
     def _on_play_position(self, frame: int) -> None:
         self.view.play_head = min(frame, self._play_end)

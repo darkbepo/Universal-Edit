@@ -145,6 +145,7 @@ def test_play_starts_or_explains(window, qtbot, media):
     from umc.gui.audioeditor.player import NO_DEVICE
 
     page = open_in_editor(window, qtbot, [media / "tone.wav"])
+    page.player.set_volume(0)  # no beeps on a developer's PC
     page.toggle_play()
     if page.player.active:  # a sound device exists here
         qtbot.wait(200)
@@ -152,6 +153,39 @@ def test_play_starts_or_explains(window, qtbot, media):
         assert not page.player.active and page.view.play_head is None
     else:
         assert page.message.text() == NO_DEVICE
+
+
+@pytest.fixture
+def no_saved_volume(window):
+    from PySide6.QtCore import QSettings
+
+    from umc.gui.audioeditor.audio_editor_page import VOLUME_KEY
+
+    QSettings().remove(VOLUME_KEY)
+    yield VOLUME_KEY
+    QSettings().remove(VOLUME_KEY)
+
+
+def test_volume_slider_sets_the_playback_volume_and_is_remembered(
+    window, qtbot, media, no_saved_volume
+):
+    from PySide6.QtCore import QSettings
+
+    from umc.gui.audioeditor.player import sink_volume
+
+    page = open_in_editor(window, qtbot, [media / "tone.wav"])
+    assert page.volume_slider.value() == 70
+    page.volume_slider.setValue(35)
+    assert page.player.volume == pytest.approx(0.35)
+    assert page.volume_label.text() == "35 %"
+    assert QSettings().value(no_saved_volume, type=int) == 35
+    page.volume_slider.setValue(0)  # silent while it plays on a developer's PC
+    page.toggle_play()
+    if page.player.active:  # a sound device exists here: the sink follows the slider live
+        assert page.player.sink.volume() == pytest.approx(0, abs=1e-3)
+        page.volume_slider.setValue(1)
+        assert page.player.sink.volume() == pytest.approx(sink_volume(0.01), abs=1e-4)
+        page.stop()
 
 
 def test_broken_file_is_a_plain_message(window, qtbot, tmp_path):

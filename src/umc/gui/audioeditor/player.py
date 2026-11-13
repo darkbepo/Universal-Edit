@@ -7,7 +7,7 @@ import logging
 
 import numpy as np
 from PySide6.QtCore import QIODevice, QObject, QTimer, Signal
-from PySide6.QtMultimedia import QAudio, QAudioFormat, QAudioSink, QMediaDevices
+from PySide6.QtMultimedia import QAudioFormat, QAudioSink, QMediaDevices, QtAudio
 
 from umc.audioedit.document import AudioDoc
 
@@ -15,6 +15,21 @@ log = logging.getLogger(__name__)
 
 NO_DEVICE = "No sound output was found, so the sound can't be played."
 TICK_MS = 30
+DEFAULT_VOLUME = 0.7  # of the slider (0…1)
+
+# Qt 6.12 reports QAudioSink.error() / state() as QtAudio enums: they never equal the old QAudio
+# ones, so always compare with these (tests/test_audio_player.py checks a real sink).
+NO_ERROR = QtAudio.Error.NoError
+IDLE = QtAudio.State.IdleState
+STOPPED = QtAudio.State.StoppedState
+
+
+def sink_volume(slider: float) -> float:
+    """Slider position (0…1, as the ear hears it) → QAudioSink's linear volume."""
+    slider = min(1.0, max(0.0, slider))
+    return QtAudio.convertVolume(
+        slider, QtAudio.VolumeScale.LogarithmicVolumeScale, QtAudio.VolumeScale.LinearVolumeScale
+    )
 
 
 class _Source(QIODevice):
@@ -55,6 +70,7 @@ class Player(QObject):
         self.origin = 0
         self.rate = 1
         self.paused = False
+        self.volume = DEFAULT_VOLUME
         self._timer = QTimer(self)
         self._timer.setInterval(TICK_MS)
         self._timer.timeout.connect(self._tick)
@@ -80,10 +96,10 @@ class Player(QObject):
         self.source = _Source(doc.samples, start, end)
         self.source.open(QIODevice.OpenModeFlag.ReadOnly)
         self.sink = QAudioSink(device, fmt, self)
-        self.sink.stateChanged.connect(self._on_state)
+        self.sink.setVolume(sink_volume(self.volume))
         self.origin, self.rate, self.paused = start, doc.rate, False
         self.sink.start(self.source)
-        if self.sink.error() != QAudio.Error.NoError:
+        if self.sink.error() != NO_ERROR:
             self.stop()
             return NO_DEVICE
         self._timer.start()
@@ -96,6 +112,12 @@ class Player(QObject):
         heard = self.sink.processedUSecs() * self.rate // 1_000_000
         queued = (self.sink.bufferSize() - self.sink.bytesFree()) // (2 * self.source.channels)
         return int(self.origin + max(0, heard - max(0, queued)))
+
+    def set_volume(self, volume: float) -> None:
+        """0…1 as heard; applies at once while playing."""
+        self.volume = min(1.0, max(0.0, volume))
+        if self.sink is not None:
+            self.sink.setVolume(sink_volume(self.volume))
 
     def pause(self) -> None:
         if self.sink is not None and not self.paused:
@@ -112,7 +134,6 @@ class Player(QObject):
             return
         self._timer.stop()
         sink, self.sink = self.sink, None
-        sink.stateChanged.disconnect(self._on_state)
         sink.stop()
         sink.deleteLater()
         if self.source is not None:
@@ -122,18 +143,19 @@ class Player(QObject):
         self.finished.emit()
 
     def _tick(self) -> None:
-        if self.sink is not None:
-            self.position_changed.emit(self.position())
+        if self.sink is None:
+            return
+        self.position_changed.emit(self.position())
+        # Polled, not from stateChanged: PySide6 6.12 can't hand that signal's QAudio::State to
+        # Python ("cannot be converted"), so a connected slot is never called.
+        self._check_state(self.sink.state())
 
-    def _on_state(self, state) -> None:
+    def _check_state(self, state) -> None:
         # Idle = the source ran dry: everything has been played
-        if state == QAudio.State.IdleState and self.source is not None:
+        if state == IDLE and self.source is not None:
             if self.source.pos >= self.source.end:
                 self.stop()
-        elif (
-            state == QAudio.State.StoppedState
-            and self.sink is not None
-            and self.sink.error() != QAudio.Error.NoError
-        ):
+        elif state == STOPPED and self.sink is not None:
+            # our own stop() clears self.sink first, so this is the device stopping by itself
             log.info("audio playback stopped: %s", self.sink.error())
             self.stop()
