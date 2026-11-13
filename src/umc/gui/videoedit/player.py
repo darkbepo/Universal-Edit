@@ -80,12 +80,14 @@ class _Run:
             for item in self.streams.frames():
                 if not self._put(item):
                     return
+            self._put(None)
         except Exception:
             if not self.stop.is_set():
                 log.exception("preview playback failed")
                 self.error = preview.ERROR
-        self._put(None)
-        _forget(threading.current_thread())
+            self._put(None)
+        finally:
+            _forget(threading.current_thread())
 
     def _feed(self) -> None:
         try:
@@ -328,4 +330,6 @@ class MediaScanner(QObject):
             entry = (self._thread, self._worker)
             self._thread.setParent(None)
             _STRAGGLERS.append(entry)
-            self._thread.finished.connect(lambda: _STRAGGLERS.remove(entry))
+            self._thread.finished.connect(lambda: _forget(entry))
+            if self._thread.isFinished():  # finished before the connection was made
+                _forget(entry)

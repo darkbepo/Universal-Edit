@@ -162,3 +162,16 @@ def pytest_unconfigure(config):
         sys.stdout.flush()
         sys.stderr.flush()
         os._exit(int(_SESSION[-1].exitstatus))  # read now: hooks may still have changed it
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _gui_thread_gc(request):
+    """Garbage collection only on the GUI thread (as in the app): a collection inside a worker
+    thread can crash PySide. Only for runs that have a Qt application available."""
+    try:
+        qapp = request.getfixturevalue("qapp")
+    except Exception:
+        return
+    from umc.gui.gc_guard import install_gui_gc
+
+    install_gui_gc(qapp)

@@ -105,6 +105,9 @@ def main(argv: list[str] | None = None) -> int:
 
     branding.set_windows_app_id()
     app = QApplication(sys.argv if argv is None else argv)
+    from umc.gui.gc_guard import install_gui_gc
+
+    install_gui_gc(app)  # cyclic GC only on the GUI thread (worker-thread GC crashes PySide)
     app.setApplicationName(branding.APP_NAME)
     app.setOrganizationName(branding.ORG_NAME)
     app.setApplicationVersion(__version__)
