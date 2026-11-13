@@ -27,6 +27,15 @@ jobs:
       - name: Install ffmpeg (creates the sample video for the browser tests)
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
+      # The desktop document editor writes / reads the DOCX of the cross-app test (test_cross_app_docx).
+      # setup-python: the system python3 refuses pip installs (externally managed).
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the desktop document editor's Python libraries
+        run: python3 -m pip install python-docx lxml Pillow
+
       - name: Browser tests (real conversions in headless Chromium)
         run: |
           npx playwright install --with-deps chromium

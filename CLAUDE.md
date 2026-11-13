@@ -145,6 +145,8 @@ See `web/README.md` for commands and deployment.
   Playwright's own Chromium isn't always installed locally; `npx playwright test -c
   playwright.edge.local.config.ts` (in `web/`) or the matrix script's `--channel msedge` use Edge instead.
   The image editor is `editor/` (model, no DOM) + `ui/editor/` (page), imported on demand.
+  The document editor is `doceditor/` (reader / writers / subset, DOM APIs but no UI) +
+  `ui/doceditor/` (ProseMirror page, `window.__doceditor` with `?e2e`), imported on demand.
 - **Cancel** = terminate the worker (kills FFmpeg's nested worker too); a new worker starts next run.
 - **Must be cross-origin isolated** (COOP/COEP): headers in `vite.config.ts` / `public/_headers`;
   where a host can't send them (GitHub Pages) `coi-serviceworker.js` (emitted by a plugin in
@@ -754,7 +756,17 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       formats go through the document route planner. Saves back to the same format, as PDF, or as
       any document format; parts the editor can't keep (headers, comments, …) are listed in a
       notice before they are lost. Self-test step "document editor".
-      Not yet: website, PDF editing, headers / footers, comments, tracked changes, zoom.
+      Not yet: PDF editing, headers / footers, comments, tracked changes, zoom.
+   7b. ✅ Document editor on the website — plan `docs/superpowers/plans/2026-11-11-web-document-editor.md`:
+      same features and shortcuts; ProseMirror (MIT) page in `web/src/ui/doceditor/`, logic in
+      `web/src/doceditor/` (own DOCX reader / writer, markdown-it, the same HTML subset — byte-identical
+      output checked by `tests/fixtures/doceditor-vectors.json` in both suites). Runs on the page;
+      only ODT / RTF / PDF go through the worker (Pandoc / MuPDF), so DOCX / MD / TXT / HTML never
+      download Pandoc. Markdown with pictures saves as a ZIP; no DOC. Chromium's XMLSerializer
+      keeps a parsed part's `<?xml?>` (jsdom drops it): `docx-package.ts` `serialise` strips it,
+      or the part gets two and won't parse. e2e `e2e/doceditor.spec.ts`
+      (`test_cross_app_docx` runs the desktop reader on a web-saved DOCX; needs a Python with
+      python-docx: `python3`, `UMC_PYTHON` or the desktop `.venv`).
    8. ✅ 3D viewer (both apps; first step of the 3D editor): Convert | Edit when every file is a 3D
       model. Qt-free model `editor3d/` (`mesh.py` = `load_view_model` via the converter's
       `load_model`, so mm rules match converting; stood on the bed like "Centre on the print bed";

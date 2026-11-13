@@ -59,7 +59,7 @@ for (const [name, paths] of chosen) {
     let message = "";
     try {
       await page.locator(`.pill[data-target="${target}"]`).click();
-      await page.getByRole("button", { name: "Convert" }).click();
+      await page.getByRole("button", { name: "Convert", exact: true }).click();
       await page.locator(".status.success, .status.error").waitFor({ timeout });
       message = (await page.locator(".status").textContent())?.trim() ?? "";
       status = (await page.locator(".status.success").count()) ? "ok" : /desktop app|needs the desktop|isn.t available in the browser/i.test(message) ? "desktop-only" : "fail";

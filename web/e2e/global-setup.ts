@@ -6,6 +6,22 @@ import { fileURLToPath } from "node:url";
 
 export const FIXTURES = fileURLToPath(new URL("./fixtures/", import.meta.url));
 
+/** A Python that can run the desktop code (python-docx + lxml), or null: `UMC_PYTHON`, then
+ * `python3` (CI), then the desktop venv next to `web/` (local Windows runs). */
+export function findPython(): string | null {
+  const venv = fileURLToPath(new URL(`../../.venv/${process.platform === "win32" ? "Scripts/python.exe" : "bin/python"}`, import.meta.url));
+  for (const exe of [process.env.UMC_PYTHON, "python3", venv]) {
+    if (!exe) continue;
+    try {
+      execFileSync(exe, ["-c", "import docx, lxml"], { stdio: "ignore" });
+      return exe;
+    } catch {
+      /* next one */
+    }
+  }
+  return null;
+}
+
 export default async function globalSetup() {
   mkdirSync(FIXTURES, { recursive: true });
   const mupdf = await import("mupdf");
@@ -127,9 +143,42 @@ export default async function globalSetup() {
   const r = await pandoc.convert({ from: "markdown", to: "docx", "output-file": "out.docx" },
     "# Report\n\nFirst paragraph with **bold**.\n\n- one\n- two\n", {});
   writeFileSync(`${FIXTURES}report.docx`, Buffer.from(await (r.files["out.docx"] as Blob).arrayBuffer()));
+  // The document editor's samples: a DOCX and an ODT from the same pandoc build (heading, bold, a
+  // list, a table with a header row and one more), indented TXT and a README-like Markdown file.
+  const editable = "# Editable report\n\nSome **bold words** here.\n\n- first\n- second\n\n| Name | Score |\n|------|-------|\n| Ada  | 10    |\n";
+  for (const ext of ["docx", "odt"]) {
+    const out = await pandoc.convert({ from: "markdown", to: ext, "output-file": `out.${ext}` }, editable, {});
+    writeFileSync(`${FIXTURES}editable.${ext}`, Buffer.from(await (out.files[`out.${ext}`] as Blob).arrayBuffer()));
+  }
+  writeFileSync(`${FIXTURES}aligned.txt`, "def f():\n    return 1\n\n\tTabbed\tcolumns\there\n  two  spaces  inside\n");
+  writeFileSync(`${FIXTURES}readme.md`, "---\ntitle: Readme\n---\n\n# Project\n\nIntro with `code` and *emphasis*.\n\n" +
+    "```python\ndef main():\n    print(\"hi\")\n```\n\n> A quote\n> on two lines\n\n- one\n  - nested\n- two\n\n" +
+    "| Col | Other |\n| --- | --- |\n| a |  |\n");
+  const python = findPython();
+  // A DOCX written by the desktop editor, and what the desktop editor reads back from it.
+  if (python) {
+    try {
+      // the desktop's writer, then a run in Word's own "Strong" character style (python-docx)
+      execFileSync(python, ["-c", [
+        "import sys, docx",
+        "sys.path.insert(0, sys.argv[1])",
+        "from pathlib import Path",
+        "from umc.doceditor import docx_reader, docx_writer",
+        "p = Path(sys.argv[2]) / 'desktop.docx'",
+        "docx_writer.write('<h1>From the desktop</h1><p>Plain and <b>bold</b> text.</p><p>Name\\tScore</p>'",
+        "  '<table><tr><td><p>Ada</p></td><td><p>10</p></td></tr><tr><td><p>Lin</p></td><td><p></p></td></tr></table>', {}, p)",
+        "d = docx.Document(str(p))",
+        "d.add_paragraph('Word style: ').add_run('Strong', style='Strong')",
+        "d.save(str(p))",
+        "(Path(sys.argv[2]) / 'desktop.html').write_text(docx_reader.read(p).html, encoding='utf-8')",
+      ].join("\n"), fileURLToPath(new URL("../../src", import.meta.url)), FIXTURES]);
+    } catch (e) {
+      console.warn("couldn't write desktop.docx: the cross-app DOCX test will be skipped", e);
+    }
+  } else console.warn("no python with python-docx: the cross-app DOCX test will be skipped");
   // Camera RAW (DNG) and Photoshop samples, from the desktop app's pure-Python writer.
   try {
-    execFileSync("python3", ["-c",
+    execFileSync(python ?? "python3", ["-c",
       "import sys; sys.path.insert(0, sys.argv[1]); from pathlib import Path; " +
       "from umc.core.samples import write_test_dng, write_test_photo, write_test_psd; " +
       "write_test_dng(Path(sys.argv[2]) / 'photo.dng'); write_test_psd(Path(sys.argv[2]) / 'design.psd'); " +
