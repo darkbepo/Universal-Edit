@@ -138,21 +138,37 @@ test("a press on the page's scrollbar scrolls and keeps the selection", async ({
   await expect.poll(() => page.locator(".doc-scroll").evaluate((el) => el.scrollTop)).toBeGreaterThan(top); // it scrolled
 });
 
-test("the page shows while a document opens (the converter's download visible there)", async ({ page }) => {
+/** Holds Pandoc's wasm download until `release()`; `held()` counts the requests caught, so a
+ * test can prove the download really waited. */
+async function holdPandoc(page: Page): Promise<{ release: () => void; held: () => number }> {
   let release!: () => void;
-  const held = new Promise<void>((r) => (release = r));
+  const gate = new Promise<void>((r) => (release = r));
+  let hits = 0;
   await page.route(/pandoc-[^/]*\.wasm$/, async (route) => {
-    await held;
+    hits++;
+    await gate;
     await route.continue();
   });
+  return { release, held: () => hits };
+}
+/** A real (if tiny) RTF file: String.raw keeps the backslashes ("\r" and "\a" in a plain string
+ * are escapes, so the old sample was "{<CR>tf1<BEL>nsi …", not RTF). */
+const RTF = { name: "memo.rtf", mimeType: "application/rtf", buffer: Buffer.from(String.raw`{\rtf1\ansi Hello from RTF\par}`) };
+/** The RTF opened as exactly its one line of text. */
+const rtfOpened = (page: Page) => expect(page.locator(".doc-editor .ProseMirror p").first()).toHaveText("Hello from RTF", { timeout: 120_000 });
+
+test("the page shows while a document opens (the converter's download visible there)", async ({ page }) => {
+  const pandoc = await holdPandoc(page);
   await load(page, []);
-  await page.locator('input[type="file"]').first().setInputFiles([{ name: "memo.rtf", mimeType: "application/rtf", buffer: Buffer.from("{\rtf1\ansi Hello from RTF\par}") }]);
+  await page.locator('input[type="file"]').first().setInputFiles([RTF]);
   await editBtn(page).dblclick(); // a double click opens it once
   await expect(page.locator(".doc-editor")).toBeVisible();
   await expect(page.locator("main.app")).toBeHidden();
   await expect(page.locator(".doc-editor .doc-message")).toContainText(/Opening|Downloading/);
-  release();
-  await expect(page.locator(".doc-editor .ProseMirror")).toContainText("Hello from RTF", { timeout: 120_000 });
+  await expect.poll(pandoc.held, { timeout: 60_000 }).toBeGreaterThan(0); // the download is waiting
+  await expect(page.locator(".doc-editor .doc-message")).toContainText(/Opening|Downloading/);
+  pandoc.release();
+  await rtfOpened(page);
   await expect(page.locator(".doc-editor")).toHaveCount(1);
 });
 
@@ -191,43 +207,34 @@ test("the Convert and Properties mode buttons ask first with unsaved edits", asy
 
 // ---------------------------------------------------------------- Task 11
 
-/** Holds Pandoc's wasm download until the returned function is called. */
-async function holdPandoc(page: Page): Promise<() => void> {
-  let release!: () => void;
-  const held = new Promise<void>((r) => (release = r));
-  await page.route(/pandoc-[^/]*\.wasm$/, async (route) => {
-    await held;
-    await route.continue();
-  });
-  return release;
-}
-const RTF = { name: "memo.rtf", mimeType: "application/rtf", buffer: Buffer.from("{\rtf1\ansi Hello from RTF\par}") };
-
 test("Back during a running open leaves Edit working", async ({ page }) => {
-  const release = await holdPandoc(page);
+  const pandoc = await holdPandoc(page);
   await load(page, []);
   await page.locator('input[type="file"]').first().setInputFiles([RTF]);
   await editBtn(page).click();
   await expect(page.locator(".doc-editor .doc-message")).toContainText(/Opening|Downloading/);
+  await expect.poll(pandoc.held, { timeout: 60_000 }).toBeGreaterThan(0); // still opening: held
   await page.getByRole("button", { name: "← Back to Convert" }).click();
   await expect(page.locator("main.app")).toBeVisible();
   await expect(editBtn(page)).toBeEnabled();
   await editBtn(page).click();
   await expect(page.locator(".doc-editor")).toBeVisible();
-  release();
-  await expect(page.locator(".doc-editor .ProseMirror")).toContainText("Hello from RTF", { timeout: 120_000 });
+  pandoc.release();
+  await rtfOpened(page);
 });
 
 test("a document dropped during an open that then fails keeps the editor", async ({ page }) => {
   writeFileSync(fx("broken.docx"), "not a zip at all");
-  const release = await holdPandoc(page);
+  const pandoc = await holdPandoc(page);
   await load(page, []);
   await page.locator('input[type="file"]').first().setInputFiles([RTF]);
   await editBtn(page).click();
   await expect(page.locator(".doc-editor .doc-message")).toContainText(/Opening|Downloading/);
+  await expect.poll(pandoc.held, { timeout: 60_000 }).toBeGreaterThan(0); // the RTF open is waiting
   await dropOn(page, "body", [fx("broken.docx")]);
   await expect(page.locator(".doc-editor .doc-message")).toHaveClass(/error/);
-  release();
+  expect(await opening(page)).toBe(1); // the taken-over RTF open is still running
+  pandoc.release();
   // the first open (taken over) finishing must not send the user back to Convert
   await expect.poll(() => opening(page), { timeout: 120_000 }).toBe(0);
   await expect(page.locator(".doc-editor")).toBeVisible();
@@ -392,29 +399,55 @@ test("images still open the image editor", async ({ page }) => {
 
 test("big table stays responsive", async ({ page }) => {
   const rows = Array.from({ length: 20_000 }, (_, i) => `| r${i} | ${i} |`).join("\n");
-  await load(page, []);
   const md = `# Big\n\n| a | b |\n|---|---|\n${rows}\n`;
-  await page.locator('input[type="file"]').first().setInputFiles([{ name: "big.md", mimeType: "text/markdown", buffer: Buffer.from(md) }]);
+  // the editor's code is loaded (and warm) first, so the timing is the document's alone
+  await openDoc(page, fx("notes.txt"));
+  // from now on, the longest the page goes without drawing a frame
+  await page.evaluate(() => {
+    const w = window as unknown as { __gap: number; __last: number; __drewOpening: boolean };
+    w.__gap = 0;
+    w.__last = performance.now();
+    w.__drewOpening = false;
+    const tick = (now: number) => {
+      w.__gap = Math.max(w.__gap, now - w.__last);
+      w.__last = now;
+      if (document.querySelector(".doc-editor .doc-message")?.textContent?.startsWith("Opening")) w.__drewOpening = true;
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+  const gap = () => page.evaluate(() => (window as unknown as { __gap: number }).__gap);
   let t = Date.now();
-  await editBtn(page).click();
+  await page.evaluate((text) => {
+    const dt = new DataTransfer();
+    dt.items.add(new File([text], "big.md", { type: "text/markdown" }));
+    document.body.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: dt }));
+  }, md);
   await expect(pm(page).locator("td", { hasText: "r19999" })).toHaveCount(1, { timeout: 5_000 });
   const openMs = Date.now() - t;
-  // the page answers at once (no long task left running)
+  const openGap = await gap();
+  // whether a frame was drawn with "Opening…" showing: the parse is one synchronous block, so
+  // only sometimes (logged, not asserted; the freeze itself is bounded below)
+  const drewOpening = await page.evaluate(() => (window as unknown as { __drewOpening: boolean }).__drewOpening);
+  // and straight after
   t = Date.now();
   await page.evaluate(() => new Promise((r) => requestAnimationFrame(r)));
   expect(Date.now() - t).toBeLessThan(1_000);
   t = Date.now();
   const out = await saved(page, () => page.keyboard.press("Control+s"));
   const saveMs = Date.now() - t;
+  console.log(`big table: open ${openMs} ms (longest frame gap ${Math.round(openGap)} ms, "Opening…" drawn: ${drewOpening}), save ${saveMs} ms (longest gap since open ${Math.round(await gap())} ms)`);
   expect(out.name).toBe("big.md");
   expect(readFileSync(out.path, "utf8")).toContain("| r19999 | 19999 |");
   expect(openMs, "open").toBeLessThan(5_000);
   expect(saveMs, "save").toBeLessThan(5_000);
+  // the page stops drawing for ~1.7 s here (Edge, 12-core PC): never for 3 s
+  expect(openGap, "the longest the page froze while opening").toBeLessThan(3_000);
 });
 
 test("test_cross_app_docx", async ({ page }) => {
   const python = findPython();
-  test.skip(!python || !existsSync(fx("desktop.docx")), "needs python with python-docx (UMC_PYTHON, python3 or the desktop venv)");
+  test.skip(!python || !existsSync(fx("desktop.docx")) || !existsSync(fx("desktop.html")), "needs python with python-docx (UMC_PYTHON, python3 or the desktop venv)");
   await openDoc(page, fx("desktop.docx"));
   // the web reads what the desktop reads
   expect(await docHtml(page)).toBe(readFileSync(fx("desktop.html"), "utf8"));
@@ -698,7 +731,7 @@ test("Pandoc's download shows its progress", async ({ page }) => {
   });
   await page.locator('input[type="file"]').first().setInputFiles([RTF]);
   await editBtn(page).click();
-  await expect(pm(page)).toContainText("Hello from RTF", { timeout: 120_000 });
+  await rtfOpened(page);
   const seen = await page.evaluate(() => (window as unknown as { __messages: string[] }).__messages);
   const pcts = seen.map((m) => /Downloading the document converter… (\d+) %/.exec(m)?.[1]).filter(Boolean).map(Number);
   console.log(`pandoc wasm content-encoding: ${encodings.join(", ")}; progress seen: ${pcts.join(" ")}`);

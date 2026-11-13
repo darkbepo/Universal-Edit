@@ -1,7 +1,7 @@
 // Generates small sample files (no binaries in git). Video needs a system ffmpeg; those tests
 // skip without it.
 import { execFileSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 export const FIXTURES = fileURLToPath(new URL("./fixtures/", import.meta.url));
@@ -155,7 +155,9 @@ export default async function globalSetup() {
     "```python\ndef main():\n    print(\"hi\")\n```\n\n> A quote\n> on two lines\n\n- one\n  - nested\n- two\n\n" +
     "| Col | Other |\n| --- | --- |\n| a |  |\n");
   const python = findPython();
-  // A DOCX written by the desktop editor, and what the desktop editor reads back from it.
+  // A DOCX written by the desktop editor, and what the desktop editor reads back from it. Old
+  // copies go first, so a failed write skips the cross-app test instead of reusing them.
+  for (const f of ["desktop.docx", "desktop.html"]) rmSync(`${FIXTURES}${f}`, { force: true });
   if (python) {
     try {
       // the desktop's writer, then a run in Word's own "Strong" character style (python-docx)
