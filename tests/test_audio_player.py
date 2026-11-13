@@ -27,9 +27,11 @@ def test_sink_reports_the_constants_the_player_compares_with(qapp):
     from umc.gui.audioeditor import player
 
     sink = QAudioSink(QAudioDevice(), _format())
-    assert sink.error() == player.NO_ERROR
-    assert sink.state() == player.STOPPED
-    assert type(sink.state()) is type(player.IDLE)
+    # Compare the kind of value, not the value: a machine without a sound device (CI) reports
+    # OpenError here instead of NoError.
+    assert type(sink.error()) is type(player.NO_ERROR)
+    assert type(sink.state()) is type(player.IDLE) is type(player.STOPPED)
+    assert sink.state() in (player.STOPPED, player.IDLE)
 
 
 def test_sink_volume_follows_the_ear():

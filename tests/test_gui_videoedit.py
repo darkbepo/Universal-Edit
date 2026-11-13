@@ -997,7 +997,10 @@ def test_sink_enums_match_the_ones_the_module_uses(qtbot):
     fmt.setChannelCount(2)
     fmt.setSampleFormat(QAudioFormat.SampleFormat.Int16)
     sink = QAudioSink(QAudioDevice(), fmt)
-    assert sink.error() == m.QtAudio.Error.NoError
+    # Compare the kind of value, not the value: a machine without a sound device (CI) reports
+    # OpenError here instead of NoError.
+    assert type(sink.error()) is type(m.QtAudio.Error.NoError)
+    assert type(sink.state()) is type(m.QtAudio.State.StoppedState)
     assert sink.state() in (m.QtAudio.State.StoppedState, m.QtAudio.State.IdleState)
     sink.deleteLater()
 
