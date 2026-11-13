@@ -490,6 +490,14 @@ export class DocView {
     };
   }
 
+  /** Revoke the pictures' object URLs and destroy the view (the page is going away). */
+  destroy(): void {
+    for (const url of this.urls.values()) URL.revokeObjectURL(url);
+    this.urls.clear();
+    this.listeners.clear();
+    this.view.destroy();
+  }
+
   focus(): void {
     this.view.focus();
   }

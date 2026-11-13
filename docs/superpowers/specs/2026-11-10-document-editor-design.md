@@ -244,6 +244,9 @@ columns when done.
     `confirm`); the desktop's box also offers "Save as…".
 - **Known limits (both apps, by design):** typed spaces and a final Shift+Enter line break at
   the end of a line are trimmed when the document is saved.
+- **Known limit (website on Windows):** Ctrl+Alt+1 / 2 / 3 / 0 don't set headings, because on
+  Windows Ctrl+Alt is AltGr, which types characters on many keyboard layouts (`{`, `}`, `@`…).
+  The style box in the formatting bar works everywhere.
 
 ## Docs
 

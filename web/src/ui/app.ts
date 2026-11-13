@@ -7,6 +7,7 @@ import { defaults, type Values } from "../core/options";
 import { fileFractions } from "../core/progress";
 import { converterById, targetsFor } from "../core/registry";
 import type { InputFile, OutputFile, Target } from "../core/types";
+import { MAX_FILE_BYTES, WEB_EDITABLE_DOCUMENT_EXTS } from "../doceditor/types";
 import { ConversionClient, JobCancelled } from "../worker/client";
 import { editorHub, newPictureDialog } from "./hub";
 import { groupIcon, icon } from "./icons";
@@ -56,6 +57,7 @@ export function mountApp(root: HTMLElement): void {
   let editor: import("./editor/page").EditorPage | null = null;
   let viewer: import("./editor3d/page").ViewerPage | null = null;
   let audio: import("./audioeditor/page").AudioEditorPage | null = null;
+  let docEditor: import("./doceditor/page").DocEditorPage | null = null;
   let editing = false;
   // Three columns (badge | logo + name | Convert/Edit): the outer two are equally wide, so the
   // name stays centred on the page.
@@ -128,6 +130,12 @@ export function mountApp(root: HTMLElement): void {
   // ---------------------------------------------------------------- files
   async function addFiles(list: FileList | File[]) {
     const skipped: string[] = [];
+    if (editing && docEditor && !docEditor.el.hidden) {
+      // the document editor opens one dropped document instead (it asks about unsaved changes)
+      const found = await Promise.all(Array.from(list, (f) => detect(f).catch(() => null)));
+      await docEditor.dropFiles(found.every((f) => f !== null) ? (found as InputFile[]) : []);
+      return;
+    }
     if (editing && audio && !audio.el.hidden) {
       await audio.openFiles(Array.from(list)); // audio files replace the sound (asks first)
       return;
@@ -210,19 +218,46 @@ export function mountApp(root: HTMLElement): void {
 
   // ---------------------------------------------------------------- Convert | Edit
   const appMain = root.querySelector("main.app") as HTMLElement;
-  const editKind = (): "image" | "model" | "audio" | null => {
+  // A lone .zip is a document when it is a Markdown ZIP the website saved (checked once per file).
+  const markdownZips = new WeakMap<InputFile, boolean>();
+  const editKind = (): "image" | "model" | "audio" | "document" | null => {
     if (!files.length) return null;
     if (files.every((f) => f.family === "image")) return "image";
     if (files.every((f) => f.family === "model")) return "model";
     if (files.every((f) => f.family === "audio")) return "audio";
+    if (files.length === 1) {
+      const f = files[0];
+      if (f.family === "document" && WEB_EDITABLE_DOCUMENT_EXTS.includes(f.ext)) return "document";
+      if (markdownZips.get(f)) return "document";
+    }
     return null;
   };
+  /** Check a lone .zip in the queue (its reader is loaded only then), then update Edit. */
+  async function checkMarkdownZip() {
+    const f = files.length === 1 ? files[0] : null;
+    if (!f || f.ext !== "zip" || markdownZips.has(f)) return;
+    markdownZips.set(f, false);
+    if (f.file.size > MAX_FILE_BYTES) return;
+    try {
+      const [{ isEditableMarkdownZip }, bytes] = await Promise.all([import("../doceditor/open"), f.file.arrayBuffer()]);
+      markdownZips.set(f, isEditableMarkdownZip(new Uint8Array(bytes)));
+    } catch (e) {
+      console.error(`Couldn't look inside ${f.name}`, e);
+    }
+    updateEditSwitch();
+  }
+  function updateEditSwitch() {
+    if (!editing) editMode.disabled = !canEdit();
+    const kind = editKind();
+    editMode.title = kind === "document" ? "Open the document in the document editor" : kind === "model" ? "Open the 3D models in the 3D viewer" : kind === "image" ? "Open the images in the image editor (each image becomes a layer)" : kind === "audio" ? "Open the sound in the audio editor (several files are joined)" : "Add images, audio, one text document, or 3D models to edit them";
+  }
   const canEdit = () => editKind() !== null;
   function showConverter() {
     editing = false;
     editor?.hide();
     viewer?.hide();
     audio?.hide();
+    docEditor?.hide();
     appMain.hidden = false;
     bar.hidden = false;
     orbit.setActive(!files.length); // back on screen: the badges move again
@@ -253,9 +288,11 @@ export function mountApp(root: HTMLElement): void {
     if (busy || !files.length) return;
     if (editing) {
       if (editor && !editor.el.hidden && !editor.maybeLeave()) return;
+      if (docEditor && !docEditor.el.hidden && !docEditor.maybeLeave()) return;
       editing = false;
       editor?.hide();
       viewer?.hide();
+      docEditor?.hide();
       appMain.hidden = false;
       bar.hidden = false;
     }
@@ -269,6 +306,9 @@ export function mountApp(root: HTMLElement): void {
   let audioP: Promise<import("./audioeditor/page").AudioEditorPage> | null = null;
   const ensureAudio = () => (audioP ??= import("./audioeditor/page").then(({ mountAudioEditor }) =>
     (audio = mountAudioEditor(root, { client, onBack: showConverter }))));
+  let docEditorP: Promise<import("./doceditor/page").DocEditorPage> | null = null;
+  const ensureDocEditor = () => (docEditorP ??= import("./doceditor/page").then(({ mountDocEditor }) =>
+    (docEditor = mountDocEditor(root, { client, onBack: showConverter }))));
   const ensureEditor = () => (editorP ??= import("./editor/page").then(({ mountEditor }) =>
     (editor = mountEditor(root, { client, onBack: showConverter }))));
   let opening = false; // an editor tile is being opened (New picture window, code loading)
@@ -288,6 +328,19 @@ export function mountApp(root: HTMLElement): void {
       const v = await ensureViewer();
       await v.open(files);
       showPage(v);
+      return;
+    }
+    if (editKind() === "document") {
+      const d = await ensureDocEditor();
+      editMode.disabled = true;
+      const ok = await d.open(files[0]);
+      editMode.disabled = !canEdit();
+      if (!ok) {
+        note.textContent = d.lastError();
+        note.hidden = false;
+        return;
+      }
+      showPage(d);
       return;
     }
     if (editKind() === "audio") {
@@ -352,6 +405,7 @@ export function mountApp(root: HTMLElement): void {
   convertMode.addEventListener("click", () => {
     if (editing && editor && !editor.el.hidden && !editor.maybeLeave()) return;
     if (editing && audio && !audio.el.hidden && !audio.maybeLeave()) return;
+    if (editing && docEditor && !docEditor.el.hidden && !docEditor.maybeLeave()) return;
     showConverter();
   });
 
@@ -372,8 +426,8 @@ export function mountApp(root: HTMLElement): void {
     filesHint.hidden = files.length < 2;
     right.hidden = !has;
     editMode.disabled = !canEdit();
-    const kind = editKind();
-    editMode.title = kind === "model" ? "Open the 3D models in the 3D viewer" : kind === "image" ? "Open the images in the image editor (each image becomes a layer)" : kind === "audio" ? "Open the sound in the audio editor (several files are joined)" : "Add images, audio or 3D models to edit them";
+    updateEditSwitch();
+    void checkMarkdownZip();
     const fams = new Set(files.map((f) => f.family));
     filesLabel.textContent = fams.size === 1
       ? `Queue · ${files.length} ${NOUN[files[0].family][files.length === 1 ? 0 : 1]}`

@@ -9,7 +9,7 @@
  */
 
 import { redo, redoDepth, undo, undoDepth } from "prosemirror-history";
-import { Selection, type Command } from "prosemirror-state";
+import { Selection, TextSelection, type Command } from "prosemirror-state";
 import { defaults } from "../../core/options";
 import { canonicalExt, detect, familyOfExt } from "../../core/detect";
 import { converterById, targetsFor } from "../../core/registry";
@@ -233,7 +233,7 @@ export class DocEditorPage {
     clearTimeout(this.statusTimer);
     window.removeEventListener("keydown", this.onKey);
     window.removeEventListener("beforeunload", this.onUnload);
-    this.view.view.destroy();
+    this.view.destroy();
     this.el.remove();
   }
 
@@ -242,6 +242,15 @@ export class DocEditorPage {
   private pressOutside(e: MouseEvent): void {
     const v = this.view.view;
     if (e.button !== 0 || v.dom.contains(e.target as Node)) return;
+    // a press on the scroll area's own scrollbars (Chrome / Edge fire mousedown there) scrolls
+    const scroll = e.currentTarget as HTMLElement | null;
+    if (scroll?.getBoundingClientRect) {
+      const r = scroll.getBoundingClientRect();
+      const x = e.clientX - r.left;
+      const y = e.clientY - r.top;
+      if (x >= scroll.clientLeft + scroll.clientWidth && x < r.width) return;
+      if (y >= scroll.clientTop + scroll.clientHeight && y < r.height) return;
+    }
     e.preventDefault();
     let pos: number | null = null;
     try {
@@ -257,7 +266,10 @@ export class DocEditorPage {
     }
     const doc = v.state.doc;
     const $pos = doc.resolve(pos ?? doc.content.size);
-    v.dispatch(v.state.tr.setSelection(pos === null ? Selection.atEnd(doc) : Selection.near($pos)));
+    const near = pos === null ? Selection.atEnd(doc) : Selection.near($pos);
+    // Shift+press extends the selection to that place, like QTextEdit
+    const sel = e.shiftKey && near instanceof TextSelection ? TextSelection.create(doc, v.state.selection.anchor, near.head) : near;
+    v.dispatch(v.state.tr.setSelection(sel));
     v.focus();
   }
 

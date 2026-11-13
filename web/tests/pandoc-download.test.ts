@@ -71,3 +71,23 @@ test("a failed download is a plain error", async () => {
   expect((error as Error).message).toBe("Couldn't download the document converter. Check the internet connection and try again.");
   expect(got.length).toBe(0);
 });
+
+test("a connection dropping mid-download is the same plain error", async () => {
+  const MSG = "Couldn't download the document converter. Check the internet connection and try again.";
+  for (const headers of [{ "content-length": "100" }, {}] as Record<string, string>[]) {
+    vi.stubGlobal("fetch", async () =>
+      new Response(
+        new ReadableStream({
+          start(c) {
+            c.enqueue(new Uint8Array([1, 2]));
+            c.error(new TypeError("network error"));
+          },
+        }),
+        { status: 200, headers },
+      ),
+    );
+    const { error } = await load();
+    expect((error as Error).message).toBe(MSG);
+  }
+  expect(got.length).toBe(0);
+});

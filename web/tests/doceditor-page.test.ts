@@ -504,3 +504,55 @@ describe("Task 9a", () => {
     expect(keyNames(new KeyboardEvent("keydown", { key: "S", code: "KeyS", keyCode: 83, ctrlKey: true, shiftKey: true }), true)).toEqual(["Mod-Shift-s"]);
   });
 });
+
+describe("Task 10 (9a re-review)", () => {
+  const press = (target: Element, init: MouseEventInit) => {
+    const e = new MouseEvent("mousedown", { bubbles: true, cancelable: true, ...init });
+    target.dispatchEvent(e);
+    return e;
+  };
+
+  test("a press on the scroll area's own scrollbars leaves the selection alone", async () => {
+    const { page } = mount();
+    await page.open(input("a.txt", "ab\ncd\n"));
+    const scroll = q(page, ".doc-scroll");
+    // a 500 × 400 box with a 15 px scrollbar on the right and at the bottom
+    const box = { left: 100, top: 50, right: 600, bottom: 450, width: 500, height: 400, x: 100, y: 50, toJSON: () => ({}) } as DOMRect;
+    scroll.getBoundingClientRect = () => box;
+    for (const [k, v] of Object.entries({ clientLeft: 0, clientTop: 0, clientWidth: 485, clientHeight: 385 }))
+      Object.defineProperty(scroll, k, { value: v, configurable: true });
+    const v = page.view.view;
+    for (const [x, y] of [[590, 200], [300, 440]]) {
+      v.dispatch(v.state.tr.setSelection(TextSelection.create(v.state.doc, 1, 3)));
+      const e = press(scroll, { clientX: x, clientY: y });
+      expect(e.defaultPrevented, `${x},${y}`).toBe(false);
+      expect([v.state.selection.from, v.state.selection.to]).toEqual([1, 3]);
+    }
+    // inside the box it still moves the caret
+    expect(press(scroll, { clientX: 300, clientY: 200 }).defaultPrevented).toBe(true);
+    expect(v.state.selection.empty).toBe(true);
+  });
+
+  test("Shift+press in the margin extends the selection", async () => {
+    const { page } = mount();
+    await page.open(input("a.txt", "ab\ncd\n"));
+    const v = page.view.view;
+    v.dispatch(v.state.tr.setSelection(TextSelection.create(v.state.doc, 2)));
+    expect(press(q(page, ".doc-page"), { clientX: 5, clientY: 900, shiftKey: true }).defaultPrevented).toBe(true);
+    expect(v.state.selection.anchor).toBe(2);
+    expect(v.state.selection.head).toBe(v.state.doc.content.size - 1);
+  });
+
+  test("dispose revokes the pictures' object URLs and destroys the view", async () => {
+    const revoked: string[] = [];
+    (URL as unknown as Record<string, unknown>).revokeObjectURL = (u: string) => revoked.push(u);
+    const { page } = mount();
+    await page.open(input("a.html", `<p>x<img src="data:image/png;base64,${b64(PNG)}"></p>`));
+    const img = page.view.view.dom.querySelector("img") as HTMLImageElement;
+    expect(img.src).toMatch(/^blob:/);
+    const view = page.view.view;
+    page.dispose();
+    expect(revoked).toContain(img.getAttribute("src"));
+    expect(view.isDestroyed).toBe(true);
+  });
+});

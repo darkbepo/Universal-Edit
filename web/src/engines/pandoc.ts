@@ -55,7 +55,12 @@ export function getPandoc(onStatus?: (msg: string) => void): Promise<Pandoc> {
         throw new ConversionError(DOWNLOAD_FAILED, String(e));
       }
       if (!res.ok) throw new ConversionError(DOWNLOAD_FAILED, `HTTP ${res.status}`);
-      const wasm = await download(res, (pct) => onStatus?.(`${PANDOC_LOADING} ${pct} %`));
+      let wasm: ArrayBuffer;
+      try {
+        wasm = await download(res, (pct) => onStatus?.(`${PANDOC_LOADING} ${pct} %`));
+      } catch (e) {
+        throw new ConversionError(DOWNLOAD_FAILED, String(e)); // the connection dropped mid-way
+      }
       return createPandocInstance(wasm);
     })();
     ready.catch(() => (ready = null));
