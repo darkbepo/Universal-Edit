@@ -939,14 +939,14 @@ from tests.conftest import needs_ffmpeg  # noqa: E402
 
 
 @pytest.fixture
-def window(qtbot):
+def window(qtbot, monkeypatch):
     from PySide6.QtCore import QCoreApplication
 
     QCoreApplication.setOrganizationName("UMC-tests")
     from umc.gui.main_window import MainWindow
     from umc.gui.videoedit.editor_page import VideoEditorPage
 
-    VideoEditorPage._ask_save_changes = lambda self: "discard"  # never block on a question
+    monkeypatch.setattr(VideoEditorPage, "_ask_save_changes", lambda self: "discard")
     w = MainWindow()
     qtbot.addWidget(w)
     w.resize(1280, 800)

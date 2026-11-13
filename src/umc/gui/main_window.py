@@ -33,7 +33,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from umc.core import addons
+from umc.core import addons, editors
 from umc.core import options as opts
 from umc.core.detect import DetectedFile, MediaFamily, detect
 from umc.core.job import ConversionJob, file_fractions
@@ -592,18 +592,13 @@ class MainWindow(QMainWindow):
             else:
                 self._check_mode_button()
             return
-        if kind == "video":
-            if page.open_paths([f.path for f in self.files]):
-                self._show_video_page(page)
-                return
-            self._check_mode_button()
-            self.input_error.setText(page.message.text())
-            self.input_error.setVisible(True)
-            return
         if not page.open_paths([f.path for f in self.files]):
             self._check_mode_button()
             self.input_error.setText(page.message.text())
             self.input_error.setVisible(True)
+            return
+        if kind == "video":
+            self._show_video_page(page)
             return
         self._show_page(page)
         page.canvas.fit()
@@ -622,6 +617,8 @@ class MainWindow(QMainWindow):
         of a new picture first). False if nothing was opened."""
         if self._current_editor() is not None or self.busy:
             return False
+        if any(e.id == kind and not e.available for e in editors.EDITORS):
+            return False  # "Coming soon"
         if addons.is_addon(kind) and not self._editor_ready(kind):
             return False
         if kind == "image":

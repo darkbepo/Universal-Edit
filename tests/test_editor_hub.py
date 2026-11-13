@@ -78,6 +78,31 @@ def test_tiles_shown_until_files_are_added(window, media):
     assert hub.isVisible()
 
 
+def test_coming_soon_tiles_are_greyed_out_and_open_nothing(qtbot, monkeypatch):
+    import dataclasses
+
+    from PySide6.QtCore import QCoreApplication
+
+    import umc.core.editors as editors
+    import umc.gui.widgets.editor_hub as hub_module
+
+    soon = tuple(dataclasses.replace(e, available=False) if e.id == "video" else e for e in EDITORS)
+    monkeypatch.setattr(editors, "EDITORS", soon)
+    monkeypatch.setattr(hub_module, "EDITORS", soon)
+    QCoreApplication.setOrganizationName("UMC-tests")
+    from umc.gui.main_window import MainWindow
+
+    w = MainWindow()
+    qtbot.addWidget(w)
+    w.show()
+    tile = w.hub.tiles["video"]
+    assert not tile.isEnabled()
+    assert tile.badge.text() == "Coming soon" and not tile.badge.isHidden()
+    assert "coming soon" in tile.toolTip()
+    assert w.open_editor("video") is False
+    assert w.stack.currentIndex() == 0
+
+
 def test_unknown_editors_open_nothing(window):
     assert window.open_editor("nothing") is False
     assert window.stack.currentIndex() == 0
