@@ -807,6 +807,20 @@ Everything found while reviewing Task 9, in one round (owner rule).
 
 ---
 
+### Task 10a: Task 10 follow-up — show the page while a document opens, light ZIP check
+
+Everything found while reviewing Task 10, in one round (owner rule).
+- **Open shows the page first, like the audio flow:** set `opening` / disable Edit before `ensureDocEditor()`, take `const f = files[0]` before any await, show the doc page ("Opening…" and Pandoc's download progress visible there), and on failure go back with `showConverter()` and the plain note; ignore an empty `lastError()` (superseded open). Covers: ODT/RTF first-use download invisible for seconds or minutes; Convert/Cancel/Clear usable meanwhile (Cancel killed the open); double click before the module loads ran two opens; Clear during `ensureDocEditor()` gave an unhandled rejection (`file.name` read outside the try in page.ts).
+- **Light Markdown-ZIP check:** move `markdownZipName` / `isEditableMarkdownZip` into `web/src/doceditor/mdzip.ts` importing only `docx-package`; `open.ts` and `app.ts` use it, so a lone archive no longer downloads the editor's open chunk (~65 kB gz).
+- **Properties from the audio editor** (already on main): call `audio.maybeLeave()` and hide the audio page first, like the other editors.
+- **e2e:** the Convert and Properties mode buttons ask first with unsaved edits; an open that fails (corrupt .docx) keeps Convert with the note; the scrollbar test skips where the browser uses overlay scrollbars (`bar.w === 0`) instead of failing.
+- Note for Task 11: scrollbar check assumes right/bottom bars (RTL / left scrollbars).
+
+**Files:** `web/src/ui/app.ts`, `web/src/ui/doceditor/page.ts`, `web/src/doceditor/open.ts`, new `web/src/doceditor/mdzip.ts`, `web/e2e/doceditor.spec.ts`, tests.
+- [ ] Tests that fail first → fix → `tsc`, `npm test`, e2e (Edge config), build size still within +2 KB of origin/main → commit `Show the website document editor while a document opens`.
+
+---
+
 ### Task 11: End-to-end tests, cross-app check, docs
 
 **Real-browser checks collected from the Task 7–9 reviews (put them in `doceditor.spec.ts`):** click the grey margin / empty paper then Ctrl+S, Ctrl+F, Ctrl+K — no browser dialog, caret in the page; Ctrl+S/K/H/L/E/J/R kept from the browser in the text; a real picture drop lands at the drop position and a document drop doesn't navigate; `<dialog>` showModal + Esc; `showSaveFilePicker` then Ctrl+S writes the same file (where the browser allows); colour and file picker cancel detection; `beforeunload` while dirty; banner close; status line after typing; keyboard behaviour around empty links; clipboard copy/paste inside the editor; pasted pictures shrunk to the page width; Pandoc progress on the live site (check `content-encoding`).
