@@ -2,7 +2,7 @@
 import { Deflate, strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import vectorsJson from "../../tests/fixtures/doceditor-vectors.json";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { crc32 } from "../src/doceditor/docx-package";
+import { crc32, parseXml, serialise } from "../src/doceditor/docx-package";
 import { readDocx } from "../src/doceditor/docx-read";
 import { writeDocx } from "../src/doceditor/docx-write";
 import { normaliseHtml } from "../src/doceditor/subset";
@@ -1664,4 +1664,19 @@ describe("XML declarations TextDecoder misreads", () => {
       );
     },
   );
+});
+
+test("serialise writes one XML declaration, also where the browser keeps the parsed one (Chromium)", () => {
+  const real = XMLSerializer.prototype.serializeToString;
+  // Chromium serialises a parsed document with its declaration; jsdom without
+  const spy = vi.spyOn(XMLSerializer.prototype, "serializeToString").mockImplementation(function (this: XMLSerializer, node: Node) {
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>${real.call(this, node)}`;
+  });
+  try {
+    const text = serialise(parseXml("<?xml version=\"1.0\" encoding=\"UTF-8\"?><a/>"));
+    expect(text.match(/<\?xml/g)).toHaveLength(1);
+    expect(() => parseXml(text)).not.toThrow();
+  } finally {
+    spy.mockRestore();
+  }
 });

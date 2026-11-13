@@ -57,8 +57,10 @@ export function parseXml(text: string): Document {
   return doc;
 }
 
+/** The part as text, with our declaration (Chromium's serializer keeps the parsed one; jsdom's
+ * drops it — two would make the part unreadable). */
 export const serialise = (doc: Document): string =>
-  XML_HEAD + new XMLSerializer().serializeToString(doc);
+  XML_HEAD + new XMLSerializer().serializeToString(doc).replace(/^\s*<\?xml[^?]*\?>\s*/, "");
 
 /** Creates elements in one part, with the prefixes that part already uses. */
 export class Xml {
