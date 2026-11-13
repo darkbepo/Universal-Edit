@@ -360,6 +360,9 @@ pyinstaller packaging/umc.spec                      # build the executable into 
 UniversalEdit.exe --self-test report.txt  # headless smoke test of a build (exit 0 = OK)
 python scripts/convert_matrix.py --out matrix-out   # try EVERY conversion with defaults → report.md
 node web/scripts/convert-matrix.mjs matrix-out/samples --channel msedge  # same for the website
+python scripts/readme/make_samples.py S packaging/bin/ffmpeg.exe  # README screenshots: samples,
+python scripts/readme/shoot_desktop.py S                         #   video editor shot, then (website
+node scripts/readme/shoot.mjs S http://localhost:4173             #   preview running) → docs/images/*.jpg
 ```
 
 The two matrix scripts are the broad safety net: one sample per input format, every target the
@@ -447,7 +450,7 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
    on every push to `main` that touches `web/` and then runs all browser tests against the live site.
    Next: PWA/offline.
 9. **Converter parity with the big online converters** (owner wants all of these, in this order;
-   each lands in BOTH apps where possible, and the "What works where" table in README.md must be
+   each lands in BOTH apps where possible, and the README's "What it can do" fold-out tables must be
    updated in the same commit):
    1. ✅ Audio files as input (MP3/WAV/FLAC/M4A/OGG… ↔ each other) — `MediaFamily.AUDIO` / family "audio"
    2. ✅ Camera RAW + PSD input — desktop: rawpy/LibRaw in `imaging.open_image`; web: magick-wasm
@@ -960,7 +963,7 @@ LibreOffice-wasm). The owner hands the project over at this point; the next phas
 - Plain, non-technical language in replies. One task at a time, then **stop and summarise**
   (what changed, what was verified, what's next) and list every file created/modified.
 - Commits: on your worktree's branch, authored as `darkbepo`, imperative subject, **no co-author
-  or session trailers**. Merge into `main` and push after each finished task (see "Start here"). Update the README "What works where" table and the
+  or session trailers**. Merge into `main` and push after each finished task (see "Start here"). Update the README's "What it can do" fold-out tables (right category) and the
   roadmap here in the same commit as the feature.
 - New dependencies must be AGPL-3.0-compatible (MIT/BSD/Apache/MPL/LGPL/GPL-3/AGPL). Big external
   programs are never bundled: detect + "Install it for me" (signed MSI/NSIS or SHA-256-checked
@@ -1023,7 +1026,7 @@ converters for saving/exporting. Suggested order (most value first), one task pe
    writes HTML and Markdown; round-trip DOCX through Pandoc/LibreOffice via the document route
    planner). Web: a contenteditable/ProseMirror-style editor (MIT) + pandoc-wasm for import/export.
 
-For each editor feature add rows to the README table (desktop / website columns) and a roadmap
+For each editor feature add rows to the README's fold-out tables (desktop / website columns) and a roadmap
 line here, exactly like the converter features.
 
 ### Known gaps / ideas left open
