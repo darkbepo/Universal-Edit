@@ -793,6 +793,7 @@ Everything found while reviewing Task 9, in one round (owner rule).
 **Interfaces:**
 - Consumes: `mountDocEditor` (Task 9), `WEB_EDITABLE_DOCUMENT_EXTS`.
 - A single `.zip` counts as a document when `isEditableMarkdownZip(bytes)` (from `doceditor/open.ts`, Task 5b) is true, so a Markdown ZIP saved by the website can be edited again.
+- **Note (2026-11-13):** after the second rebase `app.ts` has `editKind(): "image" | "model" | "audio" | null` (an audio editor landed too; `main_window.py` likewise). Add `"document"` alongside and keep the image, 3D and audio flows unchanged.
 - **Note (2026-11-12):** `main` now has a 3D viewer on the same switch. `app.ts` already has `editKind(): "image" | "model" | null`, with `viewer` mounted from `./editor3d/page`. Extend it to `"image" | "model" | "document" | null` and keep the image and 3D flows unchanged. The tooltip gains the document case. The desktop already routes documents and 3D models through `edit_kind()` / `_current_editor()`.
 - Produces: `editKind(): "image" | "model" | "document" | null` in app.ts. `canEdit()` = `editKind() !== null`. The tooltip texts are in Global Constraints.
 
