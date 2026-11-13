@@ -47,3 +47,13 @@ describe("photo form lists", () => {
     expect(form.ROTATIONS).toEqual(photo.ROTATIONS);
   });
 });
+
+describe("photo form ZIP names", () => {
+  it("never overwrite each other", async () => {
+    const { uniqueName } = await import("../src/ui/photoform");
+    const tree: Record<string, number> = { "a.jpg": 1, "a (1).jpg": 1 };
+    expect(uniqueName(tree, "b.jpg")).toBe("b.jpg");
+    expect(uniqueName(tree, "a.jpg")).toBe("a (2).jpg");
+    expect(uniqueName({ notes: 1 }, "notes")).toBe("notes (1)");
+  });
+});

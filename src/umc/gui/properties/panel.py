@@ -7,6 +7,7 @@ too, after asking once before it changes an original."""
 
 from __future__ import annotations
 
+import struct
 from pathlib import Path
 
 from PySide6.QtCore import QSettings, Qt, Signal
@@ -40,14 +41,14 @@ def _read(f: DetectedFile, others: list[DetectedFile]):
     sections = describe(f)
     if not photo.can_change(f.ext):
         return sections, None, []
-    everyone = []
+    everyone = []  # (file, details) of every picture whose details could be read
     current = None
     for g in others:
         try:
             d = photo.read_details(g.path.read_bytes())
-        except (OSError, ValueError):
+        except (OSError, ValueError, struct.error):
             continue
-        everyone.append(d)
+        everyone.append((g, d))
         if g == f:
             current = d
     return sections, current, everyone
@@ -95,6 +96,7 @@ class PropertiesPanel(QWidget):
         self.body_lay.setContentsMargins(0, 0, 4, 0)
         self.body_lay.setSpacing(10)
         self._keep_message: tuple[str, bool] | None = None
+        self._readable: list[DetectedFile] = []
         self.form = PhotoForm()
         self.form.setVisible(False)
         self.form.save_requested.connect(self._save)
@@ -155,7 +157,9 @@ class PropertiesPanel(QWidget):
         return [g for g in self.files if photo.can_change(g.ext)]
 
     def _loaded(self, result) -> None:
-        sections, current, everyone = result
+        sections, current, readable = result
+        self._readable = [g for g, _d in readable]
+        everyone = [d for _g, d in readable]
         self.status.clear()
         self.status.setVisible(False)
         self._show(sections)
@@ -238,7 +242,8 @@ class PropertiesPanel(QWidget):
         return ok
 
     def _save(self, edit: PhotoEdit, as_copy: bool, every: bool) -> None:
-        targets = self.changeable() if every else [self.current] if self.current else []
+        # "Apply to all N pictures" = the pictures the form counted (whose details could be read)
+        targets = list(self._readable) if every else [self.current] if self.current else []
         if not targets:
             return
         if not as_copy and not self.confirm_original(len(targets)):

@@ -103,13 +103,15 @@ def test_xmp_properties_are_removed():
     assert out == '<rdf:Description dc:x="1"></rdf:Description>'
 
 
-def test_damaged_exif_is_replaced_not_refused():
+def test_damaged_exif_is_refused_unless_removing_everything():
     b = io.BytesIO()
     Image.new("RGB", (4, 4)).save(b, "JPEG")
     data = containers.put(b.getvalue(), None)
     broken = data[:2] + b"\xff\xe1\x00\x0aExif\x00\x00II" + data[2:]
-    out = photo.apply(broken, photo.PhotoEdit({"title": "Fixed"}))
-    assert photo.read_details(out).title == "Fixed"
+    with pytest.raises(photo.PhotoError, match="damaged"):
+        photo.apply(broken, photo.PhotoEdit({"title": "x"}))
+    out = photo.apply(broken, photo.PhotoEdit({"title": "Fresh"}, remove_all=True))
+    assert photo.read_details(out).title == "Fresh"
     Image.open(io.BytesIO(out)).load()
 
 
@@ -286,3 +288,61 @@ def test_form_only_for_pictures_it_can_change(qtbot, window, media):
     qtbot.waitUntil(lambda: "Picture" in window.properties_panel.rows(), timeout=10000)
     assert window.properties_panel.form.isHidden()
     _settle(qtbot, window)
+
+
+# ----------------------------------------------------------------------------- saving safety
+def test_save_keeps_mode_and_follows_links(tmp_path):
+    import os
+    import stat
+
+    p = write_test_photo(tmp_path / "private.jpg")
+    os.chmod(p, 0o600)
+    link = tmp_path / "link.jpg"
+    link.symlink_to(p)
+    written = photo.save_file(link, photo.PhotoEdit({"title": "Via link"}))
+    assert written == p.resolve()
+    assert link.is_symlink()  # the link is still a link…
+    assert photo.read_details(p.read_bytes()).title == "Via link"  # …and its target changed
+    assert stat.S_IMODE(p.stat().st_mode) == 0o600  # a private picture stays private
+    assert not list(tmp_path.glob(photo.TEMP_PREFIX + "*"))
+
+
+def test_locked_file_says_so_and_leaves_nothing_behind(tmp_path, monkeypatch):
+    import os
+
+    p = write_test_photo(tmp_path / "a.jpg")
+    before = p.read_bytes()
+
+    def locked(src, dst):
+        raise PermissionError("in use")
+
+    monkeypatch.setattr(os, "replace", locked)
+    with pytest.raises(photo.PhotoError, match="open in another program"):
+        photo.save_file(p, photo.PhotoEdit({"title": "x"}))
+    assert p.read_bytes() == before
+    assert not list(tmp_path.glob(photo.TEMP_PREFIX + "*"))
+
+
+def test_save_as_copy_never_overwrites(tmp_path):
+    p = write_test_photo(tmp_path / "a.jpg")
+    (tmp_path / "a (1).jpg").write_bytes(b"someone else's")
+    out = photo.save_file(p, photo.PhotoEdit({"title": "x"}), as_copy=True)
+    assert out.name == "a (2).jpg"
+    assert (tmp_path / "a (1).jpg").read_bytes() == b"someone else's"
+
+
+def test_location_hiding_places_are_cleaned():
+    cases = {c["name"]: c for c in json.loads(CASES.read_text(encoding="utf-8"))}
+    data = bytes.fromhex(cases["hiding.jpg: read"]["input"])
+    assert b"Copenhagen" in data and data.count(b"\xff\xd8") == 2
+    out = photo.apply(data, photo.PhotoEdit(remove_location=True))
+    assert b"Copenhagen" not in out and b"Denmark" not in out  # IPTC city / country
+    assert b"Caption kept" in out  # other IPTC records stay
+    assert out.count(b"\xff\xd8") == 1  # the appended preview picture (own EXIF + GPS) is gone
+    assert b"xmp/extension" not in out and b"MPF\x00" not in out
+    gone = photo.apply(data, photo.PhotoEdit(remove_all=True))
+    assert b"c2pa" not in gone and b"Caption kept" not in gone
+    xmp_case = bytes.fromhex(cases["xmp2.jpg: read"]["input"])
+    cleaned = photo.apply(xmp_case, photo.PhotoEdit(remove_location=True))
+    assert b"GPSLatitude" not in cleaned and b"Copenhagen" not in cleaned  # single quotes too
+    assert b"Mine" in cleaned

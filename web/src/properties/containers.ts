@@ -12,11 +12,17 @@ const PNG_XMP_KEY = ascii("XML:com.adobe.xmp");
 export const KEEP = Symbol("keep the XMP packet");
 export type XmpArg = string | null | typeof KEEP;
 const MAX_JPEG_SEGMENT = 65533;
+const PHOTOSHOP_ID = ascii("Photoshop 3.0\0");
+const ICC_ID = ascii("ICC_PROFILE\0");
+const ADOBE_ID = ascii("Adobe");
+const MPF_ID = ascii("MPF\0");
+// IPTC records that say where: sublocation, city, province, country code / name, location code
+const IPTC_PLACES = new Set(["2:26", "2:27", "2:90", "2:92", "2:95", "2:100", "2:101"]);
 
 export class ContainerError extends Error {}
 
 const enc = new TextEncoder();
-const dec = new TextDecoder("utf-8");
+const dec = new TextDecoder("utf-8", { ignoreBOM: true });
 
 class Out {
   private parts: Uint8Array[] = [];
@@ -92,8 +98,94 @@ function jpegGet(data: Uint8Array, ident: Uint8Array): Uint8Array | null {
 
 const join = (a: Uint8Array, b: Uint8Array) => { const o = new Uint8Array(a.length + b.length); o.set(a); o.set(b, a.length); return o; };
 
-function jpegPut(data: Uint8Array, exif: Uint8Array | null, xmp: XmpArg, strip: boolean): Uint8Array {
-  const [segs, rest] = jpegSegments(data);
+/** Where the main picture ends (after its EOI) in ``rest`` (from the first SOS), or null. */
+function jpegEnd(rest: Uint8Array): number | null {
+  let p = 0;
+  const n = rest.length;
+  while (p + 1 < n) {
+    if (rest[p] !== 0xff) return null;
+    const m = rest[p + 1];
+    if (m === 0xff) { p += 1; continue; }
+    if (m === 0xd9) return p + 2;
+    if ((m >= 0xd0 && m <= 0xd7) || m === 0x01) {
+      p += 2;
+    } else {
+      if (p + 4 > n) return null;
+      p += 2 + ((rest[p + 2] << 8) | rest[p + 3]);
+    }
+    if (m === 0xda || (m >= 0xd0 && m <= 0xd7)) { // entropy-coded data follows
+      while (p < n) {
+        if (rest[p] === 0xff && p + 1 < n) {
+          const nxt = rest[p + 1];
+          if (nxt !== 0 && !(nxt >= 0xd0 && nxt <= 0xd7)) break;
+          p += 2;
+        } else {
+          p += 1;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function iptcWithoutPlaces(iim: Uint8Array): Uint8Array | null {
+  const out = new Out();
+  let p = 0;
+  while (p < iim.length) {
+    if (iim[p] !== 0x1c || p + 5 > iim.length) return null;
+    const rec = iim[p + 1], ds = iim[p + 2];
+    let size = (iim[p + 3] << 8) | iim[p + 4];
+    let head = 5;
+    if (size & 0x8000) {
+      const k = size & 0x7fff;
+      if (k > 4 || p + 5 + k > iim.length) return null;
+      size = 0;
+      for (let i = 0; i < k; i++) size = size * 256 + iim[p + 5 + i];
+      head += k;
+    }
+    const end = p + head + size;
+    if (end > iim.length) return null;
+    if (!IPTC_PLACES.has(`${rec}:${ds}`)) out.push(iim.subarray(p, end));
+    p = end;
+  }
+  return out.bytes();
+}
+
+function photoshopWithoutPlaces(payload: Uint8Array): Uint8Array | null {
+  const out = new Out();
+  out.push(PHOTOSHOP_ID);
+  const dv = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+  let p = PHOTOSHOP_ID.length;
+  while (p < payload.length) {
+    if (!same(payload.subarray(p, p + 4), "8BIM") || p + 7 > payload.length) return null;
+    const rid = dv.getUint16(p + 4);
+    const nameLen = payload[p + 6];
+    const nameEnd = p + 7 + nameLen + ((nameLen + 1) % 2);
+    if (nameEnd + 4 > payload.length) return null;
+    const size = dv.getUint32(nameEnd);
+    const dataEnd = nameEnd + 4 + size;
+    if (dataEnd > payload.length) return null;
+    let data: Uint8Array | null = payload.subarray(nameEnd + 4, dataEnd);
+    const next = dataEnd + (size % 2);
+    if (rid === 0x0425) { p = next; continue; }
+    if (rid === 0x0404) {
+      data = iptcWithoutPlaces(data);
+      if (data === null) return null;
+    }
+    out.push(payload.subarray(p, nameEnd), be32(data.length), data);
+    if (data.length % 2) out.push(new Uint8Array(1));
+    p = next;
+  }
+  return out.bytes();
+}
+
+function jpegPut(data: Uint8Array, exif: Uint8Array | null, xmp: XmpArg, strip: boolean, dropLocation: boolean): Uint8Array {
+  const [segs, rest0] = jpegSegments(data);
+  let rest = rest0;
+  if (strip || dropLocation) { // the appended pictures (previews, depth maps) go too
+    const end = jpegEnd(rest);
+    if (end !== null) rest = rest.subarray(0, end);
+  }
   const out = new Out();
   out.push(new Uint8Array([0xff, 0xd8]));
   let placedExif = false, placedXmp = false;
@@ -101,7 +193,8 @@ function jpegPut(data: Uint8Array, exif: Uint8Array | null, xmp: XmpArg, strip: 
   const newXmp = xmp !== KEEP && xmp !== null ? jpegSegment(0xe1, join(XMP_ID, enc.encode(xmp as string))) : new Uint8Array(0);
   let lead = 0;
   while (lead < segs.length && segs[lead][0] === 0xe0) lead++;
-  segs.forEach(([marker, payload], i) => {
+  segs.forEach(([marker, payload0], i) => {
+    let payload = payload0;
     if (i === lead && !placedExif) {
       out.push(newExif);
       placedExif = true;
@@ -120,7 +213,18 @@ function jpegPut(data: Uint8Array, exif: Uint8Array | null, xmp: XmpArg, strip: 
       placedXmp = true;
       return;
     }
-    if (strip && (isXmpExt || marker === 0xed || marker === 0xfe || marker === 0xec)) return;
+    if (strip) {
+      const keep = marker === 0xe0 || (marker === 0xe2 && startsWith(payload, ICC_ID)) || (marker === 0xee && startsWith(payload, ADOBE_ID));
+      if (((marker >= 0xe1 && marker <= 0xef) || marker === 0xfe) && !keep) return; // every other APPn, comments
+    }
+    if (dropLocation) {
+      if (isXmpExt || (marker === 0xe2 && startsWith(payload, MPF_ID))) return; // extended XMP; index of the appended pictures
+      if (marker === 0xed && startsWith(payload, PHOTOSHOP_ID)) {
+        const cleaned = photoshopWithoutPlaces(payload);
+        if (cleaned === null) return; // unreadable: drop it rather than keep a location
+        payload = cleaned;
+      }
+    }
     out.push(jpegSegment(marker, payload));
   });
   if (!placedExif) out.push(newExif);
@@ -193,7 +297,7 @@ function pngXmpText(body: Uint8Array): string | null {
   return dec.decode(text);
 }
 
-function pngPut(data: Uint8Array, exif: Uint8Array | null, xmp: XmpArg, strip: boolean): Uint8Array {
+function pngPut(data: Uint8Array, exif: Uint8Array | null, xmp: XmpArg, strip: boolean, dropLocation: boolean): Uint8Array {
   const chunks = pngChunks(data);
   const out = new Out();
   out.push(PNG_SIG);
@@ -204,6 +308,8 @@ function pngPut(data: Uint8Array, exif: Uint8Array | null, xmp: XmpArg, strip: b
     const isXmp = kind === "iTXt" && startsWith(body, xmpKey0);
     if (isXmp && (xmp !== KEEP || strip)) continue;
     if (strip && ["tEXt", "zTXt", "iTXt", "tIME"].includes(kind)) continue;
+    const rawProfile = startsWith(body, ascii("Raw profile type"));
+    if (dropLocation && ["tEXt", "zTXt", "iTXt"].includes(kind) && rawProfile) continue; // ImageMagick's copies
     if ((kind === "IDAT" || kind === "IEND") && !placed) {
       if (exif !== null) out.push(pngChunk("eXIf", exif));
       if (xmp !== KEEP && xmp !== null) {
@@ -287,7 +393,10 @@ function webpPut(data: Uint8Array, exif: Uint8Array | null, xmp: XmpArg, strip: 
 export function getExif(data: Uint8Array): Uint8Array | null {
   const kind = kindOf(data);
   if (kind === "jpeg") return jpegGet(data, EXIF_ID);
-  if (kind === "png") return pngChunks(data).find(([k]) => k === "eXIf")?.[1] ?? null;
+  if (kind === "png") {
+    const raw = pngChunks(data).find(([k]) => k === "eXIf")?.[1] ?? null;
+    return raw !== null && startsWith(raw, EXIF_ID) ? raw.subarray(6) : raw;
+  }
   if (kind === "webp") {
     const raw = webpChunks(data).find(([k]) => k === "EXIF")?.[1] ?? null;
     return raw !== null && startsWith(raw, EXIF_ID) ? raw.subarray(6) : raw;
@@ -317,10 +426,10 @@ export function getXmp(data: Uint8Array): string | null {
   return null;
 }
 
-export function put(data: Uint8Array, exif: Uint8Array | null, xmp: XmpArg = KEEP, strip = false): Uint8Array {
+export function put(data: Uint8Array, exif: Uint8Array | null, xmp: XmpArg = KEEP, strip = false, dropLocation = false): Uint8Array {
   const kind = kindOf(data);
-  if (kind === "jpeg") return jpegPut(data, exif, xmp, strip);
-  if (kind === "png") return pngPut(data, exif, xmp, strip);
+  if (kind === "jpeg") return jpegPut(data, exif, xmp, strip, dropLocation);
+  if (kind === "png") return pngPut(data, exif, xmp, strip, dropLocation);
   if (kind === "webp") return webpPut(data, exif, xmp, strip);
   throw new ContainerError("only JPEG, PNG and WebP pictures can be changed");
 }

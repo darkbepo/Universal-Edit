@@ -19,8 +19,13 @@ const XMP_PROPS: Record<string, string[]> = {
   tags: ["dc:subject"],
   taken: ["exif:DateTimeOriginal", "exif:DateTimeDigitized", "xmp:CreateDate", "photoshop:DateCreated"],
   orientation: ["tiff:Orientation"],
-  location: ["exif:GPS*"],
+  location: ["exif:GPS*", "drone-dji:Gps*", "drone-dji:AbsoluteAltitude", "drone-dji:RelativeAltitude",
+    "photoshop:City", "photoshop:State", "photoshop:Country", "Iptc4xmpCore:Location", "Iptc4xmpCore:CountryCode",
+    "Iptc4xmpExt:LocationCreated", "Iptc4xmpExt:LocationShown", "xmpNote:HasExtendedXMP"],
 };
+// an XMP packet with any of these has a location in it
+const XMP_PLACE = /(exif:GPSL(atitude|ongitude)|drone-dji:Gps|photoshop:City|Iptc4xmpCore:Location|Iptc4xmpExt:Location)/;
+const { wsTrim, wellFormed } = exif;
 
 export class PhotoError extends Error {}
 
@@ -39,12 +44,12 @@ export interface PhotoEdit {
 export const canChange = (ext: string) => WRITABLE_EXTS.has(ext.toLowerCase());
 
 export function tagsText(text: string): string {
-  return text.split(/[;,]/).map((p) => p.trim()).filter(Boolean).join("; ");
+  return text.split(/[;,]/).map((p) => wsTrim(p)).filter(Boolean).join("; ");
 }
 
 /** "2026-11-12 14:03" (or with seconds) → "2026:11:12 14:03:00"; throws PhotoError. */
 export function exifDate(display: string): string {
-  const m = /^\s*(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?\s*$/.exec(display);
+  const m = /^[ \t\n\r\f\v]*(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?[ \t\n\r\f\v]*$/.exec(display);
   if (!m) throw new PhotoError("Write the date as year-month-day and time, like 2026-11-12 14:03.");
   const y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]);
   const h = Number(m[4] ?? 0), mi = Number(m[5] ?? 0), s = Number(m[6] ?? 0);
@@ -58,7 +63,7 @@ export function exifDate(display: string): string {
 }
 
 export function displayDate(text: string | null): string {
-  const m = /^(\d{4}):(\d\d):(\d\d)[ T](\d\d):(\d\d)/.exec((text ?? "").trim());
+  const m = /^(\d{4}):(\d\d):(\d\d)[ T](\d\d):(\d\d)/.exec(wsTrim(text ?? ""));
   return m ? `${m[1]}-${m[2]}-${m[3]} ${m[4]}:${m[5]}` : "";
 }
 
@@ -92,7 +97,7 @@ export function readDetails(data: Uint8Array): PhotoDetails {
     d.author = d.author || xmp.get(packet, "dc:creator") || "";
     d.copyright = d.copyright || xmp.get(packet, "dc:rights") || "";
     d.tags = d.tags || tagsText(xmp.get(packet, "dc:subject") ?? "");
-    d.has_location = d.has_location || /exif:GPSL(atitude|ongitude)/.test(packet);
+    d.has_location = d.has_location || XMP_PLACE.test(packet);
   }
   return d;
 }
@@ -113,7 +118,10 @@ export function apply(data: Uint8Array, edit: PhotoEdit): Uint8Array {
 function applyEdit(data: Uint8Array, edit0: PhotoEdit): Uint8Array {
   let edit = edit0;
   let raw = containers.getExif(data);
-  if (raw !== null && parse(raw) === null) raw = null; // damaged: start a fresh block
+  if (raw !== null && !edit.remove_all && parse(raw) === null) {
+    // never throw the camera's details away quietly
+    throw new PhotoError("This picture's hidden details are damaged, so they can't be changed safely. “Remove all hidden details” starts them afresh.");
+  }
   if (edit.remove_all) {
     const old = parse(containers.getExif(data));
     const orientation = old ? old.short(old.ifd0, TAG.orientation) || 1 : 1;
@@ -131,7 +139,7 @@ function applyEdit(data: Uint8Array, edit0: PhotoEdit): Uint8Array {
   };
   const values = edit.values ?? {};
   const v: Partial<Record<Field, string>> = {};
-  for (const k of FIELDS) if (values[k] !== undefined) v[k] = (values[k] as string).trim();
+  for (const k of FIELDS) if (values[k] !== undefined) v[k] = wsTrim(wellFormed(values[k] as string));
   if (v.title !== undefined) textPair(TAG.description, TAG.xp_title, v.title);
   if (v.comment !== undefined) textPair(null, TAG.xp_comment, v.comment);
   if (v.author !== undefined) textPair(TAG.artist, TAG.xp_author, v.author);
@@ -157,7 +165,7 @@ function applyEdit(data: Uint8Array, edit0: PhotoEdit): Uint8Array {
     if (edit.remove_location) props.push(...XMP_PROPS.location);
     if (props.length) newXmp = xmp.remove(packet, props);
   }
-  return containers.put(data, shrink(newExif), newXmp, Boolean(edit.remove_all));
+  return containers.put(data, shrink(newExif), newXmp, Boolean(edit.remove_all), Boolean(edit.remove_location || edit.remove_all));
 }
 
 function shrink(tiff: Uint8Array): Uint8Array | null {

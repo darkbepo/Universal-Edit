@@ -3,7 +3,7 @@
 // Changes are appended: original bytes stay put (maker notes point into them), changed values
 // and rewritten directories go at the end, and whatever is left unreferenced is zeroed.
 
-export const SIZES: Record<number, number> = { 1: 1, 2: 1, 3: 2, 4: 4, 5: 8, 6: 1, 7: 1, 8: 2, 9: 4, 10: 8, 11: 4, 12: 8 };
+export const SIZES: Record<number, number> = { 1: 1, 2: 1, 3: 2, 4: 4, 5: 8, 6: 1, 7: 1, 8: 2, 9: 4, 10: 8, 11: 4, 12: 8, 13: 4, 16: 8, 17: 8, 18: 8 };
 export const BYTE = 1, ASCII = 2, SHORT = 3, LONG = 4;
 export const EXIF_IFD = 0x8769, GPS_IFD = 0x8825;
 export const TAG = {
@@ -13,6 +13,12 @@ export const TAG = {
 } as const;
 const XP_TAGS: number[] = [TAG.xp_title, TAG.xp_comment, TAG.xp_author, TAG.xp_keywords];
 const MAX_IFD_ENTRIES = 1000;
+
+/** Python's ``str.strip(" \t\n\r\f\v")``: only ASCII white space is trimmed (both apps). */
+export const wsTrim = (s: string) => s.replace(/^[ \t\n\r\f\v]+|[ \t\n\r\f\v]+$/g, "");
+
+/** Lone surrogates (broken text) become U+FFFD, like the desktop's ``well_formed``. */
+export const wellFormed = (s: string) => s.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "\uFFFD");
 
 export class ExifError extends Error {}
 
@@ -26,8 +32,9 @@ export class Ifd {
   size(): number { return 2 + 12 * this.entries.length + 4; }
 }
 
-const utf8 = new TextDecoder("utf-8");
-const utf16 = new TextDecoder("utf-16le");
+// ignoreBOM: a leading BOM stays in the text, as Python's decode keeps it
+const utf8 = new TextDecoder("utf-8", { ignoreBOM: true });
+const utf16 = new TextDecoder("utf-16le", { ignoreBOM: true });
 
 export class Tiff {
   readonly data: Uint8Array;
@@ -60,7 +67,11 @@ export class Tiff {
     for (let i = 0; i < n; i++) {
       const p = at + 2 + 12 * i;
       const tag = this.u16(p), type = this.u16(p + 2), count = this.u32(p + 4);
-      const size = (SIZES[type] ?? 0) * count;
+      if (SIZES[type] === undefined) { // unknown type: keep the entry's own 4 bytes as they are
+        ifd.entries.push({ tag, type, count, raw: this.data.slice(p + 8, p + 12), at: -1 });
+        continue;
+      }
+      const size = SIZES[type] * count;
       let raw: Uint8Array, where: number;
       if (size <= 4) {
         raw = this.data.slice(p + 8, p + 8 + size);
@@ -78,7 +89,7 @@ export class Tiff {
 
   sub(ifd: Ifd, tag: number): Ifd | null {
     const e = ifd.get(tag);
-    if (!e || (e.type !== LONG && e.type !== 13) || e.count !== 1) return null;
+    if (!e || (e.type !== LONG && e.type !== 13) || e.count !== 1 || e.raw.length !== 4) return null;
     try {
       return this.readIfd(new DataView(e.raw.buffer, e.raw.byteOffset, 4).getUint32(0, this.le));
     } catch (err) {
@@ -90,8 +101,8 @@ export class Tiff {
   text(ifd: Ifd | null, tag: number): string | null {
     const e = ifd ? ifd.get(tag) : undefined;
     if (!e) return null;
-    let text = XP_TAGS.includes(tag) ? utf16.decode(e.raw.length % 2 ? e.raw.subarray(0, e.raw.length - 1) : e.raw) : utf8.decode(e.raw);
-    text = text.split("\x00", 1)[0].trim();
+    let text = XP_TAGS.includes(tag) ? utf16.decode(e.raw) : utf8.decode(e.raw);
+    text = wsTrim(text.split("\x00", 1)[0]);
     return text || null;
   }
 
@@ -113,10 +124,11 @@ const concat = (...parts: Uint8Array[]) => {
   return out;
 };
 
-export const asciiValue = (text: string): [number, Uint8Array] => [ASCII, concat(enc.encode(text), new Uint8Array([0]))];
+export const asciiValue = (text: string): [number, Uint8Array] => [ASCII, concat(enc.encode(wellFormed(text)), new Uint8Array([0]))];
 
 /** Windows' own fields (Title, Comments, Authors, Tags): UTF-16 in BYTE values. */
-export function xpValue(text: string): [number, Uint8Array] {
+export function xpValue(text0: string): [number, Uint8Array] {
+  const text = wellFormed(text0);
   const out = new Uint8Array(text.length * 2 + 2);
   for (let i = 0; i < text.length; i++) {
     const c = text.charCodeAt(i);

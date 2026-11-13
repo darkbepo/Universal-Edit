@@ -4,8 +4,11 @@ leaving the picture data byte-for-byte as it was. Pure Python, line-by-line port
 
 ``put`` takes the new EXIF block (TIFF bytes, or None = remove) and the new XMP text (None =
 remove, KEEP = leave as it is). With ``strip`` it also drops every other place hidden details
-live (JPEG comments and Photoshop/IPTC blocks, PNG text chunks and time stamp), but never the
-colour profile."""
+live: in a JPEG every APPn block but JFIF, the colour profile and Adobe's colour flag, comments,
+and the extra pictures phones append after the main one (previews, depth maps, each with its own
+EXIF); in a PNG the text chunks and time stamp. With ``drop_location`` (Remove the location) it
+removes the other copies of a location: extended XMP, the IPTC city / country records, the
+appended pictures, and PNG "Raw profile" text chunks (ImageMagick's copies of EXIF / XMP)."""
 
 from __future__ import annotations
 
@@ -20,6 +23,12 @@ PNG_XMP_KEY = b"XML:com.adobe.xmp"
 KEEP = object()  # put(): leave the XMP packet alone
 
 MAX_JPEG_SEGMENT = 65533  # payload bytes after the 2-byte length
+PHOTOSHOP_ID = b"Photoshop 3.0\x00"
+ICC_ID = b"ICC_PROFILE\x00"
+ADOBE_ID = b"Adobe"
+MPF_ID = b"MPF\x00"
+# IPTC records that say where: sublocation, city, province, country code / name, location code
+IPTC_PLACES = {(2, 26), (2, 27), (2, 90), (2, 92), (2, 95), (2, 100), (2, 101)}
 
 
 class ContainerError(ValueError):
@@ -82,8 +91,103 @@ def _jpeg_get(data: bytes, ident: bytes) -> bytes | None:
     return None
 
 
-def _jpeg_put(data: bytes, exif: bytes | None, xmp: object, strip: bool) -> bytes:
+def _jpeg_end(rest: bytes) -> int | None:
+    """Where the main picture ends (after its EOI marker) in ``rest`` (from the first SOS on),
+    or None when that can't be found safely (then nothing is cut)."""
+    p, n = 0, len(rest)
+    while p + 1 < n:
+        if rest[p] != 0xFF:
+            return None
+        m = rest[p + 1]
+        if m == 0xFF:  # fill byte
+            p += 1
+            continue
+        if m == 0xD9:
+            return p + 2
+        if 0xD0 <= m <= 0xD7 or m == 0x01:
+            p += 2
+        else:
+            if p + 4 > n:
+                return None
+            p += 2 + struct.unpack(">H", rest[p + 2 : p + 4])[0]
+        if m == 0xDA or 0xD0 <= m <= 0xD7:  # entropy-coded data follows
+            while p < n:
+                if rest[p] == 0xFF and p + 1 < n:
+                    nxt = rest[p + 1]
+                    if nxt != 0 and not 0xD0 <= nxt <= 0xD7:
+                        break
+                    p += 2
+                else:
+                    p += 1
+    return None
+
+
+def _iptc_without_places(iim: bytes) -> bytes | None:
+    """IPTC IIM data without the location records (None if it can't be read)."""
+    out = bytearray()
+    p = 0
+    while p < len(iim):
+        if iim[p] != 0x1C or p + 5 > len(iim):
+            return None
+        rec, ds = iim[p + 1], iim[p + 2]
+        size = struct.unpack(">H", iim[p + 3 : p + 5])[0]
+        head = 5
+        if size & 0x8000:  # extended length
+            k = size & 0x7FFF
+            if k > 4 or p + 5 + k > len(iim):
+                return None
+            size = int.from_bytes(iim[p + 5 : p + 5 + k], "big")
+            head += k
+        end = p + head + size
+        if end > len(iim):
+            return None
+        if (rec, ds) not in IPTC_PLACES:
+            out += iim[p:end]
+        p = end
+    return bytes(out)
+
+
+def _photoshop_without_places(payload: bytes) -> bytes | None:
+    """An APP13 Photoshop block without the IPTC location records (and the now wrong IPTC
+    checksum resource 0x0425). None if it can't be read (the caller then drops it)."""
+    out = bytearray(PHOTOSHOP_ID)
+    p = len(PHOTOSHOP_ID)
+    while p < len(payload):
+        if payload[p : p + 4] != b"8BIM" or p + 7 > len(payload):
+            return None
+        rid = struct.unpack(">H", payload[p + 4 : p + 6])[0]
+        name_len = payload[p + 6]
+        name_end = p + 7 + name_len + ((name_len + 1) % 2)  # padded to even
+        if name_end + 4 > len(payload):
+            return None
+        size = struct.unpack(">I", payload[name_end : name_end + 4])[0]
+        data_end = name_end + 4 + size
+        if data_end > len(payload):
+            return None
+        data = payload[name_end + 4 : data_end]
+        nxt = data_end + (size % 2)
+        if rid == 0x0425:
+            p = nxt
+            continue
+        if rid == 0x0404:
+            data = _iptc_without_places(data)
+            if data is None:
+                return None
+        out += payload[p:name_end] + struct.pack(">I", len(data)) + data
+        if len(data) % 2:
+            out += b"\x00"
+        p = nxt
+    return bytes(out)
+
+
+def _jpeg_put(
+    data: bytes, exif: bytes | None, xmp: object, strip: bool, drop_location: bool
+) -> bytes:
     segs, rest = _jpeg_segments(data)
+    if strip or drop_location:  # the appended pictures (previews, depth maps) go too
+        end = _jpeg_end(rest)
+        if end is not None:
+            rest = rest[:end]
     out = bytearray(b"\xff\xd8")
     placed_exif = placed_xmp = False
     new_exif = _jpeg_segment(0xE1, EXIF_ID + exif) if exif is not None else b""
@@ -113,8 +217,18 @@ def _jpeg_put(data: bytes, exif: bytes | None, xmp: object, strip: bool) -> byte
                 out += new_xmp
             placed_xmp = True
             continue
-        if strip and (is_xmp_ext or marker in (0xED, 0xFE, 0xEC)):  # Photoshop/IPTC, COM, Ducky
-            continue
+        if strip:
+            keep = marker == 0xE0 or (marker == 0xE2 and payload.startswith(ICC_ID))
+            keep = keep or (marker == 0xEE and payload.startswith(ADOBE_ID))
+            if (0xE1 <= marker <= 0xEF or marker == 0xFE) and not keep:
+                continue  # every other APPn block and comments
+        if drop_location:
+            if is_xmp_ext or (marker == 0xE2 and payload.startswith(MPF_ID)):
+                continue  # extended XMP; the index of the appended pictures (now gone)
+            if marker == 0xED and payload.startswith(PHOTOSHOP_ID):
+                payload = _photoshop_without_places(payload)
+                if payload is None:
+                    continue  # unreadable: drop it rather than keep a location
         out += _jpeg_segment(marker, payload)
     if not placed_exif:
         out += new_exif
@@ -166,7 +280,9 @@ def _png_xmp_text(body: bytes) -> str | None:
     return text.decode("utf-8", "replace")
 
 
-def _png_put(data: bytes, exif: bytes | None, xmp: object, strip: bool) -> bytes:
+def _png_put(
+    data: bytes, exif: bytes | None, xmp: object, strip: bool, drop_location: bool
+) -> bytes:
     chunks = _png_chunks(data)
     out = bytearray(PNG_SIG)
     placed = False
@@ -178,6 +294,12 @@ def _png_put(data: bytes, exif: bytes | None, xmp: object, strip: bool) -> bytes
             continue
         if strip and kind in (b"tEXt", b"zTXt", b"iTXt", b"tIME"):
             continue
+        if (
+            drop_location
+            and kind in (b"tEXt", b"zTXt", b"iTXt")
+            and body.startswith(b"Raw profile type")
+        ):
+            continue  # ImageMagick's copies of EXIF / XMP / IPTC
         if kind in (b"IDAT", b"IEND") and not placed:  # before the picture data
             if exif is not None:
                 out += _png_chunk(b"eXIf", exif)
@@ -223,7 +345,10 @@ def _webp_chunk(kind: bytes, body: bytes) -> bytes:
     return kind + struct.pack("<I", len(body)) + body + (b"\x00" if len(body) & 1 else b"")
 
 
-def _webp_put(data: bytes, exif: bytes | None, xmp: object, strip: bool) -> bytes:
+def _webp_put(
+    data: bytes, exif: bytes | None, xmp: object, strip: bool, drop_location: bool
+) -> bytes:
+    del drop_location  # a WebP keeps its details only in the EXIF and XMP chunks
     chunks = _webp_chunks(data)
     keep_xmp = xmp is KEEP and not strip
     old_xmp = next((b for k, b in chunks if k == b"XMP "), None) if keep_xmp else None
@@ -256,7 +381,8 @@ def get_exif(data: bytes) -> bytes | None:
     if kind == "jpeg":
         return _jpeg_get(data, EXIF_ID)
     if kind == "png":
-        return next((b for k, b in _png_chunks(data) if k == b"eXIf"), None)
+        raw = next((b for k, b in _png_chunks(data) if k == b"eXIf"), None)
+        return raw[6:] if raw is not None and raw.startswith(EXIF_ID) else raw
     if kind == "webp":
         raw = next((b for k, b in _webp_chunks(data) if k == b"EXIF"), None)
         return raw[6:] if raw is not None and raw.startswith(EXIF_ID) else raw
@@ -281,12 +407,18 @@ def get_xmp(data: bytes) -> str | None:
     return None
 
 
-def put(data: bytes, exif: bytes | None, xmp: object = KEEP, strip: bool = False) -> bytes:
+def put(
+    data: bytes,
+    exif: bytes | None,
+    xmp: object = KEEP,
+    strip: bool = False,
+    drop_location: bool = False,
+) -> bytes:
     kind = kind_of(data)
     if kind == "jpeg":
-        return _jpeg_put(data, exif, xmp, strip)
+        return _jpeg_put(data, exif, xmp, strip, drop_location)
     if kind == "png":
-        return _png_put(data, exif, xmp, strip)
+        return _png_put(data, exif, xmp, strip, drop_location)
     if kind == "webp":
-        return _webp_put(data, exif, xmp, strip)
+        return _webp_put(data, exif, xmp, strip, drop_location)
     raise ContainerError("only JPEG, PNG and WebP pictures can be changed")

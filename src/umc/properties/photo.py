@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
+import struct
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -20,6 +22,7 @@ from umc.properties import containers, exif, xmp
 from umc.properties.exif import TAG
 
 WRITABLE_EXTS = {"jpg", "png", "webp"}
+TEMP_PREFIX = ".umc-saving-"  # the new file, next to the original, until it replaces it
 FIELDS = ("title", "comment", "author", "copyright", "tags", "taken")
 ROTATIONS = {1: "Upright", 6: "Turned 90° right", 3: "Upside down", 8: "Turned 90° left"}
 
@@ -32,8 +35,19 @@ XMP_PROPS = {
     "taken": ["exif:DateTimeOriginal", "exif:DateTimeDigitized", "xmp:CreateDate",
               "photoshop:DateCreated"],
     "orientation": ["tiff:Orientation"],
-    "location": ["exif:GPS*"],
+    "location": ["exif:GPS*", "drone-dji:Gps*", "drone-dji:AbsoluteAltitude",
+                 "drone-dji:RelativeAltitude", "photoshop:City", "photoshop:State",
+                 "photoshop:Country", "Iptc4xmpCore:Location", "Iptc4xmpCore:CountryCode",
+                 "Iptc4xmpExt:LocationCreated", "Iptc4xmpExt:LocationShown",
+                 "xmpNote:HasExtendedXMP"],
 }  # fmt: skip
+# an XMP packet with any of these has a location in it
+XMP_PLACE = re.compile(
+    r"(exif:GPSL(atitude|ongitude)|drone-dji:Gps|photoshop:City|Iptc4xmpCore:Location"
+    r"|Iptc4xmpExt:Location)",
+    re.ASCII,
+)
+WS = exif.WS
 
 
 class PhotoError(ValueError):
@@ -77,14 +91,14 @@ def can_change(ext: str) -> bool:
 # ---------------------------------------------------------------------------- values
 def tags_text(text: str) -> str:
     """ "a, b;c" → "a; b; c" (empty parts dropped)."""
-    parts = [p.strip() for p in re.split(r"[;,]", text)]
+    parts = [p.strip(WS) for p in re.split(r"[;,]", text)]
     return "; ".join(p for p in parts if p)
 
 
 def exif_date(display: str) -> str:
     """ "2026-11-12 14:03" (or with seconds) → "2026:11:12 14:03:00"; raises PhotoError."""
     m = re.fullmatch(r"\s*(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?\s*",
-                     display)  # fmt: skip
+                     display, re.ASCII)  # fmt: skip
     if not m:
         raise PhotoError("Write the date as year-month-day and time, like 2026-11-12 14:03.")
     y, mo, d = int(m[1]), int(m[2]), int(m[3])
@@ -97,7 +111,7 @@ def exif_date(display: str) -> str:
 
 
 def display_date(exif_text: str | None) -> str:
-    m = re.match(r"(\d{4}):(\d\d):(\d\d)[ T](\d\d):(\d\d)", (exif_text or "").strip())
+    m = re.match(r"(\d{4}):(\d\d):(\d\d)[ T](\d\d):(\d\d)", (exif_text or "").strip(WS), re.ASCII)
     return f"{m[1]}-{m[2]}-{m[3]} {m[4]}:{m[5]}" if m else ""
 
 
@@ -126,7 +140,7 @@ def read_details(data: bytes) -> PhotoDetails:
         d.author = d.author or xmp.get(packet, "dc:creator") or ""
         d.copyright = d.copyright or xmp.get(packet, "dc:rights") or ""
         d.tags = d.tags or tags_text(xmp.get(packet, "dc:subject") or "")
-        d.has_location = d.has_location or bool(re.search(r"exif:GPSL(atitude|ongitude)", packet))
+        d.has_location = d.has_location or bool(XMP_PLACE.search(packet))
     return d
 
 
@@ -137,17 +151,21 @@ def apply(data: bytes, edit: PhotoEdit) -> bytes:
         raise PhotoError("Only JPG, PNG and WebP pictures can be changed here.")
     try:
         return _apply(data, edit)
-    except (exif.ExifError, containers.ContainerError) as exc:
+    except (exif.ExifError, containers.ContainerError, struct.error) as exc:
         raise PhotoError(f"The picture's details couldn't be changed ({exc}).") from exc
 
 
 def _apply(data: bytes, edit: PhotoEdit) -> bytes:
     raw = containers.get_exif(data)
-    if raw is not None:
+    if raw is not None and not edit.remove_all:
         try:
             exif.Tiff(raw)
-        except exif.ExifError:
-            raw = None  # a damaged block: start a fresh one rather than refuse
+        except exif.ExifError as exc:
+            # never throw the camera's details away quietly
+            raise PhotoError(
+                "This picture's hidden details are damaged, so they can't be changed safely. "
+                "“Remove all hidden details” starts them afresh."
+            ) from exc
     if edit.remove_all:
         # keep only the rotation, so the picture still shows the right way up
         old = containers.get_exif(data)
@@ -173,7 +191,7 @@ def _apply(data: bytes, edit: PhotoEdit) -> bytes:
         if tag_xp is not None:
             ifd0[tag_xp] = exif.xp_value(value) if value else None
 
-    v = {k: edit.values[k].strip() for k in FIELDS if k in edit.values}
+    v = {k: exif.well_formed(edit.values[k]).strip(WS) for k in FIELDS if k in edit.values}
     if "title" in v:
         text_pair(TAG["description"], TAG["xp_title"], v["title"])
     if "comment" in v:
@@ -206,7 +224,13 @@ def _apply(data: bytes, edit: PhotoEdit) -> bytes:
             props += XMP_PROPS["location"]
         if props:
             new_xmp = xmp.remove(packet, props)
-    return containers.put(data, _shrink(new_exif), new_xmp, strip=edit.remove_all)
+    return containers.put(
+        data,
+        _shrink(new_exif),
+        new_xmp,
+        strip=edit.remove_all,
+        drop_location=edit.remove_location or edit.remove_all,
+    )
 
 
 def _shrink(tiff: bytes) -> bytes | None:
@@ -231,6 +255,7 @@ def save_file(path: Path, edit: PhotoEdit, as_copy: bool = False) -> Path:
     is replaced only once the new file is complete, and keeps its modified date."""
     from umc.core.job import unique_path
 
+    path = path.resolve()  # a link: change the file it points to, keep the link
     data = path.read_bytes()
     out = apply(data, edit)
     if as_copy:
@@ -239,9 +264,10 @@ def save_file(path: Path, edit: PhotoEdit, as_copy: bool = False) -> Path:
         dest.write_bytes(out)
         return dest
     st = path.stat()
-    tmp = path.with_name(f".{path.name}.umc-saving")
+    tmp = path.with_name(f"{TEMP_PREFIX}{path.name}")
     try:
         tmp.write_bytes(out)
+        shutil.copymode(path, tmp)  # a private picture stays private
         os.utime(tmp, ns=(st.st_atime_ns, st.st_mtime_ns))
         os.replace(tmp, path)
     except PermissionError as exc:

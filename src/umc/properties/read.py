@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import math
 import re
+import struct
 import zipfile
 from datetime import UTC, datetime
 from xml.etree import ElementTree as ET
@@ -206,7 +207,7 @@ def _picture(f: DetectedFile) -> tuple[str, dict]:
     if photo.can_change(f.ext):  # the details people change: read them like the form does
         try:
             d = photo.read_details(f.path.read_bytes())
-        except (OSError, ValueError):
+        except (OSError, ValueError, struct.error):
             d = None
         if d is not None:
             for key in ("title", "comment", "author", "copyright", "tags"):

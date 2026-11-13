@@ -11,11 +11,13 @@ so an old location or name is really gone from the file, not just hidden.
 
 from __future__ import annotations
 
+import re
 import struct
 from dataclasses import dataclass, field
 
 # field types → bytes per item
-SIZES = {1: 1, 2: 1, 3: 2, 4: 4, 5: 8, 6: 1, 7: 1, 8: 2, 9: 4, 10: 8, 11: 4, 12: 8}
+SIZES = {1: 1, 2: 1, 3: 2, 4: 4, 5: 8, 6: 1, 7: 1, 8: 2, 9: 4, 10: 8, 11: 4, 12: 8, 13: 4, 16: 8,
+         17: 8, 18: 8}  # fmt: skip
 BYTE, ASCII, SHORT, LONG, RATIONAL = 1, 2, 3, 4, 5
 
 EXIF_IFD, GPS_IFD = 0x8769, 0x8825
@@ -34,6 +36,7 @@ TAG = {
     "digitized": 0x9004,  # DateTimeDigitized (Exif IFD)
 }
 MAX_IFD_ENTRIES = 1000
+WS = " \t\n\r\f\v"  # only ASCII white space is trimmed (the same as the web port)
 
 
 class ExifError(ValueError):
@@ -45,7 +48,7 @@ class Entry:
     tag: int
     type: int
     count: int
-    raw: bytes  # the value's bytes (count × size)
+    raw: bytes  # the value's bytes (count × size); for an unknown type: the entry's 4 bytes
     at: int  # absolute offset of the value when stored outside the entry, else -1
 
 
@@ -92,7 +95,10 @@ class Tiff:
         for i in range(n):
             p = at + 2 + 12 * i
             tag, typ, count = self.u16(p), self.u16(p + 2), self.u32(p + 4)
-            size = SIZES.get(typ, 0) * count
+            if typ not in SIZES:  # unknown type: keep the entry's own 4 bytes as they are
+                ifd.entries.append(Entry(tag, typ, count, self.data[p + 8 : p + 12], -1))
+                continue
+            size = SIZES[typ] * count
             if size <= 4:
                 raw, where = self.data[p + 8 : p + 8 + size], -1
             else:
@@ -106,7 +112,7 @@ class Tiff:
 
     def sub(self, ifd: Ifd, tag: int) -> Ifd | None:
         e = ifd.get(tag)
-        if e is None or e.type not in (LONG, 13) or e.count != 1:
+        if e is None or e.type not in (LONG, 13) or e.count != 1 or len(e.raw) != 4:
             return None
         try:
             return self.read_ifd(struct.unpack(self.e + "I", e.raw)[0])
@@ -122,7 +128,7 @@ class Tiff:
             text = e.raw.decode("utf-16-le", "replace")
         else:
             text = e.raw.decode("utf-8", "replace")
-        text = text.split("\x00", 1)[0].strip()
+        text = text.split("\x00", 1)[0].strip(WS)
         return text or None
 
     def short(self, ifd: Ifd | None, tag: int) -> int | None:
@@ -133,13 +139,18 @@ class Tiff:
 
 
 # ---------------------------------------------------------------------------- encoding values
+def well_formed(text: str) -> str:
+    """Lone surrogates (broken text) become U+FFFD, as the browser's encoder does."""
+    return re.sub("[\ud800-\udfff]", "\ufffd", text)
+
+
 def ascii_value(text: str) -> tuple[int, bytes]:
-    return ASCII, text.encode("utf-8") + b"\x00"
+    return ASCII, well_formed(text).encode("utf-8") + b"\x00"
 
 
 def xp_value(text: str) -> tuple[int, bytes]:
     """Windows' own fields (Title, Comments, Authors, Tags): UTF-16 in BYTE values."""
-    return BYTE, text.encode("utf-16-le") + b"\x00\x00"
+    return BYTE, well_formed(text).encode("utf-16-le") + b"\x00\x00"
 
 
 def short_value(n: int, e: str) -> tuple[int, bytes]:

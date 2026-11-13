@@ -37,6 +37,14 @@ export function common(details: PhotoDetails[]): Record<Field, string | null> {
   return out;
 }
 
+/** ``name``, or "name (1).ext", "name (2).ext"… when the ZIP already holds one by that name. */
+export function uniqueName(taken: Record<string, unknown>, name: string): string {
+  if (!(name in taken)) return name;
+  const dot = name.lastIndexOf(".");
+  const [stem, ext] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ""];
+  for (let n = 1; ; n++) if (!(`${stem} (${n})${ext}` in taken)) return `${stem} (${n})${ext}`;
+}
+
 export class PhotoForm {
   readonly el: HTMLElement;
   private readonly inputs = {} as Record<Field, HTMLInputElement>;
@@ -168,7 +176,7 @@ export class PhotoForm {
     } else {
       const { zipSync } = await import("fflate");
       const tree: Record<string, Uint8Array> = {};
-      for (const o of outputs) tree[o.target.file.name] = o.data;
+      for (const o of outputs) tree[uniqueName(tree, o.target.file.name)] = o.data;
       blob = new Blob([zipSync(tree, { level: 0 }) as BlobPart], { type: "application/zip" });
       name = "pictures (changed details).zip";
     }
