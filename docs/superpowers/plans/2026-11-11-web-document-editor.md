@@ -780,6 +780,13 @@ Everything found while reviewing Task 9, in one round (owner rule).
 
 ### Task 10: Convert | Edit for documents on the website
 
+**Found in Task 9a re-review (do here first, each with a failing test):**
+- **Important:** pressing the page's scrollbar replaces the selection with a caret (`pressOutside` on `.doc-scroll`; Chrome/Edge fire mousedown there). Return early for presses on the scroll element's own scrollbars (outside `clientLeft + clientWidth` / `clientTop + clientHeight`).
+- Shift+press in the margin extends the selection (`TextSelection.create(doc, sel.anchor, pos)`), like QTextEdit.
+- A connection dropping mid-download (`reader.read()` / `arrayBuffer()` rejecting) gives the plain `DOWNLOAD_FAILED` message too.
+- `DocView.destroy()` revokes the pictures' object URLs and destroys the view; `page.dispose()` calls it.
+- Spec known limits: no Ctrl+Alt+digit heading shortcuts on Windows (AltGr layouts; the style box works); trailing typed spaces trimmed.
+
 **Files:**
 - Modify: `web/src/ui/app.ts` (the Convert | Edit section, ~l.171-230; the drop handler ~l.117)
 
