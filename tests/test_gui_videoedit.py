@@ -871,3 +871,64 @@ def test_sounddevice_is_gone():
     assert "sounddevice" not in (root / "pyproject.toml").read_text(encoding="utf-8")
     assert not hasattr(audio_out, "SoundDeviceOut")
     assert not re.search(r"import sounddevice", Path(audio_out.__file__).read_text("utf-8"))
+
+
+def test_sink_enums_match_the_ones_the_module_uses(qtbot):
+    from PySide6.QtMultimedia import QAudioDevice, QAudioFormat, QAudioSink
+
+    from umc.gui.videoedit import qt_audio_out as m
+
+    fmt = QAudioFormat()
+    fmt.setSampleRate(48000)
+    fmt.setChannelCount(2)
+    fmt.setSampleFormat(QAudioFormat.SampleFormat.Int16)
+    sink = QAudioSink(QAudioDevice(), fmt)
+    assert sink.error() == m.QtAudio.Error.NoError
+    assert sink.state() in (m.QtAudio.State.StoppedState, m.QtAudio.State.IdleState)
+    sink.deleteLater()
+
+
+def test_feed_signals_ready_after_an_exact_drain(qtbot):
+    from umc.gui.videoedit.qt_audio_out import _Feed
+
+    feed = _Feed()
+    feed.push(bytes(4000))
+    qtbot.wait(20)
+    assert len(feed.readData(4000)) == 4000  # drained exactly; no short read follows
+    with qtbot.waitSignal(feed.readyRead, timeout=1000):
+        feed.push(bytes(400))
+
+
+def test_sink_error_marks_output_dead_and_frees_write(qtbot):
+    import threading
+    import time
+
+    from umc.gui.videoedit.qt_audio_out import QtAudio, QtAudioOut, _Feed
+
+    class Sink:
+        def error(self):
+            return QtAudio.Error.IOError
+
+    feed = _Feed()
+    out = QtAudioOut._for_test(feed)
+    out._sink = Sink()
+    out.write(bytes(48000 * 4))
+    done = threading.Event()
+    th = threading.Thread(target=lambda: (out.write(bytes(400)), done.set()), daemon=True)
+    th.start()
+    time.sleep(0.15)
+    assert not done.is_set()
+    out._on_state(QtAudio.State.StoppedState)
+    assert out._dead and done.wait(0.5)
+    out._sink = None
+
+
+def test_nothing_is_queued_after_close():
+    from umc.gui.videoedit.qt_audio_out import QtAudioOut, _Feed
+
+    feed = _Feed()
+    out = QtAudioOut._for_test(feed)
+    out.close()
+    feed.push(bytes(400))
+    out.write(bytes(400))
+    assert feed.queued_bytes() == 0

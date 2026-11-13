@@ -11,7 +11,7 @@ import os
 import threading
 
 from PySide6.QtCore import QIODevice, QMetaObject, QObject, Qt, QThread, Signal, Slot
-from PySide6.QtMultimedia import QAudio, QAudioFormat, QAudioSink, QMediaDevices
+from PySide6.QtMultimedia import QAudioFormat, QAudioSink, QMediaDevices, QtAudio
 
 from umc.videoedit.audio_out import (
     CHANNELS,
@@ -34,6 +34,7 @@ class _Feed(QIODevice):
         super().__init__()
         self._lock = threading.Condition()
         self._buf = bytearray()
+        self._closed = False
         self._starved = True  # the last read came up short, so the sink waits for readyRead
         self._arrived.connect(self._announce, Qt.ConnectionType.QueuedConnection)
         self.open(QIODevice.OpenModeFlag.ReadOnly)
@@ -44,6 +45,8 @@ class _Feed(QIODevice):
 
     def push(self, chunk: bytes) -> None:
         with self._lock:
+            if self._closed:
+                return
             self._buf += chunk
             wake = self._starved
             self._starved = False
@@ -54,8 +57,9 @@ class _Feed(QIODevice):
         with self._lock:
             return len(self._buf)
 
-    def clear(self) -> None:
+    def close_feed(self) -> None:
         with self._lock:
+            self._closed = True
             self._buf.clear()
             self._lock.notify_all()
 
@@ -78,6 +82,8 @@ class _Feed(QIODevice):
                 return b""
             data = bytes(self._buf[:take])
             del self._buf[:take]
+            if not self._buf:  # emptied: the sink may go idle without reading again
+                self._starved = True
             self._lock.notify_all()
             return data
 
@@ -114,9 +120,9 @@ class QtAudioOut(QObject):
     def _on_state(self, state) -> None:  # noqa: ANN001
         sink = self._sink
         if (
-            state == QAudio.State.StoppedState
+            state == QtAudio.State.StoppedState
             and sink is not None
-            and sink.error() != QAudio.Error.NoError
+            and sink.error() != QtAudio.Error.NoError
         ):
             log.info("preview sound stopped: %s", sink.error())
             self._dead = True
@@ -142,7 +148,7 @@ class QtAudioOut(QObject):
         if self._closed:
             return
         self._closed = True
-        self._feed.clear()
+        self._feed.close_feed()
         if QThread.currentThread() is self.thread():
             self._stop_sink()
         else:
@@ -178,7 +184,7 @@ def open_qt_output() -> AudioOut:
         feed = _Feed()
         sink = QAudioSink(device, fmt)
         sink.start(feed)
-        if sink.error() != QAudio.Error.NoError:
+        if sink.error() != QtAudio.Error.NoError:
             log.warning("Couldn't open the sound output (%s); preview is silent", sink.error())
             sink.stop()
             sink.deleteLater()
