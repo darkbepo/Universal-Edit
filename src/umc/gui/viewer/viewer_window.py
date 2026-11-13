@@ -426,7 +426,7 @@ class ViewerWindow(QMainWindow):
         if can_edit:
             self.edit_button.setToolTip(f"Open this file in the {editor.title.lower()}")
         elif editor is not None and editor.available:
-            self.edit_button.setToolTip(f"The {editor.title.lower()} can't edit this kind of file")
+            self.edit_button.setToolTip("This kind of file can't be edited here")
         elif editor is not None:
             self.edit_button.setToolTip(f"The {editor.title.lower()} is coming soon")
         else:

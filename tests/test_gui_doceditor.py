@@ -997,9 +997,10 @@ def test_save_with_a_usable_template_has_no_layout_notice(qtbot, page, tmp_path)
 
 
 # ===== a new, empty document (the start screen's "Document editor" tile) =====
-def test_open_empty_is_an_untitled_clean_document(qtbot, page, tmp_path):
-    _open(qtbot, page, _txt(tmp_path, "old"))
-    page.open_empty()
+def test_open_empty_is_an_untitled_clean_document(qtbot, page, docx_with_header):
+    _open(qtbot, page, docx_with_header)
+    assert page.warnings == [W_HEADERS] and page.banner.isVisible()
+    assert page.open_empty() is True
     assert page.untitled and page.source is None and page.source_format is None
     assert page.view.toPlainText() == "" and page.view.document().blockCount() == 1
     assert not page.view.document().isModified() and not page.view.document().isUndoAvailable()
@@ -1009,26 +1010,42 @@ def test_open_empty_is_an_untitled_clean_document(qtbot, page, tmp_path):
 
 
 def test_save_untitled_asks_like_save_as_then_saves_there(qtbot, page, tmp_path, monkeypatch):
-    page.open_empty()
+    monkeypatch.setattr(page_mod.QStandardPaths, "writableLocation", lambda loc: str(tmp_path))
+    assert page.open_empty()
     _type(page, "Hello new")
-    out = tmp_path / "mine.docx"
+    out = tmp_path / "mine.html"
     calls = []
 
     def dialog(parent, title, default, filters, selected):
-        calls.append((Path(default).name, selected))
+        calls.append((Path(default), selected))
         return str(out), selected
 
     monkeypatch.setattr(QFileDialog, "getSaveFileName", dialog)
     _save(qtbot, page)
-    assert calls == [("Untitled.docx", "Word (DOCX) (*.docx)")]
-    assert python_docx.Document(out).paragraphs[0].text == "Hello new"
+    # starts in Documents, named Untitled, DOCX chosen
+    assert calls == [(tmp_path / "Untitled.docx", "Word (DOCX) (*.docx)")]
+    assert "Hello new" in out.read_text(encoding="utf-8")
     assert not page.view.document().isModified()
     _type(page, " again")
     _save(qtbot, page)  # now saves to that file without asking
     assert len(calls) == 1
-    assert python_docx.Document(out).paragraphs[0].text == "Hello new again"
-    _save(qtbot, page, "save_as")  # Save as offers the file it was saved to
-    assert calls[-1][0] == "mine.docx"
+    assert "Hello new again" in out.read_text(encoding="utf-8")
+    _save(qtbot, page, "save_as")  # Save as offers that file, in that format
+    assert calls[-1][0] == out and calls[-1][1].endswith("(*.html)")
+
+
+def test_untitled_save_as_falls_back_to_home(page, monkeypatch):
+    monkeypatch.setattr(page_mod.QStandardPaths, "writableLocation", lambda loc: "")
+    page.open_empty()
+    assert page._default_path() == Path.home() / "Untitled.docx"
+
+
+def test_open_empty_refused_while_busy(page, tmp_path):
+    page.saving = True
+    try:
+        assert page.open_empty() is False and not page.untitled
+    finally:
+        page.saving = False
 
 
 def test_untitled_with_changes_asks_and_save_cancel_keeps_it(qtbot, page, monkeypatch):

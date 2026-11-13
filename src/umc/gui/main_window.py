@@ -609,7 +609,8 @@ class MainWindow(QMainWindow):
             return True
         if kind == "document":
             page = self._page("document")
-            page.open_empty()
+            if not page.open_empty():  # still finishing an open or save
+                return False
             self._show_page(page)
             page.view.setFocus()
             return True

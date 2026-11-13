@@ -618,7 +618,11 @@ describe("a new, empty document (the start screen's tile)", () => {
   test("openEmpty: one empty paragraph named Untitled, clean, no warnings; Save asks like Save as, then Ctrl+S saves there", async () => {
     const { page } = mount();
     await page.open(input("page.htm", "<style>p{}</style><p>old</p>"));
+    const warnings = () => (page as unknown as { warnings: string[] }).warnings;
+    expect(warnings()).toEqual([W_PAGESTYLE]);
+    expect(q(page, ".doc-banner").hidden).toBe(false);
     page.openEmpty();
+    expect(warnings()).toEqual([]);
     expect(page.view.view.state.doc.childCount).toBe(1);
     expect(page.view.view.state.doc.textContent).toBe("");
     expect(page.view.dirty).toBe(false);
@@ -665,4 +669,20 @@ describe("a new, empty document (the start screen's tile)", () => {
     expect(await page.save()).toBe(true);
     expect(downloads.map((d) => d.name)).toEqual(["a.txt"]);
   });
+});
+
+
+test("a save that ends after a new document was started says nothing over it", async () => {
+  let finish!: () => void;
+  const { page } = mount(() => new Promise((resolve) => (finish = () => resolve([{ name: "x.odt", data: new Uint8Array([7]), type: "x" }]))));
+  await page.open(input("a.txt", "one\n"));
+  page.askSaveAs = async () => ({ stem: "copy", format: "odt", toFile: false });
+  const saving = page.saveAs();
+  await vi.waitFor(() => expect(q(page, ".doc-message").textContent).toContain("Saving"));
+  page.openEmpty();
+  finish();
+  expect(await saving).toBe(true);
+  expect(downloads.map((d) => d.name)).toEqual(["copy.odt"]);
+  expect(q(page, ".doc-message").textContent).toBe("");
+  expect(page.view.dirty).toBe(false);
 });

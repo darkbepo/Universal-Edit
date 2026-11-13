@@ -70,7 +70,7 @@ def test_pdf_pages(qtbot, viewer, folder):
     assert "3 pages" in viewer.detail_label.text()
     qtbot.waitUntil(lambda: not viewer.pages.labels[0].pixmap().isNull(), timeout=15000)
     assert not viewer.edit_button.isEnabled()  # the document editor doesn't edit PDFs
-    assert viewer.edit_button.toolTip() == "The document editor can't edit this kind of file"
+    assert viewer.edit_button.toolTip() == "This kind of file can't be edited here"
 
 
 def test_text(qtbot, viewer, folder):

@@ -7,7 +7,7 @@ import threading
 from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtCore import QEventLoop, QObject, Qt, QThread, QTimer, Signal, Slot
+from PySide6.QtCore import QEventLoop, QObject, QStandardPaths, Qt, QThread, QTimer, Signal, Slot
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QFileDialog,
@@ -322,11 +322,11 @@ class DocEditorPage(QWidget):
             retry()
 
     # ------------------------------------------------------------ opening
-    def open_empty(self) -> None:
+    def open_empty(self) -> bool:
         """Started from the editor tiles: a new, empty document named "Untitled" (Save asks
-        where to save it first)."""
+        where to save it first). False (nothing changed) while an open or save runs."""
         if self.busy:
-            return
+            return False
         self.view.load(OpenedDocument("", {}, "docx"))
         self.source, self.source_format, self.untitled = None, None, True
         self.warnings = []
@@ -336,6 +336,7 @@ class DocEditorPage(QWidget):
         self.show_message("")
         self._update_buttons()
         self._update_status()
+        return True
 
     def open_path(self, path: Path) -> None:
         """Open ``path`` on a worker thread; ``opened`` is emitted when it's shown.
@@ -496,7 +497,8 @@ class DocEditorPage(QWidget):
         formats = save_formats()
         ids = [ext for ext, _ in formats]
         filters = [f"{label} (*.{ext})" for ext, label in formats]
-        current = self.source_format if self.source_format in ids else ids[0]
+        current = self._save_target[1] if self._save_target else self.source_format
+        current = current if current in ids else ids[0]
         path, chosen = QFileDialog.getSaveFileName(
             self,
             "Save document as",
@@ -523,7 +525,8 @@ class DocEditorPage(QWidget):
             return self.source
         if self._save_target is not None:
             return self._save_target[0]
-        return Path.home() / UNTITLED_FILE
+        docs = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DocumentsLocation)
+        return (Path(docs) if docs else Path.home()) / UNTITLED_FILE
 
     def _start_save(self, path: Path, fmt: str) -> None:
         content = self.view.content()

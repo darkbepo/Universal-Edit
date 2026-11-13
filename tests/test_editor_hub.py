@@ -146,3 +146,11 @@ def test_document_tile_opens_an_empty_document(window, monkeypatch):
     monkeypatch.setattr(QFileDialog, "getSaveFileName", no_dialog)
     window.leave_edit()  # nothing typed: leaves without asking
     assert window.stack.currentIndex() == 0 and window.hub.isVisible()
+
+
+def test_document_tile_stays_put_when_the_page_refuses(window, monkeypatch):
+    from umc.gui.doceditor.doc_editor_page import DocEditorPage
+
+    monkeypatch.setattr(DocEditorPage, "open_empty", lambda self: False)
+    assert window.open_editor("document") is False
+    assert window.stack.currentIndex() == 0 and not window.edit_mode.isChecked()

@@ -629,7 +629,9 @@ export class DocEditorPage {
         a.click();
         setTimeout(() => URL.revokeObjectURL(url), 60_000);
       }
-      if (this.loads === loaded) this.view.markClean(saved);
+      // another document was opened meanwhile: it isn't the one saved, so say nothing over it
+      if (this.loads !== loaded) return true;
+      this.view.markClean(saved);
       this.showMessage([`Saved “${handle?.name ?? name}”.`, ...notices].join(" "));
       return true;
     } catch (err) {
