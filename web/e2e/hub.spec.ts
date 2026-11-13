@@ -9,16 +9,17 @@ declare global {
   }
 }
 
-test("tiles: image editor, 3D viewer and audio editor open, the rest say Coming soon; hidden once files are added", async ({ page }) => {
+test("tiles: image, 3D, audio and document editors open, the video editor says Coming soon; hidden once files are added", async ({ page }) => {
   await page.goto("./?e2e");
   const tiles = page.locator(".editor-tile");
   await expect(tiles).toHaveCount(5);
-  for (const id of ["image", "model", "audio"]) await expect(page.locator(`.editor-tile[data-editor=${id}]`)).toBeEnabled();
-  for (const id of ["video", "document"]) {
-    const t = page.locator(`.editor-tile[data-editor=${id}]`);
-    await expect(t).toBeDisabled();
-    await expect(t).toContainText("Coming soon");
+  for (const id of ["image", "model", "audio", "document"]) {
+    await expect(page.locator(`.editor-tile[data-editor=${id}]`)).toBeEnabled();
   }
+  await expect(page.locator(".editor-tile[data-editor=document]")).not.toContainText("Coming soon");
+  const video = page.locator(".editor-tile[data-editor=video]");
+  await expect(video).toBeDisabled();
+  await expect(video).toContainText("Coming soon");
   await page.locator('input[type="file"]').first().setInputFiles([`${FIXTURES}img0.png`]);
   await expect(page.locator(".editor-hub")).toBeHidden();
   await page.getByRole("button", { name: "Clear" }).click();

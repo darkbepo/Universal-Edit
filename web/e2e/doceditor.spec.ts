@@ -300,6 +300,35 @@ async function reopen(page: Page, path: string, name: string) {
   await expect(message(page)).not.toHaveClass(/error/);
 }
 
+test("document editor tile: a new Untitled document; Save asks like Save as, then Ctrl+S saves there; it reopens", async ({ page }) => {
+  await page.goto("./?e2e");
+  await page.locator(".editor-tile[data-editor=document]").click();
+  await expect(page.locator(".doc-editor")).toBeVisible();
+  expect(await docText(page)).toBe("");
+  expect(await unloadAsks(page)).toBe(false); // nothing typed: nothing to lose
+  await pm(page).click();
+  await page.keyboard.type("Fresh words");
+  const first = await saved(page, async () => {
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    const dlg = page.locator("dialog.doc-save-dialog");
+    await expect(dlg.getByLabel("File name")).toHaveValue("Untitled");
+    await expect(dlg.getByLabel("Format")).toHaveValue("docx");
+    await dlg.getByRole("button", { name: "Save", exact: true }).click();
+  });
+  expect(first.name).toBe("Untitled.docx");
+  await pm(page).click();
+  await page.keyboard.press("End");
+  await page.keyboard.type(" again");
+  const second = await saved(page, () => page.keyboard.press("Control+s"));
+  expect(second.name).toBe("Untitled.docx");
+  await expect(page.locator("dialog.doc-save-dialog")).not.toBeVisible();
+  await reopen(page, second.path, second.name);
+  expect((await docText(page)).trim()).toBe("Fresh words again");
+  // Back leaves without a question (nothing changed since it opened)
+  await page.getByRole("button", { name: "← Back to Convert" }).click();
+  await expect(page.locator(".editor-hub")).toBeVisible();
+});
+
 test("edit opens a docx", async ({ page }) => {
   await openDoc(page, fx("editable.docx"));
   await expect(pm(page).locator("h1")).toHaveText("Editable report");

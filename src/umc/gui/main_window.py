@@ -607,6 +607,12 @@ class MainWindow(QMainWindow):
             page.open_empty()
             self._show_page(page)
             return True
+        if kind == "document":
+            page = self._page("document")
+            page.open_empty()
+            self._show_page(page)
+            page.view.setFocus()
+            return True
         return False  # not available yet
 
     def new_picture(self, width: int, height: int, background: str) -> bool:

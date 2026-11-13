@@ -56,9 +56,20 @@ def test_folder_items(tmp_path):
 def test_edit_button_follows_the_editor_tiles():
     for kind in (vf.IMAGE, vf.MODEL, vf.AUDIO):
         assert vf.editor_for(kind).available
-    for kind in (vf.VIDEO, vf.PAGES, vf.CONVERT, vf.TEXT):
-        assert not vf.editor_for(kind).available  # "coming soon"
+    for kind in (vf.PAGES, vf.CONVERT, vf.TEXT):
+        assert vf.editor_for(kind).id == "document" and vf.editor_for(kind).available
+    assert not vf.editor_for(vf.VIDEO).available  # "coming soon"
     assert vf.editor_for(vf.OTHER) is None
+
+
+def test_edit_only_what_the_editor_can_open():
+    # the document editor edits DOCX / TXT / MD …, not a PDF or an EPUB the viewer shows
+    assert vf.can_edit(vf.TEXT, Path("a.txt")) and vf.can_edit(vf.CONVERT, Path("a.DOCX"))
+    assert not vf.can_edit(vf.PAGES, Path("a.pdf"))
+    assert not vf.can_edit(vf.PAGES, Path("a.epub"))
+    assert vf.can_edit(vf.IMAGE, Path("a.png"))
+    assert not vf.can_edit(vf.VIDEO, Path("a.mp4"))  # coming soon
+    assert not vf.can_edit(vf.OTHER, Path("a.bin"))
 
 
 def test_read_text_encodings(tmp_path):

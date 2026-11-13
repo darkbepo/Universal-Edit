@@ -421,10 +421,12 @@ class ViewerWindow(QMainWindow):
     def _update_buttons(self) -> None:
         self.convert_button.setEnabled(self.current is not None)
         editor = vf.editor_for(self.kind)
-        can_edit = editor is not None and editor.available and self.current is not None
+        can_edit = self.current is not None and vf.can_edit(self.kind, self.current.path)
         self.edit_button.setEnabled(can_edit)
         if can_edit:
             self.edit_button.setToolTip(f"Open this file in the {editor.title.lower()}")
+        elif editor is not None and editor.available:
+            self.edit_button.setToolTip(f"The {editor.title.lower()} can't edit this kind of file")
         elif editor is not None:
             self.edit_button.setToolTip(f"The {editor.title.lower()} is coming soon")
         else:

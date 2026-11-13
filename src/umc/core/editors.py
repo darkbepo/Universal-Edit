@@ -21,7 +21,7 @@ EDITORS: tuple[EditorInfo, ...] = (
     EditorInfo("model", "3D viewer", "Look at and measure 3D models", "cube", True),
     EditorInfo("video", "Video editor", "Trim, join and mix clips", "movie", False),
     EditorInfo("audio", "Audio editor", "Cut, fade and clean up sound", "music", True),
-    EditorInfo("document", "Document editor", "Write and format documents", "document", False),
+    EditorInfo("document", "Document editor", "Write and format documents", "document", True),
 )
 
 COMING_SOON = "Coming soon"

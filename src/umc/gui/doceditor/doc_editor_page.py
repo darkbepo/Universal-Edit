@@ -40,6 +40,7 @@ __all__ = ["DocEditorPage", "OpenedDocument"]
 
 ONLY_ONE = "Only one document can be edited at a time."
 EXT_ALIASES = {"htm": "html", "markdown": "md"}
+UNTITLED_FILE = "Untitled.docx"  # what Save as offers for a new document
 # The HTML normaliser raises the recursion limit for deeply nested pages: give workers room.
 STACK_SIZE = 64 * 1024 * 1024
 STATUS_DELAY_MS = 150
@@ -82,6 +83,7 @@ class DocEditorPage(QWidget):
         super().__init__(parent)
         self.setObjectName("DocEditorPage")
         self.source: Path | None = None
+        self.untitled = False  # a new document from the start screen: no file yet
         self.source_format: str | None = None
         self.warnings: list[str] = []
         self.saving = False
@@ -234,6 +236,11 @@ class DocEditorPage(QWidget):
 
     # ------------------------------------------------------------ state
     @property
+    def has_document(self) -> bool:
+        """A document is shown: an opened file or a new, untitled one."""
+        return self.source is not None or self.untitled
+
+    @property
     def busy(self) -> bool:
         """An open or save is running (or its thread hasn't finished yet)."""
         return bool(self._jobs) or self._opening is not None or self.saving
@@ -242,13 +249,13 @@ class DocEditorPage(QWidget):
         doc = self.view.document()
         self.undo_button.setEnabled(doc.isUndoAvailable())
         self.redo_button.setEnabled(doc.isRedoAvailable())
-        enabled = self.source is not None and not self.busy
+        enabled = self.has_document and not self.busy
         self.save_button.setEnabled(enabled)
         self.save_as_button.setEnabled(enabled)
 
     def _update_status(self) -> None:
         self._status_timer.stop()
-        if self.source is None:
+        if not self.has_document:
             self.status.setText("")
             return
         doc = self.view.document()
@@ -315,6 +322,21 @@ class DocEditorPage(QWidget):
             retry()
 
     # ------------------------------------------------------------ opening
+    def open_empty(self) -> None:
+        """Started from the editor tiles: a new, empty document named "Untitled" (Save asks
+        where to save it first)."""
+        if self.busy:
+            return
+        self.view.load(OpenedDocument("", {}, "docx"))
+        self.source, self.source_format, self.untitled = None, None, True
+        self.warnings = []
+        self._save_target, self._warned = None, False
+        self.banner.setVisible(False)
+        self.find_bar.setVisible(False)
+        self.show_message("")
+        self._update_buttons()
+        self._update_status()
+
     def open_path(self, path: Path) -> None:
         """Open ``path`` on a worker thread; ``opened`` is emitted when it's shown.
 
@@ -371,6 +393,7 @@ class DocEditorPage(QWidget):
         path = self._opening
         self.view.load(opened)
         self.source, self.source_format = path, opened.source_format
+        self.untitled = False
         self.warnings = list(opened.warnings)
         self._save_target, self._warned = None, False
         self.banner_label.setText(warning_text(self.warnings))
@@ -448,8 +471,10 @@ class DocEditorPage(QWidget):
 
     def save(self) -> bool:
         """Save to the opened file (or the last Save as target). False if nothing started."""
-        if self.source is None or self.busy:
+        if not self.has_document or self.busy:
             return False
+        if self._save_target is None and self.source is None:  # untitled: ask where first
+            return self.save_as()
         if self._save_target is None:
             if self.warnings and not self._warned:
                 answer = self._ask_lose_parts()
@@ -466,7 +491,7 @@ class DocEditorPage(QWidget):
 
     def save_as(self) -> bool:
         """Ask for a file name and format and start saving. False if the user cancelled."""
-        if self.source is None or self.busy:
+        if not self.has_document or self.busy:
             return False
         formats = save_formats()
         ids = [ext for ext, _ in formats]
@@ -475,7 +500,7 @@ class DocEditorPage(QWidget):
         path, chosen = QFileDialog.getSaveFileName(
             self,
             "Save document as",
-            str(self.source),
+            str(self._default_path()),
             ";;".join(filters),
             filters[ids.index(current)],
         )
@@ -492,6 +517,13 @@ class DocEditorPage(QWidget):
             return False
         self._start_save(path, ext)
         return True
+
+    def _default_path(self) -> Path:
+        if self.source is not None:
+            return self.source
+        if self._save_target is not None:
+            return self._save_target[0]
+        return Path.home() / UNTITLED_FILE
 
     def _start_save(self, path: Path, fmt: str) -> None:
         content = self.view.content()
@@ -596,7 +628,7 @@ class DocEditorPage(QWidget):
         if self.saving:
             self._wait_for_save()
         doc = self.view.document()
-        if self.source is None or not doc.isModified():
+        if not self.has_document or not doc.isModified():
             return True
         answer = self._ask_save_changes()
         if answer == "discard":

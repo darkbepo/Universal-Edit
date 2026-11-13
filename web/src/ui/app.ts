@@ -406,6 +406,21 @@ export function mountApp(root: HTMLElement): void {
         showPage(a);
         return;
       }
+      if (id === "document") {
+        let d: import("./doceditor/page").DocEditorPage;
+        try {
+          d = await ensureDocEditor();
+        } catch (e) {
+          console.error("Couldn't load the document editor", e);
+          docEditorP = null; // try again next time
+          note.textContent = "Couldn't load the document editor. Check the internet connection and try again.";
+          note.hidden = false;
+          return;
+        }
+        d.openEmpty();
+        showPage(d);
+        return;
+      }
       if (id !== "image") return; // not available yet
       const pick = await newPictureDialog();
       if (!pick) return;

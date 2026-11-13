@@ -64,9 +64,10 @@ def window(qtbot):
 def test_tiles_shown_until_files_are_added(window, media):
     hub = window.hub
     assert hub.isVisible()
-    assert [t for t, tile in hub.tiles.items() if tile.isEnabled()] == ["image", "model", "audio"]
-    for key in ("video", "document"):
-        assert hub.tiles[key].badge is not None and hub.tiles[key].badge.text() == "Coming soon"
+    enabled = [t for t, tile in hub.tiles.items() if tile.isEnabled()]
+    assert enabled == ["image", "model", "audio", "document"]
+    assert hub.tiles["video"].badge is not None and hub.tiles["video"].badge.text() == "Coming soon"
+    assert hub.tiles["document"].badge.isHidden()
     window.add_files([str(media / "img0.png")])
     assert not hub.isVisible()
     window.clear_files()
@@ -126,3 +127,22 @@ def test_3d_viewer_tile_opens_it_empty(window, tmp_path):
     page.wait_idle()
     window.leave_edit()
     assert window.stack.currentIndex() == 0
+
+
+def test_document_tile_opens_an_empty_document(window, monkeypatch):
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    assert window.open_editor("document")
+    page = window.doc_editor
+    assert window.stack.currentWidget() is page and window.edit_mode.isChecked()
+    assert page.source is None and page.untitled and page.view.toPlainText() == ""
+    assert not page.view.document().isModified() and not page.banner.isVisible()
+    assert page.save_button.isEnabled() and page.save_as_button.isEnabled()
+
+    def no_dialog(*a, **k):
+        raise AssertionError("no question expected")
+
+    monkeypatch.setattr(QMessageBox, "exec", no_dialog)
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", no_dialog)
+    window.leave_edit()  # nothing typed: leaves without asking
+    assert window.stack.currentIndex() == 0 and window.hub.isVisible()

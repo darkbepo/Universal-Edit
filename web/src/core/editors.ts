@@ -15,7 +15,7 @@ export const EDITORS: EditorInfo[] = [
   { id: "model", title: "3D viewer", blurb: "Look at and measure 3D models", icon: "cube", available: true },
   { id: "video", title: "Video editor", blurb: "Trim, join and mix clips", icon: "movie", available: false },
   { id: "audio", title: "Audio editor", blurb: "Cut, fade and clean up sound", icon: "music", available: true },
-  { id: "document", title: "Document editor", blurb: "Write and format documents", icon: "document", available: false },
+  { id: "document", title: "Document editor", blurb: "Write and format documents", icon: "document", available: true },
 ];
 
 export const COMING_SOON = "Coming soon";

@@ -613,3 +613,56 @@ test("a taken-over open's download progress leaves the later open's message alon
   expect(await first).toBe(null);
   expect(page.lastError()).toBe(TOO_DEEP);
 });
+
+describe("a new, empty document (the start screen's tile)", () => {
+  test("openEmpty: one empty paragraph named Untitled, clean, no warnings; Save asks like Save as, then Ctrl+S saves there", async () => {
+    const { page } = mount();
+    await page.open(input("page.htm", "<style>p{}</style><p>old</p>"));
+    page.openEmpty();
+    expect(page.view.view.state.doc.childCount).toBe(1);
+    expect(page.view.view.state.doc.textContent).toBe("");
+    expect(page.view.dirty).toBe(false);
+    expect(q(page, ".doc-banner").hidden).toBe(true);
+    expect(q(page, ".doc-status").textContent).toBe("0 words · 0 characters");
+    expect((buttonNamed(page, "Save as") as HTMLButtonElement).disabled).toBe(false);
+    expect(page.maybeLeave()).toBe(true);
+    expect(confirms).toEqual([]);
+    type(page, "Hello");
+    const asked: string[][] = [];
+    page.askSaveAs = async (stem: string, format: string) => {
+      asked.push([stem, format]);
+      return { stem: "mine", format: "html", toFile: false };
+    };
+    expect(await page.save()).toBe(true);
+    expect(asked).toEqual([["Untitled", "docx"]]);
+    expect(confirms).toEqual([]); // the old file's warnings are gone
+    expect(downloads.map((d) => d.name)).toEqual(["mine.html"]);
+    expect(await textOf(downloads[0].blob)).toContain("Hello");
+    expect(page.view.dirty).toBe(false);
+    type(page, "!");
+    expect(await page.save()).toBe(true);
+    expect(asked.length).toBe(1);
+    expect(downloads.map((d) => d.name)).toEqual(["mine.html", "mine.html"]);
+  });
+
+  test("a cancelled first Save keeps it unsaved; opening a file afterwards works as usual", async () => {
+    const { page } = mount();
+    page.openEmpty();
+    type(page, "x");
+    page.askSaveAs = async () => null;
+    expect(await page.save()).toBe(false);
+    expect(page.view.dirty).toBe(true);
+    confirmAnswer = false;
+    expect(page.maybeLeave()).toBe(false);
+    expect(confirms).toEqual([DISCARD]);
+    confirmAnswer = true;
+    await page.dropFiles([input("a.txt", "file\n")]);
+    expect(page.view.content().plainText).toContain("file");
+    page.askSaveAs = async () => {
+      throw new Error("an opened file saves without asking");
+    };
+    type(page, "y");
+    expect(await page.save()).toBe(true);
+    expect(downloads.map((d) => d.name)).toEqual(["a.txt"]);
+  });
+});

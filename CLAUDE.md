@@ -782,11 +782,13 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       Next: basic editing for 3D printing (plan in the session handoff / owner's go-ahead).
    9. ✅ Start screen = hub (both apps): editor tiles under the empty drop zone, listed in
       `core/editors.py` / `web/src/core/editors.ts` (same order and text; `available` False =
-      greyed "Coming soon" — video and document editor for now; tests/test_editor_hub.py checks
+      greyed "Coming soon" — only the video editor now; tests/test_editor_hub.py checks
       both lists). Image tile → "New picture" (`editor/blank.py` / `blank.ts`, presets in
       `web/src/editor/presets.ts` so the start page doesn't load the editor) → `MainWindow.new_picture`
       / `EditorPage.openBlank`; 3D tile → viewer `open_empty` / `openEmpty` with an "Open…" button
-      (`files_chosen` / `onOpen` add the models to the queue like a drop). Tiles hide once files
+      (`files_chosen` / `onOpen` add the models to the queue like a drop); document tile →
+      `DocEditorPage.open_empty` / `openEmpty` (an empty "Untitled", not dirty; the first Save
+      asks like Save as, DOCX first, then Save / Ctrl+S write there). Tiles hide once files
       are added. Later steps (owner, Nov 2026): own viewer for "Open with", Windows installer with
       optional editors + "Convert" context menu, editors as downloadable add-ons on desktop.
    10. ✅ Viewer (desktop): `UniversalEdit --view FILE` (what "Open with" will run, step 4). Model
