@@ -8,6 +8,7 @@ import { AudioDoc } from "../../audioedit/document";
 import * as ops from "../../audioedit/ops";
 import type { Samples } from "../../audioedit/ops";
 import * as peaks from "../../audioedit/peaks";
+import { DEFAULT_VOLUME, gainFor, VOLUME_KEY } from "../../audioedit/volume";
 import { readWav, writeWav } from "../../audioedit/wav";
 import { MAX_SAMPLES, OPEN_TARGET, TOO_LONG } from "../../converters/audioedit";
 import { defaults } from "../../core/options";
@@ -96,6 +97,10 @@ export class AudioEditorPage {
   private frame = 0;
   private active = false;
   private ctx: AudioContext | null = null;
+  private gain: GainNode | null = null;
+  volume = DEFAULT_VOLUME; // the slider, 0…1
+  private volumeSlider = h("input", { type: "range", class: "audio-volume", min: "0", max: "100", step: "1", ariaLabel: "Volume" });
+  private volumeLabel = h("span", { class: "audio-volume-value muted" });
   private player: { src: AudioBufferSourceNode; origin: number; end: number; t0: number; paused: boolean } | null = null;
   private saveTarget: { name: string; format: string; bitrate: number; handle?: FileHandle } | null = null;
   private bitrate = 192;
@@ -126,7 +131,8 @@ export class AudioEditorPage {
       btn("home", "|◀", "Go to the start (Home)", () => this.goTo(0)),
       btn("play", "▶ Play", "Play the selection, or from the cursor (Space)", () => this.togglePlay()),
       btn("stop", "■ Stop", "Stop playing", () => this.stop()),
-      btn("end", "▶|", "Go to the end (End)", () => this.goTo(this.doc?.frames ?? 0)));
+      btn("end", "▶|", "Go to the end (End)", () => this.goTo(this.doc?.frames ?? 0)),
+      h("label", { class: "audio-volume-box" }, h("span", { class: "muted" }, "Volume"), this.volumeSlider, this.volumeLabel));
     const groups = TOOL_GROUPS.map((items) => h("div", { class: "audio-group" },
       ...items.map(([key, label, title]) => btn(key, label, title, () => void this.run(key)))));
     const tools = h("div", { class: "audio-tools", role: "toolbar", ariaLabel: "Audio tools" }, transport, ...groups);
@@ -136,6 +142,22 @@ export class AudioEditorPage {
       h("div", { class: "audio-body" }, tools, h("div", { class: "audio-view" }, this.host, this.placeholder), this.scroll),
       h("div", { class: "editor-status" }, this.selectionLabel, this.message, this.infoLabel));
 
+    let saved = NaN;
+    try {
+      saved = Number(localStorage.getItem(VOLUME_KEY) ?? NaN);
+    } catch {
+      /* storage blocked: the default */
+    }
+    this.volumeSlider.value = String(Number.isFinite(saved) ? Math.min(100, Math.max(0, Math.round(saved))) : Math.round(DEFAULT_VOLUME * 100));
+    this.showVolume();
+    this.volumeSlider.addEventListener("input", () => {
+      this.showVolume();
+      try {
+        localStorage.setItem(VOLUME_KEY, this.volumeSlider.value);
+      } catch {
+        /* fine: just not remembered */
+      }
+    });
     this.scroll.addEventListener("input", () => this.setStart((+this.scroll.value * this.visibleFrames()) / SCROLL_STEPS));
     this.installMouse();
     // On the document, not the page: a button that disables itself (Cut) drops the focus to <body>.
@@ -395,6 +417,8 @@ export class AudioEditorPage {
     const tag = (e.target as HTMLElement).tagName;
     if (tag === "INPUT" && (e.target as HTMLInputElement).type !== "range") return;
     if (tag === "SELECT" || (e.target as HTMLElement).closest("dialog")) return;
+    // Home / End move the volume slider itself while it has the focus
+    if (e.target === this.volumeSlider && (e.key === "Home" || e.key === "End")) return;
     const ctrl = e.ctrlKey || e.metaKey;
     const k = e.key.toLowerCase();
     let handled = true;
@@ -517,7 +541,13 @@ export class AudioEditorPage {
       doc.samples.forEach((ch, c) => buf.copyToChannel(ch.subarray(start, end) as Float32Array<ArrayBuffer>, c));
       const src = this.ctx.createBufferSource();
       src.buffer = buf;
-      src.connect(this.ctx.destination);
+      if (!this.gain) {
+        this.gain = this.ctx.createGain();
+        this.gain.connect(this.ctx.destination);
+      }
+      this.gain.gain.cancelScheduledValues(this.ctx.currentTime);
+      this.gain.gain.value = gainFor(this.volume);
+      src.connect(this.gain);
       void this.ctx.resume();
       src.start();
       const player = { src, origin: start, end, t0: this.ctx.currentTime, paused: false };
@@ -531,6 +561,27 @@ export class AudioEditorPage {
       this.showMessage(NO_AUDIO_OUTPUT, true);
     }
     this.update();
+  }
+
+  /** 0…1 as heard; applies at once while playing. */
+  setVolume(volume: number): void {
+    this.volume = Math.min(1, Math.max(0, volume));
+    if (!this.gain || !this.ctx) return;
+    // a short glide while it plays: a jump in gain clicks
+    if (this.player) this.gain.gain.setTargetAtTime(gainFor(this.volume), this.ctx.currentTime, 0.015);
+    else this.gain.gain.value = gainFor(this.volume);
+  }
+
+  /** The gain being played (for tests), or null before the first playback. */
+  get playGain(): number | null {
+    return this.gain?.gain.value ?? null;
+  }
+
+  private showVolume(): void {
+    const value = Number(this.volumeSlider.value);
+    this.volumeLabel.textContent = `${value} %`;
+    this.volumeSlider.title = `Playback volume (${value} %); saving is not affected`;
+    this.setVolume(value / 100);
   }
 
   /** The frame being heard. */

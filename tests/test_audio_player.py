@@ -41,6 +41,9 @@ def test_sink_volume_follows_the_ear():
     steps = [sink_volume(i / 10) for i in range(11)]
     assert steps == sorted(steps)
     assert sink_volume(0.5) < 0.5  # half way sounds half as loud, which is well under half power
+    # the website's gainFor (web/src/audioedit/volume.ts) checks these same numbers
+    for v, g in ((0.01, 0.0021824), (0.25, 0.0624694), (0.5, 0.150515), (0.7, 0.2614394)):
+        assert sink_volume(v) == pytest.approx(g, abs=1e-6)
 
 
 def test_player_volume_is_clamped(qapp):

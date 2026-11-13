@@ -882,7 +882,9 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       `QAudio.*` — compare with `player.NO_ERROR` / `IDLE` / `STOPPED` (`tests/test_audio_player.py`
       checks a real sink); `stateChanged` can't reach Python at all, so the 30 ms timer polls
       `state()`. Desktop volume slider (QSettings `audioeditor/volume`, 0–100, default 70) →
-      `sink_volume` (logarithmic slider → linear sink volume); the web has none yet.
+      `sink_volume` (logarithmic slider → linear sink volume). Web: the same slider (localStorage
+      `umc-audio-volume`) → a GainNode, `audioedit/volume.ts` `gainFor` = Qt's formula
+      (−ln(1 − v) / ln 100, clamped), both test suites check the same numbers.
       Worker results must reach the page through bound-method slots (a lambda runs on the worker
       thread). Shortcuts: Space, Home / End, Ctrl+X / C / V, Delete, Ctrl+T, Ctrl+L, Ctrl+A, Esc,
       + / − (desktop also Ctrl+1 / 3; Chrome keeps those for tabs), Ctrl+E, Ctrl+F, Ctrl+Z / Y,
