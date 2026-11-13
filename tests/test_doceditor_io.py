@@ -194,6 +194,24 @@ def test_too_large(tmp_path, monkeypatch):
         open_document(p)
 
 
+def test_too_long_text_refused_before_parsing(tmp_path, monkeypatch):
+    monkeypatch.setattr(io_mod, "MAX_CHARS", 12)
+    ok = tmp_path / "ok.md"
+    ok.write_text("😀" * 2 + "x" * 10, encoding="utf-8")  # code points, like the web
+    assert open_document(ok).html
+
+    def never(*_args, **_kwargs):
+        raise AssertionError("parsed")
+
+    for name in ("md_to_html", "_txt_to_html", "normalise_html_report", "text_length"):
+        monkeypatch.setattr(io_mod, name, never)
+    for name in ("big.md", "big.txt"):
+        p = tmp_path / name
+        p.write_text("😀" * 2 + "x" * 11, encoding="utf-8")
+        with pytest.raises(ConversionError, match="too large to edit here"):
+            open_document(p)
+
+
 def test_file_too_large(tmp_path, monkeypatch):
     monkeypatch.setattr(io_mod, "MAX_FILE_BYTES", 5)
     p = tmp_path / "big.txt"

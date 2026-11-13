@@ -168,6 +168,14 @@ def _txt_to_html(text: str) -> str:
     return "".join(f"<p>{html_lib.escape(_keep_spaces(line))}</p>" for line in lines)
 
 
+def _read_limited(path: Path) -> str:
+    """The file's text, refused before any parsing when it is longer than the editor takes."""
+    text = read_text(path)
+    if len(text) > MAX_CHARS:
+        raise ConversionError(TOO_LARGE)
+    return text
+
+
 def open_document(path: Path, cancel_event: threading.Event | None = None) -> OpenedDocument:
     path = Path(path)
     if path.stat().st_size > MAX_FILE_BYTES:
@@ -176,7 +184,7 @@ def open_document(path: Path, cancel_event: threading.Event | None = None) -> Op
     if ext == "docx":
         doc = read(path)
     elif ext == "md":
-        front, text = split_front_matter(read_text(path))
+        front, text = split_front_matter(_read_limited(path))
         body = md_to_html(text)
         out, images, warnings = normalise_html_report(body, base_dir=path.parent)
         if _has_markdown_extras(text):
@@ -185,7 +193,7 @@ def open_document(path: Path, cancel_event: threading.Event | None = None) -> Op
             warnings.append(W_MDFORMAT)
         doc = OpenedDocument(out, images, "md", warnings, front_matter=front)
     elif ext == "txt":
-        doc = OpenedDocument(_txt_to_html(read_text(path)), {}, "txt")
+        doc = OpenedDocument(_txt_to_html(_read_limited(path)), {}, "txt")
     elif ext == "html":
         source = read_text(path)
         out, images, warnings = normalise_html_report(source, base_dir=path.parent)
@@ -199,6 +207,6 @@ def open_document(path: Path, cancel_event: threading.Event | None = None) -> Op
         raise ConversionError("This file type can't be edited.")
     if not doc.html.strip():
         doc.html = EMPTY
-    if text_length(doc.html) > MAX_CHARS:
+    if text_length(doc.html) > MAX_CHARS:  # other formats
         raise ConversionError(TOO_LARGE)
     return doc

@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { strFromU8, unzipSync, zipSync } from "fflate";
 import { describe, expect, test, vi } from "vitest";
+import * as markdown from "../src/doceditor/markdown";
+import * as subset from "../src/doceditor/subset";
 import { writeDocx } from "../src/doceditor/docx-write";
 import {
   hasDroppedFormats,
@@ -21,6 +23,20 @@ import {
   W_MDEXTRA,
   W_PICTURES,
 } from "../src/doceditor/types";
+
+// Pass-through spies, so a test can prove a step never ran.
+vi.mock("../src/doceditor/markdown", async (actual) => {
+  const real = await actual<typeof import("../src/doceditor/markdown")>();
+  return { ...real, mdToHtml: vi.fn(real.mdToHtml) };
+});
+vi.mock("../src/doceditor/subset", async (actual) => {
+  const real = await actual<typeof import("../src/doceditor/subset")>();
+  return {
+    ...real,
+    normaliseHtmlReport: vi.fn(real.normaliseHtmlReport),
+    textLength: vi.fn(real.textLength),
+  };
+});
 
 const PNG = Uint8Array.from(
   atob(
@@ -79,6 +95,19 @@ describe("openDocument", () => {
   test("refuses too many characters after reading", async () => {
     const text = "a".repeat(MAX_CHARS + 1);
     await expect(openDocument(fileOf(text, "a.txt"), noConvert)).rejects.toThrow(TOO_LARGE);
+  });
+
+  test("refuses too long text and Markdown before parsing it", async () => {
+    const spies = [markdown.mdToHtml, subset.normaliseHtmlReport, subset.textLength].map((f) => vi.mocked(f));
+    // Counted in code points, like Python's len: ten emoji are ten characters.
+    const text = `${"\u{1F600}".repeat(10)}${"a".repeat(MAX_CHARS - 10)}`;
+    await expect(openDocument(fileOf(text, "a.md"), noConvert)).resolves.toBeTruthy();
+    expect(markdown.mdToHtml).toHaveBeenCalledTimes(1);
+    for (const name of ["a.txt", "a.md"]) {
+      for (const spy of spies) spy.mockClear();
+      await expect(openDocument(fileOf(`${text}a`, name), noConvert)).rejects.toThrow(TOO_LARGE);
+      for (const spy of spies) expect(spy).not.toHaveBeenCalled();
+    }
   });
 
   test("refuses other file types", async () => {

@@ -193,10 +193,21 @@ describe("opening", () => {
     expect(page.lastError()).toBe("Couldn't read this OpenDocument file.");
   });
 
+  test("an open taken over while “Opening…” is being drawn never reads its file", async () => {
+    const convert = vi.fn<Run>(async () => []);
+    const { page } = mount(convert);
+    const first = page.open(input("a.odt", new Uint8Array([1])));
+    expect(q(page, ".doc-message").textContent).toBe("Opening “a.odt”…"); // shown at once
+    expect(await page.open(input("b.txt", "second\n"))).toBe(true);
+    expect(await first).toBe(null);
+    expect(convert).not.toHaveBeenCalled();
+  });
+
   test("a later open wins over one still running", async () => {
     let release!: () => void;
     const { page } = mount(() => new Promise((_r, reject) => (release = () => reject(new Error("slow")))));
     const first = page.open(input("a.odt", new Uint8Array([1])));
+    await vi.waitFor(() => expect(release).toBeTypeOf("function")); // past "Opening…", converting
     expect(await page.open(input("b.txt", "second\n"))).toBe(true);
     release();
     expect(await first).toBe(null); // superseded, not failed
@@ -563,6 +574,7 @@ describe("Task 11 (10a re-review)", () => {
     const { page } = mount(() => new Promise((_r, reject) => (release = () => reject(new Error("slow")))));
     page.view.maxDepth = 4;
     const first = page.open(input("a.odt", new Uint8Array([1])));
+    await vi.waitFor(() => expect(release).toBeTypeOf("function")); // past "Opening…", converting
     expect(await page.open(input("deep.html", "<blockquote><blockquote><blockquote><blockquote><p>x</p></blockquote></blockquote></blockquote></blockquote>"))).toBe(false);
     expect(page.lastError()).not.toBe("");
     release();
@@ -595,6 +607,7 @@ test("a taken-over open's download progress leaves the later open's message alon
   })));
   page.view.maxDepth = 4;
   const first = page.open(input("a.odt", new Uint8Array([1])));
+  await vi.waitFor(() => expect(release).toBeTypeOf("function")); // past "Opening…", converting
   expect(await page.open(input("deep.html", "<blockquote><blockquote><blockquote><blockquote><p>x</p></blockquote></blockquote></blockquote></blockquote>"))).toBe(false);
   release();
   expect(await first).toBe(null);

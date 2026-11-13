@@ -426,9 +426,10 @@ test("big table stays responsive", async ({ page }) => {
   await expect(pm(page).locator("td", { hasText: "r19999" })).toHaveCount(1, { timeout: 5_000 });
   const openMs = Date.now() - t;
   const openGap = await gap();
-  // whether a frame was drawn with "Opening…" showing: the parse is one synchronous block, so
-  // only sometimes (logged, not asserted; the freeze itself is bounded below)
+  // a frame was drawn with "Opening…" showing: the page waits for one before the parse, which
+  // is one synchronous block (the freeze itself is bounded below)
   const drewOpening = await page.evaluate(() => (window as unknown as { __drewOpening: boolean }).__drewOpening);
+  expect(drewOpening).toBe(true);
   // and straight after
   t = Date.now();
   await page.evaluate(() => new Promise((r) => requestAnimationFrame(r)));

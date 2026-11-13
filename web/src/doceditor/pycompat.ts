@@ -11,6 +11,16 @@ const PY_SPACE = new RegExp(`[${PY_WS}]`);
 
 export const isPySpace = (c: string): boolean => PY_SPACE.test(c);
 
+/** Python's len(s): code points, so a surrogate pair counts once. */
+export function pyLen(s: string): number {
+  let n = s.length;
+  for (let i = 1; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c >= 0xdc00 && c <= 0xdfff && (s.charCodeAt(i - 1) & 0xfc00) === 0xd800) n--;
+  }
+  return n;
+}
+
 /** `s` without the leading and trailing characters `isSpace` accepts. */
 export function trimWith(s: string, isSpace: (c: string) => boolean): string {
   let start = 0;

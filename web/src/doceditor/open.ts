@@ -8,7 +8,7 @@ import { unzipPackage } from "./docx-package";
 import { readDocx } from "./docx-read";
 import { hasDroppedFormats, hasMarkdownExtras, mdToHtml, splitFrontMatter } from "./markdown";
 import { hasDotDot, isEditableMarkdownZip, markdownZipName } from "./mdzip";
-import { escAttr, pyStrip } from "./pycompat";
+import { escAttr, pyLen, pyStrip } from "./pycompat";
 import { htmlTitle, normaliseHtmlReport, textLength } from "./subset";
 import {
   MAX_CHARS,
@@ -90,11 +90,18 @@ function opened(html: string, sourceFormat: string, extra: Partial<OpenedDocumen
 }
 
 
+/** `bytes` as text, refused before any parsing when it is longer than the editor takes. */
+function decodeLimited(bytes: Uint8Array): string {
+  const text = decodeText(bytes);
+  if (pyLen(text) > MAX_CHARS) throw new Error(TOO_LARGE);
+  return text;
+}
+
 /** Open a Markdown ZIP: the `.md`, its pictures read from `<stem>_files/` in the ZIP. */
 function openMarkdownZip(bytes: Uint8Array, md: string): OpenedDocument {
   const files = unzipPackage(bytes);
   const folder = `${md.slice(0, -3)}_files/`;
-  const [front, text] = splitFrontMatter(decodeText(files.get(md) ?? new Uint8Array()));
+  const [front, text] = splitFrontMatter(decodeLimited(files.get(md) ?? new Uint8Array()));
   // Only exact names inside the folder are ever looked up.
   const resolveImage = (rel: string) =>
     rel.startsWith(folder) && !hasDotDot(rel) ? (files.get(rel) ?? null) : null;
@@ -119,13 +126,13 @@ export async function openDocument(file: File, convert: Convert): Promise<Opened
   } else if (ext === "docx") {
     doc = readDocx(bytes);
   } else if (ext === "md") {
-    const [front, text] = splitFrontMatter(decodeText(bytes));
+    const [front, text] = splitFrontMatter(decodeLimited(bytes));
     const { html, images, warnings } = normaliseHtmlReport(mdToHtml(text));
     if (hasMarkdownExtras(text)) warnings.push(W_MDEXTRA);
     if (hasDroppedFormats(text)) warnings.push(W_MDFORMAT);
     doc = opened(html, "md", { images, warnings, frontMatter: front });
   } else if (ext === "txt") {
-    doc = opened(txtToHtml(decodeText(bytes)), "txt");
+    doc = opened(txtToHtml(decodeLimited(bytes)), "txt");
   } else if (ext === "html") {
     const source = decodeText(bytes);
     const { html, images, warnings } = normaliseHtmlReport(source);
@@ -137,6 +144,6 @@ export async function openDocument(file: File, convert: Convert): Promise<Opened
     doc.template = null;
   }
   if (!pyStrip(doc.html)) doc.html = EMPTY;
-  if (textLength(doc.html) > MAX_CHARS) throw new Error(TOO_LARGE);
+  if (textLength(doc.html) > MAX_CHARS) throw new Error(TOO_LARGE); // other formats
   return doc;
 }

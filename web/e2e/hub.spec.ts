@@ -76,3 +76,20 @@ test("a short, narrow window scrolls to the tiles instead of cutting them off", 
   expect(tile.y + tile.height).toBeLessThanOrEqual(bar.y); // not hidden under the bottom bar
   await expect(page.locator(".drop")).toBeVisible();
 });
+
+test("pressing Convert while a tile's editor is still loading doesn't let a second tile open too", async ({ page }) => {
+  await page.goto("./?e2e");
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  await page.route(/\.js(\?|$)/, async (route) => {
+    await gate; // hold every lazily loaded chunk: the 3D viewer is still loading
+    await route.continue();
+  });
+  await page.locator(".editor-tile[data-editor=model]").click();
+  await page.getByRole("button", { name: "Convert mode" }).click();
+  await page.locator(".editor-tile[data-editor=audio]").click();
+  release();
+  await expect(page.locator(".viewer3d")).toBeVisible();
+  await page.waitForTimeout(500); // the audio editor would load by now
+  await expect(page.locator(".audio-canvas")).toHaveCount(0); // never even mounted
+});

@@ -254,7 +254,9 @@ export function mountApp(root: HTMLElement): void {
   const canEdit = () => editKind() !== null;
   function showConverter() {
     editing = false;
-    opening = false; // a document still opening is left to finish hidden (docRun ignores it)
+    // a document still opening is left to finish hidden (docRun ignores it); a tile still
+    // opening keeps `opening`, so a second tile can't start meanwhile
+    if (docOpening) opening = docOpening = false;
     docRun++;
     editMode.disabled = !canEdit();
     editor?.hide();
@@ -312,6 +314,7 @@ export function mountApp(root: HTMLElement): void {
     (editor = mountEditor(root, { client, onBack: showConverter }))));
   let opening = false; // an editor tile is being opened (New picture window, code loading)
   let docRun = 0; // counts document opens from Edit; leaving the page ends the one running
+  let docOpening = false; // the `opening` flag is held by a document open (docRun)
   function showPage(page: { show(): void }) {
     editing = true;
     appMain.hidden = true;
@@ -334,7 +337,7 @@ export function mountApp(root: HTMLElement): void {
       // the page shows straight away, with "Opening…" and the converter's download progress
       const f = files[0];
       const run = ++docRun;
-      opening = true;
+      opening = docOpening = true;
       editMode.disabled = true;
       try {
         let d: import("./doceditor/page").DocEditorPage;
@@ -356,7 +359,7 @@ export function mountApp(root: HTMLElement): void {
         }
       } finally {
         if (run === docRun) {
-          opening = false;
+          opening = docOpening = false;
           editMode.disabled = !canEdit();
         }
       }

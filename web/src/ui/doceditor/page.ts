@@ -431,6 +431,13 @@ export class DocEditorPage {
       if (token !== this.opens) return null;
     }
     this.showMessage(`Opening “${file.name}”…`);
+    // one frame first, so "Opening…" is drawn before the (synchronous) parse freezes the page;
+    // a hidden tab draws no frames, so it doesn't wait longer than 100 ms for one
+    await new Promise<void>((r) => {
+      if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => setTimeout(r, 0));
+      setTimeout(r, typeof requestAnimationFrame === "function" ? 100 : 0);
+    });
+    if (token !== this.opens) return null;
     try {
       const doc = await openDocument(file.file, this.makeConvert(() => token === this.opens));
       if (token !== this.opens) return null;
