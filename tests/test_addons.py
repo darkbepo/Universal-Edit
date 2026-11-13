@@ -292,3 +292,5 @@ def test_installer_and_ci_offer_every_addon():
         assert f"Components: {addon_id};" in iss
     assert "Components: " + " or ".join(ids) + ";" in iss
     assert "foreach ($a in " + ", ".join(f'"{i}"' for i in ids) + ")" in workflow
+    # the silent install picks its components explicitly: every add-on must be in that list
+    assert '/COMPONENTS="main,' + ",".join(ids) + '"' in workflow
