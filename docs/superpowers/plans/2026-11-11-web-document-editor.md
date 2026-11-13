@@ -823,6 +823,13 @@ Everything found while reviewing Task 10, in one round (owner rule).
 
 ### Task 11: End-to-end tests, cross-app check, docs
 
+**Found in Task 10a re-review (do here first, each with a failing test):**
+- Back during a running open (e.g. the first Pandoc download) leaves `opening` true, so Edit and the "open empty" editor tiles are ignored until it settles: clear it in `showConverter()` / ignore the result once the page is hidden.
+- A document dropped during an open that then fails sends the user back to Convert via the superseded first open's `lastError()`: have `page.open` report "superseded" (e.g. `null` or an open counter) instead of reading `lastError()`.
+- e2e: accepting the Convert-mode prompt; Properties from the audio editor asks first.
+- Scrollbar check assumes right/bottom bars (RTL / left scrollbars): handle or note as a known limit.
+- Build budget: only ~0.27 kB of the +2 KB entry-chunk allowance is left — keep new code out of the entry chunk.
+
 **Real-browser checks collected from the Task 7–9 reviews (put them in `doceditor.spec.ts`):** click the grey margin / empty paper then Ctrl+S, Ctrl+F, Ctrl+K — no browser dialog, caret in the page; Ctrl+S/K/H/L/E/J/R kept from the browser in the text; a real picture drop lands at the drop position and a document drop doesn't navigate; `<dialog>` showModal + Esc; `showSaveFilePicker` then Ctrl+S writes the same file (where the browser allows); colour and file picker cancel detection; `beforeunload` while dirty; banner close; status line after typing; keyboard behaviour around empty links; clipboard copy/paste inside the editor; pasted pictures shrunk to the page width; Pandoc progress on the live site (check `content-encoding`).
 
 **Files:**
