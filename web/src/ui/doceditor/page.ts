@@ -124,6 +124,8 @@ export class DocEditorPage {
   private saving: Promise<boolean> | null = null;
   /** Counts opens: a result is used only by the latest one. */
   private opens = 0;
+  /** Opens still running (the latest and any taken over), for the e2e hook. */
+  private running = 0;
   /** Counts loaded documents: a save finishing after another one opened leaves it alone. */
   private loads = 0;
   private active = false;
@@ -218,6 +220,34 @@ export class DocEditorPage {
     window.addEventListener("beforeunload", this.onUnload);
     this.updateButtons();
     this.updateStatus();
+    if (typeof location !== "undefined" && location.search.includes("e2e")) this.installTestHook();
+  }
+
+  /** `window.__doceditor` for the e2e tests: state reads, like the image editor's `__editor`. */
+  private installTestHook(): void {
+    const page = this;
+    (window as unknown as { __doceditor: object }).__doceditor = {
+      /** The document as the exchange-format HTML a save would write. */
+      html: () => page.view.content().html,
+      text: () => page.view.content().plainText,
+      get dirty() {
+        return page.view.dirty;
+      },
+      /** The editor's selection as [anchor, head] positions. */
+      get selection() {
+        const s = page.view.view.state.selection;
+        return [s.anchor, s.head];
+      },
+      /** Opens still running, taken-over ones included. */
+      get opening() {
+        return page.running;
+      },
+      get unloadAsks() {
+        const e = new Event("beforeunload", { cancelable: true });
+        page.onUnload(e as BeforeUnloadEvent);
+        return e.defaultPrevented;
+      },
+    };
   }
 
   private readonly onKey = (e: KeyboardEvent) => this.key(e);
@@ -249,7 +279,8 @@ export class DocEditorPage {
       const r = scroll.getBoundingClientRect();
       const x = e.clientX - r.left;
       const y = e.clientY - r.top;
-      if (x >= scroll.clientLeft + scroll.clientWidth && x < r.width) return;
+      // outside the content box: a bar on the right, or on the left (right-to-left pages)
+      if ((x < scroll.clientLeft || x >= scroll.clientLeft + scroll.clientWidth) && x >= 0 && x < r.width) return;
       if (y >= scroll.clientTop + scroll.clientHeight && y < r.height) return;
     }
     e.preventDefault();
@@ -353,8 +384,9 @@ export class DocEditorPage {
 
   // ---------------------------------------------------------------- converting
   /** Runs `doc:{to}` in the conversion worker for bytes named `name`, with the converter's
-   * default options plus `options`; the engine's download progress goes to the message line. */
-  private makeConvert(): Convert {
+   * default options plus `options`; the engine's download progress goes to the message line
+   * while `current()` (an open taken over by a later one leaves it to that one). */
+  private makeConvert(current = () => true): Convert {
     return async (bytes, fromExt, toExt, name, options = {}) => {
       const file: InputFile = {
         file: new File([bytes as BlobPart], name),
@@ -367,11 +399,12 @@ export class DocEditorPage {
       const conv = converterById(target.converterId);
       const before = { text: this.message.textContent ?? "", error: this.message.classList.contains("error") };
       const outs = await this.opts.client.run(target, [file], { ...defaults(conv.options), ...options }, (_f, m) => {
+        if (!current()) return; // another open has the message line now
         const pct = ENGINE_LOADING.exec(m ?? "");
         if (pct) this.showMessage(`Downloading the document converter… ${pct[1]} %`);
         else if (m?.startsWith("Loading document engine")) this.showMessage("Downloading the document converter…");
       });
-      if (this.message.textContent?.startsWith("Downloading the document converter")) this.showMessage(before.text, before.error);
+      if (current() && this.message.textContent?.startsWith("Downloading the document converter")) this.showMessage(before.text, before.error);
       if (!outs[0]) throw new Error(`Couldn't convert “${name}”.`);
       return outs[0].data;
     };
@@ -379,18 +412,28 @@ export class DocEditorPage {
 
   // ---------------------------------------------------------------- opening
   /** Open `file`; false (with the reason in the message line) when it can't be edited. While a
-   * save runs, it opens when that is done; a later open wins over one still running. */
-  async open(file: InputFile): Promise<boolean> {
+   * save runs, it opens when that is done; a later open wins over one still running, and the
+   * one taken over gives null (the message line is then the later one's). */
+  async open(file: InputFile): Promise<boolean | null> {
     const token = ++this.opens;
+    this.running++;
+    try {
+      return await this.openNow(file, token);
+    } finally {
+      this.running--;
+    }
+  }
+
+  private async openNow(file: InputFile, token: number): Promise<boolean | null> {
     if (this.saving) {
       this.showMessage("Saving… the document will open when it's done.");
       await this.saving;
-      if (token !== this.opens) return false;
+      if (token !== this.opens) return null;
     }
     this.showMessage(`Opening “${file.name}”…`);
     try {
-      const doc = await openDocument(file.file, this.convert);
-      if (token !== this.opens) return false;
+      const doc = await openDocument(file.file, this.makeConvert(() => token === this.opens));
+      if (token !== this.opens) return null;
       this.view.load(doc);
       this.loads++;
       this.source = { name: file.name, stem: stemOf(file.name), format: doc.sourceFormat };
@@ -406,7 +449,7 @@ export class DocEditorPage {
       if (this.active) this.view.focus();
       return true;
     } catch (err) {
-      if (token !== this.opens) return false;
+      if (token !== this.opens) return null;
       console.error(`Couldn't open ${file.name}`, err);
       // our own errors (and the converter's) are plain language; anything else isn't
       const plain = err instanceof Error && err.constructor === Error && err.message;

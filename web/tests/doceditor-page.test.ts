@@ -199,7 +199,7 @@ describe("opening", () => {
     const first = page.open(input("a.odt", new Uint8Array([1])));
     expect(await page.open(input("b.txt", "second\n"))).toBe(true);
     release();
-    expect(await first).toBe(false);
+    expect(await first).toBe(null); // superseded, not failed
     expect(html(page)).toBe("<p>second</p>");
     expect(page.lastError()).toBe("");
   });
@@ -555,4 +555,48 @@ describe("Task 10 (9a re-review)", () => {
     expect(revoked).toContain(img.getAttribute("src"));
     expect(view.isDestroyed).toBe(true);
   });
+});
+
+describe("Task 11 (10a re-review)", () => {
+  test("an open taken over by a later one that fails reports null, not the later one's error", async () => {
+    let release!: () => void;
+    const { page } = mount(() => new Promise((_r, reject) => (release = () => reject(new Error("slow")))));
+    page.view.maxDepth = 4;
+    const first = page.open(input("a.odt", new Uint8Array([1])));
+    expect(await page.open(input("deep.html", "<blockquote><blockquote><blockquote><blockquote><p>x</p></blockquote></blockquote></blockquote></blockquote>"))).toBe(false);
+    expect(page.lastError()).not.toBe("");
+    release();
+    expect(await first).toBe(null);
+  });
+
+  test("a press on a scrollbar on the left (right-to-left pages) leaves the selection alone", async () => {
+    const { page } = mount();
+    await page.open(input("a.txt", "ab\ncd\n"));
+    const scroll = q(page, ".doc-scroll");
+    const box = { left: 100, top: 50, right: 600, bottom: 450, width: 500, height: 400, x: 100, y: 50, toJSON: () => ({}) } as DOMRect;
+    scroll.getBoundingClientRect = () => box;
+    // RTL: the vertical bar is on the left, so clientLeft includes it
+    for (const [k, v] of Object.entries({ clientLeft: 15, clientTop: 0, clientWidth: 485, clientHeight: 385 }))
+      Object.defineProperty(scroll, k, { value: v, configurable: true });
+    const v = page.view.view;
+    v.dispatch(v.state.tr.setSelection(TextSelection.create(v.state.doc, 1, 3)));
+    const e = new MouseEvent("mousedown", { bubbles: true, cancelable: true, clientX: 105, clientY: 200 });
+    scroll.dispatchEvent(e);
+    expect(e.defaultPrevented).toBe(false);
+    expect([v.state.selection.from, v.state.selection.to]).toEqual([1, 3]);
+  });
+});
+
+test("a taken-over open's download progress leaves the later open's message alone", async () => {
+  let release!: () => void;
+  const { page } = mount((_t, _f, _o, onProgress) => new Promise((_r, reject) => (release = () => {
+    onProgress(0, "Loading document engine… 50 %");
+    reject(new Error("slow"));
+  })));
+  page.view.maxDepth = 4;
+  const first = page.open(input("a.odt", new Uint8Array([1])));
+  expect(await page.open(input("deep.html", "<blockquote><blockquote><blockquote><blockquote><p>x</p></blockquote></blockquote></blockquote></blockquote>"))).toBe(false);
+  release();
+  expect(await first).toBe(null);
+  expect(page.lastError()).toBe(TOO_DEEP);
 });

@@ -254,6 +254,9 @@ export function mountApp(root: HTMLElement): void {
   const canEdit = () => editKind() !== null;
   function showConverter() {
     editing = false;
+    opening = false; // a document still opening is left to finish hidden (docRun ignores it)
+    docRun++;
+    editMode.disabled = !canEdit();
     editor?.hide();
     viewer?.hide();
     audio?.hide();
@@ -290,13 +293,7 @@ export function mountApp(root: HTMLElement): void {
       if (editor && !editor.el.hidden && !editor.maybeLeave()) return;
       if (docEditor && !docEditor.el.hidden && !docEditor.maybeLeave()) return;
       if (audio && !audio.el.hidden && !audio.maybeLeave()) return;
-      editing = false;
-      editor?.hide();
-      viewer?.hide();
-      audio?.hide();
-      docEditor?.hide();
-      appMain.hidden = false;
-      bar.hidden = false;
+      showConverter();
     }
     setMode("properties");
   }
@@ -314,6 +311,7 @@ export function mountApp(root: HTMLElement): void {
   const ensureEditor = () => (editorP ??= import("./editor/page").then(({ mountEditor }) =>
     (editor = mountEditor(root, { client, onBack: showConverter }))));
   let opening = false; // an editor tile is being opened (New picture window, code loading)
+  let docRun = 0; // counts document opens from Edit; leaving the page ends the one running
   function showPage(page: { show(): void }) {
     editing = true;
     appMain.hidden = true;
@@ -335,6 +333,7 @@ export function mountApp(root: HTMLElement): void {
     if (editKind() === "document") {
       // the page shows straight away, with "Opening…" and the converter's download progress
       const f = files[0];
+      const run = ++docRun;
       opening = true;
       editMode.disabled = true;
       try {
@@ -349,17 +348,17 @@ export function mountApp(root: HTMLElement): void {
           return;
         }
         showPage(d);
-        const ok = await d.open(f);
-        const why = d.lastError();
-        // an empty reason: a later open (a drop) took over, so the page stays
-        if (!ok && why && !d.el.hidden) {
+        // null: a later open (a drop) took over, so the page stays
+        if ((await d.open(f)) === false && run === docRun) {
           showConverter();
-          note.textContent = why;
+          note.textContent = d.lastError();
           note.hidden = false;
         }
       } finally {
-        opening = false;
-        editMode.disabled = !canEdit();
+        if (run === docRun) {
+          opening = false;
+          editMode.disabled = !canEdit();
+        }
       }
       return;
     }
