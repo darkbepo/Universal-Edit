@@ -38,5 +38,5 @@ test("nextImageName", () => {
 });
 
 test("the normaliser's nesting cap matches the desktop", () => {
-  expect(pySubset).toContain(`\nMAX_NESTING = ${MAX_NESTING}\n`);
+  expect(pySubset.replace(/\r\n/g, "\n")).toContain(`\nMAX_NESTING = ${MAX_NESTING}\n`);
 });
