@@ -21,7 +21,7 @@ export function icon(name: IconName, size = 20, cls = "ico"): SVGSVGElement {
 
 export const FAMILY_ICON: Record<string, IconName> = {
   image: "photo", video: "movie", audio: "music", document: "document", model: "cube", archive: "archive",
-  subtitle: "subtitle", font: "font", vector: "vector", cad: "cad",
+  subtitle: "subtitle", font: "font", vector: "vector", cad: "cad", code: "code",
 };
 
 // First matching keyword (lower case) in a target group name → icon.
