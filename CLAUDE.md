@@ -1044,7 +1044,21 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
          Test hooks: `.code-editor`, `.code-tab` (`.code-tab-name`, `.code-tab-close`),
          `.code-find-count`, `.code-status`, `window.__codeeditor` (`text`, `setText`, `tabs`,
          `dirty`) with `?e2e`; e2e `e2e/codeeditor.spec.ts`.
-      4. Preview (HTML / Markdown), JSON / YAML / XML check, Tidy.
+      4. ✅ Preview, checks, Tidy (plan `docs/superpowers/plans/2026-11-14-code-editor-step4-extras.md`)
+         — the code editor is complete. `codeedit/check.py` ↔ `check.ts`: JSON through our own
+         scanner (`scan_json` / `scanJson`, same line / column in both apps), YAML through PyYAML
+         / `yaml`, XML through lxml / fast-xml-parser (an unclosed tag reports the last line on
+         the web too; two top-level elements are only caught on the desktop). `codeedit/tidy.py`
+         ↔ `tidy.ts`: JSON re-emitted from the scanner's tokens (number / string spellings kept),
+         XML element-only children indented, anything with text kept as written; refuses while
+         the check fails. Shared cases `tests/fixtures/codeedit_check_cases.json` /
+         `codeedit_tidy_cases.json`. Desktop: 400 ms check timer (`run_check`, not above
+         `MAX_CHECK_BYTES` 2 MB), wavy underline (`CodeView.set_problems`), red clickable note,
+         Tidy / Preview buttons; Markdown preview = `gui/codeeditor/preview.MarkdownPane`
+         (markdown-it) in a splitter, HTML = a `umc-codepreview-*` copy with `<base href>` →
+         default browser. Web: `@codemirror/lint` (MIT) in `compartments.lint`, `.code-note`
+         (`.link` when it names a line), `.code-preview` iframe `sandbox="allow-scripts"` with
+         `srcdoc` (no `allow-same-origin`), phones swap code and preview (`.previewing`).
 11. **First public release** (owner, Nov 2026: wait until more editors are ready). Push a
     `v<__version__>` tag (bump `umc/__init__.py` first; the workflow checks they match): the
     Windows build then publishes the .exe zip, the installer and the editor add-on zips as a
