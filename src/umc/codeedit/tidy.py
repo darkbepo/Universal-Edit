@@ -68,12 +68,16 @@ _XML_TOKEN = re.compile(
 
 # Where a line break between child elements would show as a space (HTML / SVG text flow): such
 # elements, and any element holding one of the inline ones, are kept exactly as written.
-TEXT_FLOW = frozenset(
-    ["p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "dt", "dd", "td", "th", "caption", "label", "button", "legend", "option", "summary", "figcaption", "pre", "title", "text", "tspan", "textPath", "desc"]
+_FLOW_NAMES = (
+    "p h1 h2 h3 h4 h5 h6 li dt dd td th caption label button legend option summary figcaption"
+    " pre title text tspan textPath desc"
 )
-INLINE = frozenset(
-    ["a", "abbr", "b", "bdi", "bdo", "br", "cite", "code", "data", "dfn", "em", "i", "img", "kbd", "mark", "q", "s", "samp", "small", "span", "strong", "sub", "sup", "time", "u", "var", "tspan", "textPath"]
+_INLINE_NAMES = (
+    "a abbr b bdi bdo br cite code data dfn em i img kbd mark q s samp small span strong sub"
+    " sup time u var tspan textPath"
 )
+TEXT_FLOW = frozenset(_FLOW_NAMES.split())
+INLINE = frozenset(_INLINE_NAMES.split())
 _PRESERVE = re.compile(r"""\sxml:space\s*=\s*["']preserve["']""")
 
 
