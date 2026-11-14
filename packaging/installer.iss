@@ -60,6 +60,7 @@ Name: "image"; Description: "Image editor (layers, retouching, background remova
 Name: "model"; Description: "3D viewer"; Types: full
 Name: "audio"; Description: "Audio editor"; Types: full
 Name: "video"; Description: "Video editor"; Types: full
+Name: "code"; Description: "Code editor"; Types: full
 
 [Tasks]
 Name: "contextmenu"; Description: "Add ""Convert with Universal Edit"" to the right-click menu"; GroupDescription: "Windows:"
@@ -73,6 +74,7 @@ Source: "{#AddonsDir}\UniversalEdit-addon-image-*.zip"; DestDir: "{tmp}\addons";
 Source: "{#AddonsDir}\UniversalEdit-addon-model-*.zip"; DestDir: "{tmp}\addons"; Components: model; Flags: deleteafterinstall
 Source: "{#AddonsDir}\UniversalEdit-addon-audio-*.zip"; DestDir: "{tmp}\addons"; Components: audio; Flags: deleteafterinstall
 Source: "{#AddonsDir}\UniversalEdit-addon-video-*.zip"; DestDir: "{tmp}\addons"; Components: video; Flags: deleteafterinstall
+Source: "{#AddonsDir}\UniversalEdit-addon-code-*.zip"; DestDir: "{tmp}\addons"; Components: code; Flags: deleteafterinstall
 
 [InstallDelete]
 ; files of an older version that a new one no longer has (the folder is ours alone)
@@ -83,7 +85,7 @@ Name: "{autoprograms}\Universal Edit"; Filename: "{app}\UniversalEdit.exe"
 Name: "{autodesktop}\Universal Edit"; Filename: "{app}\UniversalEdit.exe"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\UniversalEdit.exe"; Parameters: "--install-addon all ""{tmp}\addons"""; Components: image or model or audio or video; StatusMsg: "Installing the editors…"; Flags: runhidden waituntilterminated
+Filename: "{app}\UniversalEdit.exe"; Parameters: "--install-addon all ""{tmp}\addons"""; Components: image or model or audio or video or code; StatusMsg: "Installing the editors…"; Flags: runhidden waituntilterminated
 ; each switch is written as chosen (--register also clears what an older version registered)
 Filename: "{app}\UniversalEdit.exe"; Parameters: "--register context-menu"; Tasks: contextmenu; Flags: runhidden waituntilterminated
 Filename: "{app}\UniversalEdit.exe"; Parameters: "--unregister context-menu"; Tasks: not contextmenu; Flags: runhidden waituntilterminated

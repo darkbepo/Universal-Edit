@@ -403,6 +403,33 @@ def _audio_editor_check(d: Path) -> list[Path]:
     return [out]
 
 
+def _code_editor_check(d: Path) -> list[Path]:
+    """Code editor: the page loads (add-on + Pygments), a comment over several lines is coloured
+    on every line, and an untouched CRLF file saves back byte for byte."""
+    import importlib
+
+    from umc.codeedit.lexing import LineLexer
+    from umc.codeedit.textfile import decode, encode
+
+    importlib.import_module("umc.gui.codeeditor.code_editor_page")
+    lexer = LineLexer("css")
+    state = 0
+    kinds = []
+    for line in ("a { color: red; } /* one", "two", "three */"):
+        spans, state = lexer.lex(line, state)
+        kinds.append({s.kind for s in spans})
+    if kinds[1] != {"comment"}:
+        raise RuntimeError(f"comment colours lost between lines: {kinds}")
+    d.mkdir(parents=True, exist_ok=True)
+    f = d / "style.css"
+    data = b"a {\r\n  color: red;\r\n}\r\n"
+    f.write_bytes(data)
+    file = decode(f.read_bytes())
+    if encode(file, file.text) != data:
+        raise RuntimeError("saving an untouched file changed its bytes")
+    return [f]
+
+
 def _video_editor_check(d: Path) -> list[Path]:
     """Video editor: two clips with a crossfade, a title and music → project file → MP4."""
     import importlib
@@ -524,6 +551,10 @@ def run(report: Path) -> int:
             (
                 "video editor (project -> mp4: crossfade, text, music)",
                 lambda: _video_editor_check(d / "videoedit"),
+            ),
+            (
+                "code editor (colours, save byte-exact)",
+                lambda: _code_editor_check(d / "codeedit"),
             ),
             ("mp4 -> webm", lambda: _convert([out / "img0 slideshow.mp4"], "webm", out)),
             ("mp4 -> gif", lambda: _convert([out / "img0 slideshow.mp4"], "video:gif", out)),

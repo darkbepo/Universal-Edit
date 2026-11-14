@@ -281,6 +281,23 @@ def test_video_tile_is_available_on_desktop(window):
     assert tile.isEnabled() and tile.badge.text() == "Install"
 
 
+def test_code_editor_is_an_add_on_with_pygments():
+    code = addons.ADDONS["code"]
+    assert code.modules == ("umc.gui.codeeditor",) and code.packages == ("pygments",)
+    assert code.entry == "umc.gui.codeeditor.code_editor_page"
+    # the Qt-free model stays in the app: detection and the viewer use it
+    assert not any(m.startswith("umc.codeedit") for a in addons.ADDONS.values() for m in a.modules)
+
+
+def test_self_test_checks_the_code_editor():
+    import inspect
+
+    from umc import selftest
+
+    assert "code editor" in inspect.getsource(selftest.run)
+    assert hasattr(selftest, "_code_editor_check")
+
+
 def test_installer_and_ci_offer_every_addon():
     """Each add-on is a component of the installer, copied, installed and checked by CI."""
     iss = (ROOT / "packaging" / "installer.iss").read_text(encoding="utf-8")
