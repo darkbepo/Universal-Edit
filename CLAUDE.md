@@ -818,7 +818,7 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       Next: basic editing for 3D printing (plan in the session handoff / owner's go-ahead).
    9. ✅ Start screen = hub (both apps): editor tiles under the empty drop zone, listed in
       `core/editors.py` / `web/src/core/editors.ts` (same order and text; `available` False =
-      greyed "Coming soon" — on desktop none is left; the website's video and code tiles are,
+      greyed "Coming soon" — on desktop none is left; the website's video tile is,
       `WEB_LATER`); tests/test_editor_hub.py checks both lists. Tiles are three per row
       (two on mid widths, one on phones) with a 48 px tinted icon square on the left; desktop
       marks a not-ready icon with the `soon` property — Qt ignores an ancestor's `:disabled` in
@@ -1019,7 +1019,7 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
          text. Edit: `MainWindow.edit_choices()` — TXT / MD document editor first, HTML code
          editor first; the ▾ next to Edit (`edit_more`) offers the other. Code colours are
          `code_*` in `theme.py` and `--code-*` in `styles.css` (test keeps them equal).
-         Self-test step "code editor". Website: "Coming soon" (`WEB_LATER`).
+         Self-test step "code editor".
          Review fixes: lines over `lexing.MAX_LINE_CHARS` (5000, minified code) aren't coloured;
          an edit's re-colouring stops after `CHUNK_LINES` blocks and the timer does the rest;
          text is read with `code_view.raw_text` (`toPlainText()` turns no-break spaces into
@@ -1027,7 +1027,23 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
          "Don't save" on leaving closes the tabs. Known limit: `<script>` / `<style>` blocks
          inside HTML / Vue / Svelte aren't coloured (Pygments' HTML lexer pops those states
          at each line end when lexing line by line).
-      3. Website editor (CodeMirror 6).
+      3. ✅ Website editor (plan `docs/superpowers/plans/2026-11-14-code-editor-step3-web.md`):
+         CodeMirror 6 (MIT) in `web/src/ui/codeeditor/` (page, findbar, setup, shortcuts), loaded
+         on demand from `ui/app.ts` (`ensureCodeEditor`); one `EditorView`, an `EditorState` per
+         tab swapped with `setState`; per-tab settings through `setup.compartments`.
+         `codeedit/cmlanguages.ts` maps the table's `codemirror` key to a lazily imported
+         `lang-*` package or a `legacy-modes` StreamLanguage, plus the table's comment marks
+         (Ctrl+/). Colours: `setup.codeHighlight` maps lezer tags to `var(--code-<kind>)`, the
+         same kinds as `lexing.KINDS`. `codeedit/search.ts` ports `search.py` (Python pattern
+         syntax: `\1`, `\g<name>`, `(?P<name>…)`); both suites run
+         `tests/fixtures/codeedit_search_cases.json`. Saving = `textfile.encode` → download or a
+         `showSaveFilePicker` handle (Ctrl+S writes there again). Over 2 MB: no language. The
+         browser keeps Ctrl+N / Ctrl+W / Ctrl+Tab: New = Alt+N, close tab = Alt+W, tabs =
+         Alt+PageDown / PageUp. Edit's ▾ is `.edit-more` + `.edit-menu` (`role=menuitem`
+         "Edit as code" / "Edit as document"), same `editChoices` rules as the desktop.
+         Test hooks: `.code-editor`, `.code-tab` (`.code-tab-name`, `.code-tab-close`),
+         `.code-find-count`, `.code-status`, `window.__codeeditor` (`text`, `setText`, `tabs`,
+         `dirty`) with `?e2e`; e2e `e2e/codeeditor.spec.ts`.
       4. Preview (HTML / Markdown), JSON / YAML / XML check, Tidy.
 11. **First public release** (owner, Nov 2026: wait until more editors are ready). Push a
     `v<__version__>` tag (bump `umc/__init__.py` first; the workflow checks they match): the
