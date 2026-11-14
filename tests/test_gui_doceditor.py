@@ -936,8 +936,9 @@ def test_switch_for_one_document(qtbot, window, media):
     assert window.edit_mode.isEnabled()
     assert "document editor" in window.edit_mode.toolTip()
     window.add_files([str(media / "notes.txt")])
-    assert window.edit_kind() is None
-    assert not window.edit_mode.isEnabled()
+    # two text files: the document editor takes one, the code editor opens both as tabs
+    assert window.edit_kind() == "code"
+    assert window.edit_mode.isEnabled()
 
 
 def test_no_switch_for_pdf(qtbot, window, media):
