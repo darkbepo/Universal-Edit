@@ -1,0 +1,50 @@
+[
+ {
+  "id": "json_nested",
+  "language": "json",
+  "text": "{\"a\":[1,2,{\"b\":null}],\"c\":{}, \"d\": \"é\\u00e9\", \"e\": 1.0, \"f\": 1e5, \"g\": []}\n",
+  "result": "{\n  \"a\": [\n    1,\n    2,\n    {\n      \"b\": null\n    }\n  ],\n  \"c\": {},\n  \"d\": \"é\\u00e9\",\n  \"e\": 1.0,\n  \"f\": 1e5,\n  \"g\": []\n}\n"
+ },
+ {
+  "id": "json_no_trailing_newline",
+  "language": "json",
+  "text": "[1,2]",
+  "result": "[\n  1,\n  2\n]"
+ },
+ {
+  "id": "json_already_tidy",
+  "language": "json",
+  "text": "{\n  \"a\": 1\n}\n",
+  "result": "{\n  \"a\": 1\n}\n"
+ },
+ {
+  "id": "json_broken",
+  "language": "json",
+  "text": "{\"a\":1,}",
+  "error": true
+ },
+ {
+  "id": "xml_mixed",
+  "language": "xml",
+  "text": "<?xml version=\"1.0\"?>\n<!-- c --><root a=\"x>y\"><item>1</item><item><b/></item><p>Hello <b>world</b>!</p><item><![CDATA[x < y]]></item></root>\n",
+  "result": "<?xml version=\"1.0\"?>\n<!-- c -->\n<root a=\"x>y\">\n  <item>1</item>\n  <item>\n    <b/>\n  </item>\n  <p>Hello <b>world</b>!</p>\n  <item><![CDATA[x < y]]></item>\n</root>\n"
+ },
+ {
+  "id": "xml_reindent",
+  "language": "xml",
+  "text": "<a>\n      <b/>\n</a>",
+  "result": "<a>\n  <b/>\n</a>"
+ },
+ {
+  "id": "svg_is_xml",
+  "language": "svg",
+  "text": "<svg><g><rect/></g></svg>\n",
+  "result": "<svg>\n  <g>\n    <rect/>\n  </g>\n</svg>\n"
+ },
+ {
+  "id": "xml_broken",
+  "language": "xml",
+  "text": "<a><b></a>",
+  "error": true
+ }
+]
