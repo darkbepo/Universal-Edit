@@ -22,6 +22,7 @@ EDITORS: tuple[EditorInfo, ...] = (
     EditorInfo("video", "Video editor", "Trim, join and mix clips", "movie", True),
     EditorInfo("audio", "Audio editor", "Cut, fade and clean up sound", "music", True),
     EditorInfo("document", "Document editor", "Write and format documents", "document", True),
+    EditorInfo("code", "Code editor", "Quick edits to code and text files", "code", False),
 )
 
 COMING_SOON = "Coming soon"

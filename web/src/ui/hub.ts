@@ -20,9 +20,12 @@ export function editorHub(onChoose: (id: string) => void): HTMLElement {
       class: "editor-tile", type: "button", disabled: !e.available,
       title: e.available ? `Open the ${e.title.toLowerCase()} without a file` : `The ${e.title.toLowerCase()} is coming soon`,
     },
-    h("span", { class: "tile-top" }, icon(e.icon, 26), e.available ? "" : h("span", { class: "badge-pill" }, COMING_SOON)),
-    h("span", { class: "tile-title" }, e.title),
-    h("span", { class: "tile-blurb" }, e.blurb));
+    h("span", { class: "tile-icon" }, icon(e.icon, 28)),
+    h("span", { class: "tile-text" },
+      h("span", { class: "tile-head" },
+        h("span", { class: "tile-title" }, e.title),
+        e.available ? "" : h("span", { class: "badge-pill" }, COMING_SOON)),
+      h("span", { class: "tile-blurb" }, e.blurb)));
     b.dataset.editor = e.id;
     b.addEventListener("click", () => onChoose(e.id));
     return b;

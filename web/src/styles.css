@@ -154,19 +154,26 @@ h1 { font-size: 15px; font-weight: 650; margin: 0; letter-spacing: -0.005em; whi
 /* Editor tiles under the empty drop zone (ui/hub.ts) */
 .editor-hub { text-align: center; }
 .editor-hub h2 { font-size: 14px; font-weight: 600; margin: 4px 0 10px; }
-.editor-tiles { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+/* Three per row (owner, Nov 2026): a big icon on the left, the text on the right. */
+.editor-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 296px)); justify-content: center; gap: 10px; }
 .editor-tile {
-  width: 196px; min-height: 118px; display: flex; flex-direction: column; gap: 4px; text-align: left;
+  min-height: 92px; display: flex; align-items: center; gap: 14px; text-align: left;
   padding: 12px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
   color: var(--text); cursor: pointer; font: inherit; transition: border-color .15s, background .15s;
 }
-.editor-tile .tile-top { display: flex; align-items: center; justify-content: space-between; min-height: 26px; color: var(--accent); margin-bottom: 2px; }
+.editor-tile .tile-icon {
+  flex: none; width: 48px; height: 48px; display: grid; place-items: center;
+  border-radius: 12px; background: var(--accent-soft); color: var(--accent);
+}
+.editor-tile .tile-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+.editor-tile .tile-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
 .editor-tile:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-soft); }
 .editor-tile:disabled { cursor: default; background: var(--surface-alt); border-style: dashed; color: var(--muted); }
-.editor-tile:disabled .tile-top { color: var(--border-strong); }
+.editor-tile:disabled .tile-icon { background: var(--surface); color: var(--border-strong); }
 .editor-tile .tile-title { font-weight: 600; font-size: 14px; }
 .editor-tile .tile-blurb { font-size: 13px; color: var(--muted); line-height: 1.35; }
-@media (max-width: 560px) { .editor-tile { width: calc(50% - 5px); } }
+@media (max-width: 900px) { .editor-tiles { grid-template-columns: repeat(2, minmax(0, 296px)); } }
+@media (max-width: 560px) { .editor-tiles { grid-template-columns: minmax(0, 1fr); } }
 .new-picture .bg-choice { gap: 8px 16px; margin: 0; flex-wrap: wrap; justify-content: flex-start; }
 .new-picture .bg-choice .check { flex: 0 0 auto; margin: 0; } /* not the dialog's indented checkbox row */
 

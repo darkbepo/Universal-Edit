@@ -246,7 +246,7 @@ screen to begin with an empty one.
 | **Audio editor** (laid out like a simple Audacity): several files joined end to end · waveform per channel with a time ruler, zoom and scroll · play / pause / stop with a volume slider · cut, copy, paste, delete, trim to the selection, silence, fade in / out, amplify (dB), normalize (−1 dB), reverse · undo / redo · save as MP3, M4A, WAV, FLAC, OGG, OPUS, AIFF, WMA or AC-3 | ✅ (≈ 45 min of stereo at most) | ✅ (≈ 15 min of stereo at most) |
 | **Document editor**: one DOCX, ODT, RTF, DOC, Markdown, TXT or HTML file · headings, fonts, colours, highlight, lists, tables, pictures, links, page breaks · find & replace · undo · save back or as PDF and every document format | ✅ | ✅ (DOC needs the desktop app) |
 | **3D viewer**: STL, OBJ, 3MF, PLY, GLB, OFF, STEP, IGES · rotate / pan / zoom, front / top / side / 3D views, shaded / edges / wireframe, print-bed grid · size in mm, triangles, parts, watertight check, volume | ✅ | ✅ (no OFF) |
-| **Start screen tiles**: open the image editor (new picture: size presets, white / transparent / black), the 3D viewer, the audio editor, the video editor or the document editor (a new "Untitled" document) without a file | ✅ | ✅ (video editor: "Coming soon") |
+| **Start screen tiles** (three per row, big icon on the left): open the image editor (new picture: size presets, white / transparent / black), the 3D viewer, the audio editor, the video editor or the document editor (a new "Untitled" document) without a file · the code editor shows "Coming soon" | ✅ | ✅ (video editor: "Coming soon") |
 
 </details>
 

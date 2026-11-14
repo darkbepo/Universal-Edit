@@ -815,8 +815,11 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       Next: basic editing for 3D printing (plan in the session handoff / owner's go-ahead).
    9. ✅ Start screen = hub (both apps): editor tiles under the empty drop zone, listed in
       `core/editors.py` / `web/src/core/editors.ts` (same order and text; `available` False =
-      greyed "Coming soon" — on desktop no editor is left (the website's video tile is, `WEB_LATER`); tests/test_editor_hub.py checks
-      both lists). Image tile → "New picture" (`editor/blank.py` / `blank.ts`, presets in
+      greyed "Coming soon" — the code editor until roadmap 10.17 step 2, and the website's video
+      tile, `WEB_LATER`); tests/test_editor_hub.py checks both lists. Tiles are three per row
+      (two on mid widths, one on phones) with a 48 px tinted icon square on the left; desktop
+      marks a not-ready icon with the `soon` property — Qt ignores an ancestor's `:disabled` in
+      a descendant selector, so `QPushButton:disabled QLabel#…` styled every tile. Image tile → "New picture" (`editor/blank.py` / `blank.ts`, presets in
       `web/src/editor/presets.ts` so the start page doesn't load the editor) → `MainWindow.new_picture`
       / `EditorPage.openBlank`; 3D tile → viewer `open_empty` / `openEmpty` with an "Open…" button
       (`files_chosen` / `onOpen` add the models to the queue like a drop); document tile →
