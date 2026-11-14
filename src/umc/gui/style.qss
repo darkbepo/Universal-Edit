@@ -329,6 +329,12 @@ QPlainTextEdit#ViewerText {
     border: none;
     padding: 12px;
 }
+QTextBrowser#CodePreview {
+    background: @surface;
+    border: none;
+    border-left: 1px solid @border;
+    padding: 8px 14px;
+}
 /* code editor text (its font: CodeView sets a rule of its own, so zoom works) */
 QPlainTextEdit#CodeView {
     background: @surface;

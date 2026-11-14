@@ -40,6 +40,7 @@ from umc.codeedit.check import CHECKED, Problem, check
 from umc.codeedit.languages import LANGUAGES, language_for
 from umc.codeedit.textfile import Encoding, Newline, TextFile, decode, encode
 from umc.codeedit.tidy import TIDY, TidyError, tidy
+from umc.gui import theme
 from umc.gui.codeeditor.code_view import CodeView, raw_text
 from umc.gui.codeeditor.find_bar import FindBar
 from umc.gui.codeeditor.highlight import ChunkedHighlighter
@@ -606,8 +607,9 @@ class CodeEditorPage(QWidget):
             self.note.setText(_html_escape(self._tidy_note))
         elif self.problems:
             p = self.problems[0]
+            red = theme.palette()["danger"]
             self.note.setText(
-                f'<a href="line:{p.line}" style="color: inherit">'
+                f'<a href="line:{p.line}" style="color: {red}">'
                 f"Line {p.line}: {_html_escape(p.message)}</a>"
             )
         else:
