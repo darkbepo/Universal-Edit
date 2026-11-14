@@ -5,7 +5,15 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from umc.core.detect import COMPOUND_EXTS, DetectedFile, MediaFamily, canonical_ext, family_of_ext
+from umc.codeedit.languages import EDITABLE_EXTS
+from umc.core.detect import (
+    CODE_FILENAMES,
+    COMPOUND_EXTS,
+    DetectedFile,
+    MediaFamily,
+    canonical_ext,
+    family_of_ext,
+)
 from umc.core.editors import EDITORS, EditorInfo
 from umc.doceditor.types import EDITABLE_DOCUMENT_EXTS
 
@@ -102,16 +110,28 @@ def folder_items(path: Path) -> list[Path]:
     return items
 
 
-def editor_for(kind: str) -> EditorInfo | None:
-    """The editor Edit opens for this kind, or None. ``available`` False = not ready yet."""
-    editor_id = _EDITOR_OF_KIND.get(kind)
+def editor_id_for(kind: str, path: Path) -> str | None:
+    """The editor Edit opens for ``path`` (of view ``kind``): text files the document editor
+    doesn't take (code, JSON, …) go to the code editor."""
+    if kind == TEXT:
+        ext = _ext_of_name(path.name)
+        if ext not in EDITABLE_DOCUMENT_EXTS and (
+            ext in EDITABLE_EXTS or path.name.lower() in CODE_FILENAMES
+        ):
+            return "code"
+    return _EDITOR_OF_KIND.get(kind)
+
+
+def editor_for(kind: str, path: Path | None = None) -> EditorInfo | None:
+    """The editor Edit opens, or None. ``available`` False = not ready yet."""
+    editor_id = editor_id_for(kind, path) if path is not None else _EDITOR_OF_KIND.get(kind)
     return next((e for e in EDITORS if e.id == editor_id), None)
 
 
 def can_edit(kind: str, path: Path) -> bool:
     """Whether Edit opens ``path`` (of view ``kind``): its editor is ready and, for documents,
     the document editor can open that format (not PDF / EPUB, which it only converts)."""
-    editor = editor_for(kind)
+    editor = editor_for(kind, path)
     if editor is None or not editor.available:
         return False
     return editor.id != "document" or _ext_of_name(path.name) in EDITABLE_DOCUMENT_EXTS

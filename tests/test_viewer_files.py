@@ -89,8 +89,13 @@ def test_code_files_are_shown_as_text(tmp_path):
     p = tmp_path / "Dockerfile"
     p.write_text("FROM python\n")
     assert vf.view_kind(detect(p)) == vf.TEXT
-    # no Edit yet: the document editor can't open code (the code editor comes next)
-    assert not vf.can_edit(vf.TEXT, Path("a.css"))
+    # Edit opens code in the code editor; plain text stays with the document editor
+    assert vf.can_edit(vf.TEXT, Path("a.css"))
+    assert vf.editor_id_for(vf.TEXT, Path("a.css")) == "code"
+    assert vf.editor_id_for(vf.TEXT, Path("Dockerfile")) == "code"
+    assert vf.editor_id_for(vf.TEXT, Path("a.json")) == "code"
+    assert vf.editor_id_for(vf.TEXT, Path("a.txt")) == "document"
+    assert vf.editor_id_for(vf.IMAGE, Path("a.png")) == "image"
 
 
 def test_view_kind_of_detected(tmp_path):

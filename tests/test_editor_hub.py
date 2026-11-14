@@ -69,12 +69,10 @@ def test_tiles_shown_until_files_are_added(window, media):
     hub = window.hub
     assert hub.isVisible()
     enabled = [t for t, tile in hub.tiles.items() if tile.isEnabled()]
-    assert enabled == ["image", "model", "video", "audio", "document"]
+    assert enabled == ["image", "model", "video", "audio", "document", "code"]
     assert hub.tiles["video"].badge.isHidden()
     assert hub.tiles["document"].badge.isHidden()
-    code = hub.tiles["code"]  # the code editor comes next: shown, greyed out
-    assert not code.isEnabled() and code.badge.text() == "Coming soon"
-    assert window.open_editor("code") is False
+    assert hub.tiles["code"].badge.isHidden()
     window.add_files([str(media / "img0.png")])
     assert not hub.isVisible()
     window.clear_files()
@@ -107,9 +105,21 @@ def test_icons_sit_on_a_tinted_square(window):
     pal = theme.palette()
     try:
         assert box_colour(window.hub.tiles["image"]) == pal["accent_soft"]
-        assert box_colour(window.hub.tiles["code"]) == pal["surface"]  # not ready: plain
+        window.hub.tiles["image"].icon.setProperty("soon", True)  # as a not-ready tile is
+        app.setStyleSheet(theme.stylesheet())
+        app.processEvents()
+        assert box_colour(window.hub.tiles["image"]) == pal["surface"]
     finally:
         app.setStyleSheet(old)
+
+
+def test_code_tile_opens_an_untitled_file(window):
+    assert window.open_editor("code")
+    page = window.code_editor
+    assert window.stack.currentWidget() is page and window.edit_mode.isChecked()
+    assert page.tabs.count() == 1 and page.current.title == "Untitled"
+    window.leave_edit()  # nothing typed: no question
+    assert window.stack.currentIndex() == 0
 
 
 def test_coming_soon_tiles_are_greyed_out_and_open_nothing(qtbot, monkeypatch):

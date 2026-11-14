@@ -97,6 +97,11 @@ LANGUAGES: tuple[Language, ...] = (
     _l("rst", "reStructuredText", ("rst",), line=".. ", pygments="rst", cm="plain"),
 )
 
+# Files the code editor opens (by extension; "" = a text file without one). TXT and Markdown
+# open in the document editor first, with "Edit as code" as the second choice.
+EDITABLE_EXTS: frozenset[str] = frozenset({e for lang in LANGUAGES for e in lang.exts} | {""})
+DOCUMENT_FIRST: frozenset[str] = frozenset({"txt", "md"})
+
 _BY_NAME = {n: lang for lang in LANGUAGES for n in lang.filenames}
 _BY_EXT = {e: lang for lang in LANGUAGES for e in lang.exts}
 

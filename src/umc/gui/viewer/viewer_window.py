@@ -420,7 +420,7 @@ class ViewerWindow(QMainWindow):
 
     def _update_buttons(self) -> None:
         self.convert_button.setEnabled(self.current is not None)
-        editor = vf.editor_for(self.kind)
+        editor = vf.editor_for(self.kind, self.current.path if self.current else None)
         can_edit = self.current is not None and vf.can_edit(self.kind, self.current.path)
         self.edit_button.setEnabled(can_edit)
         if can_edit:

@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from umc.codeedit.languages import DOCUMENT_FIRST, EDITABLE_EXTS
 from umc.core import addons, editors
 from umc.core import options as opts
 from umc.core.detect import DetectedFile, MediaFamily, detect
@@ -149,9 +150,20 @@ class MainWindow(QMainWindow):
             b.setCursor(Qt.CursorShape.PointingHandCursor)
             self._mode_group.addButton(b)
             mb.addWidget(b)
+        # ▾ after Edit: the other editor for files two editors can open (TXT / MD / HTML)
+        self.edit_more = QToolButton(objectName="SegmentMore")
+        self.edit_more.setText("▾")
+        self.edit_more.setToolTip("Other editors")
+        self.edit_more.setAccessibleName("Other editors")
+        self.edit_more.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.edit_more.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.edit_more.setMenu(QMenu(self.edit_more))
+        self.edit_more.menu().aboutToShow.connect(self._fill_edit_menu)
+        self.edit_more.setVisible(False)
+        mb.insertWidget(2, self.edit_more)
         self.convert_mode.setChecked(True)
         self.convert_mode.clicked.connect(self.leave_edit)
-        self.edit_mode.clicked.connect(self.enter_edit)
+        self.edit_mode.clicked.connect(lambda _checked=False: self.enter_edit())
         self.properties_mode.clicked.connect(self.enter_properties)
         self.mode = "convert"  # on the converter screen: "convert" or "properties"
         right = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
@@ -167,6 +179,7 @@ class MainWindow(QMainWindow):
         self.viewer3d = None  # ViewerPage (3D models), created on first use
         self.audio_editor = None  # AudioEditorPage, created on first use
         self.video_editor = None  # VideoEditorPage, created on first use
+        self.code_editor = None  # CodeEditorPage, created on first use
         self._convert_size = None
 
         # ---------------------------------------------------------- body: two columns
@@ -458,6 +471,7 @@ class MainWindow(QMainWindow):
         self.input_error.setText(error)
         self.input_error.setVisible(bool(error))
         self.edit_mode.setEnabled(self.edit_available())
+        self.edit_more.setVisible(len(self.edit_choices()) > 1)
         self._update_edit_tooltip()
         # No files yet: the drop zone gets the whole window.
         if not has_files and self.mode == "properties":
@@ -493,13 +507,43 @@ class MainWindow(QMainWindow):
             return "video"
         if len(self.files) == 1 and self.files[0].family == MediaFamily.PROJECT:
             return "video"
-        if (
-            len(self.files) == 1
-            and self.files[0].family == MediaFamily.DOCUMENT
-            and self.files[0].ext in EDITABLE_DOCUMENT_EXTS
+        choices = self._text_edit_choices()
+        return choices[0] if choices else None
+
+    def _text_edit_choices(self) -> list[str]:
+        """Document / code editor choices for text-like files, default first."""
+        files = self.files
+        if len(files) == 1:
+            ext = files[0].ext
+            if ext in DOCUMENT_FIRST:
+                return ["document", "code"]
+            if ext == "html":
+                return ["code", "document"]
+            if files[0].family == MediaFamily.DOCUMENT and ext in EDITABLE_DOCUMENT_EXTS:
+                return ["document"]
+        text_like = (MediaFamily.DOCUMENT, MediaFamily.VECTOR, MediaFamily.SUBTITLE)
+        if files and all(
+            f.family == MediaFamily.CODE or (f.family in text_like and f.ext in EDITABLE_EXTS)
+            for f in files
         ):
-            return "document"
-        return None
+            return ["code"]
+        return []
+
+    def edit_choices(self) -> list[str]:
+        """Every editor that can open the files, the one Edit opens first."""
+        kind = self.edit_kind()
+        if kind is None:
+            return []
+        if kind in ("code", "document"):
+            return self._text_edit_choices()
+        return [kind]
+
+    def _fill_edit_menu(self) -> None:
+        menu = self.edit_more.menu()
+        menu.clear()
+        labels = {"code": "Edit as code", "document": "Edit as document"}
+        for kind in self.edit_choices():
+            menu.addAction(labels.get(kind, kind), lambda k=kind: self.enter_edit(k))
 
     def edit_available(self) -> bool:
         return self.edit_kind() is not None
@@ -511,7 +555,9 @@ class MainWindow(QMainWindow):
 
     def _update_edit_tooltip(self) -> None:
         kind = self.edit_kind()
-        if kind == "document":
+        if kind == "code":
+            tip = "Open the files in the code editor"
+        elif kind == "document":
             tip = "Open the document in the document editor"
         elif kind == "model":
             tip = "Open the 3D models in the 3D viewer"
@@ -522,7 +568,7 @@ class MainWindow(QMainWindow):
         elif kind == "video":
             tip = "Open the files in the video editor"
         else:
-            tip = "Add images, videos, audio, one text document, or 3D models to edit them"
+            tip = "Add images, videos, audio, code, one text document, or 3D models to edit them"
         self.edit_mode.setToolTip(tip)
 
     def cycle_theme(self) -> None:
@@ -556,6 +602,14 @@ class MainWindow(QMainWindow):
                 self.video_editor.back_requested.connect(self.leave_edit)
                 self.stack.addWidget(self.video_editor)
             return self.video_editor
+        if kind == "code":
+            if self.code_editor is None:
+                from umc.gui.codeeditor.code_editor_page import CodeEditorPage
+
+                self.code_editor = CodeEditorPage()
+                self.code_editor.back_requested.connect(self.leave_edit)
+                self.stack.addWidget(self.code_editor)
+            return self.code_editor
         if kind == "audio":
             if self.audio_editor is None:
                 from umc.gui.audioeditor.audio_editor_page import AudioEditorPage
@@ -600,10 +654,12 @@ class MainWindow(QMainWindow):
         self.resize(max(self.width(), 1200), max(self.height(), 760))
         page.on_shown()
 
-    def enter_edit(self) -> None:
+    def enter_edit(self, kind: str | None = None) -> None:
+        """Open the files in their editor (``kind``: one of ``edit_choices()``, from the ▾)."""
         if self._current_editor() is not None:
             return
-        kind = self.edit_kind()
+        choices = self.edit_choices()
+        kind = kind if kind in choices else (choices[0] if choices else None)
         if kind is None or self.busy:
             self._check_mode_button()
             return
@@ -611,6 +667,13 @@ class MainWindow(QMainWindow):
             self._check_mode_button()
             return
         page = self._page(kind)
+        if kind == "code":
+            if page.open_paths([f.path for f in self.files]):
+                self._show_page(page)
+                page.view.setFocus()
+            else:
+                self._check_mode_button()
+            return
         if kind == "document":
             page.open_path(self.files[0].path)
             self._show_page(page)
@@ -682,6 +745,12 @@ class MainWindow(QMainWindow):
             page = self._page("document")
             if not page.open_empty():  # still finishing an open or save
                 return False
+            self._show_page(page)
+            page.view.setFocus()
+            return True
+        if kind == "code":
+            page = self._page("code")
+            page.open_empty()
             self._show_page(page)
             page.view.setFocus()
             return True
