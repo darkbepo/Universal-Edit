@@ -620,7 +620,13 @@ class CodeEditorPage(QWidget):
     def _encoded(self, tab: CodeTab, text: str) -> bytes | None:
         base = tab.file if tab.file is not None else decode(b"")
         try:
-            return encode(base, text, encoding=tab.encoding, newline=tab.newline, bom=tab.bom)
+            return encode(
+                base,
+                text,
+                encoding=tab.encoding,
+                newline=tab.newline if tab.newline != base.newline else None,
+                bom=tab.bom,
+            )
         except ValueError:
             answer = self.ask(
                 "Can't save in this encoding",
@@ -632,7 +638,13 @@ class CodeEditorPage(QWidget):
                 return None
             tab.encoding, tab.bom = "utf-8", False
             self._update_status()
-            return encode(base, text, encoding="utf-8", newline=tab.newline, bom=False)
+            return encode(
+                base,
+                text,
+                encoding="utf-8",
+                newline=tab.newline if tab.newline != base.newline else None,
+                bom=False,
+            )
 
     def _start_save(self, tab: CodeTab, path: Path) -> bool:
         text = raw_text(tab.document)

@@ -57,6 +57,37 @@ test("tabs keep the file order; Back asks about a hidden unsaved tab", async ({ 
   await expect(page.locator(".code-editor")).toBeHidden();
 });
 
+test("closing another tab keeps what you typed in this one", async ({ page }) => {
+  await openInEditor(page, [file("a.css", "a {}"), file("b.js", "let b = 1;")]);
+  await page.locator(".code-tab").nth(1).locator(".code-tab-name").click();
+  await page.evaluate(() => window.__codeeditor!.setText("typed in b"));
+  await page.locator(".code-tab").first().locator(".code-tab-close").click();
+  expect(await page.evaluate(() => window.__codeeditor!.tabs())).toEqual(["b.js"]);
+  expect(await page.evaluate(() => window.__codeeditor!.text())).toBe("typed in b");
+});
+
+test("mixed line endings survive an untouched save", async ({ page }) => {
+  const data = Buffer.from("a\r\nb\r\nc\nd", "utf-8");
+  await openInEditor(page, [file("mixed.txt.js", data)]);
+  expect(await saveBytes(page)).toEqual(data);
+});
+
+test("word wrap follows you to the other tabs", async ({ page }) => {
+  await openInEditor(page, [file("a.css", "a {}"), file("b.css", "b {}")]);
+  await page.locator(".cm-content").click();
+  await page.keyboard.press("Alt+z");
+  await expect(page.locator(".cm-content.cm-lineWrapping")).toHaveCount(1);
+  await page.locator(".code-tab").nth(1).locator(".code-tab-name").click();
+  await expect(page.locator(".cm-content.cm-lineWrapping")).toHaveCount(1);
+});
+
+test("two files with the same name both open", async ({ page }) => {
+  await openInEditor(page, [file("index.js", "let one = 1;")]);
+  await page.locator(".code-editor input[type=file]").setInputFiles([file("index.js", "let two = 2; // another folder")]);
+  await expect(page.locator(".code-tab")).toHaveCount(2);
+  expect(await page.evaluate(() => window.__codeeditor!.text())).toBe("let two = 2; // another folder");
+});
+
 test("find counts matches and Replace all is one undo step", async ({ page }) => {
   await openInEditor(page, [file("a.js", "a-b-c")]);
   await page.locator(".cm-content").click();
@@ -104,6 +135,18 @@ test("big files open without freezing", async ({ page }) => {
   await page.keyboard.type("x");
   expect(Date.now() - start).toBeLessThan(3000);
   expect(await page.evaluate(() => window.__codeeditor!.text().length)).toBe(minified.length + 1);
+});
+
+test("a huge one-line file stays quick with word wrap on", async ({ page }) => {
+  await openInEditor(page, [file("a.css", "a {}")]);
+  await page.locator(".cm-content").click();
+  await page.keyboard.press("Alt+z"); // wrap on
+  const start = Date.now();
+  await page.locator(".code-editor input[type=file]").setInputFiles([file("app.min.js", "var a=1;".repeat(190_000))]);
+  await expect(page.locator(".code-tab")).toHaveCount(2);
+  await page.locator(".cm-content").click();
+  await page.keyboard.type("x");
+  expect(Date.now() - start).toBeLessThan(4000);
 });
 
 test("a .txt offers Edit as code next to Edit", async ({ page }) => {

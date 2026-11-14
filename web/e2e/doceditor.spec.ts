@@ -10,6 +10,11 @@ const fx = (name: string) => `${FIXTURES}${name}`;
 // headless Chromium hides scrollbars unless asked not to (the scrollbar test presses one)
 test.use({ launchOptions: { ignoreDefaultArgs: ["--hide-scrollbars"] } });
 const editBtn = (page: Page) => page.getByRole("button", { name: "Edit", exact: true });
+/** HTML opens in the code editor first: pick the document editor from the ▾ next to Edit. */
+async function editAsDocument(page: Page) {
+  await page.getByRole("button", { name: "Other editors" }).click();
+  await page.getByRole("menuitem", { name: "Edit as document" }).click();
+}
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==", "base64");
 
 async function load(page: Page, files: string[]) {
@@ -48,13 +53,18 @@ test("Edit: one editable document, a Markdown ZIP; not DOC, two documents or a m
   await expect(editBtn(page)).toHaveAttribute("title", "Open the document in the document editor");
   const clear = page.getByRole("button", { name: "Clear" });
   const add = (files: string[]) => page.locator('input[type="file"]').first().setInputFiles(files);
-  for (const files of [[fx("letter.doc")], [fx("doc.md"), fx("notes.txt")], [fx("notes.txt"), fx("img0.png")], [fx("bundle.zip")]]) {
+  for (const files of [[fx("letter.doc")], [fx("notes.txt"), fx("img0.png")], [fx("bundle.zip")]]) {
     await clear.click();
     await add(files);
     await expect(page.locator(".queue li")).toHaveCount(files.length);
     await expect(editBtn(page), files.join(" + ")).toBeDisabled();
-    await expect(editBtn(page)).toHaveAttribute("title", "Add images, audio, one text document, or 3D models to edit them");
+    await expect(editBtn(page)).toHaveAttribute("title", "Add images, audio, code, one text document, or 3D models to edit them");
   }
+  // two text documents: the code editor opens both (the document editor takes one)
+  await clear.click();
+  await add([fx("doc.md"), fx("notes.txt")]);
+  await expect(editBtn(page)).toBeEnabled();
+  await expect(editBtn(page)).toHaveAttribute("title", "Open the files in the code editor");
   await clear.click();
   await add([fx("notes-md.zip")]);
   await expect(editBtn(page)).toBeEnabled();
@@ -666,7 +676,7 @@ test("Insert picture uses the browser's file window", async ({ page }) => {
 test("the banner closes; the status line follows typing", async ({ page }) => {
   await load(page, []);
   await page.locator('input[type="file"]').first().setInputFiles([{ name: "styled.html", mimeType: "text/html", buffer: Buffer.from("<style>p{color:red}</style><p>Two words</p>") }]);
-  await editBtn(page).click();
+  await editAsDocument(page);
   const banner = page.locator(".doc-editor .doc-banner");
   await expect(banner).toBeVisible();
   await expect(banner).toContainText("can't keep");
@@ -683,7 +693,7 @@ test("the banner closes; the status line follows typing", async ({ page }) => {
 test("the arrow keys step over an empty link, and typing keeps it", async ({ page }) => {
   await load(page, []);
   await page.locator('input[type="file"]').first().setInputFiles([{ name: "links.html", mimeType: "text/html", buffer: Buffer.from('<p>ab<a href="https://example.com/"></a>cd</p>') }]);
-  await editBtn(page).click();
+  await editAsDocument(page);
   await pm(page).locator("p").click();
   await page.keyboard.press("Home");
   // a short pause after each press: ProseMirror reads the browser's move on `selectionchange`

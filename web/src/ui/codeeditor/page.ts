@@ -21,6 +21,7 @@ import { SHORTCUTS, keyName, showKey } from "./shortcuts";
 
 export const MAX_OPEN_BYTES_WEB = 20_000_000;
 export const MAX_HIGHLIGHT_BYTES = 2_000_000;
+export const MAX_WRAP_LINE = 100_000; // longer lines are never wrapped
 export const UNTITLED = "Untitled";
 const ENCODINGS: [string, Encoding, boolean][] = [
   ["UTF-8", "utf-8", false],
@@ -52,6 +53,8 @@ interface Tab {
   bom: boolean;
   indent: string;
   colours: boolean;
+  longestLine: number;
+  source?: string; // name, size and date of the file it came from (two "index.js" are different files)
   handle?: FileHandle;
 }
 
@@ -287,7 +290,7 @@ export class CodeEditorPage {
       effects: [
         compartments.indent.reconfigure(indentUnit.of(indent)),
         compartments.font.reconfigure(fontSize(this.fontPx)),
-        compartments.wrap.reconfigure(this.wrap ? EditorView.lineWrapping : []),
+        compartments.wrap.reconfigure(this.wrapFor(null)),
       ],
     }).state;
   }
@@ -329,6 +332,10 @@ export class CodeEditorPage {
     if (this.current >= 0 && this.current < this.tabs.length) this.tabs[this.current].state = this.view.state;
     this.current = index;
     this.view.setState(this.tabs[index].state);
+    // text size and word wrap are the editor's, not the tab's: bring this tab up to date
+    this.view.dispatch({
+      effects: [compartments.font.reconfigure(fontSize(this.fontPx)), compartments.wrap.reconfigure(this.wrapFor(this.tabs[index]))],
+    });
     this.findBar.documentChanged();
     this.renderTabs();
     this.updateStatus();
@@ -339,7 +346,7 @@ export class CodeEditorPage {
     if (this.tabs.length) this.select((this.current + step + this.tabs.length) % this.tabs.length);
   }
 
-  private async addTab(name: string, file: TextFile | null, text: string): Promise<Tab> {
+  private async addTab(name: string, file: TextFile | null, text: string, source?: string): Promise<Tab> {
     const languageId = languageFor(name);
     const indent = detectIndent(text);
     const tab: Tab = {
@@ -350,6 +357,8 @@ export class CodeEditorPage {
       newline: file?.newline ?? "\n",
       bom: file?.bom ?? false,
       colours: !file || file.raw.length <= MAX_HIGHLIGHT_BYTES,
+      longestLine: text.split("\n").reduce((m, l) => Math.max(m, l.length), 0),
+      source,
     };
     tab.savedDoc = tab.state.doc;
     this.tabs.push(tab);
@@ -383,7 +392,8 @@ export class CodeEditorPage {
     const problems: string[] = [];
     let opened = false;
     for (const f of list) {
-      const existing = this.tabs.findIndex((t) => t.file && t.name === f.name);
+      const source = `${f.name}\u0000${f.size}\u0000${f.lastModified}`;
+      const existing = this.tabs.findIndex((t) => t.source === source);
       if (existing >= 0) {
         this.select(existing);
         opened = true;
@@ -404,7 +414,7 @@ export class CodeEditorPage {
         this.tabs = [];
         this.current = -1;
       }
-      await this.addTab(f.name, file, file.text);
+      await this.addTab(f.name, file, file.text, source);
       opened = true;
     }
     this.showMessage(problems.join(" "), problems.length > 0);
@@ -420,7 +430,9 @@ export class CodeEditorPage {
     const tab = this.tabs[index];
     if (!tab || this.saving) return false;
     if (this.isDirty(tab) && !window.confirm(`Discard the changes to “${tab.name}”?`)) return false;
-    if (this.current === index) this.tabs[index].state = this.view.state;
+    // keep what was typed in the tab being looked at (it may not be the one closing)
+    if (this.current >= 0) this.tabs[this.current].state = this.view.state;
+    const was = this.current;
     this.tabs.splice(index, 1);
     if (!this.tabs.length) {
       this.current = -1;
@@ -428,7 +440,7 @@ export class CodeEditorPage {
       return true;
     }
     this.current = -1;
-    this.select(Math.min(index, this.tabs.length - 1));
+    this.select(index < was ? was - 1 : index === was ? Math.min(index, this.tabs.length - 1) : was);
     return true;
   }
 
@@ -477,9 +489,14 @@ export class CodeEditorPage {
     this.updateStatus();
   }
 
+  /** Word wrap for a tab: never for very long lines (a wrapped 1 MB line is laid out in full). */
+  private wrapFor(t: Tab | null) {
+    return this.wrap && !(t && t.longestLine > MAX_WRAP_LINE) ? EditorView.lineWrapping : [];
+  }
+
   private toggleWrap(): void {
     this.wrap = !this.wrap;
-    this.view.dispatch({ effects: compartments.wrap.reconfigure(this.wrap ? EditorView.lineWrapping : []) });
+    this.view.dispatch({ effects: compartments.wrap.reconfigure(this.wrapFor(this.tab())) });
   }
 
   private zoom(step: number): void {
@@ -519,13 +536,13 @@ export class CodeEditorPage {
   private encoded(t: Tab, text: string): Uint8Array | null {
     const base = t.file ?? decode(new Uint8Array());
     try {
-      return encode(base, text, { encoding: t.encoding, newline: t.newline, bom: t.bom });
+      return encode(base, text, { encoding: t.encoding, newline: t.newline !== base.newline ? t.newline : undefined, bom: t.bom });
     } catch {
       if (!window.confirm(`This text has characters ${t.encoding.toUpperCase()} can't store. Save as UTF-8 instead?`)) return null;
       t.encoding = "utf-8";
       t.bom = false;
       this.updateStatus();
-      return encode(base, text, { encoding: "utf-8", newline: t.newline, bom: false });
+      return encode(base, text, { encoding: "utf-8", newline: t.newline !== base.newline ? t.newline : undefined, bom: false });
     }
   }
 

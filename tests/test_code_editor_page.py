@@ -78,6 +78,15 @@ def test_unusual_spaces_survive_saving(qtbot, page, tmp_path):
     assert f.read_bytes() == data + b"!"
 
 
+def test_mixed_line_endings_survive_an_untouched_save(qtbot, page, tmp_path):
+    f = tmp_path / "mixed.txt"
+    data = b"a\r\nb\r\nc\nd"
+    f.write_bytes(data)
+    _open(qtbot, page, f)
+    _save(qtbot, page)
+    assert f.read_bytes() == data
+
+
 def test_chosen_line_endings_stay_after_saving(qtbot, page, tmp_path):
     f = tmp_path / "one.txt"
     f.write_bytes(b"one line")
