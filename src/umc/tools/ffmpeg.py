@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
+import logging
 import subprocess
 import threading
+import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
 
-from umc.core.errors import ConversionError, ToolMissingError
+from umc.core.errors import ConversionCancelled, ConversionError, ToolMissingError
 from umc.tools import process
+
+log = logging.getLogger(__name__)
 
 DOWNLOAD_URL = "https://ffmpeg.org/download.html"
 
@@ -263,6 +268,82 @@ def run_ffmpeg(
         if hint:
             raise ConversionError(f"{error_message} {hint}", details=exc.details) from exc
         raise
+
+
+def _base_cmd(args: Sequence[str]) -> list[str]:
+    return [ffmpeg_path(), "-hide_banner", "-nostdin", "-loglevel", "error", *args]
+
+
+def ffmpeg_popen(
+    args: Sequence[str], *, cwd: Path | None = None, stderr_path: Path | None = None
+) -> subprocess.Popen:
+    """Start ffmpeg with ``args`` (output included); binary stdout pipe.
+
+    stderr is discarded, or written to ``stderr_path`` (so a failure can be explained).
+    """
+    cmd = _base_cmd(args)
+    log.debug("popen: %s", subprocess.list2cmdline(cmd))
+    err = open(stderr_path, "wb") if stderr_path is not None else None  # noqa: SIM115
+    try:
+        return subprocess.Popen(
+            cmd,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=err if err is not None else subprocess.DEVNULL,
+            creationflags=process._creationflags(),
+            cwd=cwd,
+        )
+    finally:
+        if err is not None:
+            err.close()  # the child has its own handle
+
+
+def ffmpeg_bytes(
+    args: Sequence[str],
+    *,
+    cwd: Path | None = None,
+    timeout: float = 60.0,
+    cancel_event: threading.Event | None = None,
+    error_message: str = "FFmpeg couldn't read this file.",
+) -> bytes:
+    """Run ffmpeg with ``args`` and return everything it wrote to stdout (binary)."""
+    if cancel_event is not None and cancel_event.is_set():
+        raise ConversionCancelled()
+    cmd = _base_cmd(args)
+    log.debug("run: %s", subprocess.list2cmdline(cmd))
+    proc = subprocess.Popen(
+        cmd,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        creationflags=process._creationflags(),
+        cwd=cwd,
+    )
+    started = time.monotonic()
+    try:
+        while True:
+            try:
+                out, err = proc.communicate(timeout=0.05)  # retrying loses no output
+                break
+            except subprocess.TimeoutExpired:
+                if cancel_event is not None and cancel_event.is_set():
+                    raise ConversionCancelled() from None
+                if time.monotonic() - started > timeout:
+                    raise ConversionError(
+                        f"{error_message} (it took too long and was stopped)"
+                    ) from None
+    finally:
+        if proc.poll() is None:
+            process._kill(proc)
+        for pipe in (proc.stdout, proc.stderr):
+            if pipe is not None:
+                with contextlib.suppress(OSError):
+                    pipe.close()
+    if proc.returncode != 0:
+        tail = "\n".join(err.decode("utf-8", "replace").splitlines()[-30:])
+        log.error("ffmpeg failed (%s):\n%s", proc.returncode, tail)
+        raise ConversionError(error_message, details=tail)
+    return out
 
 
 def _friendly_hint(stderr: str) -> str:

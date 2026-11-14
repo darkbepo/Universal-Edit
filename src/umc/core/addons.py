@@ -73,6 +73,13 @@ ADDONS: dict[str, Addon] = {
         packages=(),
         entry="umc.gui.audioeditor.audio_editor_page",
     ),
+    "video": Addon(
+        "video",
+        "Video editor",
+        modules=("umc.gui.videoedit",),  # the Qt-free model umc.videoedit stays in the app
+        packages=(),
+        entry="umc.gui.videoedit.editor_page",
+    ),
 }
 
 _activated: set[str] = set()

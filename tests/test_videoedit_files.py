@@ -79,6 +79,24 @@ def test_load_finds_moved_folder_by_relpath(vmedia, tmp_path):
     assert all(s.path.parent == b for s in loaded.sources)
 
 
+@pytest.mark.parametrize("sep", ["/", "\\"])
+def test_relpath_is_stored_with_forward_slashes_and_read_either_way(vmedia, tmp_path, sep):
+    a = tmp_path / "a"
+    (a / "media").mkdir(parents=True)
+    shutil.copy(vmedia / "red.mp4", a / "media" / "red.mp4")
+    project, _ = new_project([a / "media" / "red.mp4"])
+    projectfile.save_project(project, a / "p.umcvideo")
+    data = json.loads((a / "p.umcvideo").read_text(encoding="utf-8"))
+    assert data["sources"][0]["relpath"] == "media/red.mp4"  # the same file on every system
+    data["sources"][0]["relpath"] = sep.join(["media", "red.mp4"])
+    (a / "p.umcvideo").write_text(json.dumps(data), encoding="utf-8")
+    b = tmp_path / "b"
+    a.rename(b)
+    loaded, missing = projectfile.load_project(b / "p.umcvideo")
+    assert missing == []
+    assert loaded.sources[0].path == (b / "media" / "red.mp4").resolve()
+
+
 def test_load_reports_missing(vmedia, tmp_path):
     shutil.copy(vmedia / "red.mp4", tmp_path / "red.mp4")
     project, _ = new_project([tmp_path / "red.mp4"])

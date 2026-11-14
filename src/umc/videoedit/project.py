@@ -113,6 +113,11 @@ class Source:
     fps: float
     has_audio: bool
 
+    @property
+    def key(self) -> str:
+        """Names this source *and* its file: a relinked source gets new thumbnails."""
+        return f"{self.id}|{self.path}"
+
 
 @dataclass(frozen=True)
 class Transition:
@@ -184,7 +189,7 @@ class AudioClip:
 @dataclass(frozen=True)
 class TextItem:
     id: str
-    text: str = opt("Text", "Text", kind="text")
+    text: str = opt("Text", "Text", kind="textarea")
     start: float = 0.0
     end: float = 3.0
     anchor: str = opt("bottom", "Position", choices=ANCHORS)

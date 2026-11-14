@@ -10,6 +10,7 @@ export const BROWSER_NOTE = "The browser can't read the details of this file. Th
 export const NOUN: Record<string, string> = {
   image: "image", video: "video", audio: "audio", document: "document", model: "3D model",
   archive: "archive", subtitle: "subtitles", font: "font", vector: "vector graphic", cad: "CAD drawing",
+  code: "code file",
 };
 export const OFFICE_EXTS = new Set(["docx", "docm", "dotx", "xlsx", "xlsm", "pptx", "pptm", "ppsx"]);
 export const ODF_EXTS = new Set(["odt", "ods", "odp", "odg"]);

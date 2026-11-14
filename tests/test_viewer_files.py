@@ -54,11 +54,21 @@ def test_folder_items(tmp_path):
 
 
 def test_edit_button_follows_the_editor_tiles():
-    for kind in (vf.IMAGE, vf.MODEL, vf.AUDIO):
+    for kind in (vf.IMAGE, vf.MODEL, vf.AUDIO, vf.VIDEO):
         assert vf.editor_for(kind).available
-    for kind in (vf.VIDEO, vf.PAGES, vf.CONVERT, vf.TEXT):
-        assert not vf.editor_for(kind).available  # "coming soon"
+    for kind in (vf.PAGES, vf.CONVERT, vf.TEXT):
+        assert vf.editor_for(kind).id == "document" and vf.editor_for(kind).available
     assert vf.editor_for(vf.OTHER) is None
+
+
+def test_edit_only_what_the_editor_can_open():
+    # the document editor edits DOCX / TXT / MD …, not a PDF or an EPUB the viewer shows
+    assert vf.can_edit(vf.TEXT, Path("a.txt")) and vf.can_edit(vf.CONVERT, Path("a.DOCX"))
+    assert not vf.can_edit(vf.PAGES, Path("a.pdf"))
+    assert not vf.can_edit(vf.PAGES, Path("a.epub"))
+    assert vf.can_edit(vf.IMAGE, Path("a.png"))
+    assert vf.can_edit(vf.VIDEO, Path("a.mp4"))
+    assert not vf.can_edit(vf.OTHER, Path("a.bin"))
 
 
 def test_read_text_encodings(tmp_path):
@@ -71,6 +81,16 @@ def test_read_text_encodings(tmp_path):
     assert read_text(p)[0] == "Blåbær"
     p.write_text("x" * 50, encoding="utf-8")
     assert read_text(p, limit=10) == ("x" * 10, True)
+
+
+def test_code_files_are_shown_as_text(tmp_path):
+    assert vf.kind_of_path(Path("a.css")) == vf.TEXT
+    assert vf.kind_of_path(Path("app.py")) == vf.TEXT
+    p = tmp_path / "Dockerfile"
+    p.write_text("FROM python\n")
+    assert vf.view_kind(detect(p)) == vf.TEXT
+    # no Edit yet: the document editor can't open code (the code editor comes next)
+    assert not vf.can_edit(vf.TEXT, Path("a.css"))
 
 
 def test_view_kind_of_detected(tmp_path):

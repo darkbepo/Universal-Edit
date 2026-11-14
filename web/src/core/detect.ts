@@ -1,4 +1,6 @@
 // Detect the media family of a file from its extension, falling back to magic bytes.
+import languages from "../codeedit/languages.json";
+import { SNIFF_BYTES, looksLikeText } from "../codeedit/textfile";
 import type { Family, InputFile } from "./types";
 
 const ALIASES: Record<string, string> = {
@@ -38,6 +40,21 @@ export const FONT_EXTS = new Set(["ttf", "otf", "woff", "woff2"]);
 export const SUBTITLE_EXTS = new Set(["srt", "vtt", "ass", "ssa", "smi", "lrc"]);
 export const ARCHIVE_EXTS = new Set(["zip", "7z", "rar", "tar", "tar.gz", "tar.xz", "tar.bz2"]);
 const COMPOUND_EXTS = ["tar.gz", "tar.xz", "tar.bz2"];
+const OTHER_EXTS = new Set([
+  ...IMAGE_EXTS, ...VIDEO_EXTS, ...AUDIO_EXTS, ...MODEL_EXTS, ...WEB_DOCUMENT_EXTS, ...DESKTOP_ONLY_DOCUMENT_EXTS,
+  ...VECTOR_EXTS, ...CAD_EXTS, ...FONT_EXTS, ...SUBTITLE_EXTS, ...ARCHIVE_EXTS,
+]);
+/** Code files: the language table's extensions no other family owns ("ts" is decided by content). */
+export const CODE_EXTS = new Set(
+  languages.languages.flatMap((l) => l.exts).filter((e) => e === "ts" || !OTHER_EXTS.has(e)),
+);
+export const CODE_FILENAMES = new Set(languages.languages.flatMap((l) => l.filenames));
+
+/** MPEG transport stream: a 0x47 sync byte every 188 bytes (192 with M2TS's 4-byte header). */
+export function isMpegTs(head: Uint8Array): boolean {
+  if (head.length < 392) return false;
+  return [0, 188, 376].every((i) => head[i] === 0x47) || [4, 196, 388].every((i) => head[i] === 0x47);
+}
 
 export function canonicalExt(nameOrExt: string): string {
   const lower = nameOrExt.toLowerCase();
@@ -59,6 +76,7 @@ export function familyOfExt(ext: string): Family | null {
   if (VECTOR_EXTS.has(ext)) return "vector";
   if (CAD_EXTS.has(ext)) return "cad";
   if (WEB_DOCUMENT_EXTS.has(ext) || DESKTOP_ONLY_DOCUMENT_EXTS.has(ext)) return "document";
+  if (CODE_EXTS.has(ext)) return "code";
   return null;
 }
 
@@ -102,17 +120,33 @@ export function sniff(head: Uint8Array): string | null {
   return null;
 }
 
-export async function detect(file: File): Promise<InputFile | null> {
-  let ext = canonicalExt(file.name);
-  let family = file.name.includes(".") ? familyOfExt(ext) : null;
-  if (!family) {
-    const head = new Uint8Array(await file.slice(0, 512).arrayBuffer());
-    const sniffed = sniff(head);
-    if (!sniffed) return null;
-    ext = sniffed;
-    family = familyOfExt(sniffed);
-    if (!family) return null;
+/** Family and extension of a file from its name and first bytes (up to SNIFF_BYTES). Same rules
+ * as the desktop's detect(): known names, ".ts" by content, extension, magic bytes, plain text. */
+export function detectBytes(name: string, head: Uint8Array): { family: Family; ext: string } | null {
+  const lower = name.toLowerCase();
+  if (CODE_FILENAMES.has(lower)) return { family: "code", ext: lower.replace(/^\.+/, "") };
+  const dot = name.lastIndexOf(".");
+  const hasExt = dot > 0; // ".bashrc" has no extension, like Python's Path.suffix
+  const ext = hasExt ? canonicalExt(name) : "";
+  if (ext === "ts") {
+    // TypeScript is text; a recording (even one cut mid-packet) isn't
+    return { family: !isMpegTs(head) && looksLikeText(head) ? "code" : "video", ext };
   }
+  const byExt = hasExt ? familyOfExt(ext) : null;
+  if (byExt) return { family: byExt, ext };
+  const sniffed = sniff(head.subarray(0, 512));
+  if (sniffed) {
+    const family = familyOfExt(sniffed);
+    return family ? { family, ext: sniffed } : null;
+  }
+  return looksLikeText(head) ? { family: "code", ext } : null; // text of a kind we don't know
+}
+
+export async function detect(file: File): Promise<InputFile | null> {
+  const head = new Uint8Array(await file.slice(0, SNIFF_BYTES).arrayBuffer());
+  const found = detectBytes(file.name, head);
+  if (!found) return null;
+  const { family, ext } = found;
   if (family === "video") {
     const { probeTracks } = await import("./tracks");
     const tracks = await probeTracks(file, ext).catch(() => ({ audio: null, textSubs: null }));

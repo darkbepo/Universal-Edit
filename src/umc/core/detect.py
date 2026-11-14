@@ -7,6 +7,9 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
+from umc.codeedit.languages import LANGUAGES
+from umc.codeedit.textfile import SNIFF_BYTES, looks_like_text
+
 
 class MediaFamily(StrEnum):
     DOCUMENT = "document"
@@ -20,6 +23,7 @@ class MediaFamily(StrEnum):
     VECTOR = "vector"
     CAD = "cad"
     PROJECT = "project"  # a video editor project (.umcvideo)
+    CODE = "code"  # code and text-config files (the code editor; see codeedit/languages.py)
 
 
 # Aliases → canonical extension.
@@ -167,6 +171,13 @@ PROJECT_EXTS = {"umcvideo"}
 COMPOUND_EXTS = ("tar.gz", "tar.xz", "tar.bz2")
 PRESENTATION_EXTS = {"pptx", "ppt", "odp"}
 DOCUMENT_EXTS = TEXT_DOCUMENT_EXTS | SPREADSHEET_EXTS | PRESENTATION_EXTS | DATA_EXTS
+_OTHER_EXTS = (IMAGE_EXTS | AUDIO_EXTS | VIDEO_EXTS | DOCUMENT_EXTS | MODEL_EXTS | ARCHIVE_EXTS) | (
+    SUBTITLE_EXTS | FONT_EXTS | VECTOR_EXTS | CAD_EXTS | PROJECT_EXTS
+)
+# Code files: the language table's extensions that no other family owns. "ts" is in both
+# (MPEG transport stream video, TypeScript): detect() looks inside the file.
+CODE_EXTS = {e for lang in LANGUAGES for e in lang.exts} - (_OTHER_EXTS - {"ts"})
+CODE_FILENAMES = {n for lang in LANGUAGES for n in lang.filenames}
 
 
 @dataclass(frozen=True)
@@ -183,9 +194,9 @@ class DetectedFile:
     def stem(self) -> str:
         """File name without its extension (``a.tar.gz`` → ``a``)."""
         name = self.path.name
-        return (
-            name[: -len(self.ext) - 1] if name.lower().endswith("." + self.ext) else self.path.stem
-        )
+        if self.ext and name.lower().endswith("." + self.ext):
+            return name[: -len(self.ext) - 1] or name  # ".gitignore" stays ".gitignore"
+        return self.path.stem
 
 
 def canonical_ext(ext: str) -> str:
@@ -217,7 +228,29 @@ def family_of_ext(ext: str) -> MediaFamily | None:
         return MediaFamily.PROJECT
     if ext in DOCUMENT_EXTS:
         return MediaFamily.DOCUMENT
+    if ext in CODE_EXTS:
+        return MediaFamily.CODE
     return None
+
+
+def _head(path: Path, size: int) -> bytes | None:
+    """The first bytes of a file; None for a folder or a file that can't be read."""
+    try:
+        if not path.is_file():
+            return None
+        with path.open("rb") as fh:
+            return fh.read(size)
+    except OSError:
+        return None
+
+
+def is_mpeg_ts(head: bytes) -> bool:
+    """MPEG transport stream: a 0x47 sync byte every 188 bytes (192 with M2TS's 4-byte header)."""
+    if len(head) < 392:
+        return False
+    return all(head[i] == 0x47 for i in (0, 188, 376)) or all(
+        head[i] == 0x47 for i in (4, 196, 388)
+    )
 
 
 def _sniff(path: Path) -> str | None:
@@ -322,14 +355,24 @@ def detect(path: str | Path) -> DetectedFile | None:
     """Return the detected file, or ``None`` if it isn't a supported format."""
     path = Path(path).resolve()
     lower = path.name.lower()
+    if lower in CODE_FILENAMES:  # Dockerfile, .gitignore, …
+        return DetectedFile(path=path, family=MediaFamily.CODE, ext=lower.lstrip("."))
     compound = next((c for c in COMPOUND_EXTS if lower.endswith("." + c)), None)
     ext = compound or canonical_ext(path.suffix)
+    if ext == "ts":  # TypeScript is text; a recording (even one cut mid-packet) isn't
+        head = _head(path, SNIFF_BYTES)
+        typescript = head is not None and not is_mpeg_ts(head) and looks_like_text(head)
+        family = MediaFamily.CODE if typescript else MediaFamily.VIDEO
+        return DetectedFile(path=path, family=family, ext=ext)
     family = family_of_ext(ext)
     if family is None:
         sniffed = _sniff(path)
-        if sniffed is None:
-            return None
-        ext, family = sniffed, family_of_ext(sniffed)
+        if sniffed is not None:
+            ext, family = sniffed, family_of_ext(sniffed)
+        else:
+            head = _head(path, SNIFF_BYTES)
+            if head is not None and looks_like_text(head):
+                family = MediaFamily.CODE  # text of a kind we don't know: plain text
         if family is None:
             return None
     return DetectedFile(path=path, family=family, ext=ext)

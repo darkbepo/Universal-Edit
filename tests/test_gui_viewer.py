@@ -15,7 +15,7 @@ from umc.viewer import files as vf  # noqa: E402
 def folder(media, tmp_path):
     for name in ("img0.png", "three.pdf", "notes.txt", "clip.mp4", "tone.wav", "anim.gif"):
         shutil.copy(media / name, tmp_path / name)
-    (tmp_path / "data.bin").write_bytes(b"xx")
+    (tmp_path / "data.bin").write_bytes(b"\x00\x01")  # binary (unknown text shows as text)
     return tmp_path
 
 
@@ -69,13 +69,15 @@ def test_pdf_pages(qtbot, viewer, folder):
     assert len(viewer.pages.labels) == 3
     assert "3 pages" in viewer.detail_label.text()
     qtbot.waitUntil(lambda: not viewer.pages.labels[0].pixmap().isNull(), timeout=15000)
-    assert not viewer.edit_button.isEnabled()  # the document editor is "coming soon"
+    assert not viewer.edit_button.isEnabled()  # the document editor doesn't edit PDFs
+    assert viewer.edit_button.toolTip() == "This kind of file can't be edited here"
 
 
 def test_text(qtbot, viewer, folder):
     viewer.open_path(folder / "notes.txt")
     _shows(qtbot, viewer, viewer.text)
     assert viewer.text.toPlainText().strip()
+    assert viewer.edit_button.isEnabled()  # a text file opens in the document editor
 
 
 def test_video_plays(qtbot, viewer, folder):

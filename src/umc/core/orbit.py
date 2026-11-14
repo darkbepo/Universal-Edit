@@ -32,6 +32,8 @@ BADGES: list[tuple[str, str, str]] = [
     ("vector", "SVG", "#2fb5d6"),
     ("gif", "GIF", "#d96fd1"),
     ("table", "XLSX", "#3fae5a"),
+    ("code", "CSS", "#5c6bc0"),
+    ("code", "JS", "#e3c341"),
 ]
 
 
@@ -47,8 +49,8 @@ class Ring:
 
 
 RINGS: list[Ring] = [
-    Ring(radius=1.0, tilt=62, roll=-10, period=100, direction=1, phase=0.0, count=5),
-    Ring(radius=0.84, tilt=56, roll=14, period=85, direction=-1, phase=0.1, count=4),
+    Ring(radius=1.0, tilt=62, roll=-10, period=100, direction=1, phase=0.0, count=6),
+    Ring(radius=0.84, tilt=56, roll=14, period=85, direction=-1, phase=0.1, count=5),
     Ring(radius=0.68, tilt=68, roll=3, period=72, direction=1, phase=0.3, count=3),
 ]
 

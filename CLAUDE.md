@@ -75,7 +75,18 @@ imports, but keep the defaults sensible so a user can convert with zero configur
      strip showing the chosen format). Only formats valid for the detected inputs are shown.
   4. Bottom bar: summary/status, save-to (desktop), overall progress, Convert / Cancel.
   Below 900 px wide everything stacks in one column.
-- Dark/light theme following the OS. Same tokens in `gui/theme.py` and `web/src/styles.css`.
+- Dark/light theme: follows the OS unless the user picks one with the sun / moon button in the
+  top bar (System → Light → Dark; desktop next to the cog, also in Settings; web beside the badge).
+  Desktop: `theme.set_choice` (QSettings `appearance/theme`, also tells Qt via
+  `styleHints().setColorScheme`), `theme.load_choice()` in `app.py` before the first window;
+  repaint on `theme.notifier().changed` (fires only when light ↔ dark really changes), never on
+  `colorSchemeChanged` directly. Before it fires, `icons.retint` redraws in every open window the
+  icons / pixmaps made by `icons.icon` / `icons.pixmap` and swaps palette hexes in widget
+  stylesheets, so pages that tint once when built (editors, viewer) follow without own code.
+  Connect window slots as bound methods (a lambda keeps a deleted window connected). Web: `ui/theme.ts` sets `<html data-theme>` + localStorage
+  `umc-theme`; an inline script in `index.html` applies it before the first paint; `styles.css`
+  has the dark tokens twice (OS dark + `[data-theme="dark"]`, `tests/theme.test.ts` checks they
+  match each other and `theme.py`). Same tokens in `gui/theme.py` and `web/src/styles.css`.
   Icons: Tabler line icons (MIT) in `gui/icon_data.py` / `web/src/ui/icon_data.ts` (same set).
 - Never block the UI thread — all conversions run in a worker thread with progress/cancel.
 - Errors are shown inline in plain language (no raw stack traces in the UI; log them instead).
@@ -147,6 +158,12 @@ See `web/README.md` for commands and deployment.
   The image editor is `editor/` (model, no DOM) + `ui/editor/` (page), imported on demand.
   The document editor is `doceditor/` (reader / writers / subset, DOM APIs but no UI) +
   `ui/doceditor/` (ProseMirror page, `window.__doceditor` with `?e2e`), imported on demand.
+- **Phones (≤ 560 px, `isPhone()` in `ui/back.ts`):** check new UI at 375 px wide. Editor top bars
+  show "← Back" (`backLabel`, `.back-long` hidden) and put secondary buttons in `.top-tools`
+  (`display: contents` on wide screens, a second row on phones; `.desk-only` hides). Image editor
+  windows become one bottom sheet at a time (`FloatingHost.onlyOnPhone`, tool options start
+  minimised); the document format bar is one sideways-scrolling row (its Table menu is
+  `position: fixed`). The 3D viewer takes pinch / two-finger pan (`TOUCH_HINT`).
 - **Cancel** = terminate the worker (kills FFmpeg's nested worker too); a new worker starts next run.
 - **Must be cross-origin isolated** (COOP/COEP): headers in `vite.config.ts` / `public/_headers`;
   where a host can't send them (GitHub Pages) `coi-serviceworker.js` (emitted by a plugin in
@@ -195,7 +212,7 @@ See `web/README.md` for commands and deployment.
 ## Tech stack
 
 - **Language:** Python 3.11+
-- **GUI:** PySide6-Essentials (Qt 6) + PySide6-Addons (only Qt Multimedia, for the viewer) — Fusion style + `gui/style.qss` with `@token` colours filled from `gui/theme.py`
+- **GUI:** PySide6-Essentials (Qt 6) + PySide6-Addons (only Qt Multimedia, for the viewer and the video editor's sound) — Fusion style + `gui/style.qss` with `@token` colours filled from `gui/theme.py`
 - **Images:** Pillow (+ `pillow-heif` for HEIC; AVIF is native in Pillow ≥ 11.3)
 - **Video / GIF / slideshow / audio:** FFmpeg (bundled binary, invoked via `subprocess`; progress parsed from `-progress pipe:1`)
 - **PDF:** PyMuPDF (`pymupdf`) for PDF → images/text, page ranges, EPUB/XPS → PDF, and future splitting.
@@ -210,6 +227,10 @@ See `web/README.md` for commands and deployment.
   `file_list.thumbnails_pending()`). Clipboard data we made must go through
   `gui/clipboard_owner.release_clipboard` before quitting (app `aboutToQuit`), else exit crashes.
   (After quitting, the clip pastes as a plain picture: centred, no longer "in place".)
+  Cyclic garbage collection runs only on the GUI thread (`gui/gc_guard.py`, installed in `app.py`
+  and `tests/conftest.py`): a collection inside a worker thread freed PySide objects and crashed.
+  `gui/videoedit/threads.py`: never connect `worker.deleteLater` to `QThread.finished` — it runs on
+  the worker thread while the GUI thread drops the last Python reference (double delete).
 
 Primary target platform is **Windows** (`.exe`); keep code cross-platform (macOS/Linux) where it costs nothing.
 
@@ -232,6 +253,9 @@ src/umc/
     doceditor/           # document editor view: DocEditorPage (top bar, saving on a QThread),
                          #   text_view (QTextEdit), format_bar, find_bar, formatting (merge/toggle
                          #   helpers), html_export (QTextDocument → HTML subset)
+    videoedit/           # video editor view: VideoEditorPage (top bar, saving / export on threads),
+                         #   timeline (painted rows), player + preview_view (frames + sound),
+                         #   qt_audio_out (Qt Multimedia sink), threads (worker helper), dialogs
     editor3d/            # 3D viewer: ViewerPage (top bar, info panel, loads on a QThread), gl_view
     viewer/              # "Open with" viewer: ViewerWindow, views (image/media/pages/text), tasks
     audioeditor/         # audio editor: AudioEditorPage (tool row, open/save on a QThread),
@@ -241,6 +265,12 @@ src/umc/
   viewer/                # viewer model — files.py (view kinds, folder list), preview.py; no Qt
   audioedit/             # audio editor model (numpy, no Qt) — document.py (AudioDoc, splice
                          #   undo), ops.py, peaks.py (waveform columns), wav.py, io.py (open/save)
+  codeedit/              # code editor model (no Qt) — languages.py (language table → web
+                         #   languages.json), textfile.py (byte-exact read / write)
+  videoedit/             # video editor model (no Qt) — project.py (frozen dataclasses), edits.py
+                         #   (pure edits), history.py (snapshot undo), projectfile.py (.umcvideo),
+                         #   media.py (probe, new_project), render.py (one filter_complex),
+                         #   window.py (360 p preview windows), export.py (groups of 16, GIF)
   doceditor/             # document editor model — pure Python, no Qt
     types.py             # SaveContent / OpenedDocument, "parts that will be lost" warnings, limits
     html_subset.py       # the small HTML the editor shows and saves (sanitise, picture names)
@@ -349,6 +379,9 @@ pyinstaller packaging/umc.spec                      # build the executable into 
 UniversalEdit.exe --self-test report.txt  # headless smoke test of a build (exit 0 = OK)
 python scripts/convert_matrix.py --out matrix-out   # try EVERY conversion with defaults → report.md
 node web/scripts/convert-matrix.mjs matrix-out/samples --channel msedge  # same for the website
+python scripts/readme/make_samples.py S packaging/bin/ffmpeg.exe  # README screenshots: samples,
+python scripts/readme/shoot_desktop.py S                         #   video editor shot, then (website
+node scripts/readme/shoot.mjs S http://localhost:4173             #   preview running) → docs/images/*.jpg
 ```
 
 The two matrix scripts are the broad safety net: one sample per input format, every target the
@@ -436,7 +469,7 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
    on every push to `main` that touches `web/` and then runs all browser tests against the live site.
    Next: PWA/offline.
 9. **Converter parity with the big online converters** (owner wants all of these, in this order;
-   each lands in BOTH apps where possible, and the "What works where" table in README.md must be
+   each lands in BOTH apps where possible, and the README's "What it can do" fold-out tables must be
    updated in the same commit):
    1. ✅ Audio files as input (MP3/WAV/FLAC/M4A/OGG… ↔ each other) — `MediaFamily.AUDIO` / family "audio"
    2. ✅ Camera RAW + PSD input — desktop: rawpy/LibRaw in `imaging.open_image`; web: magick-wasm
@@ -782,11 +815,13 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       Next: basic editing for 3D printing (plan in the session handoff / owner's go-ahead).
    9. ✅ Start screen = hub (both apps): editor tiles under the empty drop zone, listed in
       `core/editors.py` / `web/src/core/editors.ts` (same order and text; `available` False =
-      greyed "Coming soon" — video and document editor for now; tests/test_editor_hub.py checks
+      greyed "Coming soon" — on desktop no editor is left (the website's video tile is, `WEB_LATER`); tests/test_editor_hub.py checks
       both lists). Image tile → "New picture" (`editor/blank.py` / `blank.ts`, presets in
       `web/src/editor/presets.ts` so the start page doesn't load the editor) → `MainWindow.new_picture`
       / `EditorPage.openBlank`; 3D tile → viewer `open_empty` / `openEmpty` with an "Open…" button
-      (`files_chosen` / `onOpen` add the models to the queue like a drop). Tiles hide once files
+      (`files_chosen` / `onOpen` add the models to the queue like a drop); document tile →
+      `DocEditorPage.open_empty` / `openEmpty` (an empty "Untitled", not dirty; the first Save
+      asks like Save as, DOCX first, then Save / Ctrl+S write there). Tiles hide once files
       are added. Later steps (owner, Nov 2026): own viewer for "Open with", Windows installer with
       optional editors + "Convert" context menu, editors as downloadable add-ons on desktop.
    10. ✅ Viewer (desktop): `UniversalEdit --view FILE` (what "Open with" will run, step 4). Model
@@ -842,7 +877,9 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       `core/addons.py` `ADDONS` (ids = `core/editors.py`): image = `umc.gui.editor` + site
       package `onnxruntime` (~24 MB zip); model = `umc.gui.editor3d.viewer_page` (the viewer's
       3D preview `gl_view` and the Qt-free `umc.editor` / `umc.editor3d` stay in the app: the
-      converter (.ora), video text fonts, the hub and the viewer use them). Zips =
+      converter (.ora), video text fonts, the hub and the viewer use them); audio =
+      `umc.gui.audioeditor`; video = `umc.gui.videoedit` (the Qt-free `umc.audioedit` /
+      `umc.videoedit` stay in the app). Zips =
       `addon.json` + `umc/…` + `site/…`, built by `scripts/build_addons.py`, which also writes
       the git-ignored `src/umc/addon_hashes.json` the spec bundles (**run it before
       PyInstaller**; the spec refuses otherwise and keeps every other `umc` module via
@@ -853,7 +890,7 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       GitHub release `v<__version__>` (`build-windows.yml` publishes it on a `v*` tag;
       `UMC_ADDONS_URL` overrides). GUI: `gui/addon_install.ensure_installed` (asked by
       `MainWindow._editor_ready` for tiles and Edit), tiles' "Install" badge, Settings
-      "Editors" (install / remove). Installer: [Components] image / model → copied to {tmp}
+      "Editors" (install / remove). Installer: [Components] image / model / audio / video → copied to {tmp}
       and installed by `UniversalEdit.exe --install-addon all <folder>`; uninstall deletes the
       add-ons folder. CI installs the built add-ons before `--self-test` ("editor add-ons
       installed and loading"). Tests simulate the built app with `UMC_ADDONS_TEST=1` +
@@ -876,6 +913,13 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       for a name ("<name> edited.<ext>", never over the original). Playback: desktop
       `gui/audioeditor/player.py` (QAudioSink pulling int16 from a QIODevice; offscreen / no
       device → a plain message), web Web Audio (AudioBuffer of the range; pause = suspend).
+      **PySide6 6.12:** `QAudioSink.error()` / `state()` return `QtAudio` enums, which never equal
+      `QAudio.*` — compare with `player.NO_ERROR` / `IDLE` / `STOPPED` (`tests/test_audio_player.py`
+      checks a real sink); `stateChanged` can't reach Python at all, so the 30 ms timer polls
+      `state()`. Desktop volume slider (QSettings `audioeditor/volume`, 0–100, default 70) →
+      `sink_volume` (logarithmic slider → linear sink volume). Web: the same slider (localStorage
+      `umc-audio-volume`) → a GainNode, `audioedit/volume.ts` `gainFor` = Qt's formula
+      (−ln(1 − v) / ln 100, clamped), both test suites check the same numbers.
       Worker results must reach the page through bound-method slots (a lambda runs on the worker
       thread). Shortcuts: Space, Home / End, Ctrl+X / C / V, Delete, Ctrl+T, Ctrl+L, Ctrl+A, Esc,
       + / − (desktop also Ctrl+1 / 3; Chrome keeps those for tabs), Ctrl+E, Ctrl+F, Ctrl+Z / Y,
@@ -911,7 +955,7 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       `name (1).jpg`), web `ui/photoform.ts` (downloads; replaces the queue's File so later
       conversions use it). e2e checks the desktop reader on a web-saved photo (python3).
       Next steps: music tags (mutagen, GPL-2.0+, approved), video, PDF / Office, file name + dates.
-   15. Orbiting drop-zone badges (both apps): 12 file-type badges (icon + type, own colour,
+   15. Orbiting drop-zone badges (both apps): 14 file-type badges (icon + type, own colour,
       dimmed to 62 %) on three tilted rings around the empty drop zone's text, smaller / fainter
       on the far side, faded near the text. Dragging a file over pulls them in and speeds them up;
       a drop on the empty page bursts them outward, then adds the files. Model `core/orbit.py`
@@ -922,6 +966,39 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       `prefers-reduced-motion`; Windows "Animation effects" via SPI_GETCLIENTAREAANIMATION;
       `UMC_REDUCE_MOTION=1/0` overrides) = still badges, no burst delay.
       Kept calm on purpose (owner): laps of 72–100 s, pull 1.8× speed, 650 ms soft burst.
+   16. ✅ Video editor, first version (desktop) — spec `docs/superpowers/specs/2026-11-10-video-editor-design.md`.
+      Qt-free model `videoedit/`: frozen project dataclasses, `edits.py` pure edits, snapshot undo,
+      `.umcvideo` JSON (each source stored as path + relpath). One FFmpeg `filter_complex` per render
+      (`render.py`; the graph is written to a file and passed with `-/filter_complex`; text = a
+      generated ASS file + libass). Preview = 360 p windows (`window.py`) as raw frames + PCM through
+      pipes; sound through Qt Multimedia (`gui/videoedit/qt_audio_out.py`: PySide6 6.12 returns
+      `QtAudio` enums — compare with those, not `QAudio`). Export in groups of 16 for long projects.
+      Convert | Edit when a video is added; start-screen tile; desktop add-on "video"; self-test step
+      "video editor". Website: still "Coming soon" (`core/editors.WEB_LATER`).
+      Not yet: picture-in-picture, keyframes, the website editor.
+   17. Code editor (both apps; owner, Nov 2026: "quick edits, Notepad++ in spirit") — spec
+      `docs/superpowers/specs/2026-11-14-code-editor-design.md`, one plan per step.
+      1. ✅ Accept code files (plan `docs/superpowers/plans/2026-11-14-code-editor-step1-detection.md`):
+         family `code` (`MediaFamily.CODE` / `"code"`). `codeedit/languages.py` is the language
+         table (exts, whole file names like `dockerfile` / `.gitignore`, comment marks, Pygments /
+         CodeMirror names) → `web/src/codeedit/languages.json` (`python -m
+         umc.codeedit.languages`, test checks they match); `CODE_EXTS` = its extensions no other
+         family owns (HTML / JSON / TXT / SVG / SRT … keep their family). `.ts` is both video and
+         TypeScript: it's code only when it isn't synced (`is_mpeg_ts` / `isMpegTs`: 0x47 every
+         188 / 192 bytes) **and** reads as text — so a recording cut mid-packet stays video.
+         `.ipynb` is code on the desktop (no converter there) but a document on the web (Pandoc);
+         `tests/fixtures/code_exts.json` pins both sets. Folders / unreadable paths are refused.
+         Unknown files that `looks_like_text` (no NUL in 8 KB; UTF-8, else ≤ 5 % control bytes)
+         are accepted as plain text. `codeedit/textfile.py` / `textfile.ts`: byte-exact read /
+         write (BOM, UTF-8 / UTF-16 / Windows-1252 as browsers read it, line endings; untouched
+         text saves the original bytes). Shared cases: `tests/fixtures/codeedit_cases.json`,
+         `detect_code_cases.json`. Code files only get `pack:*` targets, are shown as text in the
+         viewer, and are registered for "Open with" only — never the Convert right-click entry
+         (`shell_integration.convert_extensions` drops `CODE_EXTS`); runnable scripts
+         (`RUNNABLE_EXTS`: bat, cmd, ps1, py, sh …) get neither, so double-click-to-run is never
+         disturbed. Badges CSS + JS.
+      2. Desktop editor (add-on "code", Pygments). 3. Website editor (CodeMirror 6).
+      4. Preview (HTML / Markdown), JSON / YAML / XML check, Tidy.
 11. **First public release** (owner, Nov 2026: wait until more editors are ready). Push a
     `v<__version__>` tag (bump `umc/__init__.py` first; the workflow checks they match): the
     Windows build then publishes the .exe zip, the installer and the editor add-on zips as a
@@ -929,6 +1006,9 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
     anything (only the installer adds editors). Before it: pin `softprops/action-gh-release`
     to a commit SHA and make the installer report a failed `--install-addon`.
 12. Ideas: presets, batch queue.
+13. ✅ Light / dark mode switch (both apps; owner, Nov 2026): sun / moon button in the top bar,
+    System → Light → Dark, remembered (see "UI / UX requirements"). Tests `tests/test_theme.py`,
+    `web/tests/theme.test.ts`, `web/e2e/theme.spec.ts` (incl. the 375 px top bar).
 
 ## Handoff — read this first (for the next Claude account)
 
@@ -940,7 +1020,7 @@ LibreOffice-wasm). The owner hands the project over at this point; the next phas
 - Plain, non-technical language in replies. One task at a time, then **stop and summarise**
   (what changed, what was verified, what's next) and list every file created/modified.
 - Commits: on your worktree's branch, authored as `darkbepo`, imperative subject, **no co-author
-  or session trailers**. Merge into `main` and push after each finished task (see "Start here"). Update the README "What works where" table and the
+  or session trailers**. Merge into `main` and push after each finished task (see "Start here"). Update the README's "What it can do" fold-out tables (right category) and the
   roadmap here in the same commit as the feature.
 - New dependencies must be AGPL-3.0-compatible (MIT/BSD/Apache/MPL/LGPL/GPL-3/AGPL). Big external
   programs are never bundled: detect + "Install it for me" (signed MSI/NSIS or SHA-256-checked
@@ -992,7 +1072,7 @@ converters for saving/exporting. Suggested order (most value first), one task pe
    PSD (Pillow can't write PSD; consider a ZIP of PNG layers + JSON, or OpenRaster `.ora`, an open
    standard GIMP/Krita read). Web: `web/src/editor/` on `OffscreenCanvas` in the worker, same
    command model; export through the existing converters.
-3. **Video timeline:** a model of tracks (video, images, audio, text) and clips (source, in/out,
+3. ✅ (desktop, see roadmap 10.16) **Video timeline:** a model of tracks (video, images, audio, text) and clips (source, in/out,
    start, transitions, volume). Rendering = one FFmpeg `filter_complex` (trim/setpts, concat,
    overlay, xfade, amix, drawtext/ass) — reuse `converters/slideshow.py`, `video.py`,
    `subtitles.py`. Preview: thumbnails/filmstrip via FFmpeg; real playback needs
@@ -1003,7 +1083,7 @@ converters for saving/exporting. Suggested order (most value first), one task pe
    writes HTML and Markdown; round-trip DOCX through Pandoc/LibreOffice via the document route
    planner). Web: a contenteditable/ProseMirror-style editor (MIT) + pandoc-wasm for import/export.
 
-For each editor feature add rows to the README table (desktop / website columns) and a roadmap
+For each editor feature add rows to the README's fold-out tables (desktop / website columns) and a roadmap
 line here, exactly like the converter features.
 
 ### Known gaps / ideas left open

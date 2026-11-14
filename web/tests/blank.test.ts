@@ -17,7 +17,7 @@ describe("new picture", () => {
 });
 
 describe("editor tiles", () => {
-  it("only the image editor and 3D viewer are ready", () => {
-    expect(EDITORS.filter((e) => e.available).map((e) => e.id)).toEqual(["image", "model", "audio"]);
+  it("every editor but the video editor is ready", () => {
+    expect(EDITORS.filter((e) => e.available).map((e) => e.id)).toEqual(["image", "model", "audio", "document"]);
   });
 });

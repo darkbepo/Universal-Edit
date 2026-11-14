@@ -1,0 +1,633 @@
+{
+ "languages": [
+  {
+   "id": "text",
+   "name": "Plain text",
+   "exts": [
+    "log",
+    "txt"
+   ],
+   "filenames": [],
+   "line_comment": null,
+   "block_comment": null,
+   "pygments": "text",
+   "codemirror": "plain"
+  },
+  {
+   "id": "css",
+   "name": "CSS",
+   "exts": [
+    "css"
+   ],
+   "filenames": [],
+   "line_comment": null,
+   "block_comment": [
+    "/*",
+    "*/"
+   ],
+   "pygments": "css",
+   "codemirror": "css"
+  },
+  {
+   "id": "scss",
+   "name": "SCSS",
+   "exts": [
+    "scss"
+   ],
+   "filenames": [],
+   "line_comment": "//",
+   "block_comment": [
+    "/*",
+    "*/"
+   ],
+   "pygments": "scss",
+   "codemirror": "sass"
+  },
+  {
+   "id": "less",
+   "name": "Less",
+   "exts": [
+    "less"
+   ],
+   "filenames": [],
+   "line_comment": "//",
+   "block_comment": [
+    "/*",
+    "*/"
+   ],
+   "pygments": "less",
+   "codemirror": "less"
+  },
+  {
+   "id": "javascript",
+   "name": "JavaScript",
+   "exts": [
+    "js",
+    "mjs",
+    "cjs"
+   ],
+   "filenames": [],
+   "line_comment": "//",
+   "block_comment": [
+    "/*",
+    "*/"
+   ],
+   "pygments": "js",
+   "codemirror": "javascript"
+  },
+  {
+   "id": "jsx",
+   "name": "JavaScript (JSX)",
+   "exts": [
+    "jsx"
+   ],
+   "filenames": [],
+   "line_comment": "//",
+   "block_comment": [
+    "/*",
+    "*/"
+   ],
+   "pygments": "jsx",
+   "codemirror": "jsx"
+  },
+  {
+   "id": "typescript",
+   "name": "TypeScript",
+   "exts": [
+    "ts",
+    "tsx"
+   ],
+   "filenames": [],
+   "line_comment": "//",
+   "block_comment": [
+    "/*",
+    "*/"
+   ],
+   "pygments": "typescript",
+   "codemirror": "typescript"
+  },
+  {
+   "id": "python",
+   "name": "Python",
+   "exts": [
+    "py",
+    "pyw"
+   ],
+   "filenames": [],
+   "line_comment": "#",
+   "block_comment": null,
+   "pygments": "python",
+   "codemirror": "python"
+  },
+  {
+   "id": "java",
+   "name": "Java",
+   "exts": [
+    "java"
+   ],
+   "filenames": [],
+   "line_comment": "//",
+   "block_comment": [
+    "/*",
+    "*/"
+   ],
+   "pygments": "java",
+   "codemirror": "java"
+  },
+  {
+   "id": "c",
+   "name": "C",
+   "exts": [
+    "c",
+    "h"
+   ],
+   "filenames": [],
+   "line_comment": "//",
+   "block_comment": [
+    "/*",
+    "*/"
+   ],
+   "pygments": "c",
+   "codemirror": "cpp"
+  },
+  {
+   "id": "cpp",
+   "name": "C++",
+   "exts": [
+    "cpp",
+    "hpp",
+    "cc",
+    "cxx",
+    "hh"
+   ],
+   "filenames": [],
+   "line_comment": "//",
+   "block_comment": [
+    "/*",
+    "*/"
+   ],
+   "pygments": "cpp",
+   "codemirror": "cpp"
+  },
+  {
+   "id": "csharp",
+   "name": "C#",
+   "exts": [
+    "cs"
+   ],
+   "filenames": [],
+   "line_comment": "//",
+   "block_comment": [
+    "/*",
+    "*/"
+   ],
+   "pygments": "csharp",
+   "codemirror": "csharp"
+  },
+  {
+   "id": "go",
+   "name": "Go",
+   "exts": [
+    "go"
+   ],
+   "filenames": [],
+   "line_comment": "//",
+   "block_comment": [
+    "/*",
+    "*/"
+   ],
+   "pygments": "go",
+   "codemirror": "go"
+  },
+  {
+   "id": "rust",
+   "name": "Rust",
+   "exts": [
+    "rs"
+   ],
+   "filenames": [],
+   "line_comment": "//",
+   "block_comment": [
+    "/*",
+    "*/"
+   ],
+   "pygments": "rust",
+   "codemirror": "rust"
+  },
+  {
+   "id": "php",
+   "name": "PHP",
+   "exts": [
+    "php"
+   ],
+   "filenames": [],
+   "line_comment": "//",
+   "block_comment": [
+    "/*",
+    "*/"
+   ],
+   "pygments": "php",
+   "codemirror": "php"
+  },
+  {
+   "id": "ruby",
+   "name": "Ruby",
+   "exts": [
+    "rb"
+   ],
+   "filenames": [],
+   "line_comment": "#",
+   "block_comment": null,
+   "pygments": "ruby",
+   "codemirror": "ruby"
+  },
+  {
+   "id": "shell",
+   "name": "Shell script",
+   "exts": [
+    "sh",
+    "bash",
+    "zsh"
+   ],
+   "filenames": [],
+   "line_comment": "#",
+   "block_comment": null,
+   "pygments": "bash",
+   "codemirror": "shell"
+  },
+  {
+   "id": "powershell",
+   "name": "PowerShell",
+   "exts": [
+    "ps1",
+    "psm1"
+   ],
+   "filenames": [],
+   "line_comment": "#",
+   "block_comment": [
+    "<#",
+    "#>"
+   ],
+   "pygments": "powershell",
+   "codemirror": "powershell"
+  },
+  {
+   "id": "batch",
+   "name": "Batch file",
+   "exts": [
+    "bat",
+    "cmd"
+   ],
+   "filenames": [],
+   "line_comment": "REM",
+   "block_comment": null,
+   "pygments": "batch",
+   "codemirror": "batch"
+  },
+  {
+   "id": "sql",
+   "name": "SQL",
+   "exts": [
+    "sql"
+   ],
+   "filenames": [],
+   "line_comment": "--",
+   "block_comment": [
+    "/*",
+    "*/"
+   ],
+   "pygments": "sql",
+   "codemirror": "sql"
+  },
+  {
+   "id": "ini",
+   "name": "INI / config",
+   "exts": [
+    "ini",
+    "cfg",
+    "conf"
+   ],
+   "filenames": [
+    ".editorconfig",
+    ".npmrc"
+   ],
+   "line_comment": ";",
+   "block_comment": null,
+   "pygments": "ini",
+   "codemirror": "ini"
+  },
+  {
+   "id": "toml",
+   "name": "TOML",
+   "exts": [
+    "toml"
+   ],
+   "filenames": [],
+   "line_comment": "#",
+   "block_comment": null,
+   "pygments": "toml",
+   "codemirror": "toml"
+  },
+  {
+   "id": "dotenv",
+   "name": "Environment file",
+   "exts": [
+    "env"
+   ],
+   "filenames": [
+    ".env"
+   ],
+   "line_comment": "#",
+   "block_comment": null,
+   "pygments": "bash",
+   "codemirror": "shell"
+  },
+  {
+   "id": "properties",
+   "name": "Properties",
+   "exts": [
+    "properties"
+   ],
+   "filenames": [],
+   "line_comment": "#",
+   "block_comment": null,
+   "pygments": "properties",
+   "codemirror": "properties"
+  },
+  {
+   "id": "vue",
+   "name": "Vue",
+   "exts": [
+    "vue"
+   ],
+   "filenames": [],
+   "line_comment": null,
+   "block_comment": [
+    "<!--",
+    "-->"
+   ],
+   "pygments": "html",
+   "codemirror": "html"
+  },
+  {
+   "id": "svelte",
+   "name": "Svelte",
+   "exts": [
+    "svelte"
+   ],
+   "filenames": [],
+   "line_comment": null,
+   "block_comment": [
+    "<!--",
+    "-->"
+   ],
+   "pygments": "html",
+   "codemirror": "html"
+  },
+  {
+   "id": "lua",
+   "name": "Lua",
+   "exts": [
+    "lua"
+   ],
+   "filenames": [],
+   "line_comment": "--",
+   "block_comment": null,
+   "pygments": "lua",
+   "codemirror": "lua"
+  },
+  {
+   "id": "kotlin",
+   "name": "Kotlin",
+   "exts": [
+    "kt",
+    "kts"
+   ],
+   "filenames": [],
+   "line_comment": "//",
+   "block_comment": [
+    "/*",
+    "*/"
+   ],
+   "pygments": "kotlin",
+   "codemirror": "kotlin"
+  },
+  {
+   "id": "swift",
+   "name": "Swift",
+   "exts": [
+    "swift"
+   ],
+   "filenames": [],
+   "line_comment": "//",
+   "block_comment": [
+    "/*",
+    "*/"
+   ],
+   "pygments": "swift",
+   "codemirror": "swift"
+  },
+  {
+   "id": "r",
+   "name": "R",
+   "exts": [
+    "r"
+   ],
+   "filenames": [],
+   "line_comment": "#",
+   "block_comment": null,
+   "pygments": "r",
+   "codemirror": "r"
+  },
+  {
+   "id": "perl",
+   "name": "Perl",
+   "exts": [
+    "pl",
+    "pm"
+   ],
+   "filenames": [],
+   "line_comment": "#",
+   "block_comment": null,
+   "pygments": "perl",
+   "codemirror": "perl"
+  },
+  {
+   "id": "dockerfile",
+   "name": "Dockerfile",
+   "exts": [],
+   "filenames": [
+    "dockerfile"
+   ],
+   "line_comment": "#",
+   "block_comment": null,
+   "pygments": "docker",
+   "codemirror": "dockerfile"
+  },
+  {
+   "id": "makefile",
+   "name": "Makefile",
+   "exts": [
+    "mk"
+   ],
+   "filenames": [
+    "makefile",
+    "gnumakefile"
+   ],
+   "line_comment": "#",
+   "block_comment": null,
+   "pygments": "make",
+   "codemirror": "makefile"
+  },
+  {
+   "id": "gitignore",
+   "name": "Git ignore",
+   "exts": [],
+   "filenames": [
+    ".gitignore",
+    ".gitattributes"
+   ],
+   "line_comment": "#",
+   "block_comment": null,
+   "pygments": "text",
+   "codemirror": "gitignore"
+  },
+  {
+   "id": "html",
+   "name": "HTML",
+   "exts": [
+    "html"
+   ],
+   "filenames": [],
+   "line_comment": null,
+   "block_comment": [
+    "<!--",
+    "-->"
+   ],
+   "pygments": "html",
+   "codemirror": "html"
+  },
+  {
+   "id": "xml",
+   "name": "XML",
+   "exts": [
+    "xml"
+   ],
+   "filenames": [],
+   "line_comment": null,
+   "block_comment": [
+    "<!--",
+    "-->"
+   ],
+   "pygments": "xml",
+   "codemirror": "xml"
+  },
+  {
+   "id": "svg",
+   "name": "SVG",
+   "exts": [
+    "svg"
+   ],
+   "filenames": [],
+   "line_comment": null,
+   "block_comment": [
+    "<!--",
+    "-->"
+   ],
+   "pygments": "xml",
+   "codemirror": "xml"
+  },
+  {
+   "id": "json",
+   "name": "JSON",
+   "exts": [
+    "json",
+    "ipynb"
+   ],
+   "filenames": [],
+   "line_comment": null,
+   "block_comment": null,
+   "pygments": "json",
+   "codemirror": "json"
+  },
+  {
+   "id": "yaml",
+   "name": "YAML",
+   "exts": [
+    "yaml"
+   ],
+   "filenames": [],
+   "line_comment": "#",
+   "block_comment": null,
+   "pygments": "yaml",
+   "codemirror": "yaml"
+  },
+  {
+   "id": "csv",
+   "name": "CSV",
+   "exts": [
+    "csv",
+    "tsv"
+   ],
+   "filenames": [],
+   "line_comment": null,
+   "block_comment": null,
+   "pygments": "text",
+   "codemirror": "plain"
+  },
+  {
+   "id": "markdown",
+   "name": "Markdown",
+   "exts": [
+    "md"
+   ],
+   "filenames": [],
+   "line_comment": null,
+   "block_comment": [
+    "<!--",
+    "-->"
+   ],
+   "pygments": "markdown",
+   "codemirror": "markdown"
+  },
+  {
+   "id": "subtitles",
+   "name": "Subtitles",
+   "exts": [
+    "srt",
+    "vtt",
+    "ass",
+    "ssa"
+   ],
+   "filenames": [],
+   "line_comment": null,
+   "block_comment": null,
+   "pygments": "text",
+   "codemirror": "plain"
+  },
+  {
+   "id": "latex",
+   "name": "LaTeX",
+   "exts": [
+    "tex"
+   ],
+   "filenames": [],
+   "line_comment": "%",
+   "block_comment": null,
+   "pygments": "tex",
+   "codemirror": "stex"
+  },
+  {
+   "id": "rst",
+   "name": "reStructuredText",
+   "exts": [
+    "rst"
+   ],
+   "filenames": [],
+   "line_comment": ".. ",
+   "block_comment": null,
+   "pygments": "rst",
+   "codemirror": "plain"
+  }
+ ]
+}

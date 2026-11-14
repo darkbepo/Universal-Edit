@@ -47,8 +47,9 @@ def _item_to_dict(item: Any) -> dict[str, Any]:
 
 
 def _relpath(path: Path, folder: Path) -> str | None:
+    """``path`` relative to the project's folder, always with ``/`` (same file on every OS)."""
     try:
-        return os.path.relpath(path, folder)
+        return Path(os.path.relpath(path, folder)).as_posix()
     except ValueError:  # another drive
         return None
 
@@ -104,7 +105,8 @@ def _find_source(entry: dict[str, Any], folder: Path) -> Path | None:
         return path
     rel = entry.get("relpath")
     if rel:
-        candidate = (folder / rel).resolve()
+        # "/" since the first release; "\\" from a Windows copy still reads anywhere
+        candidate = (folder / rel.replace("\\", "/")).resolve()
         if candidate.exists():
             return candidate
     return None

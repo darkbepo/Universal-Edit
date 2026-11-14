@@ -27,7 +27,7 @@ def test_detect_by_magic_bytes(media, tmp_path):
 
 def test_unknown_file_is_rejected(tmp_path):
     p = tmp_path / "x.zzz"
-    p.write_text("hello")
+    p.write_bytes(b"\x00\x01binary\x00")  # unknown text files are accepted as plain text now
     assert detect(p) is None
 
 

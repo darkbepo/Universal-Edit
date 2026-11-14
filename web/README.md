@@ -12,7 +12,8 @@ device** (WebAssembly in a Web Worker) — files are never uploaded.
 
 \* HEIC can be read but not written.
 
-**Not in the browser — use the desktop app:** old Office formats (DOC, XLS, PPT) and
+**Not in the browser — use the [desktop app](https://github.com/darkbepo/Universal-Edit/releases)
+(not released yet):** old Office formats (DOC, XLS, PPT) and
 OpenDocument spreadsheets/presentations (they need LibreOffice), VP9 / H.265 / AV1 video, and
 very large videos (browsers cap memory at a few GB).
 

@@ -10,6 +10,9 @@ interface AudioHook {
   doc: { rate: number; channels: number; frames: number; duration: number; dirty: boolean; selection: [number, number]; setSelection(a: number, b?: number): void } | null;
   fpp: number;
   playing: boolean;
+  volume: number;
+  playGain: number | null;
+  stop(): void;
   draw(): void;
 }
 declare global {
@@ -106,4 +109,25 @@ test("the audio tile opens an empty editor; Edit is off for audio mixed with ima
   await page.getByRole("button", { name: "← Back to Convert" }).click();
   await page.locator('input[type="file"]').first().setInputFiles([fx("tone.wav"), fx("img0.png")]);
   await expect(page.getByRole("button", { name: "Edit", exact: true })).toBeDisabled();
+});
+
+test("the volume slider sets the playback volume and is remembered", async ({ page }) => {
+  await openEditor(page, [fx("tone.wav")]);
+  const slider = page.getByRole("slider", { name: "Volume" });
+  await expect(slider).toHaveValue("70");
+  await slider.fill("0"); // silent while it plays
+  await expect(page.locator(".audio-volume-value")).toHaveText("0 %");
+  await page.getByRole("button", { name: "▶ Play" }).click(); // a real click: autoplay rules
+  await expect.poll(() => page.evaluate(() => window.__audio!.playing)).toBe(true);
+  expect(await page.evaluate(() => window.__audio!.playGain)).toBe(0);
+  await slider.fill("50"); // changes the sound that is playing (a short glide)
+  expect(await page.evaluate(() => window.__audio!.volume)).toBeCloseTo(0.5);
+  await expect.poll(() => page.evaluate(() => window.__audio!.playGain), { timeout: 5000 }).toBeCloseTo(0.150515, 3);
+  await page.evaluate(() => window.__audio!.stop());
+  await slider.fill("35");
+  await page.reload();
+  await page.locator('input[type="file"]').first().setInputFiles([fx("tone.wav")]);
+  await page.getByRole("button", { name: "Edit", exact: true }).click();
+  await expect(page.getByRole("slider", { name: "Volume" })).toHaveValue("35");
+  expect(await page.evaluate(() => window.__audio!.volume)).toBeCloseTo(0.35);
 });

@@ -15,8 +15,9 @@ import { Orbit } from "./orbit";
 import { PropertiesPane } from "./properties";
 import { fmtSize, Queue } from "./queue";
 import { SettingsForm } from "./settings";
+import { themeButton } from "./theme";
 
-const NOUN: Record<string, [string, string]> = { image: ["image", "images"], video: ["video", "videos"], audio: ["audio file", "audio files"], document: ["document", "documents"], model: ["3D model", "3D models"], archive: ["archive", "archives"], subtitle: ["subtitle file", "subtitle files"], font: ["font", "fonts"], vector: ["vector graphic", "vector graphics"], cad: ["CAD drawing", "CAD drawings"] };
+const NOUN: Record<string, [string, string]> = { image: ["image", "images"], video: ["video", "videos"], audio: ["audio file", "audio files"], document: ["document", "documents"], model: ["3D model", "3D models"], archive: ["archive", "archives"], subtitle: ["subtitle file", "subtitle files"], font: ["font", "fonts"], vector: ["vector graphic", "vector graphics"], cad: ["CAD drawing", "CAD drawings"], code: ["code file", "code files"] };
 
 const h = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> & { class?: string } = {}, ...children: (Node | string)[]) => {
   const el = document.createElement(tag);
@@ -30,7 +31,7 @@ const h = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLEle
 // Video encoding in the browser is capped at a few threads (engines/threads.ts), so point out
 // that the desktop app is much faster for these.
 const SLOW_IN_BROWSER = new Set(["video", "gif", "frames", "slideshow", "subtitles-video"]);
-const DESKTOP_URL = "https://github.com/darkbepo/Universal-Edit#desktop-app-for-the-heavy-stuff";
+const DESKTOP_URL = "https://github.com/darkbepo/Universal-Edit/releases";
 const MAX_RESULTS = 200;
 
 export function mountApp(root: HTMLElement): void {
@@ -59,11 +60,12 @@ export function mountApp(root: HTMLElement): void {
   let audio: import("./audioeditor/page").AudioEditorPage | null = null;
   let docEditor: import("./doceditor/page").DocEditorPage | null = null;
   let editing = false;
-  // Three columns (badge | logo + name | Convert/Edit): the outer two are equally wide, so the
+  // Three columns (badge + theme | logo + name | Convert/Edit): the outer two are equally wide, so the
   // name stays centred on the page.
   const topbar = h("header", { class: "topbar" },
     h("div", { class: "topbar-start" },
-      h("span", { class: "badge", title: "Everything is processed in your browser. Nothing is uploaded." }, icon("lock", 14), "Files never leave your device")),
+      h("span", { class: "badge", title: "Everything is processed in your browser. Nothing is uploaded." }, icon("lock", 14), "Files never leave your device"),
+      themeButton()),
     h("div", { class: "brand" }, h("img", { class: "logo", src: "./icon.svg", alt: "" }), h("h1", {}, "Universal Edit")),
     h("div", { class: "topbar-end" }, modeBar));
 
@@ -406,6 +408,21 @@ export function mountApp(root: HTMLElement): void {
         showPage(a);
         return;
       }
+      if (id === "document") {
+        let d: import("./doceditor/page").DocEditorPage;
+        try {
+          d = await ensureDocEditor();
+        } catch (e) {
+          console.error("Couldn't load the document editor", e);
+          docEditorP = null; // try again next time
+          note.textContent = "Couldn't load the document editor. Check the internet connection and try again.";
+          note.hidden = false;
+          return;
+        }
+        d.openEmpty();
+        showPage(d);
+        return;
+      }
       if (id !== "image") return; // not available yet
       const pick = await newPictureDialog();
       if (!pick) return;
@@ -423,7 +440,13 @@ export function mountApp(root: HTMLElement): void {
     }
   }
   editMode.addEventListener("click", () => void enterEdit());
-  propertiesMode.addEventListener("click", () => enterProperties());
+  propertiesMode.addEventListener("click", () => {
+    enterProperties();
+    // one column (phones, narrow windows): the panel is below the queue, so bring it on screen
+    if (mode === "properties" && matchMedia("(max-width: 900px)").matches) {
+      requestAnimationFrame(() => properties.el.scrollIntoView({ block: "start", behavior: "smooth" }));
+    }
+  });
   convertMode.addEventListener("click", () => {
     if (editing && editor && !editor.el.hidden && !editor.maybeLeave()) return;
     if (editing && audio && !audio.el.hidden && !audio.maybeLeave()) return;

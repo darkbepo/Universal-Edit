@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { AudioDoc, setHistoryBytes } from "../src/audioedit/document";
 import * as ops from "../src/audioedit/ops";
 import * as peaks from "../src/audioedit/peaks";
+import { DEFAULT_VOLUME, gainFor } from "../src/audioedit/volume";
 import { readWav, wavFormat, WavError, writeWav } from "../src/audioedit/wav";
 
 const rampDoc = (n = 10, channels = 1) => new AudioDoc(8000, Array.from({ length: channels }, () => Float32Array.from({ length: n }, (_, i) => i)));
@@ -155,5 +156,22 @@ describe("waveform columns", () => {
       expect(c.maxs[0][i]).toBeGreaterThanOrEqual(Math.max(...part));
     }
     expect(peaks.columns(big, pb, 20_000, 10, 5).mins[0].length).toBe(0);
+  });
+});
+
+describe("volume slider", () => {
+  // what Qt's QtAudio.convertVolume(Logarithmic → Linear) gives (the desktop player's sink_volume,
+  // tests/test_audio_player.py checks the same numbers), so a slider position sounds the same
+  it("matches the desktop app", () => {
+    const qt: [number, number][] = [[0, 0], [0.01, 0.0021824], [0.25, 0.0624694], [0.5, 0.150515], [0.7, 0.2614394], [1, 1]];
+    for (const [v, g] of qt) expect(gainFor(v)).toBeCloseTo(g, 6);
+  });
+  it("stays within 0…1 and only gets louder", () => {
+    expect(gainFor(-1)).toBe(0);
+    expect(gainFor(2)).toBe(1);
+    expect(gainFor(0.995)).toBe(1);
+    const steps = Array.from({ length: 101 }, (_, i) => gainFor(i / 100));
+    expect(steps).toEqual([...steps].sort((a, b) => a - b));
+    expect(DEFAULT_VOLUME).toBe(0.7);
   });
 });

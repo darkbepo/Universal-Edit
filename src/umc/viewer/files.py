@@ -7,6 +7,7 @@ from pathlib import Path
 
 from umc.core.detect import COMPOUND_EXTS, DetectedFile, MediaFamily, canonical_ext, family_of_ext
 from umc.core.editors import EDITORS, EditorInfo
+from umc.doceditor.types import EDITABLE_DOCUMENT_EXTS
 
 # View kinds
 IMAGE = "image"  # a picture (Qt or Pillow decodes it)
@@ -55,7 +56,7 @@ def kind_of(family: MediaFamily | None, ext: str) -> str:
         return MODEL
     if ext in PAGES_EXTS:
         return PAGES
-    if ext in TEXT_EXTS:
+    if ext in TEXT_EXTS or family == MediaFamily.CODE:
         return TEXT
     if family in PREVIEW_TARGETS:
         return CONVERT
@@ -105,3 +106,12 @@ def editor_for(kind: str) -> EditorInfo | None:
     """The editor Edit opens for this kind, or None. ``available`` False = not ready yet."""
     editor_id = _EDITOR_OF_KIND.get(kind)
     return next((e for e in EDITORS if e.id == editor_id), None)
+
+
+def can_edit(kind: str, path: Path) -> bool:
+    """Whether Edit opens ``path`` (of view ``kind``): its editor is ready and, for documents,
+    the document editor can open that format (not PDF / EPUB, which it only converts)."""
+    editor = editor_for(kind)
+    if editor is None or not editor.available:
+        return False
+    return editor.id != "document" or _ext_of_name(path.name) in EDITABLE_DOCUMENT_EXTS

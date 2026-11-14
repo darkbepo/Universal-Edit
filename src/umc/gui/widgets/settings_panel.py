@@ -6,7 +6,7 @@ import contextlib
 from typing import Any
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QFocusEvent
 from PySide6.QtWidgets import (
     QCheckBox,
     QColorDialog,
@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QPlainTextEdit,
     QPushButton,
     QSlider,
     QSpinBox,
@@ -27,12 +28,22 @@ from PySide6.QtWidgets import (
 from umc.core.options import OptionSpec, option_specs
 
 
+class _TextArea(QPlainTextEdit):
+    """Multi-line text; ``editingFinished`` when it loses focus (like QLineEdit's)."""
+
+    editingFinished = Signal()  # noqa: N815 - mirrors QLineEdit
+
+    def focusOutEvent(self, e: QFocusEvent) -> None:  # noqa: N802
+        super().focusOutEvent(e)
+        self.editingFinished.emit()
+
+
 class _Field:
     """One option: its editor widget plus get/set helpers."""
 
-    def __init__(self, spec: OptionSpec, on_change) -> None:
+    def __init__(self, spec: OptionSpec, on_change, on_commit=None) -> None:
         self.spec = spec
-        self.widget, self.get, self.set = _make_editor(spec, on_change)
+        self.widget, self.get, self.set = _make_editor(spec, on_change, on_commit)
         self.label = QLabel(spec.label)
         self.help = QLabel(spec.help) if spec.help else None
         if self.help:
@@ -51,12 +62,24 @@ class _Field:
         self.container.setVisible(visible)
 
 
-def _make_editor(spec: OptionSpec, on_change):
+def _make_editor(spec: OptionSpec, on_change, on_commit=None):
+    """The widget for ``spec`` with get / set helpers.
+
+    ``on_change`` runs on every change; ``on_commit`` (optional) once an edit is finished: at
+    once for clicks and choices, on release for a dragged slider, on ``editingFinished`` for
+    spin boxes and text.
+    """
+    commit = on_commit or (lambda: None)
+
+    def change_and_commit(*_args) -> None:
+        on_change()
+        commit()
+
     k = spec.kind
     if k == "bool":
         w = QCheckBox()
         w.setChecked(bool(spec.default))
-        w.toggled.connect(on_change)
+        w.toggled.connect(change_and_commit)
         return w, w.isChecked, w.setChecked
 
     if k == "choice":
@@ -74,7 +97,7 @@ def _make_editor(spec: OptionSpec, on_change):
                     return
 
         set_choice(spec.default)
-        w.currentIndexChanged.connect(on_change)
+        w.currentIndexChanged.connect(change_and_commit)
         return w, get_choice, set_choice
 
     if k == "slider":
@@ -105,7 +128,14 @@ def _make_editor(spec: OptionSpec, on_change):
             slider.setValue(round(float(v) * scale))
             refresh()
 
-        slider.valueChanged.connect(lambda _: (refresh(), on_change()))
+        def slider_moved(_v: int) -> None:
+            refresh()
+            on_change()
+            if not slider.isSliderDown():  # keyboard / wheel / page click: done at once
+                commit()
+
+        slider.valueChanged.connect(slider_moved)
+        slider.sliderReleased.connect(commit)
         set_slider(spec.default)
         return box, get_slider, set_slider
 
@@ -122,6 +152,7 @@ def _make_editor(spec: OptionSpec, on_change):
             w.setSuffix(f" {spec.unit}")
         w.setValue(spec.default)
         w.valueChanged.connect(on_change)
+        w.editingFinished.connect(commit)
         return w, w.value, w.setValue
 
     if k == "color":
@@ -138,7 +169,7 @@ def _make_editor(spec: OptionSpec, on_change):
             if c.isValid():
                 state["value"] = c.name()
                 paint()
-                on_change()
+                change_and_commit()
 
         def set_color(v):
             state["value"] = v or "#ffffff"
@@ -169,8 +200,18 @@ def _make_editor(spec: OptionSpec, on_change):
         browse.clicked.connect(pick_file)
         clear.clicked.connect(edit.clear)
         edit.textChanged.connect(on_change)
+        edit.editingFinished.connect(commit)
         edit.setText(spec.default)
         return box, edit.text, edit.setText
+
+    if k == "textarea":
+        area = _TextArea()
+        area.setTabChangesFocus(True)
+        area.setPlainText(str(spec.default))
+        area.setFixedHeight(area.fontMetrics().lineSpacing() * 4 + 14)
+        area.textChanged.connect(on_change)
+        area.editingFinished.connect(commit)
+        return area, area.toPlainText, lambda v: area.setPlainText(str(v))
 
     # text / password
     w = QLineEdit()
@@ -179,11 +220,13 @@ def _make_editor(spec: OptionSpec, on_change):
     w.setText(str(spec.default))
     w.setPlaceholderText(str(spec.default) or "")
     w.textChanged.connect(on_change)
+    w.editingFinished.connect(commit)
     return w, w.text, w.setText
 
 
 class SettingsPanel(QWidget):
     changed = Signal()
+    committed = Signal()  # an edit is finished (slider released, spin box left, box ticked…)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -223,7 +266,7 @@ class SettingsPanel(QWidget):
                 heading.setObjectName("Section")
                 form.addRow(heading)
                 self._group_labels.append((heading, []))
-            f = _Field(spec, self._on_change)
+            f = _Field(spec, self._on_change, self._on_commit)
             if spec.name in values:
                 with contextlib.suppress(TypeError, ValueError):
                     f.set(values[spec.name])
@@ -239,16 +282,22 @@ class SettingsPanel(QWidget):
         return {name: f.get() for name, f in self._fields.items()}
 
     def set_values(self, values: dict[str, Any]) -> None:
-        """Show these values without announcing a change (the form keeps its fields)."""
+        """Show new values in the current form (no ``changed`` / ``committed``)."""
         self._building = True
         try:
-            for name, v in values.items():
-                if name in self._fields:
+            for name, value in values.items():
+                f = self._fields.get(name)
+                if f is not None and f.get() != value:
                     with contextlib.suppress(TypeError, ValueError):
-                        self._fields[name].set(v)
+                        f.set(value)
         finally:
             self._building = False
         self._update_visibility()
+
+    def field_widget(self, name: str) -> QWidget | None:
+        """The editor widget of one option (None when it isn't in the form)."""
+        f = self._fields.get(name)
+        return f.widget if f else None
 
     def has_visible_fields(self) -> bool:
         vals = self.values()
@@ -259,6 +308,10 @@ class SettingsPanel(QWidget):
             return
         self._update_visibility()
         self.changed.emit()
+
+    def _on_commit(self) -> None:
+        if not self._building:
+            self.committed.emit()
 
     def _update_visibility(self) -> None:
         vals = self.values()

@@ -22,10 +22,13 @@ import { MAX_FILE_BYTES, WEB_EDITABLE_DOCUMENT_EXTS, warningText } from "../../d
 import type { ConversionClient } from "../../worker/client";
 import { FindBar } from "./findbar";
 import { FormatBar, browserAsker, type Asker } from "./formatbar";
+import { backLabel } from "../back";
 import { DocView, EDITOR_KEYS, NOT_A_PICTURE, pictureExt, plainText } from "./view";
 
 export const ONLY_ONE = "Only one document can be edited at a time.";
 export const DISCARD = "Discard unsaved changes to this document?";
+/** The name a new document (the start screen's tile) is offered to be saved as. */
+export const UNTITLED = "Untitled";
 const STATUS_DELAY_MS = 150;
 /** What the Pandoc engine says while it downloads (`engines/pandoc.ts`), with its percent. */
 const ENGINE_LOADING = /^Loading document engine.*?(\d+) %$/;
@@ -118,6 +121,8 @@ export class DocEditorPage {
   private readonly saveAsBtn: HTMLButtonElement;
   private readonly saveDialog: HTMLDialogElement;
   private source: { name: string; stem: string; format: string } | null = null;
+  /** A new document from the start screen: the first Save asks where, like Save as. */
+  private untitled = false;
   private warnings: string[] = [];
   private warned = false;
   private lastSave: SaveTarget | null = null;
@@ -160,7 +165,7 @@ export class DocEditorPage {
     const gap = () => el("span", "gap");
     const top = el("div", "editor-top");
     top.append(
-      btn("← Back to Convert", "Leave the editor", () => this.back(), "link"),
+      backLabel(btn("← Back to Convert", "Leave the editor", () => this.back(), "link")),
       gap(),
       this.undoBtn,
       this.redoBtn,
@@ -411,6 +416,26 @@ export class DocEditorPage {
   }
 
   // ---------------------------------------------------------------- opening
+  /** A new, empty document named "Untitled" (the start screen's tile): nothing to save yet, and
+   * the first Save asks for a name and format (DOCX first). A running open is dropped. */
+  openEmpty(): void {
+    this.opens++;
+    this.view.load({ html: "", images: new Map(), sourceFormat: "docx", warnings: [], frontMatter: "", title: "", template: null });
+    this.loads++;
+    this.source = { name: UNTITLED, stem: UNTITLED, format: "docx" };
+    this.untitled = true;
+    this.warnings = [];
+    this.warned = false;
+    this.lastSave = null;
+    this.bannerText.textContent = "";
+    this.banner.hidden = true;
+    this.findBar.el.hidden = true;
+    this.showMessage("");
+    this.updateButtons();
+    this.updateStatus();
+    if (this.active) this.view.focus();
+  }
+
   /** Open `file`; false (with the reason in the message line) when it can't be edited. While a
    * save runs, it opens when that is done; a later open wins over one still running, and the
    * one taken over gives null (the message line is then the later one's). */
@@ -444,6 +469,7 @@ export class DocEditorPage {
       this.view.load(doc);
       this.loads++;
       this.source = { name: file.name, stem: stemOf(file.name), format: doc.sourceFormat };
+      this.untitled = false;
       this.warnings = [...doc.warnings];
       this.warned = false;
       this.lastSave = null;
@@ -526,6 +552,7 @@ export class DocEditorPage {
   async save(): Promise<boolean> {
     if (!this.source || this.saving) return false;
     if (this.lastSave) return this.write(this.lastSave);
+    if (this.untitled) return this.saveAs();
     if (this.warnings.length && !this.warned) {
       if (!window.confirm(`Parts of this document will be lost (${this.warnings.join(", ")}). Save anyway?`)) return false;
       this.warned = true;
@@ -603,7 +630,9 @@ export class DocEditorPage {
         a.click();
         setTimeout(() => URL.revokeObjectURL(url), 60_000);
       }
-      if (this.loads === loaded) this.view.markClean(saved);
+      // another document was opened meanwhile: it isn't the one saved, so say nothing over it
+      if (this.loads !== loaded) return true;
+      this.view.markClean(saved);
       this.showMessage([`Saved “${handle?.name ?? name}”.`, ...notices].join(" "));
       return true;
     } catch (err) {

@@ -403,6 +403,67 @@ def _audio_editor_check(d: Path) -> list[Path]:
     return [out]
 
 
+def _video_editor_check(d: Path) -> list[Path]:
+    """Video editor: two clips with a crossfade, a title and music → project file → MP4."""
+    import importlib
+    import threading
+
+    from umc.tools import ffmpeg
+    from umc.videoedit import edits, media
+    from umc.videoedit.export import ExportOptions, run_export
+    from umc.videoedit.projectfile import load_project, save_project
+
+    importlib.import_module("umc.gui.videoedit.editor_page")
+    importlib.import_module("umc.gui.videoedit.qt_audio_out")
+    d.mkdir(parents=True, exist_ok=True)
+    red, blue, tone = d / "red.mp4", d / "blue.mp4", d / "tone.wav"
+    exe = ffmpeg.ffmpeg_path()
+    import subprocess
+
+    for args, out in (
+        (["-f", "lavfi", "-i", "color=c=red:s=320x240:r=25:d=1"], red),
+        (
+            ["-f", "lavfi", "-i", "color=c=blue:s=320x240:r=25:d=1"]
+            + ["-f", "lavfi", "-i", "sine=frequency=330:duration=1", "-shortest"],
+            blue,
+        ),
+        (["-f", "lavfi", "-i", "sine=frequency=440:duration=2"], tone),
+    ):
+        subprocess.run(
+            [exe, "-y", "-v", "error", *args, str(out)],
+            check=True,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    project, problems = media.new_project([red, blue, tone])
+    if problems or len(project.main) != 2:
+        raise RuntimeError(f"unexpected project: {problems}, {len(project.main)} clips")
+    from umc.videoedit.project import Transition
+
+    project = edits.update(
+        project, project.main[1].id, transition_in=Transition(kind="fade", duration=0.5)
+    )
+    project, title = edits.add_text(project, 0.2)
+    project = edits.update(project, title, text="Hello", end=1.2)
+    project = edits.update(project, project.music_rows[0][0].id, out=1.5)
+    saved = d / "edit.umcvideo"
+    save_project(project, saved)
+    again, missing = load_project(saved)
+    if missing or len(again.main) != 2 or not again.music_rows or not again.text_rows:
+        raise RuntimeError(f"project file didn't round-trip: {missing}")
+    dest = d / "edit.mp4"
+    run_export(
+        again,
+        ExportOptions(container="mp4"),
+        dest,
+        on_progress=lambda _f, _m: None,
+        cancel_event=threading.Event(),
+    )
+    length = ffmpeg.probe(dest).duration
+    if abs(length - 1.5) > 0.1:
+        raise RuntimeError(f"export is {length:.2f} s long, expected 1.5 s")
+    return [saved, dest]
+
+
 def run(report: Path) -> int:
     from PIL import Image
 
@@ -459,6 +520,10 @@ def run(report: Path) -> int:
             (
                 "audio editor (open, cut, fade, save as mp3)",
                 lambda: _audio_editor_check(d / "audioedit"),
+            ),
+            (
+                "video editor (project -> mp4: crossfade, text, music)",
+                lambda: _video_editor_check(d / "videoedit"),
             ),
             ("mp4 -> webm", lambda: _convert([out / "img0 slideshow.mp4"], "webm", out)),
             ("mp4 -> gif", lambda: _convert([out / "img0 slideshow.mp4"], "video:gif", out)),

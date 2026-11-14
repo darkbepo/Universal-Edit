@@ -110,8 +110,8 @@ def test_reduced_motion_keeps_them_still_and_drops_at_once(qtbot, monkeypatch, m
 
 
 def test_a_drop_that_adds_nothing_brings_the_badges_back(qtbot, window, tmp_path):
-    junk = tmp_path / "notes.xyz"
-    junk.write_text("?", encoding="utf-8")
+    junk = tmp_path / "blob.xyz"
+    junk.write_bytes(b"\x00\x01?\x00")  # binary: still refused (unknown text is accepted)
     o = window.drop.orbit
     window.drop.drop_with_burst(lambda: window.handle_drop([str(junk)]))
     assert o.burst_start is not None

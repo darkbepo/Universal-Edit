@@ -32,6 +32,7 @@ NOUN = {
     MediaFamily.FONT: "font",
     MediaFamily.VECTOR: "vector graphic",
     MediaFamily.CAD: "CAD drawing",
+    MediaFamily.CODE: "code file",
 }
 OFFICE_EXTS = {"docx", "docm", "dotx", "xlsx", "xlsm", "pptx", "pptm", "ppsx"}
 ODF_EXTS = {"odt", "ods", "odp", "odg"}

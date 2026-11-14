@@ -102,8 +102,8 @@ class WinRegistry:
 
 
 # --------------------------------------------------------------------------- which files
-def convert_extensions() -> list[str]:
-    """Every extension the converter reads ("tar.gz" style ones can't have a menu entry)."""
+def known_extensions() -> list[str]:
+    """Every extension the app reads ("tar.gz" style ones can't have a menu entry)."""
     exts = set()
     for name in dir(det):
         if name.endswith("_EXTS") and isinstance(getattr(det, name), set | frozenset):
@@ -112,9 +112,25 @@ def convert_extensions() -> list[str]:
     return sorted(e for e in exts if "." not in e)
 
 
+def convert_extensions() -> list[str]:
+    """Extensions that get the "Convert" right-click entry: not code files (nothing to convert
+    a .py or .bat to; they're offered in Open with only)."""
+    code_only = det.CODE_EXTS - {"ts"}  # .ts is also a video format
+    return [e for e in known_extensions() if e not in code_only]
+
+
+# Types Windows runs on double-click: a new "Open with" handler for them can bring up the "How
+# do you want to open this file?" question, so the app leaves them alone.
+RUNNABLE_EXTS = frozenset({"bat", "cmd", "ps1", "psm1", "py", "pyw", "sh", "bash", "zsh"})
+
+
 def view_extensions() -> list[str]:
     """Extensions the viewer shows (Open with)."""
-    return [e for e in convert_extensions() if vf.kind_of_path(Path("x." + e)) != vf.OTHER]
+    return [
+        e
+        for e in known_extensions()
+        if e not in RUNNABLE_EXTS and vf.kind_of_path(Path("x." + e)) != vf.OTHER
+    ]
 
 
 def launch_command(*args: str) -> str:

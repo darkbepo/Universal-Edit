@@ -214,6 +214,28 @@ def test_export_cancel_leaves_no_file(tmp_path):
     assert not (tmp_path / "out.part.mp4").exists()
 
 
+def test_export_refuses_a_source_file_as_destination(src, tmp_path):
+    import shutil
+
+    own = tmp_path / "red.mp4"
+    shutil.copy(src["red"].path, own)
+    source = probe_source(own, "red")
+    p = Project(ProjectSettings(), (source,), (VideoClip("a", "red", 0.0, 1.0),))
+    before = own.read_bytes()
+    import sys
+
+    name = "RED.mp4" if sys.platform == "win32" else "red.mp4"  # Windows ignores case
+    for dest in (own, tmp_path / "sub" / ".." / name):
+        assert export.is_project_file(p, dest)
+        with pytest.raises(ConversionError) as err:
+            run_export(
+                p, _options(), dest, on_progress=lambda *a: None, cancel_event=threading.Event()
+            )
+        assert str(err.value) == export.OWN_FILE
+    assert own.read_bytes() == before
+    assert not export.is_project_file(p, tmp_path / "other.mp4")
+
+
 def test_export_failure_keeps_existing_dest(src, tmp_path, monkeypatch):
     dest = tmp_path / "out.mp4"
     dest.write_bytes(b"keep me")

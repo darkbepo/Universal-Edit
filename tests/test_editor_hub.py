@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from umc.core.editors import EDITORS
+from umc.core.editors import EDITORS, WEB_LATER
 from umc.core.errors import ConversionError
 from umc.editor.blank import BACKGROUNDS, PRESETS, blank_document
 
@@ -28,7 +28,11 @@ def test_same_editors_and_presets_as_the_website():
     web = re.findall(
         r'id: "(\w+)", title: "([^"]+)", blurb: "([^"]+)", icon: "([\w-]+)", available: (\w+)', ts
     )
-    assert web == [(e.id, e.title, e.blurb, e.icon, str(e.available).lower()) for e in EDITORS]
+    # editors the website doesn't have yet keep a "Coming soon" tile there
+    assert web == [
+        (e.id, e.title, e.blurb, e.icon, "false" if e.id in WEB_LATER else str(e.available).lower())
+        for e in EDITORS
+    ]
     presets = (ROOT / "web" / "src" / "editor" / "presets.ts").read_text(encoding="utf-8")
     assert re.findall(r'\["([^"]+)", (\d+), (\d+)\]', presets) == [
         (label, str(w), str(h)) for label, w, h in PRESETS
@@ -64,17 +68,43 @@ def window(qtbot):
 def test_tiles_shown_until_files_are_added(window, media):
     hub = window.hub
     assert hub.isVisible()
-    assert [t for t, tile in hub.tiles.items() if tile.isEnabled()] == ["image", "model", "audio"]
-    for key in ("video", "document"):
-        assert hub.tiles[key].badge is not None and hub.tiles[key].badge.text() == "Coming soon"
+    enabled = [t for t, tile in hub.tiles.items() if tile.isEnabled()]
+    assert enabled == ["image", "model", "video", "audio", "document"]
+    assert hub.tiles["video"].badge.isHidden()
+    assert hub.tiles["document"].badge.isHidden()
     window.add_files([str(media / "img0.png")])
     assert not hub.isVisible()
     window.clear_files()
     assert hub.isVisible()
 
 
-def test_coming_soon_tiles_open_nothing(window):
-    assert window.open_editor("video") is False
+def test_coming_soon_tiles_are_greyed_out_and_open_nothing(qtbot, monkeypatch):
+    import dataclasses
+
+    from PySide6.QtCore import QCoreApplication
+
+    import umc.core.editors as editors
+    import umc.gui.widgets.editor_hub as hub_module
+
+    soon = tuple(dataclasses.replace(e, available=False) if e.id == "video" else e for e in EDITORS)
+    monkeypatch.setattr(editors, "EDITORS", soon)
+    monkeypatch.setattr(hub_module, "EDITORS", soon)
+    QCoreApplication.setOrganizationName("UMC-tests")
+    from umc.gui.main_window import MainWindow
+
+    w = MainWindow()
+    qtbot.addWidget(w)
+    w.show()
+    tile = w.hub.tiles["video"]
+    assert not tile.isEnabled()
+    assert tile.badge.text() == "Coming soon" and not tile.badge.isHidden()
+    assert "coming soon" in tile.toolTip()
+    assert w.open_editor("video") is False
+    assert w.stack.currentIndex() == 0
+
+
+def test_unknown_editors_open_nothing(window):
+    assert window.open_editor("nothing") is False
     assert window.stack.currentIndex() == 0
 
 
@@ -126,3 +156,30 @@ def test_3d_viewer_tile_opens_it_empty(window, tmp_path):
     page.wait_idle()
     window.leave_edit()
     assert window.stack.currentIndex() == 0
+
+
+def test_document_tile_opens_an_empty_document(window, monkeypatch):
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    assert window.open_editor("document")
+    page = window.doc_editor
+    assert window.stack.currentWidget() is page and window.edit_mode.isChecked()
+    assert page.source is None and page.untitled and page.view.toPlainText() == ""
+    assert not page.view.document().isModified() and not page.banner.isVisible()
+    assert page.save_button.isEnabled() and page.save_as_button.isEnabled()
+
+    def no_dialog(*a, **k):
+        raise AssertionError("no question expected")
+
+    monkeypatch.setattr(QMessageBox, "exec", no_dialog)
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", no_dialog)
+    window.leave_edit()  # nothing typed: leaves without asking
+    assert window.stack.currentIndex() == 0 and window.hub.isVisible()
+
+
+def test_document_tile_stays_put_when_the_page_refuses(window, monkeypatch):
+    from umc.gui.doceditor.doc_editor_page import DocEditorPage
+
+    monkeypatch.setattr(DocEditorPage, "open_empty", lambda self: False)
+    assert window.open_editor("document") is False
+    assert window.stack.currentIndex() == 0 and not window.edit_mode.isChecked()

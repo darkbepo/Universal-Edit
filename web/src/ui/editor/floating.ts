@@ -3,6 +3,7 @@
 // remembers where it was put (localStorage). The window element is the <dialog> the dialogs
 // build (shown with show(), not showModal(), so the picture stays usable behind it).
 import { ICONS as TABLER } from "../icon_data";
+import { isPhone } from "../back";
 
 export type PanelState = "open" | "minimised" | "closed";
 
@@ -120,6 +121,14 @@ export class FloatingHost {
     } else this.place(el, [MARGIN + 24 * (n % 8), MARGIN + 24 * (n % 8)]);
     this.raise(el);
     this.tell(key, "open");
+    this.onlyOnPhone(key);
+  }
+
+  /** Phones show the windows as one sheet along the bottom of the picture (styles.css), so the
+   *  others go back into their icons rather than piling up over it. */
+  private onlyOnPhone(key: string): void {
+    if (!isPhone()) return;
+    for (const other of this.panels.keys()) if (other !== key) this.minimise(other);
   }
 
   setTitle(key: string, title: string): void {
@@ -142,6 +151,7 @@ export class FloatingHost {
     else this.place(p.el, [p.el.offsetLeft, p.el.offsetTop]); // the editor may have shrunk meanwhile
     this.raise(p.el);
     this.tell(key, "open");
+    this.onlyOnPhone(key);
   }
 
   /** An icon clicked again: minimise an open window, bring back a minimised one. False when
@@ -182,6 +192,7 @@ export class FloatingHost {
   }
 
   private remember(key: string, el: HTMLElement): void {
+    if (isPhone()) return; // the sheet's place says nothing about where it goes on a wide screen
     try {
       localStorage.setItem(storeKey(key), JSON.stringify([el.offsetLeft, el.offsetTop]));
     } catch {

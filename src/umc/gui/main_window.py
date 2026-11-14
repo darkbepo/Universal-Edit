@@ -33,7 +33,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from umc.core import addons
+from umc.core import addons, editors
 from umc.core import options as opts
 from umc.core.detect import DetectedFile, MediaFamily, detect
 from umc.core.job import ConversionJob, file_fractions
@@ -62,6 +62,7 @@ FAMILY_NOUN = {
     MediaFamily.VECTOR: ("vector graphic", "vector graphics"),
     MediaFamily.CAD: ("CAD drawing", "CAD drawings"),
     MediaFamily.PROJECT: ("video project", "video projects"),
+    MediaFamily.CODE: ("code file", "code files"),
 }
 
 NARROW = 900  # px of window width below which the layout becomes one column
@@ -116,7 +117,18 @@ class MainWindow(QMainWindow):
         self.settings_button.setAutoRaise(True)
         self.settings_button.clicked.connect(self.open_settings)
         at_left = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
-        tl.addWidget(self.settings_button, 0, 0, at_left)
+        # next to it: System → Light → Dark (remembered in QSettings by theme.set_choice)
+        self.theme_button = QToolButton(objectName="Cog")
+        self.theme_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.theme_button.setAutoRaise(True)
+        self.theme_button.clicked.connect(self.cycle_theme)
+        corner = QWidget()
+        cl = QHBoxLayout(corner)
+        cl.setContentsMargins(0, 0, 0, 0)
+        cl.setSpacing(2)
+        cl.addWidget(self.settings_button)
+        cl.addWidget(self.theme_button)
+        tl.addWidget(corner, 0, 0, at_left)
         tl.setColumnStretch(0, 1)
         tl.setColumnStretch(2, 1)
 
@@ -154,6 +166,7 @@ class MainWindow(QMainWindow):
         self.doc_editor = None  # DocEditorPage, created on first use
         self.viewer3d = None  # ViewerPage (3D models), created on first use
         self.audio_editor = None  # AudioEditorPage, created on first use
+        self.video_editor = None  # VideoEditorPage, created on first use
         self._convert_size = None
 
         # ---------------------------------------------------------- body: two columns
@@ -279,7 +292,8 @@ class MainWindow(QMainWindow):
         saved = self.settings.value("output_dir", "", str)
         self._set_output_dir(Path(saved) if saved and Path(saved).is_dir() else None)
         self._restore_size()
-        QGuiApplication.styleHints().colorSchemeChanged.connect(lambda _s: self._retint())
+        theme.notifier().changed.connect(self._retint)
+        theme.notifier().choice_changed.connect(self._on_theme_choice)
         self._retint()
         self._apply_layout()
         self._refresh()
@@ -341,6 +355,7 @@ class MainWindow(QMainWindow):
         self.hub.retint()
         self.properties_panel.retint()
         self.settings_button.setIcon(icons.icon("settings", pal["muted"], 20))
+        self._show_theme_choice()
         self.picker.retint()
         self.tabs.retint()
         for i in range(self.results_list.count()):
@@ -461,7 +476,8 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------ Convert | Edit
     def edit_kind(self) -> str | None:
         """ "image" when every file is an image, "document" for one editable document,
-        "model" when every file is a 3D model, "audio" when every file is audio (joined)."""
+        "model" when every file is a 3D model, "audio" when every file is audio (joined),
+        "video" for videos mixed with pictures / sound, or one video project."""
         if not self.files:
             return None
         if all(f.family == MediaFamily.IMAGE for f in self.files):
@@ -470,6 +486,13 @@ class MainWindow(QMainWindow):
             return "model"
         if all(f.family == MediaFamily.AUDIO for f in self.files):
             return "audio"
+        if any(f.family == MediaFamily.VIDEO for f in self.files) and all(
+            f.family in (MediaFamily.VIDEO, MediaFamily.IMAGE, MediaFamily.AUDIO)
+            for f in self.files
+        ):
+            return "video"
+        if len(self.files) == 1 and self.files[0].family == MediaFamily.PROJECT:
+            return "video"
         if (
             len(self.files) == 1
             and self.files[0].family == MediaFamily.DOCUMENT
@@ -496,9 +519,26 @@ class MainWindow(QMainWindow):
             tip = "Open the images in the image editor (each image becomes a layer)"
         elif kind == "audio":
             tip = "Open the sound in the audio editor (several files are joined)"
+        elif kind == "video":
+            tip = "Open the files in the video editor"
         else:
-            tip = "Add images, audio, one text document, or 3D models to edit them"
+            tip = "Add images, videos, audio, one text document, or 3D models to edit them"
         self.edit_mode.setToolTip(tip)
+
+    def cycle_theme(self) -> None:
+        theme.set_choice(theme.next_choice())  # choice_changed updates this button
+
+    def _on_theme_choice(self, _choice: str) -> None:  # a bound method: dropped with the window
+        self._show_theme_choice()
+
+    def _show_theme_choice(self) -> None:
+        choice = theme.choice()
+        following = theme.next_choice(choice)
+        self.theme_button.setIcon(icons.icon(theme.ICONS[choice], theme.palette()["muted"], 20))
+        self.theme_button.setToolTip(
+            f"Theme: {theme.LABELS[choice]} — click for {theme.LABELS[following].lower()}"
+        )
+        self.theme_button.setAccessibleName(f"Theme: {theme.LABELS[choice]}")
 
     def open_settings(self) -> None:
         from umc.gui.settings_dialog import SettingsDialog
@@ -506,8 +546,16 @@ class MainWindow(QMainWindow):
         SettingsDialog(self).exec()
 
     def _page(self, kind: str) -> QWidget:
-        """The editor page for ``kind`` ("image", "document", "model", "audio"), made on first
-        use."""
+        """The editor page for ``kind`` ("image", "document", "model", "audio", "video"), made on
+        first use."""
+        if kind == "video":
+            if self.video_editor is None:
+                from umc.gui.videoedit.editor_page import VideoEditorPage
+
+                self.video_editor = VideoEditorPage()
+                self.video_editor.back_requested.connect(self.leave_edit)
+                self.stack.addWidget(self.video_editor)
+            return self.video_editor
         if kind == "audio":
             if self.audio_editor is None:
                 from umc.gui.audioeditor.audio_editor_page import AudioEditorPage
@@ -547,6 +595,11 @@ class MainWindow(QMainWindow):
         self.edit_mode.setChecked(True)
         self.resize(max(self.width(), 1100), max(self.height(), 720))
 
+    def _show_video_page(self, page: QWidget) -> None:
+        self._show_page(page)
+        self.resize(max(self.width(), 1200), max(self.height(), 760))
+        page.on_shown()
+
     def enter_edit(self) -> None:
         if self._current_editor() is not None:
             return
@@ -576,8 +629,12 @@ class MainWindow(QMainWindow):
             return
         if not page.open_paths([f.path for f in self.files]):
             self._check_mode_button()
-            self.input_error.setText(page.message.text())
-            self.input_error.setVisible(True)
+            if not getattr(page, "open_cancelled", False):  # a cancel is no error
+                self.input_error.setText(page.message.text())
+                self.input_error.setVisible(True)
+            return
+        if kind == "video":
+            self._show_video_page(page)
             return
         self._show_page(page)
         page.canvas.fit()
@@ -596,6 +653,8 @@ class MainWindow(QMainWindow):
         of a new picture first). False if nothing was opened."""
         if self._current_editor() is not None or self.busy:
             return False
+        if any(e.id == kind and not e.available for e in editors.EDITORS):
+            return False  # "Coming soon"
         if addons.is_addon(kind) and not self._editor_ready(kind):
             return False
         if kind == "image":
@@ -612,6 +671,19 @@ class MainWindow(QMainWindow):
             page = self._page("audio")
             page.open_empty()
             self._show_page(page)
+            return True
+        if kind == "video":
+            page = self._page("video")
+            if not page.open_empty():  # still saving
+                return False
+            self._show_video_page(page)
+            return True
+        if kind == "document":
+            page = self._page("document")
+            if not page.open_empty():  # still finishing an open or save
+                return False
+            self._show_page(page)
+            page.view.setFocus()
             return True
         return False  # not available yet
 
@@ -920,6 +992,8 @@ class MainWindow(QMainWindow):
             self._drop_models(paths)
         elif page is not None and page is self.audio_editor:
             self.audio_editor.drop_paths([Path(p) for p in self._expand(paths)])
+        elif page is not None and page is self.video_editor:
+            self.video_editor.add_paths([Path(p) for p in self._expand(paths)])
         elif page is not None:
             self.editor.add_paths([Path(p) for p in self._expand(paths)])
         elif not self.busy:
@@ -941,6 +1015,8 @@ class MainWindow(QMainWindow):
         if page is not None and not page.maybe_leave():
             event.ignore()
             return
+        if self.video_editor is not None:
+            self.video_editor.shutdown()  # an embedded page never gets its own closeEvent
         if self.editor is not None:
             self.editor.stop_background_removal()
         if self.viewer3d is not None:
@@ -953,4 +1029,15 @@ class MainWindow(QMainWindow):
                 self._thread.wait(5000)
         if self.stack.currentIndex() == 0:
             self.settings.setValue("geometry", self.saveGeometry())
+        if self.video_editor is not None:
+            # shut down for good: a closed window can be reused (AppController.free_main),
+            # so the next Edit / tile builds a fresh page
+            page, self.video_editor = self.video_editor, None
+            if self.stack.currentWidget() is page:
+                self.stack.setCurrentIndex(0)
+                self._set_mode("convert")
+                if self._convert_size is not None:
+                    self.resize(self._convert_size)
+            self.stack.removeWidget(page)
+            page.deleteLater()
         super().closeEvent(event)

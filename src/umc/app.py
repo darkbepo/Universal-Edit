@@ -105,6 +105,9 @@ def main(argv: list[str] | None = None) -> int:
 
     branding.set_windows_app_id()
     app = QApplication(sys.argv if argv is None else argv)
+    from umc.gui.gc_guard import install_gui_gc
+
+    install_gui_gc(app)  # cyclic GC only on the GUI thread (worker-thread GC crashes PySide)
     app.setApplicationName(branding.APP_NAME)
     app.setOrganizationName(branding.ORG_NAME)
     app.setApplicationVersion(__version__)
@@ -124,8 +127,9 @@ def main(argv: list[str] | None = None) -> int:
     _start_cleanup()
     branding.migrate_settings()
     app.setStyle("Fusion")
+    theme.load_choice()  # the remembered System / Light / Dark, before the first window
     app.setStyleSheet(theme.stylesheet())
-    app.styleHints().colorSchemeChanged.connect(lambda _: app.setStyleSheet(theme.stylesheet()))
+    theme.notifier().changed.connect(lambda: app.setStyleSheet(theme.stylesheet()))
 
     from umc.gui.launcher import AppController
 

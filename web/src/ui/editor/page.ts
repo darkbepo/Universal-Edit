@@ -19,6 +19,7 @@ import { contentAwareFill } from "../../editor/inpaint";
 import { MASK_TARGET } from "../../converters/bgremove";
 import { CloneStampTool } from "../../editor/tools/paint";
 import { FloatingHost } from "./floating";
+import { backLabel, isPhone } from "../back";
 import { canvasPng, canvasRasterizer, decodeBlob, type Decoded } from "../../editor/raster";
 import type { Tool, ToolContext } from "../../editor/tools/base";
 import { makeTools } from "../../editor/tools/index";
@@ -175,13 +176,16 @@ export class EditorPage {
     this.redoBtn = btn("Redo", "Redo (Ctrl+Y)", () => this.canvas.redo());
     this.saveAsBtn = btn("Save as…", "Save as (Ctrl+Shift+S)", () => void this.saveAs());
     this.saveBtn = btn("Save", "Save (Ctrl+S)", () => void this.save(), "primary small");
+    // .top-tools is invisible on wide screens (display: contents); on phones it becomes the
+    // bar's second row, so Back and Save stay on the first
     const top = h("div", { class: "editor-top" },
-      btn("← Back to Convert", "Leave the editor", () => this.back(), "link"),
-      h("span", { class: "gap" }), this.undoBtn, this.redoBtn,
-      h("span", { class: "gap" }),
-      btn("−", "Zoom out", () => this.canvas.zoomOut()), btn("+", "Zoom in", () => this.canvas.zoomIn()),
-      btn("Fit", "Fit to window (Ctrl+0)", () => this.canvas.fit()), btn("100 %", "Actual pixels (Ctrl+1)", () => this.canvas.setZoom(1)),
-      h("div", { class: "spacer" }), btn("?", "Keyboard shortcuts (?)", () => void this.showShortcuts()), this.saveAsBtn, this.saveBtn);
+      backLabel(btn("← Back to Convert", "Leave the editor", () => this.back(), "link")),
+      h("div", { class: "top-tools" },
+        h("span", { class: "gap" }), this.undoBtn, this.redoBtn,
+        h("span", { class: "gap" }),
+        btn("−", "Zoom out", () => this.canvas.zoomOut()), btn("+", "Zoom in", () => this.canvas.zoomIn()),
+        btn("Fit", "Fit to window (Ctrl+0)", () => this.canvas.fit()), btn("100 %", "Actual pixels (Ctrl+1)", () => this.canvas.setZoom(1))),
+      h("div", { class: "spacer" }), btn("?", "Keyboard shortcuts (?)", () => void this.showShortcuts(), "btn small desk-only"), this.saveAsBtn, this.saveBtn);
     // Crop needs buttons too (Enter isn't available on touch screens): they float next to the
     // rectangle once one is drawn, and also offer "Crop to selection" for a selection.
     this.cropBar = new CropBar((mode) => this.barApply(mode), (mode) => this.barCancel(mode));
@@ -205,6 +209,8 @@ export class EditorPage {
     this.floating.onState = (key, state) => this.toolBar.setPanelState(key, state);
     setFloatingHost(this.floating);
     this.floating.open("tool", "Tool options", h("div", { class: "tool-options" }, this.settings.el), { closable: false, right: true });
+    // a phone has no room beside the picture: the options wait in the chosen tool's icon
+    if (isPhone()) this.floating.minimise("tool");
     this.selectTool("brush");
     this.updateButtons();
     window.addEventListener("keydown", (e) => this.key(e));
