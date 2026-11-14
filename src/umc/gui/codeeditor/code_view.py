@@ -210,8 +210,8 @@ class CodeView(QPlainTextEdit):
             sel.cursor = QTextCursor(block)
             col = max(0, min(p.column - 1, block.length() - 1)) if p.column else 0
             sel.cursor.setPosition(block.position() + col)
-            end = block.position() + max(block.length() - 1, col + 1)
-            sel.cursor.setPosition(min(end, doc.characterCount() - 1), QTextCursor.MoveMode.KeepAnchor)
+            end = min(block.position() + max(block.length() - 1, col + 1), doc.characterCount() - 1)
+            sel.cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
             selections.append(sel)
         self.setExtraSelections(selections)
 
