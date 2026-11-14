@@ -161,6 +161,16 @@ lines, save. Model: Notepad++ — but in the app's calm style, not its crowded t
 - Phones (≤ 560 px): "← Back", secondary buttons in `.top-tools`, preview replaces the code
   instead of a side pane. Check at 375 px.
 
+### Drop-zone animation (owner's request, 2026-11-14)
+
+- Two new badges in `core/orbit.BADGES`: `("code", "CSS", …)` and `("code", "JS", …)`, each with
+  its own colour that differs from the 12 already there (e.g. a CSS blue-violet and a JS yellow,
+  checked against "table" / "archive"). That makes 14 badges, so the ring counts go from 5 / 4 / 3
+  to 6 / 5 / 3 (outer rings first, so the inner ring near the text stays uncrowded). Regenerate
+  `web/src/ui/orbit.json` (`python -m umc.core.orbit`) and, on purpose,
+  `tests/fixtures/orbit_cases.json`. Check that it still looks calm (no overlaps at the narrowest
+  drop zone, 375 px on the web). Done in step 1.
+
 ### Hub, add-ons, installer, docs
 
 - `core/editors.py` / `web/src/core/editors.ts`: new `EditorInfo("code", "Code editor",
@@ -175,7 +185,7 @@ lines, save. Model: Notepad++ — but in the app's calm style, not its crowded t
 ## Suggested order (one task each, ship gate each)
 
 1. Detection + language table + `textfile` round-trip (both apps), so code files are at least
-   accepted, viewable and packable.
+   accepted, viewable and packable; the two new drop-zone badges.
 2. Desktop editor (single file → tabs), add-on, self-test.
 3. Web editor.
 4. Extras: preview, check, tidy (both apps).
