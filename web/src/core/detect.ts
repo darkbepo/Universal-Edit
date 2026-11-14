@@ -128,7 +128,10 @@ export function detectBytes(name: string, head: Uint8Array): { family: Family; e
   const dot = name.lastIndexOf(".");
   const hasExt = dot > 0; // ".bashrc" has no extension, like Python's Path.suffix
   const ext = hasExt ? canonicalExt(name) : "";
-  if (ext === "ts") return { family: isMpegTs(head) ? "video" : "code", ext };
+  if (ext === "ts") {
+    // TypeScript is text; a recording (even one cut mid-packet) isn't
+    return { family: !isMpegTs(head) && looksLikeText(head) ? "code" : "video", ext };
+  }
   const byExt = hasExt ? familyOfExt(ext) : null;
   if (byExt) return { family: byExt, ext };
   const sniffed = sniff(head.subarray(0, 512));

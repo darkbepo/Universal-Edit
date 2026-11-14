@@ -119,9 +119,18 @@ def convert_extensions() -> list[str]:
     return [e for e in known_extensions() if e not in code_only]
 
 
+# Types Windows runs on double-click: a new "Open with" handler for them can bring up the "How
+# do you want to open this file?" question, so the app leaves them alone.
+RUNNABLE_EXTS = frozenset({"bat", "cmd", "ps1", "psm1", "py", "pyw", "sh", "bash", "zsh"})
+
+
 def view_extensions() -> list[str]:
     """Extensions the viewer shows (Open with)."""
-    return [e for e in known_extensions() if vf.kind_of_path(Path("x." + e)) != vf.OTHER]
+    return [
+        e
+        for e in known_extensions()
+        if e not in RUNNABLE_EXTS and vf.kind_of_path(Path("x." + e)) != vf.OTHER
+    ]
 
 
 def launch_command(*args: str) -> str:

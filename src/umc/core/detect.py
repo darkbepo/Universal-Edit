@@ -233,12 +233,15 @@ def family_of_ext(ext: str) -> MediaFamily | None:
     return None
 
 
-def _head(path: Path, size: int) -> bytes:
+def _head(path: Path, size: int) -> bytes | None:
+    """The first bytes of a file; None for a folder or a file that can't be read."""
     try:
+        if not path.is_file():
+            return None
         with path.open("rb") as fh:
             return fh.read(size)
     except OSError:
-        return b""
+        return None
 
 
 def is_mpeg_ts(head: bytes) -> bool:
@@ -356,16 +359,20 @@ def detect(path: str | Path) -> DetectedFile | None:
         return DetectedFile(path=path, family=MediaFamily.CODE, ext=lower.lstrip("."))
     compound = next((c for c in COMPOUND_EXTS if lower.endswith("." + c)), None)
     ext = compound or canonical_ext(path.suffix)
-    if ext == "ts":
-        family = MediaFamily.VIDEO if is_mpeg_ts(_head(path, 392)) else MediaFamily.CODE
+    if ext == "ts":  # TypeScript is text; a recording (even one cut mid-packet) isn't
+        head = _head(path, SNIFF_BYTES)
+        typescript = head is not None and not is_mpeg_ts(head) and looks_like_text(head)
+        family = MediaFamily.CODE if typescript else MediaFamily.VIDEO
         return DetectedFile(path=path, family=family, ext=ext)
     family = family_of_ext(ext)
     if family is None:
         sniffed = _sniff(path)
         if sniffed is not None:
             ext, family = sniffed, family_of_ext(sniffed)
-        elif looks_like_text(_head(path, SNIFF_BYTES)):
-            family = MediaFamily.CODE  # text of a kind we don't know: plain text
+        else:
+            head = _head(path, SNIFF_BYTES)
+            if head is not None and looks_like_text(head):
+                family = MediaFamily.CODE  # text of a kind we don't know: plain text
         if family is None:
             return None
     return DetectedFile(path=path, family=family, ext=ext)

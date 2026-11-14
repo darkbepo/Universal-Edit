@@ -4,7 +4,8 @@ import { expect, test } from "@playwright/test";
 /** Drops a file on the page; returns whether the burst started (read in the same tick). */
 const dropFile = ([name, junk]: [string, boolean]) => {
   const dt = new DataTransfer();
-  const bytes = junk ? new TextEncoder().encode("not a file the app reads") : new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+  // junk = binary of no known kind (text of an unknown kind is accepted as plain text)
+  const bytes = junk ? new Uint8Array([0, 1, 2, 0, 0xff]) : new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
   dt.items.add(new File([bytes], name, { type: junk ? "" : "image/png" }));
   for (const type of ["dragover", "drop"]) document.body.dispatchEvent(new DragEvent(type, { dataTransfer: dt, bubbles: true, cancelable: true }));
   return document.querySelector<HTMLElement>(".drop canvas.orbit")?.dataset.burst === "true";

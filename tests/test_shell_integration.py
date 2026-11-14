@@ -58,9 +58,18 @@ def test_extension_lists():
 def test_code_files_are_open_with_only():
     # nothing to convert a .py / .bat to, and .bat / .cmd run on double-click
     conv, view = shell.convert_extensions(), shell.view_extensions()
-    for ext in ("css", "js", "py", "bat", "cmd", "ps1"):
-        assert ext not in conv and ext in view
+    for ext in ("css", "js", "json", "sql"):
+        assert ext not in conv or ext == "json"
+        assert ext in view
     assert "ts" in conv  # still a video format
+
+
+def test_runnable_scripts_are_left_alone():
+    # registering a handler for a type Windows runs on double-click can bring up the
+    # "How do you want to open this?" question; leave those types alone entirely
+    conv, view = shell.convert_extensions(), shell.view_extensions()
+    for ext in ("bat", "cmd", "ps1", "psm1", "py", "pyw", "sh", "bash", "zsh"):
+        assert ext not in conv and ext not in view, ext
 
 
 def test_code_files_get_no_convert_entry(reg):

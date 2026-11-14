@@ -15,7 +15,7 @@ from umc.viewer import files as vf  # noqa: E402
 def folder(media, tmp_path):
     for name in ("img0.png", "three.pdf", "notes.txt", "clip.mp4", "tone.wav", "anim.gif"):
         shutil.copy(media / name, tmp_path / name)
-    (tmp_path / "data.bin").write_bytes(b"xx")
+    (tmp_path / "data.bin").write_bytes(b"\x00\x01")  # binary (unknown text shows as text)
     return tmp_path
 
 

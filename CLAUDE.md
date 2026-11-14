@@ -972,14 +972,19 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
          CodeMirror names) → `web/src/codeedit/languages.json` (`python -m
          umc.codeedit.languages`, test checks they match); `CODE_EXTS` = its extensions no other
          family owns (HTML / JSON / TXT / SVG / SRT … keep their family). `.ts` is both video and
-         TypeScript: `is_mpeg_ts` / `isMpegTs` look for the 0x47 sync byte every 188 (192) bytes.
+         TypeScript: it's code only when it isn't synced (`is_mpeg_ts` / `isMpegTs`: 0x47 every
+         188 / 192 bytes) **and** reads as text — so a recording cut mid-packet stays video.
+         `.ipynb` is code on the desktop (no converter there) but a document on the web (Pandoc);
+         `tests/fixtures/code_exts.json` pins both sets. Folders / unreadable paths are refused.
          Unknown files that `looks_like_text` (no NUL in 8 KB; UTF-8, else ≤ 5 % control bytes)
          are accepted as plain text. `codeedit/textfile.py` / `textfile.ts`: byte-exact read /
          write (BOM, UTF-8 / UTF-16 / Windows-1252 as browsers read it, line endings; untouched
          text saves the original bytes). Shared cases: `tests/fixtures/codeedit_cases.json`,
          `detect_code_cases.json`. Code files only get `pack:*` targets, are shown as text in the
          viewer, and are registered for "Open with" only — never the Convert right-click entry
-         (`shell_integration.convert_extensions` drops `CODE_EXTS`). Badges CSS + JS.
+         (`shell_integration.convert_extensions` drops `CODE_EXTS`); runnable scripts
+         (`RUNNABLE_EXTS`: bat, cmd, ps1, py, sh …) get neither, so double-click-to-run is never
+         disturbed. Badges CSS + JS.
       2. Desktop editor (add-on "code", Pygments). 3. Website editor (CodeMirror 6).
       4. Preview (HTML / Markdown), JSON / YAML / XML check, Tidy.
 11. **First public release** (owner, Nov 2026: wait until more editors are ready). Push a

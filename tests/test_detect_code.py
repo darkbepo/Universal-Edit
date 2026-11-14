@@ -63,6 +63,27 @@ def test_ts_video(tmp_path, packet, header):
     assert (f.family, f.ext) == (MediaFamily.VIDEO, "ts")
 
 
+def test_ts_video_that_starts_mid_packet(tmp_path):
+    f = detect(_write(tmp_path, "cut.ts", b"\x00\x01\x02" + _ts_packets(188, 0) * 4))
+    assert f.family == MediaFamily.VIDEO
+
+
+def test_folders_and_missing_files_are_refused(tmp_path):
+    (tmp_path / "myfolder").mkdir()
+    (tmp_path / "proj.v2").mkdir()
+    assert detect(tmp_path / "myfolder") is None
+    assert detect(tmp_path / "proj.v2") is None
+    assert detect(tmp_path / "gone.zzz") is None
+
+
+def test_code_exts_match_the_shared_file():
+    """The website builds the same set (web/tests/detect-code.test.ts reads this file too)."""
+    from umc.core.detect import CODE_EXTS
+
+    shared = json.loads((FIXTURE.parent / "code_exts.json").read_text(encoding="utf-8"))
+    assert sorted(CODE_EXTS) == shared["code_exts"]
+
+
 def test_unknown_text_file(tmp_path):
     nfo = detect(_write(tmp_path, "notes.nfo", b"Release notes\r\n"))
     assert (nfo.family, nfo.ext) == (MediaFamily.CODE, "nfo")
