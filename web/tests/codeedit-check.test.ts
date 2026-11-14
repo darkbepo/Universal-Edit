@@ -18,6 +18,13 @@ describe("code editor checks (website)", () => {
     expect(problems[0].message).not.toMatch(/\n|Error:/);
   });
 
+  it("very deep JSON is a problem, not a crash", () => {
+    const problems = check("json", "[".repeat(5000) + "]".repeat(5000));
+    expect(problems.length).toBe(1);
+    expect(problems[0].message).toMatch(/deep/);
+    expect(check("json", "[".repeat(200) + "]".repeat(200))).toEqual([]);
+  });
+
   it("checks the same languages as the desktop", () => {
     expect([...CHECKED].sort()).toEqual(["json", "svg", "xml", "yaml"]);
   });

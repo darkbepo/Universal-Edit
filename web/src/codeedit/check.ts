@@ -25,6 +25,7 @@ export interface Token {
 
 const NUMBER = /-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/y;
 const WS = " \t\r\n";
+export const MAX_DEPTH = 256; // the same in check.py
 const isDigit = (c: string | undefined) => !!c && c >= "0" && c <= "9";
 
 function lineCol(text: string, pos: number): [number, number] {
@@ -44,6 +45,7 @@ export function scanJson(text: string): Token[] {
   const tokens: Token[] = [];
   const n = text.length;
   let pos = 0;
+  let depth = 0;
   const ws = () => {
     while (pos < n && WS.includes(text[pos])) pos++;
   };
@@ -79,9 +81,13 @@ export function scanJson(text: string): Token[] {
     ws();
     if (pos >= n) throw new JsonError(pos, "Missing value");
     const ch = text[pos];
-    if (ch === "{") obj();
-    else if (ch === "[") arr();
-    else if (ch === '"') string();
+    if (ch === "{" || ch === "[") {
+      depth++;
+      if (depth > MAX_DEPTH) throw new JsonError(pos, `Nested too deeply (more than ${MAX_DEPTH} levels)`);
+      if (ch === "{") obj();
+      else arr();
+      depth--;
+    } else if (ch === '"') string();
     else if (ch === "-" || isDigit(ch)) {
       NUMBER.lastIndex = pos;
       const m = NUMBER.exec(text);
@@ -202,9 +208,13 @@ function xmlMessage(msg: string): string {
   return "This isn't valid XML";
 }
 
+// fast-xml-parser's validator doesn't read a DOCTYPE with an internal subset: blank it out
+// (same length, line breaks kept, so positions stay right). lxml reads it on the desktop.
+const DOCTYPE = /<!DOCTYPE(?:"[^"]*"|'[^']*'|\[(?:"[^"]*"|'[^']*'|[^\]"'])*\]|[^>])*>/;
+
 function checkXml(text: string): Problem[] {
   if (!text.trim()) return [];
-  const result = XMLValidator.validate(text);
+  const result = XMLValidator.validate(text.replace(DOCTYPE, (m) => m.replace(/[^\n]/g, " ")));
   if (result === true) return [];
   const { line, msg } = result.err;
   // an unclosed tag shows at the end of the file, like the desktop (lxml)

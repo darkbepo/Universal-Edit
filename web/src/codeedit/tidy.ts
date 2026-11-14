@@ -38,7 +38,24 @@ function tidyJson(text: string): string {
 }
 
 // ---------------------------------------------------------------------------- XML
-const XML_TOKEN = /<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<\?[\s\S]*?\?>|<![^>]*>|<(?:"[^"]*"|'[^']*'|[^'">])*>|[^<]+/g;
+const XML_TOKEN =
+  /<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<\?[\s\S]*?\?>|<!DOCTYPE(?:"[^"]*"|'[^']*'|\[(?:"[^"]*"|'[^']*'|[^\]"'])*\]|[^>])*>|<![^>]*>|<(?:"[^"]*"|'[^']*'|[^'">])*>|[^<]+/g;
+
+// Where a line break between child elements would show as a space (HTML / SVG text flow): such
+// elements, and any element holding one of the inline ones, are kept exactly as written.
+export const TEXT_FLOW = new Set(
+  "p h1 h2 h3 h4 h5 h6 li dt dd td th caption label button legend option summary figcaption pre title text tspan textPath desc".split(" "),
+);
+export const INLINE = new Set(
+  "a abbr b bdi bdo br cite code data dfn em i img kbd mark q s samp small span strong sub sup time u var tspan textPath".split(" "),
+);
+const PRESERVE = /\sxml:space\s*=\s*["']preserve["']/;
+
+/** The local name of an opening tag ("<svg:text x=1>" → "text"). */
+function tagName(tag: string): string {
+  const m = /^<\s*([^\s/>]+)/.exec(tag);
+  return m ? m[1].split(":").pop()! : "";
+}
 
 interface XmlNode {
   kind: "element" | "text" | "other" | "cdata";
@@ -62,6 +79,7 @@ function xmlTree(text: string): XmlNode[] {
     if (tok.startsWith("<!--") || tok.startsWith("<?") || (tok.startsWith("<!") && !tok.startsWith("<![CDATA["))) top.children.push(node("other", start, end));
     else if (tok.startsWith("<![CDATA[")) top.children.push(node("cdata", start, end));
     else if (tok.startsWith("</")) {
+      if (stack.length === 1) continue; // a stray closing tag (the check normally refuses these first)
       const n = stack.pop()!;
       n.closeTag = tok;
       n.end = end;
@@ -80,7 +98,13 @@ const blank = (text: string, n: XmlNode) => n.kind === "text" && !text.slice(n.s
 function xmlEmit(n: XmlNode, text: string, depth: number): string {
   if (n.kind !== "element" || !n.closeTag) return text.slice(n.start, n.end);
   const kids = n.children.filter((c) => !blank(text, c));
-  if (!kids.length || kids.some((c) => c.kind === "text" || c.kind === "cdata")) return text.slice(n.start, n.end);
+  const keep =
+    !kids.length ||
+    kids.some((c) => c.kind === "text" || c.kind === "cdata") || // text inside
+    PRESERVE.test(n.openTag) || // xml:space="preserve"
+    TEXT_FLOW.has(tagName(n.openTag)) || // a paragraph, a label, SVG <text>…
+    kids.some((c) => c.kind === "element" && INLINE.has(tagName(c.openTag)));
+  if (keep) return text.slice(n.start, n.end); // a line break here would show: exactly as written
   const inner = kids.map((c) => "\n" + INDENT.repeat(depth + 1) + xmlEmit(c, text, depth + 1)).join("");
   return n.openTag + inner + "\n" + INDENT.repeat(depth) + n.closeTag;
 }

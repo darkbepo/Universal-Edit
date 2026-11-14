@@ -52,7 +52,8 @@ log = logging.getLogger(__name__)
 
 MAX_OPEN_BYTES = 50_000_000
 MAX_HIGHLIGHT_BYTES = 2_000_000
-MAX_CHECK_BYTES = 2_000_000  # bigger files are only checked when Tidy is pressed
+# the check runs on the GUI thread (about 0.3 s per MB): bigger files are only checked by Tidy
+MAX_CHECK_BYTES = 500_000
 PREVIEWS = frozenset({"html", "markdown"})
 ENCODINGS: tuple[tuple[str, Encoding, bool], ...] = (
     ("UTF-8", "utf-8", False),
@@ -672,6 +673,7 @@ class CodeEditorPage(QWidget):
         if tab.colours:
             tab.highlighter.set_language(language_id)
         self.view.set_language(language_id)
+        self.run_check()
         self._update_status()
 
     def set_encoding(self, encoding: Encoding, bom: bool) -> None:

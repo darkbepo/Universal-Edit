@@ -26,14 +26,14 @@
  {
   "id": "xml_mixed",
   "language": "xml",
-  "text": "<?xml version=\"1.0\"?>\n<!-- c --><root a=\"x>y\"><item>1</item><item><b/></item><p>Hello <b>world</b>!</p><item><![CDATA[x < y]]></item></root>\n",
-  "result": "<?xml version=\"1.0\"?>\n<!-- c -->\n<root a=\"x>y\">\n  <item>1</item>\n  <item>\n    <b/>\n  </item>\n  <p>Hello <b>world</b>!</p>\n  <item><![CDATA[x < y]]></item>\n</root>\n"
+  "text": "<?xml version=\"1.0\"?>\n<!-- c --><root a=\"x>y\"><item>1</item><item><x/></item><p>Hello <b>world</b>!</p><item><![CDATA[x < y]]></item></root>\n",
+  "result": "<?xml version=\"1.0\"?>\n<!-- c -->\n<root a=\"x>y\">\n  <item>1</item>\n  <item>\n    <x/>\n  </item>\n  <p>Hello <b>world</b>!</p>\n  <item><![CDATA[x < y]]></item>\n</root>\n"
  },
  {
   "id": "xml_reindent",
   "language": "xml",
-  "text": "<a>\n      <b/>\n</a>",
-  "result": "<a>\n  <b/>\n</a>"
+  "text": "<r>\n      <x/>\n</r>",
+  "result": "<r>\n  <x/>\n</r>"
  },
  {
   "id": "svg_is_xml",
@@ -46,5 +46,29 @@
   "language": "xml",
   "text": "<a><b></a>",
   "error": true
+ },
+ {
+  "id": "xhtml_inline_kept",
+  "language": "xml",
+  "text": "<body><p><b>a</b><i>b</i></p></body>\n",
+  "result": "<body>\n  <p><b>a</b><i>b</i></p>\n</body>\n"
+ },
+ {
+  "id": "svg_text_kept",
+  "language": "svg",
+  "text": "<svg><text><tspan>a</tspan><tspan>b</tspan></text></svg>",
+  "result": "<svg>\n  <text><tspan>a</tspan><tspan>b</tspan></text>\n</svg>"
+ },
+ {
+  "id": "xml_space_preserve_kept",
+  "language": "xml",
+  "text": "<r><keep xml:space=\"preserve\"><a/><b/></keep><c><d/></c></r>",
+  "result": "<r>\n  <keep xml:space=\"preserve\"><a/><b/></keep>\n  <c>\n    <d/>\n  </c>\n</r>"
+ },
+ {
+  "id": "doctype_subset_kept",
+  "language": "xml",
+  "text": "<!DOCTYPE r [<!ENTITY a \"x>y\"><!ELEMENT r ANY>]><r><x/><y/></r>",
+  "result": "<!DOCTYPE r [<!ENTITY a \"x>y\"><!ELEMENT r ANY>]>\n<r>\n  <x/>\n  <y/>\n</r>"
  }
 ]

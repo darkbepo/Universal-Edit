@@ -455,6 +455,12 @@ export class CodeEditorPage {
     if (this.current >= 0 && this.current < this.tabs.length) this.tabs[this.current].state = this.view.state;
     this.current = index;
     this.view.setState(this.tabs[index].state);
+    // this tab's mistakes now (the linter only reports after its delay), and its preview
+    const t = this.tabs[index];
+    const text = CHECKED.has(t.languageId) && t.state.doc.length <= MAX_CHECK_BYTES ? t.state.doc.toString() : "";
+    this.problems = text ? check(t.languageId, text) : [];
+    this.tidyNote = "";
+    if (!this.previewEl.hidden) void this.refreshPreview();
     // text size and word wrap are the editor's, not the tab's: bring this tab up to date
     this.view.dispatch({
       effects: [compartments.font.reconfigure(fontSize(this.fontPx)), compartments.wrap.reconfigure(this.wrapFor(this.tabs[index]))],

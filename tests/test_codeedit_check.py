@@ -29,6 +29,12 @@ def test_shared_cases(case):
     assert "Traceback" not in first.message and "<block" not in first.message
 
 
+def test_very_deep_json_is_a_problem_not_a_crash():
+    problems = check("json", "[" * 5000 + "]" * 5000)
+    assert problems and "deep" in problems[0].message
+    assert check("json", "[" * 200 + "]" * 200) == []  # deep, but fine
+
+
 def test_checked_languages():
     assert {"json", "yaml", "xml", "svg"} <= CHECKED
     assert "css" not in CHECKED

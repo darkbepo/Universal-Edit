@@ -14,6 +14,7 @@ from dataclasses import dataclass
 CHECKED: frozenset[str] = frozenset({"json", "yaml", "xml", "svg"})
 _NUMBER = re.compile(r"-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?")
 _WS = " \t\r\n"
+MAX_DEPTH = 256  # the same in check.ts
 
 
 @dataclass(frozen=True)
@@ -46,6 +47,7 @@ def scan_json(text: str) -> list[Token]:
     tokens: list[Token] = []
     n = len(text)
     pos = 0
+    depth = 0
 
     def ws() -> None:
         nonlocal pos
@@ -78,16 +80,21 @@ def scan_json(text: str) -> list[Token]:
             pos += 1
         raise JsonError(start, "Missing closing quote")
 
-    def value(in_object_key: bool = False) -> None:
-        nonlocal pos
+    def value() -> None:
+        nonlocal pos, depth
         ws()
         if pos >= n:
             raise JsonError(pos, "Missing value")
         ch = text[pos]
-        if ch == "{":
-            obj()
-        elif ch == "[":
-            arr()
+        if ch in "{[":
+            depth += 1
+            if depth > MAX_DEPTH:  # deeper would exhaust Python's stack (a crash, not a note)
+                raise JsonError(pos, f"Nested too deeply (more than {MAX_DEPTH} levels)")
+            if ch == "{":
+                obj()
+            else:
+                arr()
+            depth -= 1
         elif ch == '"':
             string()
         elif ch == "-" or ch.isdigit():

@@ -127,6 +127,18 @@ test("Markdown preview follows the text", async ({ page }) => {
   await expect(frame.locator("strong")).toHaveText("bold");
 });
 
+test("switching tabs clears the old mistake and follows with the preview", async ({ page }) => {
+  await openInEditor(page, [file("a.json", '{"a": 1 "b": 2}'), file("one.html", "<h1>One</h1>"), file("two.html", "<h1>Two</h1>")]);
+  await page.locator(".code-tab").first().locator(".code-tab-name").click();
+  await expect(page.locator(".code-note")).toContainText("Line 1");
+  await page.locator(".code-tab").nth(1).locator(".code-tab-name").click();
+  await expect(page.locator(".code-note")).not.toContainText("Line");
+  await page.getByRole("button", { name: "Preview", exact: true }).click();
+  await expect(page.frameLocator(".code-preview iframe").locator("h1")).toHaveText("One");
+  await page.locator(".code-tab").nth(2).locator(".code-tab-name").click();
+  await expect(page.frameLocator(".code-preview iframe").locator("h1")).toHaveText("Two");
+});
+
 test("an HTML preview can't reach the page", async ({ page }) => {
   await openInEditor(page, [file("page.html", "<h1>Hi</h1><script>try { parent.document.title = 'hacked'; } catch (e) {}</script>")]);
   const title = await page.title();

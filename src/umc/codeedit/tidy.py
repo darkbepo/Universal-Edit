@@ -57,11 +57,30 @@ _XML_TOKEN = re.compile(
     r"<!--.*?-->"  # comment
     r"|<!\[CDATA\[.*?\]\]>"  # CDATA
     r"|<\?.*?\?>"  # declaration / processing instruction
-    r"|<![^>]*>"  # DOCTYPE (simple)
+    # DOCTYPE, with an internal subset [...] and quoted values that may hold ">"
+    r"|<!DOCTYPE(?:\"[^\"]*\"|'[^']*'|\[(?:\"[^\"]*\"|'[^']*'|[^\]\"'])*\]|[^>])*>"
+    r"|<![^>]*>"  # other declarations
     r"|<(?:\"[^\"]*\"|'[^']*'|[^'\">])*>"  # a tag (quotes may hold >)
     r"|[^<]+",  # text
     re.S,
 )
+
+
+# Where a line break between child elements would show as a space (HTML / SVG text flow): such
+# elements, and any element holding one of the inline ones, are kept exactly as written.
+TEXT_FLOW = frozenset(
+    ["p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "dt", "dd", "td", "th", "caption", "label", "button", "legend", "option", "summary", "figcaption", "pre", "title", "text", "tspan", "textPath", "desc"]
+)
+INLINE = frozenset(
+    ["a", "abbr", "b", "bdi", "bdo", "br", "cite", "code", "data", "dfn", "em", "i", "img", "kbd", "mark", "q", "s", "samp", "small", "span", "strong", "sub", "sup", "time", "u", "var", "tspan", "textPath"]
+)
+_PRESERVE = re.compile(r"""\sxml:space\s*=\s*["']preserve["']""")
+
+
+def _name(tag: str) -> str:
+    """The local name of an opening tag ("<svg:text x=1>" → "text")."""
+    m = re.match(r"<\s*([^\s/>]+)", tag)
+    return m.group(1).rsplit(":", 1)[-1] if m else ""
 
 
 @dataclass
@@ -88,6 +107,8 @@ def _xml_tree(text: str) -> list[_Node]:
         elif tok.startswith("<![CDATA["):
             stack[-1].children.append(_Node("cdata", m.start(), m.end()))
         elif tok.startswith("</"):
+            if len(stack) == 1:
+                continue  # a stray closing tag (the check normally refuses these first)
             node = stack.pop()
             node.close_tag = tok
             node.end = m.end()
@@ -111,8 +132,14 @@ def _xml_emit(node: _Node, text: str, depth: int) -> str:
     if node.kind != "element" or not node.close_tag:
         return text[node.start : node.end]
     kids = [c for c in node.children if not _blank(text, c)]
-    if not kids or any(c.kind in ("text", "cdata") for c in kids):
-        return text[node.start : node.end]  # text inside: exactly as written
+    if (
+        not kids
+        or any(c.kind in ("text", "cdata") for c in kids)  # text inside
+        or _PRESERVE.search(node.open_tag)  # xml:space="preserve"
+        or _name(node.open_tag) in TEXT_FLOW  # a paragraph, a label, SVG <text>…
+        or any(c.kind == "element" and _name(c.open_tag) in INLINE for c in kids)
+    ):
+        return text[node.start : node.end]  # a line break here would show: exactly as written
     inner = "".join("\n" + INDENT * (depth + 1) + _xml_emit(c, text, depth + 1) for c in kids)
     return node.open_tag + inner + "\n" + INDENT * depth + node.close_tag
 

@@ -201,6 +201,17 @@ def test_html_preview_file_points_back_to_the_folder(tmp_path):
     assert html.index("<base") < html.index("<title>")
 
 
+def test_changing_the_language_checks_again(qtbot, page, tmp_path):
+    f = tmp_path / "data.txt"
+    f.write_text('{"a": 1 "b": 2}')
+    _open(qtbot, page, f)
+    assert page.problems == []
+    page.set_language("json")
+    assert page.problems and page.problems[0].line == 1
+    page.set_language("text")
+    assert page.problems == [] and "Line" not in page.note.text()
+
+
 def test_big_files_are_not_checked_while_typing(qtbot, page, tmp_path, monkeypatch):
     monkeypatch.setattr(cep, "MAX_CHECK_BYTES", 5)
     f = tmp_path / "a.json"
