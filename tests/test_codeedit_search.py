@@ -2,11 +2,43 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 
 from umc.codeedit.search import SearchError, find_all, replace_all, replacement_at
 
 PLAIN = {"case": False, "whole_word": False, "regex": False}
+CASES = json.loads(
+    (Path(__file__).parent / "fixtures/codeedit_search_cases.json").read_text(encoding="utf-8")
+)
+
+
+def _opts(case: dict) -> dict:
+    return {k: case[k] for k in ("case", "whole_word", "regex")}
+
+
+@pytest.mark.parametrize("case", CASES["find"], ids=lambda c: f"{c['query']}|{c['text']}")
+def test_shared_find(case):
+    if case.get("error"):
+        with pytest.raises(SearchError):
+            find_all(case["text"], case["query"], **_opts(case))
+    else:
+        got = find_all(case["text"], case["query"], **_opts(case))
+        assert got == [tuple(s) for s in case["spans"]]
+
+
+@pytest.mark.parametrize("case", CASES["replace"], ids=lambda c: f"{c['query']}|{c['text']}")
+def test_shared_replace(case):
+    got = replace_all(case["text"], case["query"], case["with"], **_opts(case))
+    assert got == (case["result"], case["count"])
+
+
+@pytest.mark.parametrize("case", CASES["at"], ids=lambda c: f"{c['start']}|{c['text']}")
+def test_shared_replacement_at(case):
+    got = replacement_at(case["text"], case["query"], case["with"], case["start"], **_opts(case))
+    assert got == (tuple(case["result"]) if case["result"] else None)
 
 
 def test_find_plain():

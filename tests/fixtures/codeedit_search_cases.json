@@ -1,0 +1,27 @@
+{
+ "find": [
+  {"text": "Cat cat cat", "query": "cat", "case": false, "whole_word": false, "regex": false, "spans": [[0, 3], [4, 7], [8, 11]]},
+  {"text": "Cat cat cat", "query": "cat", "case": true, "whole_word": false, "regex": false, "spans": [[4, 7], [8, 11]]},
+  {"text": "a(b", "query": "(", "case": false, "whole_word": false, "regex": false, "spans": [[1, 2]]},
+  {"text": "abc", "query": "", "case": false, "whole_word": false, "regex": false, "spans": []},
+  {"text": "cat catalog", "query": "cat", "case": true, "whole_word": true, "regex": false, "spans": [[0, 3]]},
+  {"text": "a.b a-b", "query": "a.b", "case": false, "whole_word": false, "regex": false, "spans": [[0, 3]]},
+  {"text": "a1 b22", "query": "\\d+", "case": false, "whole_word": false, "regex": true, "spans": [[1, 2], [4, 6]]},
+  {"text": "abc", "query": "x*", "case": false, "whole_word": false, "regex": true, "spans": []},
+  {"text": "Élan élan", "query": "élan", "case": false, "whole_word": true, "regex": false, "spans": [[0, 4], [5, 9]]},
+  {"text": "abc", "query": "(", "case": false, "whole_word": false, "regex": true, "error": true}
+ ],
+ "replace": [
+  {"text": "a-b-c", "query": "-", "with": "+", "case": false, "whole_word": false, "regex": false, "result": "a+b+c", "count": 2},
+  {"text": "x1 y2", "query": "(\\w)(\\d)", "with": "\\2\\1", "case": false, "whole_word": false, "regex": true, "result": "1x 2y", "count": 2},
+  {"text": "a-b", "query": "-", "with": "\\1", "case": false, "whole_word": false, "regex": false, "result": "a\\1b", "count": 1},
+  {"text": "a-b", "query": "-", "with": "$1", "case": false, "whole_word": false, "regex": true, "result": "a$1b", "count": 1},
+  {"text": "key=val", "query": "(?P<k>\\w+)=(?P<v>\\w+)", "with": "\\g<v>=\\g<k>", "case": false, "whole_word": false, "regex": true, "result": "val=key", "count": 1},
+  {"text": "abc", "query": "", "with": "x", "case": false, "whole_word": false, "regex": false, "result": "abc", "count": 0}
+ ],
+ "at": [
+  {"text": "x1 y2", "query": "(\\w)(\\d)", "with": "\\2\\1", "start": 3, "case": false, "whole_word": false, "regex": true, "result": [3, 5, "2y"]},
+  {"text": "a-b", "query": "-", "with": "+", "start": 1, "case": false, "whole_word": false, "regex": false, "result": [1, 2, "+"]},
+  {"text": "a-b", "query": "-", "with": "+", "start": 0, "case": false, "whole_word": false, "regex": false, "result": null}
+ ]
+}
