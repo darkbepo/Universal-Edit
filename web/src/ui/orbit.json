@@ -59,6 +59,16 @@
    "table",
    "XLSX",
    "#3fae5a"
+  ],
+  [
+   "code",
+   "CSS",
+   "#5c6bc0"
+  ],
+  [
+   "code",
+   "JS",
+   "#e3c341"
   ]
  ],
  "rings": [
@@ -69,7 +79,7 @@
    "period": 100,
    "direction": 1,
    "phase": 0.0,
-   "count": 5
+   "count": 6
   },
   {
    "radius": 0.84,
@@ -78,7 +88,7 @@
    "period": 85,
    "direction": -1,
    "phase": 0.1,
-   "count": 4
+   "count": 5
   },
   {
    "radius": 0.68,
