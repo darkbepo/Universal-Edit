@@ -265,6 +265,8 @@ src/umc/
   viewer/                # viewer model — files.py (view kinds, folder list), preview.py; no Qt
   audioedit/             # audio editor model (numpy, no Qt) — document.py (AudioDoc, splice
                          #   undo), ops.py, peaks.py (waveform columns), wav.py, io.py (open/save)
+  codeedit/              # code editor model (no Qt) — languages.py (language table → web
+                         #   languages.json), textfile.py (byte-exact read / write)
   videoedit/             # video editor model (no Qt) — project.py (frozen dataclasses), edits.py
                          #   (pure edits), history.py (snapshot undo), projectfile.py (.umcvideo),
                          #   media.py (probe, new_project), render.py (one filter_complex),
@@ -941,7 +943,7 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       have no mode switch ("← Back to Convert"), so Properties is reached from the converter
       page. Next steps (owner's go-ahead given): change photo details (lossless EXIF segment
       swap), music tags (mutagen, GPL-2.0+, approved), video, PDF / Office, file name + dates.
-   15. Orbiting drop-zone badges (both apps): 12 file-type badges (icon + type, own colour,
+   15. Orbiting drop-zone badges (both apps): 14 file-type badges (icon + type, own colour,
       dimmed to 62 %) on three tilted rings around the empty drop zone's text, smaller / fainter
       on the far side, faded near the text. Dragging a file over pulls them in and speeds them up;
       a drop on the empty page bursts them outward, then adds the files. Model `core/orbit.py`
@@ -962,6 +964,24 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       Convert | Edit when a video is added; start-screen tile; desktop add-on "video"; self-test step
       "video editor". Website: still "Coming soon" (`core/editors.WEB_LATER`).
       Not yet: picture-in-picture, keyframes, the website editor.
+   17. Code editor (both apps; owner, Nov 2026: "quick edits, Notepad++ in spirit") — spec
+      `docs/superpowers/specs/2026-11-14-code-editor-design.md`, one plan per step.
+      1. ✅ Accept code files (plan `docs/superpowers/plans/2026-11-14-code-editor-step1-detection.md`):
+         family `code` (`MediaFamily.CODE` / `"code"`). `codeedit/languages.py` is the language
+         table (exts, whole file names like `dockerfile` / `.gitignore`, comment marks, Pygments /
+         CodeMirror names) → `web/src/codeedit/languages.json` (`python -m
+         umc.codeedit.languages`, test checks they match); `CODE_EXTS` = its extensions no other
+         family owns (HTML / JSON / TXT / SVG / SRT … keep their family). `.ts` is both video and
+         TypeScript: `is_mpeg_ts` / `isMpegTs` look for the 0x47 sync byte every 188 (192) bytes.
+         Unknown files that `looks_like_text` (no NUL in 8 KB; UTF-8, else ≤ 5 % control bytes)
+         are accepted as plain text. `codeedit/textfile.py` / `textfile.ts`: byte-exact read /
+         write (BOM, UTF-8 / UTF-16 / Windows-1252 as browsers read it, line endings; untouched
+         text saves the original bytes). Shared cases: `tests/fixtures/codeedit_cases.json`,
+         `detect_code_cases.json`. Code files only get `pack:*` targets, are shown as text in the
+         viewer, and are registered for "Open with" only — never the Convert right-click entry
+         (`shell_integration.convert_extensions` drops `CODE_EXTS`). Badges CSS + JS.
+      2. Desktop editor (add-on "code", Pygments). 3. Website editor (CodeMirror 6).
+      4. Preview (HTML / Markdown), JSON / YAML / XML check, Tidy.
 11. **First public release** (owner, Nov 2026: wait until more editors are ready). Push a
     `v<__version__>` tag (bump `umc/__init__.py` first; the workflow checks they match): the
     Windows build then publishes the .exe zip, the installer and the editor add-on zips as a

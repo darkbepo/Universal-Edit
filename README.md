@@ -196,6 +196,7 @@ video), JSON / CSV / XML / YAML / Excel data, and ZIP / 7Z / RAR archives.
 | Data: JSON ↔ CSV ↔ TSV ↔ XML ↔ YAML ↔ XLSX | ✅ | ✅ |
 | Archives: open ZIP, 7Z, RAR, TAR(.GZ/.XZ/.BZ2) · extract · repack · pack any files | ✅ | ✅ |
 | Archives: create 7Z, password-protect (AES-256) | ✅ | ❌ |
+| Code and text files: CSS, JS, TS, Python, C / C++, C#, Java, Go, Rust, PHP, shell / PowerShell / batch scripts, SQL, INI / TOML / .env, Dockerfile, .gitignore and other plain text are accepted · packed into ZIP / 7Z / TAR.GZ · shown in the viewer · a code editor is on its way | ✅ | ✅ (no 7Z, no viewer) |
 
 </details>
 
