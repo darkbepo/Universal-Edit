@@ -28,4 +28,4 @@ EDITORS: tuple[EditorInfo, ...] = (
 COMING_SOON = "Coming soon"
 
 # Editors the website doesn't have yet: its tile stays "Coming soon" (available false there).
-WEB_LATER: frozenset[str] = frozenset({"video", "code"})
+WEB_LATER: frozenset[str] = frozenset({"video"})

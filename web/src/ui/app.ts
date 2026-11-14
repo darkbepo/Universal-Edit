@@ -8,6 +8,7 @@ import { fileFractions } from "../core/progress";
 import { converterById, targetsFor } from "../core/registry";
 import type { InputFile, OutputFile, Target } from "../core/types";
 import { MAX_FILE_BYTES, WEB_EDITABLE_DOCUMENT_EXTS } from "../doceditor/types";
+import codeLanguages from "../codeedit/languages.json";
 import { ConversionClient, JobCancelled } from "../worker/client";
 import { editorHub, newPictureDialog } from "./hub";
 import { groupIcon, icon } from "./icons";
@@ -49,8 +50,12 @@ export function mountApp(root: HTMLElement): void {
   // "Convert mode" as its accessible name, so it never collides with the Convert action button.
   const convertMode = h("button", { class: "seg", type: "button", ariaLabel: "Convert mode" }, "Convert");
   const editMode = h("button", { class: "seg", type: "button" }, "Edit");
+  // ▾ after Edit: the other editor for files two editors can open (TXT / MD / HTML)
+  const editMore = h("button", { class: "seg edit-more", type: "button", ariaLabel: "Other editors", title: "Other editors", hidden: true }, "▾");
+  const editMenu = h("div", { class: "edit-menu", role: "menu", hidden: true });
+  editMore.setAttribute("aria-haspopup", "menu");
   const propertiesMode = h("button", { class: "seg", type: "button", title: "See the details of the files" }, "Properties");
-  const modeBar = h("div", { class: "mode", role: "group", ariaLabel: "Mode" }, convertMode, editMode, propertiesMode);
+  const modeBar = h("div", { class: "mode", role: "group", ariaLabel: "Mode" }, convertMode, editMode, editMore, propertiesMode, editMenu);
   convertMode.setAttribute("aria-pressed", "true");
   editMode.setAttribute("aria-pressed", "false");
   propertiesMode.setAttribute("aria-pressed", "false");
@@ -59,6 +64,7 @@ export function mountApp(root: HTMLElement): void {
   let viewer: import("./editor3d/page").ViewerPage | null = null;
   let audio: import("./audioeditor/page").AudioEditorPage | null = null;
   let docEditor: import("./doceditor/page").DocEditorPage | null = null;
+  let codeEditor: import("./codeeditor/page").CodeEditorPage | null = null;
   let editing = false;
   // Three columns (badge + theme | logo + name | Convert/Edit): the outer two are equally wide, so the
   // name stays centred on the page.
@@ -222,18 +228,28 @@ export function mountApp(root: HTMLElement): void {
   const appMain = root.querySelector("main.app") as HTMLElement;
   // A lone .zip is a document when it is a Markdown ZIP the website saved (checked once per file).
   const markdownZips = new WeakMap<InputFile, boolean>();
-  const editKind = (): "image" | "model" | "audio" | "document" | null => {
-    if (!files.length) return null;
-    if (files.every((f) => f.family === "image")) return "image";
-    if (files.every((f) => f.family === "model")) return "model";
-    if (files.every((f) => f.family === "audio")) return "audio";
+  type EditKind = "image" | "model" | "audio" | "document" | "code";
+  // files the code editor opens (the language table's extensions; "" = text with none)
+  const CODE_EDITABLE_EXTS = new Set(["", ...codeLanguages.languages.flatMap((l) => l.exts)]);
+  /** Every editor that can open the files, the one Edit opens first (the desktop's
+   * MainWindow.edit_choices): TXT / MD → document then code, HTML → code then document. */
+  const editChoices = (): EditKind[] => {
+    if (!files.length) return [];
+    if (files.every((f) => f.family === "image")) return ["image"];
+    if (files.every((f) => f.family === "model")) return ["model"];
+    if (files.every((f) => f.family === "audio")) return ["audio"];
     if (files.length === 1) {
       const f = files[0];
-      if (f.family === "document" && WEB_EDITABLE_DOCUMENT_EXTS.includes(f.ext)) return "document";
-      if (markdownZips.get(f)) return "document";
+      if (f.ext === "txt" || f.ext === "md") return ["document", "code"];
+      if (f.ext === "html") return ["code", "document"];
+      if (f.family === "document" && WEB_EDITABLE_DOCUMENT_EXTS.includes(f.ext)) return ["document"];
+      if (markdownZips.get(f)) return ["document"];
     }
-    return null;
+    const textLike = new Set(["document", "vector", "subtitle"]);
+    if (files.every((f) => f.family === "code" || (textLike.has(f.family) && CODE_EDITABLE_EXTS.has(f.ext)))) return ["code"];
+    return [];
   };
+  const editKind = (): EditKind | null => editChoices()[0] ?? null;
   /** Check a lone .zip in the queue (its reader is loaded only then), then update Edit. */
   async function checkMarkdownZip() {
     const f = files.length === 1 ? files[0] : null;
@@ -250,8 +266,10 @@ export function mountApp(root: HTMLElement): void {
   }
   function updateEditSwitch() {
     if (!editing) editMode.disabled = !canEdit();
+    editMore.hidden = editChoices().length < 2;
+    editMenu.hidden = true;
     const kind = editKind();
-    editMode.title = kind === "document" ? "Open the document in the document editor" : kind === "model" ? "Open the 3D models in the 3D viewer" : kind === "image" ? "Open the images in the image editor (each image becomes a layer)" : kind === "audio" ? "Open the sound in the audio editor (several files are joined)" : "Add images, audio, one text document, or 3D models to edit them";
+    editMode.title = kind === "code" ? "Open the files in the code editor" : kind === "document" ? "Open the document in the document editor" : kind === "model" ? "Open the 3D models in the 3D viewer" : kind === "image" ? "Open the images in the image editor (each image becomes a layer)" : kind === "audio" ? "Open the sound in the audio editor (several files are joined)" : "Add images, audio, code, one text document, or 3D models to edit them";
   }
   const canEdit = () => editKind() !== null;
   function showConverter() {
@@ -265,6 +283,7 @@ export function mountApp(root: HTMLElement): void {
     viewer?.hide();
     audio?.hide();
     docEditor?.hide();
+    codeEditor?.hide();
     appMain.hidden = false;
     bar.hidden = false;
     orbit.setActive(!files.length); // back on screen: the badges move again
@@ -297,6 +316,7 @@ export function mountApp(root: HTMLElement): void {
       if (editor && !editor.el.hidden && !editor.maybeLeave()) return;
       if (docEditor && !docEditor.el.hidden && !docEditor.maybeLeave()) return;
       if (audio && !audio.el.hidden && !audio.maybeLeave()) return;
+      if (codeEditor && !codeEditor.el.hidden && !codeEditor.maybeLeave()) return;
       showConverter();
     }
     setMode("properties");
@@ -312,6 +332,22 @@ export function mountApp(root: HTMLElement): void {
   let docEditorP: Promise<import("./doceditor/page").DocEditorPage> | null = null;
   const ensureDocEditor = () => (docEditorP ??= import("./doceditor/page").then(({ mountDocEditor }) =>
     (docEditor = mountDocEditor(root, { client, onBack: showConverter }))));
+  let codeEditorP: Promise<import("./codeeditor/page").CodeEditorPage> | null = null;
+  const ensureCodeEditor = () => (codeEditorP ??= import("./codeeditor/page").then(({ mountCodeEditor }) =>
+    (codeEditor = mountCodeEditor(root, { onBack: showConverter }))).catch((e) => {
+    codeEditorP = null; // try again next time
+    throw e;
+  }));
+  async function loadCodeEditor(): Promise<import("./codeeditor/page").CodeEditorPage | null> {
+    try {
+      return await ensureCodeEditor();
+    } catch (e) {
+      console.error("Couldn't load the code editor", e);
+      note.textContent = "Couldn't load the code editor. Check the internet connection and try again.";
+      note.hidden = false;
+      return null;
+    }
+  }
   const ensureEditor = () => (editorP ??= import("./editor/page").then(({ mountEditor }) =>
     (editor = mountEditor(root, { client, onBack: showConverter }))));
   let opening = false; // an editor tile is being opened (New picture window, code loading)
@@ -327,15 +363,33 @@ export function mountApp(root: HTMLElement): void {
     propertiesMode.setAttribute("aria-pressed", "false");
     page.show();
   }
-  async function enterEdit() {
+  async function enterEdit(choice?: EditKind) {
     if (editing || busy || opening || !canEdit()) return;
-    if (editKind() === "model") {
+    const kind = choice && editChoices().includes(choice) ? choice : editKind();
+    if (kind === "code") {
+      opening = true;
+      editMode.disabled = true;
+      try {
+        const c = await loadCodeEditor();
+        if (!c) return;
+        if (await c.open(files)) showPage(c);
+        else {
+          note.textContent = c.lastError();
+          note.hidden = false;
+        }
+      } finally {
+        opening = false;
+        editMode.disabled = !canEdit();
+      }
+      return;
+    }
+    if (kind === "model") {
       const v = await ensureViewer();
       await v.open(files);
       showPage(v);
       return;
     }
-    if (editKind() === "document") {
+    if (kind === "document") {
       // the page shows straight away, with "Opening…" and the converter's download progress
       const f = files[0];
       const run = ++docRun;
@@ -367,7 +421,7 @@ export function mountApp(root: HTMLElement): void {
       }
       return;
     }
-    if (editKind() === "audio") {
+    if (kind === "audio") {
       const a = await ensureAudio();
       showPage(a); // shows "Opening…" while the worker decodes
       editMode.disabled = true;
@@ -423,6 +477,13 @@ export function mountApp(root: HTMLElement): void {
         showPage(d);
         return;
       }
+      if (id === "code") {
+        const c = await loadCodeEditor();
+        if (!c) return;
+        c.openEmpty();
+        showPage(c);
+        return;
+      }
       if (id !== "image") return; // not available yet
       const pick = await newPictureDialog();
       if (!pick) return;
@@ -440,6 +501,33 @@ export function mountApp(root: HTMLElement): void {
     }
   }
   editMode.addEventListener("click", () => void enterEdit());
+  const labels: Partial<Record<EditKind, string>> = { code: "Edit as code", document: "Edit as document" };
+  editMore.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (!editMenu.hidden) {
+      editMenu.hidden = true;
+      return;
+    }
+    editMenu.replaceChildren(
+      ...editChoices().map((k) => {
+        const item = h("button", { type: "button", role: "menuitem" }, labels[k] ?? k);
+        item.addEventListener("click", () => {
+          editMenu.hidden = true;
+          void enterEdit(k);
+        });
+        return item;
+      }),
+    );
+    editMenu.hidden = false;
+    (editMenu.firstElementChild as HTMLElement | null)?.focus();
+  });
+  document.addEventListener("click", () => (editMenu.hidden = true));
+  editMenu.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      editMenu.hidden = true;
+      editMore.focus();
+    }
+  });
   propertiesMode.addEventListener("click", () => {
     enterProperties();
     // one column (phones, narrow windows): the panel is below the queue, so bring it on screen

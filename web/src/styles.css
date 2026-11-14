@@ -150,6 +150,12 @@ h1 { font-size: 15px; font-weight: 650; margin: 0; letter-spacing: -0.005em; whi
 .mode .seg:hover:not(:disabled) { color: var(--text); }
 .mode .seg[aria-pressed="true"] { background: var(--surface); border-color: var(--border); color: var(--text); font-weight: 600; box-shadow: var(--shadow); }
 .mode .seg:disabled { color: var(--border-strong); cursor: default; }
+.mode { position: relative; }
+.mode .edit-more { padding-left: 6px; padding-right: 6px; }
+.edit-menu { position: absolute; top: calc(100% + 4px); right: 0; z-index: 20; display: flex; flex-direction: column; min-width: 170px; padding: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow); }
+.edit-menu[hidden] { display: none; }
+.edit-menu button { text-align: left; background: none; border: none; border-radius: 6px; padding: 7px 10px; font: inherit; color: var(--text); cursor: pointer; }
+.edit-menu button:hover, .edit-menu button:focus-visible { background: var(--accent-soft); color: var(--accent); }
 
 /* Two columns; one big drop zone while empty; one column on narrow screens. */
 .workspace {

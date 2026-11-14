@@ -1,15 +1,14 @@
 import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 
-// Code files are accepted (code editor step 1): they queue, can be packed, and Edit stays off
-// until the code editor exists.
+// Code files are accepted: they queue, can be packed, and Edit opens the code editor.
 test("a CSS file is accepted and packs into a ZIP", async ({ page }) => {
   await page.goto("./");
   await page.locator('input[type="file"]').first().setInputFiles([
     { name: "style.css", mimeType: "text/css", buffer: Buffer.from("a { color: red; }\n") },
   ]);
   await expect(page.locator(".queue li")).toHaveCount(1);
-  await expect(page.getByRole("button", { name: "Edit", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Edit", exact: true })).toBeEnabled();
   const download = page.waitForEvent("download");
   await page.locator('.pill[data-target="pack:zip"]').click();
   await page.getByRole("button", { name: "Convert", exact: true }).click();

@@ -16,7 +16,7 @@ export const EDITORS: EditorInfo[] = [
   { id: "video", title: "Video editor", blurb: "Trim, join and mix clips", icon: "movie", available: false },
   { id: "audio", title: "Audio editor", blurb: "Cut, fade and clean up sound", icon: "music", available: true },
   { id: "document", title: "Document editor", blurb: "Write and format documents", icon: "document", available: true },
-  { id: "code", title: "Code editor", blurb: "Quick edits to code and text files", icon: "code", available: false },
+  { id: "code", title: "Code editor", blurb: "Quick edits to code and text files", icon: "code", available: true },
 ];
 
 export const COMING_SOON = "Coming soon";

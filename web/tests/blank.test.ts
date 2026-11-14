@@ -18,6 +18,6 @@ describe("new picture", () => {
 
 describe("editor tiles", () => {
   it("every editor but the video editor is ready", () => {
-    expect(EDITORS.filter((e) => e.available).map((e) => e.id)).toEqual(["image", "model", "audio", "document"]);
+    expect(EDITORS.filter((e) => e.available).map((e) => e.id)).toEqual(["image", "model", "audio", "document", "code"]);
   });
 });
