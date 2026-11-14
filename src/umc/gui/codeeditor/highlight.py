@@ -22,6 +22,7 @@ class ChunkedHighlighter(QSyntaxHighlighter):
         self._lexer = LineLexer(language_id)
         self._enabled = True
         self._ready_until = -1  # last block number that may be coloured
+        self._coloured = 0  # blocks lexed in this run (an edit's cascade is limited by it)
         self._formats: dict[str, QTextCharFormat] = {}
         self._build_formats()
         self._timer = QTimer(self)
@@ -68,10 +69,14 @@ class ChunkedHighlighter(QSyntaxHighlighter):
         if self._enabled:
             self._timer.start()
 
+    def _reset_budget(self) -> None:
+        self._coloured = 0
+
     def _step(self) -> None:
         doc = self.document()
         if doc is None or not self._enabled:
             return
+        self._coloured = 0
         first = self._ready_until + 1
         self._ready_until = min(first + self.CHUNK_LINES - 1, doc.blockCount() - 1)
         block = doc.findBlockByNumber(first)
@@ -84,6 +89,16 @@ class ChunkedHighlighter(QSyntaxHighlighter):
         number = self.currentBlock().blockNumber()
         if not self._enabled or number > self._ready_until:
             self.setCurrentBlockState(-1)
+            return
+        if not self._coloured:  # a new run (an edit or a timer tick): budget again next turn
+            QTimer.singleShot(0, self._reset_budget)
+        self._coloured += 1
+        if self._coloured > self.CHUNK_LINES:
+            # One edit changed the state of very many lines (a string or comment opened or
+            # closed): leave the rest to the timer instead of freezing here.
+            self._ready_until = number - 1
+            self.setCurrentBlockState(-1)
+            self._timer.start()
             return
         state = max(self.previousBlockState(), 0)
         spans, after = self._lexer.lex(text, state)

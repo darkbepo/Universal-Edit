@@ -1020,6 +1020,13 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
          editor first; the ▾ next to Edit (`edit_more`) offers the other. Code colours are
          `code_*` in `theme.py` and `--code-*` in `styles.css` (test keeps them equal).
          Self-test step "code editor". Website: "Coming soon" (`WEB_LATER`).
+         Review fixes: lines over `lexing.MAX_LINE_CHARS` (5000, minified code) aren't coloured;
+         an edit's re-colouring stops after `CHUNK_LINES` blocks and the timer does the rest;
+         text is read with `code_view.raw_text` (`toPlainText()` turns no-break spaces into
+         spaces); after saving, the chosen encoding / line endings are kept, not re-guessed;
+         "Don't save" on leaving closes the tabs. Known limit: `<script>` / `<style>` blocks
+         inside HTML / Vue / Svelte aren't coloured (Pygments' HTML lexer pops those states
+         at each line end when lexing line by line).
       3. Website editor (CodeMirror 6).
       4. Preview (HTML / Markdown), JSON / YAML / XML check, Tidy.
 11. **First public release** (owner, Nov 2026: wait until more editors are ready). Push a

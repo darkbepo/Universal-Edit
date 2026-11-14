@@ -50,6 +50,24 @@ def test_same_stack_same_state():
     assert states[3] == 0 and states[4] == 0
 
 
+def test_a_quote_after_an_open_comment_doesnt_leak():
+    lines = ['int a; /* "x', "still comment", "*/ int b = 2;", "int c = 3;"]
+    result = _lex_all("java", lines)
+    last = _kinds_at(result[3][0], lines[3])
+    assert "string" not in last and "number" in last
+
+
+def test_a_very_long_line_is_skipped_quickly():
+    import time
+
+    lexer = LineLexer("javascript")
+    line = "var a=1;" * 200_000  # 1.6 MB minified, one line
+    start = time.perf_counter()
+    spans, state = lexer.lex(line, 0)
+    assert time.perf_counter() - start < 0.2
+    assert spans == [] and state == 0
+
+
 def test_kinds():
     assert kind_of(Token.Keyword.Type) == "type"
     assert kind_of(Token.Keyword) == "keyword"

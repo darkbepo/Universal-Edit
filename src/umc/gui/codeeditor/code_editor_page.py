@@ -6,6 +6,7 @@ Qt queues onto the GUI thread); colouring is chunked (``highlight.ChunkedHighlig
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import os
 import tempfile
@@ -36,7 +37,7 @@ from PySide6.QtWidgets import (
 from umc.codeedit import editing
 from umc.codeedit.languages import LANGUAGES, language_for
 from umc.codeedit.textfile import Encoding, Newline, TextFile, decode, encode
-from umc.gui.codeeditor.code_view import CodeView
+from umc.gui.codeeditor.code_view import CodeView, raw_text
 from umc.gui.codeeditor.find_bar import FindBar
 from umc.gui.codeeditor.highlight import ChunkedHighlighter
 from umc.gui.codeeditor.shortcuts import SHORTCUTS
@@ -634,7 +635,7 @@ class CodeEditorPage(QWidget):
             return encode(base, text, encoding="utf-8", newline=tab.newline, bom=False)
 
     def _start_save(self, tab: CodeTab, path: Path) -> bool:
-        text = tab.document.toPlainText()
+        text = raw_text(tab.document)
         data = self._encoded(tab, text)
         if data is None:
             return False
@@ -647,9 +648,13 @@ class CodeEditorPage(QWidget):
         if tab not in self._tabs:
             return
         renamed = tab.path is None or not _same(tab.path, path)
+        # keep what was chosen: reading the bytes back can't tell Windows-1252 from plain ASCII,
+        # or CRLF from LF in a one-line file
+        file = dataclasses.replace(
+            file, encoding=tab.encoding, newline=tab.newline, bom=tab.bom, mixed=False
+        )
         tab.path, tab.file, tab.disk_stamp = path, file, stamp
-        tab.encoding, tab.newline, tab.bom = file.encoding, file.newline, file.bom
-        if tab.document.toPlainText() == text:
+        if raw_text(tab.document) == text:
             tab.document.setModified(False)
         if renamed and tab.language_id == "text":
             self.set_language(language_for(path.name).id)
@@ -696,6 +701,9 @@ class CodeEditorPage(QWidget):
             ("save", "discard", "cancel"),
         )
         if answer == "discard":
+            while self._tabs:  # really gone: the next visit starts with only its own files
+                self._remove_tab(0)
+            self._update_status()
             return True
         if answer != "save":
             return False

@@ -70,6 +70,33 @@ def test_big_file_stays_responsive(qtbot, view):
     qtbot.waitUntil(h.done, timeout=60000)
 
 
+def test_typing_on_a_huge_line_stays_quick(qtbot, view):
+    view.setPlainText("var a=1;" * 200_000)
+    h = ChunkedHighlighter(view.document(), "javascript")
+    qtbot.waitUntil(h.done, timeout=5000)
+    start = time.perf_counter()
+    cursor = view.textCursor()
+    cursor.setPosition(100)
+    view.setTextCursor(cursor)
+    cursor.insertText("x")
+    assert time.perf_counter() - start < 0.5
+
+
+def test_a_big_recolour_after_an_edit_is_chunked(qtbot, view):
+    lines = ['"""', *[f"x{i} = {i}" for i in range(20000)], '"""', "y = 1"]
+    view.setPlainText("\n".join(lines))
+    h = ChunkedHighlighter(view.document(), "python")
+    qtbot.waitUntil(h.done, timeout=60000)
+    cursor = QTextCursor(view.document().firstBlock())
+    cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
+    start = time.perf_counter()
+    cursor.insertText("")  # the string opener goes: every line below changes
+    assert time.perf_counter() - start < 0.5
+    qtbot.waitUntil(h.done, timeout=60000)
+    number = QColor(theme.palette()["code_number"]).name()
+    assert _colour_at(view.document().findBlockByNumber(5), 5) == number
+
+
 def test_disabled_highlighter_colours_nothing(qtbot, view):
     view.setPlainText("a { color: red }")
     h = ChunkedHighlighter(view.document(), "css")

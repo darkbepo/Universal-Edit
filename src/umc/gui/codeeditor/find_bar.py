@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from umc.codeedit import search
-from umc.gui.codeeditor.code_view import CodeView
+from umc.gui.codeeditor.code_view import CodeView, raw_text
 
 _ASTRAL = re.compile(r"[\U00010000-\U0010FFFF]")
 
@@ -149,7 +149,7 @@ class FindBar(QFrame):
         self.refresh()
 
     def refresh(self) -> None:
-        text = self.view.toPlainText()
+        text = raw_text(self.view.document())
         try:
             self._spans = search.find_all(text, self.query.text(), **self._options())
         except search.SearchError as exc:
@@ -179,7 +179,7 @@ class FindBar(QFrame):
         self.refresh()
         if not self._spans:
             return
-        text = self.view.toPlainText()
+        text = raw_text(self.view.document())
         cursor = self.view.textCursor()
         here = _py_index(
             text, cursor.selectionEnd() if cursor.hasSelection() else cursor.position()
@@ -191,14 +191,14 @@ class FindBar(QFrame):
         self.refresh()
         if not self._spans:
             return
-        text = self.view.toPlainText()
+        text = raw_text(self.view.document())
         here = _py_index(text, self.view.textCursor().selectionStart())
         span = next((s for s in reversed(self._spans) if s[0] < here), self._spans[-1])
         self._select(text, span)
 
     # ------------------------------------------------------------------ replacing
     def replace(self) -> None:
-        text = self.view.toPlainText()
+        text = raw_text(self.view.document())
         cursor = self.view.textCursor()
         start = _py_index(text, cursor.selectionStart()) if cursor.hasSelection() else -1
         try:
@@ -208,14 +208,15 @@ class FindBar(QFrame):
         except search.SearchError as exc:
             self.count.setText(str(exc))
             return
-        if hit is None:
+        end = _py_index(text, cursor.selectionEnd()) if cursor.hasSelection() else -1
+        if hit is None or hit[1] != end:  # the selection must be exactly one match
             self.find_next()
             return
         cursor.insertText(hit[2])
         self.find_next()
 
     def replace_all(self) -> None:
-        text = self.view.toPlainText()
+        text = raw_text(self.view.document())
         try:
             new, n = search.replace_all(
                 text, self.query.text(), self.replacement.text(), **self._options()

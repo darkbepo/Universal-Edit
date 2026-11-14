@@ -66,6 +66,59 @@ def test_open_edit_save_keeps_bytes(qtbot, page, tmp_path):
     assert not page.current.dirty
 
 
+def test_unusual_spaces_survive_saving(qtbot, page, tmp_path):
+    f = tmp_path / "a.md"
+    data = "a b c\n".encode()  # no-break space, line separator
+    f.write_bytes(data)
+    _open(qtbot, page, f)
+    _save(qtbot, page)
+    assert f.read_bytes() == data
+    _type(page, "!")
+    _save(qtbot, page)
+    assert f.read_bytes() == data + b"!"
+
+
+def test_chosen_line_endings_stay_after_saving(qtbot, page, tmp_path):
+    f = tmp_path / "one.txt"
+    f.write_bytes(b"one line")
+    _open(qtbot, page, f)
+    page.set_newline("\r\n")
+    _save(qtbot, page)
+    assert page.current.newline == "\r\n" and not page.current.dirty
+    _type(page, "\ntwo")
+    _save(qtbot, page)
+    assert f.read_bytes() == b"one line\r\ntwo"
+
+
+def test_dont_save_on_leaving_discards(qtbot, page, tmp_path):
+    a = tmp_path / "a.css"
+    a.write_text("a {}")
+    _open(qtbot, page, a)
+    _type(page, "x")
+    page.answers = ["discard"]
+    assert page.maybe_leave()
+    assert not any(t.dirty for t in page._tabs)
+    _open(qtbot, page, a)
+    assert page.view.toPlainText() == "a {}"
+
+
+def test_replace_needs_the_whole_selection_to_match(qtbot, page, tmp_path):
+    f = tmp_path / "a.txt"
+    f.write_text("foo")
+    _open(qtbot, page, f)
+    cursor = page.view.textCursor()
+    cursor.setPosition(0)
+    cursor.setPosition(3, QTextCursor.MoveMode.KeepAnchor)  # "foo"
+    page.view.setTextCursor(cursor)
+    bar = page.find_bar
+    bar.open(replace=True)
+    bar.query.setText("fo")
+    bar.replacement.setText("X")
+    page.view.setTextCursor(cursor)
+    bar.replace()
+    assert page.view.toPlainText() == "foo"  # selection "foo" isn't the match "fo": just finds
+
+
 def test_tabs_and_duplicates(qtbot, page, tmp_path):
     a, b = tmp_path / "a.css", tmp_path / "b.js"
     a.write_text("a {}")

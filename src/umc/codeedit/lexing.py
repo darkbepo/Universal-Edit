@@ -132,6 +132,7 @@ def _spans(tokens: Iterator[tuple[int, _TokenType, str]] | list, limit: int) -> 
 
 
 _ROOT: tuple[tuple[str, ...], bool] = (("root",), False)
+MAX_LINE_CHARS = 5000  # longer lines (minified code) are left uncoloured: lexing them freezes
 
 
 class LineLexer:
@@ -193,6 +194,8 @@ class LineLexer:
     def lex(self, line: str, state: int) -> tuple[list[Span], int]:
         if self.plain or self.lexer is None:
             return [], 0
+        if len(line) > MAX_LINE_CHARS:  # minified files: no colours, state carried as it is
+            return [], state
         stack, in_comment = self._states[state] if 0 <= state < len(self._states) else _ROOT
         spans: list[Span] = []
         offset = 0
@@ -206,6 +209,8 @@ class LineLexer:
         code, stack = self._lex_code(rest, stack)
         cut = self._open_comment(rest, code)
         if cut is not None:
+            # the state after the code before the comment (what follows "/*" isn't code)
+            _spans_before, stack = self._lex_code(rest[:cut], self._states[state][0])
             code = [s for s in code if s.start < cut]
             code = [Span(s.start, min(s.length, cut - s.start), s.kind) for s in code]
             code.append(Span(cut, len(rest) - cut, "comment"))

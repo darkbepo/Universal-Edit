@@ -14,6 +14,13 @@ from umc.gui import theme
 
 BASE_POINT_SIZE = 10
 MIN_POINT_SIZE, MAX_POINT_SIZE = 6, 40
+BRACKET_WINDOW = 20_000
+
+
+def raw_text(document) -> str:
+    """The text exactly as typed. ``toPlainText()`` turns no-break spaces into spaces and line
+    separators into newlines, which would change files on saving."""
+    return document.toRawText().replace(" ", "\n")
 
 
 def _monospace_family() -> str:
@@ -171,20 +178,33 @@ class CodeView(QPlainTextEdit):
             sel.cursor.setPosition(start)
             sel.cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
             selections.append(sel)
-        if not self.textCursor().hasSelection() and self.document().characterCount() < 2_000_000:
-            text = self.toPlainText()
-            pos = self.textCursor().position()
-            other = editing.matching_bracket(text, pos)
-            if other is not None:
-                here = pos if pos < len(text) and text[pos] in "()[]{}" else pos - 1
-                for p in (here, other):
-                    sel = QTextEdit.ExtraSelection()
-                    sel.format.setBackground(QColor(pal["code_bracket"]))
-                    sel.cursor = QTextCursor(self.document())
-                    sel.cursor.setPosition(p)
-                    sel.cursor.setPosition(p + 1, QTextCursor.MoveMode.KeepAnchor)
-                    selections.append(sel)
+        for p in self._bracket_pair():
+            sel = QTextEdit.ExtraSelection()
+            sel.format.setBackground(QColor(pal["code_bracket"]))
+            sel.cursor = QTextCursor(self.document())
+            sel.cursor.setPosition(p)
+            sel.cursor.setPosition(p + 1, QTextCursor.MoveMode.KeepAnchor)
+            selections.append(sel)
         self.setExtraSelections(selections)
+
+    def _bracket_pair(self) -> tuple[int, ...]:
+        """The bracket at the cursor and its partner, looked for within ``BRACKET_WINDOW``
+        characters (a whole-text scan made every cursor move slow in big files)."""
+        cursor = self.textCursor()
+        if cursor.hasSelection():
+            return ()
+        doc = self.document()
+        pos = cursor.position()
+        here = next((p for p in (pos, pos - 1) if p >= 0 and doc.characterAt(p) in "()[]{}"), None)
+        if here is None:
+            return ()
+        start = max(0, here - BRACKET_WINDOW)
+        end = min(doc.characterCount() - 1, here + BRACKET_WINDOW)
+        window = QTextCursor(doc)
+        window.setPosition(start)
+        window.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
+        other = editing.matching_bracket(window.selectedText(), here - start)
+        return () if other is None else (here, start + other)
 
     # ------------------------------------------------------------------ editing
     def _selected_block_range(self) -> tuple[int, int]:
