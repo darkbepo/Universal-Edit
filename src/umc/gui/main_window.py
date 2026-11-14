@@ -62,6 +62,7 @@ FAMILY_NOUN = {
     MediaFamily.VECTOR: ("vector graphic", "vector graphics"),
     MediaFamily.CAD: ("CAD drawing", "CAD drawings"),
     MediaFamily.PROJECT: ("video project", "video projects"),
+    MediaFamily.CODE: ("code file", "code files"),
 }
 
 NARROW = 900  # px of window width below which the layout becomes one column

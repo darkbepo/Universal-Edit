@@ -25,6 +25,7 @@ FAMILY_ICON = {
     MediaFamily.VECTOR: "vector",
     MediaFamily.CAD: "cad",
     MediaFamily.PROJECT: "slideshow",
+    MediaFamily.CODE: "code",
 }
 
 # First matching keyword (lower case) in a target group name → icon.
