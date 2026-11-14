@@ -35,6 +35,7 @@ dependencies = [
     "ezdxf>=1.3",
     "opencv-python-headless>=4.8",  # content-aware fill (cv2.inpaint); also needed by pdf2docx
     "onnxruntime>=1.17",  # background removal (the model is downloaded on first use)
+    "pygments>=2.17",  # code editor colours (BSD-2)
 ]
 
 [project.optional-dependencies]
