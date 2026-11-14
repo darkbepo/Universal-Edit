@@ -16,6 +16,15 @@ BASE_POINT_SIZE = 10
 MIN_POINT_SIZE, MAX_POINT_SIZE = 6, 40
 
 
+def _monospace_family() -> str:
+    """A good monospace font this computer has (Windows' Consolas / Cascadia Mono first)."""
+    have = set(QFontDatabase.families())
+    for family in ("Cascadia Mono", "Consolas", "DejaVu Sans Mono", "Menlo", "Liberation Mono"):
+        if family in have:
+            return family
+    return QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont).family()
+
+
 class _Gutter(QWidget):
     def __init__(self, view: CodeView) -> None:
         super().__init__(view)
@@ -38,9 +47,7 @@ class CodeView(QPlainTextEdit):
         self._language = "text"
         self._find: list[tuple[int, int]] = []
         self._point_size = BASE_POINT_SIZE
-        font = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)
-        font.setPointSize(self._point_size)
-        self.setFont(font)
+        self._family = _monospace_family()
         self.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
         self.setTabChangesFocus(False)
         self._gutter = _Gutter(self)
@@ -74,12 +81,26 @@ class CodeView(QPlainTextEdit):
         return self._point_size
 
     def _apply_font(self) -> None:
+        # A rule of its own: the app's "* { font-size }" would otherwise win over setFont.
+        family = self._family.replace('"', "")
+        size = self._point_size
+        self.setStyleSheet(
+            f'QPlainTextEdit#CodeView {{ font-family: "{family}"; font-size: {size}pt; }}'
+        )
         font = self.font()
+        font.setFamily(family)
         font.setPointSize(self._point_size)
         self.setFont(font)
+        self.document().setDefaultFont(font)
         self._gutter.setFont(font)
         self.setTabStopDistance(self.fontMetrics().horizontalAdvance(" ") * 4)
         self._update_margins()
+
+    def setDocument(self, document) -> None:  # noqa: N802 (Qt override)
+        super().setDocument(document)
+        if document is not None and hasattr(self, "_gutter"):
+            document.setDefaultFont(self.font())  # a new tab's document: the code font too
+            self._update_margins()
 
     def set_find_matches(self, matches: list[tuple[int, int]]) -> None:
         self._find = matches

@@ -76,6 +76,16 @@ def test_tabs_and_duplicates(qtbot, page, tmp_path):
     assert page.tabs.count() == 2 and page.current.path == a
 
 
+def test_tabs_keep_the_order_the_files_came_in(qtbot, page, tmp_path):
+    paths = []
+    for i, size in enumerate((400_000, 10, 200_000, 5, 100_000)):  # big ones take longer
+        p = tmp_path / f"f{i}.txt"
+        p.write_text("x" * size)
+        paths.append(p)
+    _open(qtbot, page, *paths)
+    assert [page.tabs.tabText(i) for i in range(5)] == [p.name for p in paths]
+
+
 def test_binary_and_huge_are_refused(qtbot, page, tmp_path, monkeypatch):
     blob = tmp_path / "blob.css"
     blob.write_bytes(b"\x00\x01\x02")

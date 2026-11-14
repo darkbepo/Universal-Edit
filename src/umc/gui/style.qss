@@ -329,6 +329,12 @@ QPlainTextEdit#ViewerText {
     border: none;
     padding: 12px;
 }
+/* code editor text (its font: CodeView sets a rule of its own, so zoom works) */
+QPlainTextEdit#CodeView {
+    background: @surface;
+    border: none;
+    selection-background-color: @accent_border;
+}
 
 QPushButton#Link, QToolButton#Link {
     background: transparent;

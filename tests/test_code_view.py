@@ -129,6 +129,39 @@ def test_gutter_widens_with_more_digits(view):
     assert view.gutter_width() > narrow
 
 
+def test_monospace_and_zoom_survive_the_app_stylesheet(qtbot):
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance()
+    old = app.styleSheet()
+    app.setStyleSheet(theme.stylesheet())  # "* { font-size: 14px }" like the real app
+    try:
+        from umc.gui.codeeditor.code_view import _monospace_family
+
+        v = CodeView()
+        qtbot.addWidget(v)
+        v.show()
+        family = _monospace_family()
+        assert v.font().family() == family
+        before = v.font().pointSize()
+        v.zoom(4)
+        assert v.font().pointSize() == before + 4
+        v.zoom(0)
+        assert v.font().pointSize() == before
+        # each tab brings its own document: it must get the code font too
+        from PySide6.QtGui import QTextDocument
+        from PySide6.QtWidgets import QPlainTextDocumentLayout
+
+        doc = QTextDocument()
+        doc.setDocumentLayout(QPlainTextDocumentLayout(doc))
+        v.setDocument(doc)
+        assert doc.defaultFont().family() == family
+        v.zoom(2)
+        assert doc.defaultFont().pointSize() == v.font().pointSize()
+    finally:
+        app.setStyleSheet(old)
+
+
 def test_go_to_line(view):
     view.setPlainText("a\nb\nc")
     view.go_to_line(3)

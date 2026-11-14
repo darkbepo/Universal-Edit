@@ -90,6 +90,14 @@ def _read(path: Path) -> tuple[Path, TextFile, tuple[int, int] | None]:
     return path, file, _stamp(path)
 
 
+def _read_or_message(path: Path) -> tuple[Path, TextFile, tuple[int, int] | None] | str:
+    """``_read``, or the plain message when the file can't be opened (the others still are)."""
+    try:
+        return _read(path)
+    except UserError as exc:
+        return str(exc)
+
+
 def _write(path: Path, data: bytes) -> tuple[Path, TextFile, tuple[int, int] | None]:
     """Write next to the target first, then swap it in (a crash never leaves half a file)."""
     try:
@@ -400,7 +408,7 @@ class CodeEditorPage(QWidget):
     @Slot(object, object)
     def _job_done(self, job: dict, result: object) -> None:
         if job["kind"] == "open":
-            self._opened(*result)
+            self._opened_all(result)
         else:
             self._saved(job["tab"], job["text"], *result)
 
@@ -438,21 +446,31 @@ class CodeEditorPage(QWidget):
     def open_paths(self, paths: list[Path]) -> bool:
         """A tab per file (an open one is just shown). False if nothing could be started."""
         started = False
+        to_read: list[Path] = []
         for path in paths:
             path = Path(path)
             existing = next((t for t in self._tabs if t.path and _same(t.path, path)), None)
             if existing is not None:
                 self.tabs.setCurrentIndex(self._tabs.index(existing))
                 started = True
-                continue
-            if path.is_dir():
+            elif path.is_dir():
                 self.show_message(f"“{path.name}” is a folder.", error=True)
-                continue
-            self._run({"kind": "open"}, lambda p=path: _read(p))
-            started = True
-        if started:
+            else:
+                to_read.append(path)
+        if to_read:
+            # one job reads them in turn, so the tabs come in the order the files did
+            self._run({"kind": "open"}, lambda: [_read_or_message(p) for p in to_read])
             self.show_message("")
+            started = True
         return started
+
+    def _opened_all(self, results: list) -> None:
+        problems = [r for r in results if isinstance(r, str)]
+        for r in results:
+            if not isinstance(r, str):
+                self._opened(*r)
+        if problems:
+            self.show_message(" ".join(problems), error=True)
 
     def _opened(self, path: Path, file: TextFile, stamp: tuple[int, int] | None) -> None:
         if any(t.path and _same(t.path, path) for t in self._tabs):
