@@ -10,7 +10,10 @@
 import { EditorState, type Text } from "@codemirror/state";
 import { indentUnit } from "@codemirror/language";
 import { EditorView } from "@codemirror/view";
+import { type Diagnostic, lintGutter, linter } from "@codemirror/lint";
+import { CHECKED, type Problem, check } from "../../codeedit/check";
 import { loadLanguage } from "../../codeedit/cmlanguages";
+import { TIDY, TidyError, tidy } from "../../codeedit/tidy";
 import languages from "../../codeedit/languages.json";
 import { type Encoding, type Newline, type TextFile, decode, encode } from "../../codeedit/textfile";
 import type { InputFile } from "../../core/types";
@@ -21,6 +24,8 @@ import { SHORTCUTS, keyName, showKey } from "./shortcuts";
 
 export const MAX_OPEN_BYTES_WEB = 20_000_000;
 export const MAX_HIGHLIGHT_BYTES = 2_000_000;
+export const MAX_CHECK_BYTES = 2_000_000; // bigger files: no automatic check
+const PREVIEWS = new Set(["html", "markdown"]);
 export const MAX_WRAP_LINE = 100_000; // longer lines are never wrapped
 export const UNTITLED = "Untitled";
 const ENCODINGS: [string, Encoding, boolean][] = [
@@ -106,6 +111,13 @@ export class CodeEditorPage {
   private readonly message = el("div", "msg");
   private readonly position = el("span", "code-pos");
   private readonly note = el("span", "code-note");
+  private readonly tidyBtn: HTMLButtonElement;
+  private readonly previewBtn: HTMLButtonElement;
+  private readonly previewEl = el("div", "code-preview");
+  private readonly previewFrame = el("iframe");
+  private previewTimer: ReturnType<typeof setTimeout> | undefined;
+  private problems: Problem[] = [];
+  private tidyNote = ""; // why Tidy refused, shown until the text changes
   private readonly languageSel = el("select");
   private readonly encodingSel = el("select");
   private readonly newlineSel = el("select");
@@ -138,11 +150,16 @@ export class CodeEditorPage {
     };
     this.saveAsBtn = btn("Save as…", "Save as (Ctrl+Shift+S)", () => void this.saveAs());
     this.saveBtn = btn("Save", "Save (Ctrl+S)", () => void this.save(), "primary small");
+    this.tidyBtn = btn("Tidy", "Lay out the JSON or XML neatly (one undo step)", () => this.tidy());
+    this.previewBtn = btn("Preview", "Preview the HTML or Markdown", () => this.togglePreview());
+    this.previewBtn.setAttribute("aria-pressed", "false");
     const tools = el("div", "top-tools");
     tools.append(
       btn("Open…", "Open files (Ctrl+O)", () => this.picker.click()),
       btn("New", "New file (Alt+N)", () => this.openEmpty()),
       el("div", "spacer"),
+      this.tidyBtn,
+      this.previewBtn,
       btn("Find", "Find and replace (Ctrl+F, Ctrl+H)", () => this.findBar.open(false)),
       btn("?", "Keyboard shortcuts (F1)", () => this.showHelp()),
     );
@@ -156,7 +173,21 @@ export class CodeEditorPage {
     host.append(this.view.dom);
     this.tabsEl.setAttribute("role", "tablist");
     this.tabsEl.setAttribute("aria-label", "Open files");
-    body.append(this.tabsEl, this.findBar.el, host);
+    // the preview is a separate, sandboxed document: scripts run, but can't reach this page
+    this.previewFrame.setAttribute("sandbox", "allow-scripts");
+    this.previewFrame.title = "Preview";
+    this.previewEl.append(this.previewFrame);
+    this.previewEl.hidden = true;
+    const split = el("div", "code-split");
+    split.append(host, this.previewEl);
+    body.append(this.tabsEl, this.findBar.el, split);
+    this.note.addEventListener("click", () => {
+      const line = Number(this.note.dataset.line);
+      if (!line) return;
+      const target = this.view.state.doc.line(Math.min(line, this.view.state.doc.lines));
+      this.view.dispatch({ selection: { anchor: target.from }, scrollIntoView: true });
+      this.view.focus();
+    });
 
     const status = el("div", "editor-status code-status");
     const right = el("div", "code-status-right");
@@ -304,6 +335,98 @@ export class CodeEditorPage {
   private changed(): void {
     this.findBar.documentChanged();
     this.renderTabs();
+    if (this.tidyNote) {
+      this.tidyNote = "";
+      this.updateNote();
+    }
+    if (!this.previewEl.hidden) {
+      clearTimeout(this.previewTimer);
+      this.previewTimer = setTimeout(() => void this.refreshPreview(), 500);
+    }
+  }
+
+  // ---------------------------------------------------------------- checks, Tidy, preview
+  /** The error check for a tab (JSON / YAML / XML under MAX_CHECK_BYTES), as lint extensions. */
+  private lintFor(t: Tab) {
+    if (!CHECKED.has(t.languageId) || (t.file?.raw.length ?? 0) > MAX_CHECK_BYTES) return [];
+    const languageId = t.languageId;
+    return [
+      linter(
+        (view): Diagnostic[] => {
+          const doc = view.state.doc;
+          const problems = doc.length > MAX_CHECK_BYTES ? [] : check(languageId, doc.toString());
+          if (this.tabs[this.current] === t) {
+            this.problems = problems;
+            this.updateNote();
+          }
+          return problems.map((p) => {
+            const line = doc.line(Math.max(1, Math.min(p.line, doc.lines)));
+            const from = p.column ? Math.min(line.from + p.column - 1, line.to) : line.from;
+            const to = p.column ? Math.min(Math.max(from + 1, line.to), doc.length) : line.to;
+            return { from, to, severity: "error", message: p.message };
+          });
+        },
+        { delay: 400 },
+      ),
+      lintGutter(),
+    ];
+  }
+
+  private updateNote(): void {
+    const t = this.tab();
+    delete this.note.dataset.line;
+    this.note.classList.remove("link");
+    if (!t) {
+      this.note.textContent = "";
+    } else if (this.tidyNote) {
+      this.note.textContent = this.tidyNote;
+    } else if (this.problems.length) {
+      const p = this.problems[0];
+      this.note.textContent = `Line ${p.line}: ${p.message}`;
+      this.note.dataset.line = String(p.line);
+      this.note.classList.add("link");
+    } else {
+      this.note.textContent = t.colours ? "" : "Colours are off for files this big";
+    }
+  }
+
+  /** Lay out the current JSON / XML neatly, as one undo step (refused while it has a mistake). */
+  tidy(): void {
+    const t = this.tab();
+    if (!t || !TIDY.has(t.languageId)) return;
+    const old = this.view.state.doc.toString();
+    let next: string;
+    try {
+      next = tidy(t.languageId, old);
+    } catch (e) {
+      this.tidyNote = e instanceof TidyError ? e.message : "This couldn't be tidied.";
+      this.updateNote();
+      return;
+    }
+    if (next !== old) this.view.dispatch({ changes: { from: 0, to: old.length, insert: next } });
+  }
+
+  /** HTML / Markdown: the preview beside the code (instead of it on phones), or hide it again. */
+  togglePreview(): void {
+    const t = this.tab();
+    const show = this.previewEl.hidden && !!t && PREVIEWS.has(t.languageId);
+    this.previewEl.hidden = !show;
+    this.el.classList.toggle("previewing", show);
+    this.previewBtn.setAttribute("aria-pressed", String(show));
+    if (show) void this.refreshPreview();
+  }
+
+  private async refreshPreview(): Promise<void> {
+    const t = this.tab();
+    if (!t || this.previewEl.hidden) return;
+    const text = this.view.state.doc.toString();
+    if (t.languageId === "markdown") {
+      const { default: MarkdownIt } = await import("markdown-it");
+      const body = new MarkdownIt({ html: false, linkify: true }).render(text);
+      this.previewFrame.srcdoc = `<!doctype html><meta charset="utf-8"><style>body{font:15px/1.6 system-ui,sans-serif;margin:16px;max-width:760px}pre,code{font-family:"Cascadia Mono",Consolas,monospace}img{max-width:100%}</style>${body}`;
+    } else {
+      this.previewFrame.srcdoc = text;
+    }
   }
 
   private renderTabs(): void {
@@ -377,9 +500,11 @@ export class CodeEditorPage {
       ext = [];
     }
     if (tab.languageId !== languageId || !this.tabs.includes(tab)) return;
-    const effect = compartments.language.reconfigure(ext);
-    if (this.tabs[this.current] === tab) this.view.dispatch({ effects: effect });
-    else tab.state = tab.state.update({ effects: effect }).state;
+    const effects = [compartments.language.reconfigure(ext), compartments.lint.reconfigure(this.lintFor(tab))];
+    if (this.tabs[this.current] === tab) {
+      this.problems = [];
+      this.view.dispatch({ effects });
+    } else tab.state = tab.state.update({ effects }).state;
     this.updateStatus();
   }
 
@@ -518,6 +643,9 @@ export class CodeEditorPage {
     const t = this.tab();
     for (const s of [this.languageSel, this.encodingSel, this.newlineSel]) s.hidden = !t;
     this.saveBtn.disabled = this.saveAsBtn.disabled = !t || this.saving;
+    this.tidyBtn.hidden = !t || !TIDY.has(t.languageId);
+    this.previewBtn.hidden = !t || !PREVIEWS.has(t.languageId);
+    if (!this.previewEl.hidden && (!t || !PREVIEWS.has(t.languageId))) this.togglePreview();
     if (!t) {
       this.position.textContent = this.indentEl.textContent = this.note.textContent = "";
       return;
@@ -526,7 +654,7 @@ export class CodeEditorPage {
     this.encodingSel.value = String(Math.max(0, ENCODINGS.findIndex(([, e, b]) => e === t.encoding && b === t.bom)));
     this.newlineSel.value = String(NEWLINES.findIndex(([, n]) => n === t.newline));
     this.indentEl.textContent = t.indent === "\t" ? "Tab" : `Spaces: ${t.indent.length}`;
-    this.note.textContent = t.colours ? "" : "Colours are off for files this big";
+    this.updateNote();
     const head = this.view.state.selection.main.head;
     const line = this.view.state.doc.lineAt(head);
     this.position.textContent = `Ln ${line.number}, Col ${head - line.from + 1}`;

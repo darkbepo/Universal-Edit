@@ -88,6 +88,54 @@ test("two files with the same name both open", async ({ page }) => {
   expect(await page.evaluate(() => window.__codeeditor!.text())).toBe("let two = 2; // another folder");
 });
 
+test("a JSON mistake is underlined and named in the status bar", async ({ page }) => {
+  await openInEditor(page, [file("a.json", '{"a": 1 "b": 2}')]);
+  await expect(page.locator(".cm-lintRange-error")).toHaveCount(1);
+  await expect(page.locator(".code-note")).toContainText("Line 1");
+  await page.evaluate(() => window.__codeeditor!.setText('{"a": 1, "b": 2}'));
+  await expect(page.locator(".cm-lintRange-error")).toHaveCount(0);
+  await expect(page.locator(".code-note")).not.toContainText("Line");
+});
+
+test("Tidy lays out JSON in one undo step and keeps the bytes", async ({ page }) => {
+  const data = Buffer.from('﻿{"a":[1,2]}\r\n', "utf-8");
+  await openInEditor(page, [file("a.json", data)]);
+  await page.getByRole("button", { name: "Tidy", exact: true }).click();
+  expect(await page.evaluate(() => window.__codeeditor!.text())).toBe('{\n  "a": [\n    1,\n    2\n  ]\n}\n');
+  await page.locator(".cm-content").click();
+  await page.keyboard.press("Control+z");
+  expect(await page.evaluate(() => window.__codeeditor!.text())).toBe('{"a":[1,2]}\n');
+  expect(await saveBytes(page)).toEqual(data);
+});
+
+test("Tidy refuses while the JSON has a mistake", async ({ page }) => {
+  await openInEditor(page, [file("a.json", '{"a":1,}')]);
+  await page.getByRole("button", { name: "Tidy", exact: true }).click();
+  await expect(page.locator(".code-note")).toContainText("Fix the mistake on line 1");
+  expect(await page.evaluate(() => window.__codeeditor!.text())).toBe('{"a":1,}');
+});
+
+test("Markdown preview follows the text", async ({ page }) => {
+  await page.goto("./?e2e");
+  await page.locator('input[type="file"]').first().setInputFiles([file("notes.md", "# Title\n")]);
+  await page.getByRole("button", { name: "Other editors" }).click();
+  await page.getByRole("menuitem", { name: "Edit as code" }).click();
+  await page.getByRole("button", { name: "Preview", exact: true }).click();
+  const frame = page.frameLocator(".code-preview iframe");
+  await expect(frame.locator("h1")).toHaveText("Title");
+  await page.evaluate(() => window.__codeeditor!.setText("# Title\n\nMore **bold**"));
+  await expect(frame.locator("strong")).toHaveText("bold");
+});
+
+test("an HTML preview can't reach the page", async ({ page }) => {
+  await openInEditor(page, [file("page.html", "<h1>Hi</h1><script>try { parent.document.title = 'hacked'; } catch (e) {}</script>")]);
+  const title = await page.title();
+  await page.getByRole("button", { name: "Preview", exact: true }).click();
+  await expect(page.frameLocator(".code-preview iframe").locator("h1")).toHaveText("Hi");
+  await page.waitForTimeout(300);
+  expect(await page.title()).toBe(title);
+});
+
 test("find counts matches and Replace all is one undo step", async ({ page }) => {
   await openInEditor(page, [file("a.js", "a-b-c")]);
   await page.locator(".cm-content").click();
@@ -170,4 +218,15 @@ test("phones: no sideways scroll, Save reachable", async ({ page }) => {
   await openInEditor(page, [file("a.css", "a { color: red; }"), file("b.css", "b {}"), file("c.css", "c {}")]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
   await expect(page.locator(".code-editor").getByRole("button", { name: "Save", exact: true })).toBeInViewport();
+});
+
+test("phones: Preview swaps between the code and the page", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await openInEditor(page, [file("page.html", "<h1>Hi</h1>")]);
+  await page.getByRole("button", { name: "Preview", exact: true }).click();
+  await expect(page.locator(".code-preview")).toBeVisible();
+  await expect(page.locator(".code-host")).toBeHidden();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
+  await page.getByRole("button", { name: "Preview", exact: true }).click();
+  await expect(page.locator(".code-host")).toBeVisible();
 });

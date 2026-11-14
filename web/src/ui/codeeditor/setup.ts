@@ -50,6 +50,7 @@ const theme = EditorView.theme({
 /** The parts that change per tab or by a setting. */
 export const compartments = {
   language: new Compartment(),
+  lint: new Compartment(),
   wrap: new Compartment(),
   font: new Compartment(),
   indent: new Compartment(),
@@ -70,6 +71,7 @@ export function baseExtensions(opts: { onChange: () => void; onCursor: (line: nu
     theme,
     keymap.of([{ key: "Mod-/", run: toggleComment }, indentWithTab, ...historyKeymap, ...defaultKeymap]),
     compartments.language.of([]),
+    compartments.lint.of([]),
     compartments.wrap.of([]),
     compartments.font.of(fontSize(BASE_FONT_PX)),
     compartments.indent.of(indentUnit.of("    ")),
