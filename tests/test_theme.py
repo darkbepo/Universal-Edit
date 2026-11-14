@@ -23,6 +23,36 @@ def choice(qapp):
     QCoreApplication.setOrganizationName(old_org)
 
 
+CODE_KEYS = (
+    "keyword",
+    "string",
+    "comment",
+    "number",
+    "function",
+    "type",
+    "tag",
+    "attribute",
+    "operator",
+    "builtin",
+    "gutter",
+    "line",
+    "match",
+    "bracket",
+)
+
+
+def test_code_colours_in_both_apps():
+    from pathlib import Path
+
+    from umc.gui import theme
+
+    css = (Path(__file__).parents[1] / "web/src/styles.css").read_text(encoding="utf-8")
+    for key in CODE_KEYS:
+        light, dark = theme.LIGHT[f"code_{key}"], theme.DARK[f"code_{key}"]
+        assert css.count(f"--code-{key}: {light};") == 1, key  # :root
+        assert css.count(f"--code-{key}: {dark};") == 2, key  # both dark blocks
+
+
 def test_cycle_order():
     from umc.gui import theme
 

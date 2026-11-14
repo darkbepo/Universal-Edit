@@ -40,6 +40,21 @@ LIGHT = {
     "clip_audio": "#1f9d61",
     "clip_text": "#d98a1f",
     "playhead": "#d43c45",
+    # code editor (same values as --code-* in web/src/styles.css)
+    "code_keyword": "#8839ef",
+    "code_string": "#2f8f2f",
+    "code_comment": "#8c8fa1",
+    "code_number": "#d4570b",
+    "code_function": "#1e66f5",
+    "code_type": "#b7791f",
+    "code_tag": "#d20f39",
+    "code_attribute": "#b7791f",
+    "code_operator": "#5c6070",
+    "code_builtin": "#0e8a8a",
+    "code_gutter": "#9aa0ad",
+    "code_line": "#f4f5fa",
+    "code_match": "#fff2a8",
+    "code_bracket": "#dfe1fb",
 }
 
 DARK = {
@@ -64,6 +79,20 @@ DARK = {
     "clip_audio": "#3ccf8e",
     "clip_text": "#e8a040",
     "playhead": "#ff6b70",
+    "code_keyword": "#c792ea",
+    "code_string": "#a6d189",
+    "code_comment": "#7f8796",
+    "code_number": "#f5a97f",
+    "code_function": "#8aadf4",
+    "code_type": "#eed49f",
+    "code_tag": "#ed8796",
+    "code_attribute": "#eed49f",
+    "code_operator": "#a5adcb",
+    "code_builtin": "#8bd5ca",
+    "code_gutter": "#5b6070",
+    "code_line": "#1f2128",
+    "code_match": "#5a4b16",
+    "code_bracket": "#2c2e52",
 }
 
 
