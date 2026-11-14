@@ -13,7 +13,7 @@ import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QObject, QStandardPaths, Qt, QThread, Signal, Slot
+from PySide6.QtCore import QEvent, QObject, QStandardPaths, Qt, QThread, QTimer, Signal, Slot
 from PySide6.QtGui import QAction, QKeySequence, QShortcut, QTextDocument
 from PySide6.QtWidgets import (
     QApplication,
@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextDocumentLayout,
     QPushButton,
+    QSplitter,
     QTabBar,
     QToolButton,
     QVBoxLayout,
@@ -35,11 +36,14 @@ from PySide6.QtWidgets import (
 )
 
 from umc.codeedit import editing
+from umc.codeedit.check import CHECKED, Problem, check
 from umc.codeedit.languages import LANGUAGES, language_for
 from umc.codeedit.textfile import Encoding, Newline, TextFile, decode, encode
+from umc.codeedit.tidy import TIDY, TidyError, tidy
 from umc.gui.codeeditor.code_view import CodeView, raw_text
 from umc.gui.codeeditor.find_bar import FindBar
 from umc.gui.codeeditor.highlight import ChunkedHighlighter
+from umc.gui.codeeditor.preview import MarkdownPane, html_preview_file, open_in_browser
 from umc.gui.codeeditor.shortcuts import SHORTCUTS
 from umc.gui.codeeditor.tab import CodeTab
 
@@ -47,6 +51,8 @@ log = logging.getLogger(__name__)
 
 MAX_OPEN_BYTES = 50_000_000
 MAX_HIGHLIGHT_BYTES = 2_000_000
+MAX_CHECK_BYTES = 2_000_000  # bigger files are only checked when Tidy is pressed
+PREVIEWS = frozenset({"html", "markdown"})
 ENCODINGS: tuple[tuple[str, Encoding, bool], ...] = (
     ("UTF-8", "utf-8", False),
     ("UTF-8 with BOM", "utf-8", True),
@@ -184,8 +190,21 @@ class CodeEditorPage(QWidget):
         root.addWidget(self._build_top_bar())
         root.addWidget(self.tabs)
         root.addWidget(self.find_bar)
-        root.addWidget(self.view, 1)
+        self.preview_pane = MarkdownPane()
+        self.preview_pane.setVisible(False)
+        self.splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.splitter.addWidget(self.view)
+        self.splitter.addWidget(self.preview_pane)
+        self.splitter.setChildrenCollapsible(False)
+        root.addWidget(self.splitter, 1)
         root.addWidget(self._build_status_bar())
+
+        self.problems: list[Problem] = []
+        self._tidy_note = ""  # why Tidy refused, shown until the text changes
+        self._check_timer = QTimer(self, singleShot=True, interval=400)
+        self._check_timer.timeout.connect(self.run_check)
+        self._preview_timer = QTimer(self, singleShot=True, interval=500)
+        self._preview_timer.timeout.connect(self._refresh_preview)
 
         self.view.cursor_moved.connect(self._show_position)
         self.view.viewport().setAcceptDrops(True)
@@ -215,6 +234,8 @@ class CodeEditorPage(QWidget):
         tb("Open…", "Open files (Ctrl+O)", self.choose_files)
         tb("New", "New file (Ctrl+N)", self.open_empty)
         lay.addStretch(1)
+        self.tidy_button = tb("Tidy", "Lay out the JSON or XML neatly (one undo step)", self.tidy)
+        self.preview_button = tb("Preview", "Preview the HTML or Markdown", self.toggle_preview)
         tb("Find", "Find and replace (Ctrl+F, Ctrl+H)", lambda: self.find_bar.open(False))
         tb("?", "Keyboard shortcuts (F1)", self.show_shortcuts)
         self.save_as_button = tb("Save as…", "Save as (Ctrl+Shift+S)", self.save_as)
@@ -229,6 +250,8 @@ class CodeEditorPage(QWidget):
         self.message = QLabel(objectName="Muted")
         self.message.setWordWrap(True)
         self.note = QLabel(objectName="Muted")
+        self.note.setTextFormat(Qt.TextFormat.RichText)
+        self.note.linkActivated.connect(self._note_link)
         self.position = QLabel(objectName="Muted")
 
         def menu_button(tip: str) -> QToolButton:
@@ -362,6 +385,8 @@ class CodeEditorPage(QWidget):
             w.setVisible(has)
         self.save_button.setEnabled(has and not self.busy)
         self.save_as_button.setEnabled(has and not self.busy)
+        self.tidy_button.setVisible(has and tab.language_id in TIDY)
+        self.preview_button.setVisible(has and tab.language_id in PREVIEWS)
         if not has:
             self.position.setText("")
             self.indent_label.setText("")
@@ -376,7 +401,7 @@ class CodeEditorPage(QWidget):
         self.encoding_button.setText(enc)
         self.newline_button.setText({"\r\n": "CRLF", "\n": "LF", "\r": "CR"}[tab.newline])
         self.indent_label.setText("Tab" if tab.indent == "\t" else f"Spaces: {len(tab.indent)}")
-        self.note.setText("" if tab.colours else "Colours are off for files this big")
+        self._update_note()
         cursor = self.view.textCursor()
         self._show_position(cursor.blockNumber() + 1, cursor.positionInBlock() + 1)
         self._refresh_tab_title(tab)
@@ -498,6 +523,7 @@ class CodeEditorPage(QWidget):
         tab = CodeTab(path, file, doc, ChunkedHighlighter(doc, lang), lang)
         doc.modificationChanged.connect(lambda _m, t=tab: self._refresh_tab_title(t))
         doc.contentsChanged.connect(self.find_bar.document_changed)
+        doc.contentsChanged.connect(self._text_changed)
         self._tabs.append(tab)
         self.tabs.addTab(tab.title)
         return tab
@@ -522,6 +548,13 @@ class CodeEditorPage(QWidget):
         self.view.set_language(tab.language_id)
         self.view.set_indent_unit(tab.indent)
         self.find_bar.document_changed()
+        self._tidy_note = ""
+        self.run_check()
+        if self.preview_pane.isVisible():
+            if tab.language_id == "markdown":
+                self._refresh_preview()
+            else:
+                self.preview_pane.setVisible(False)
         self._update_status()
 
     def _tab_moved(self, src: int, dst: int) -> None:
@@ -538,6 +571,95 @@ class CodeEditorPage(QWidget):
             self.view.setDocument(self._new_document(""))
         tab.highlighter.setDocument(None)
         tab.document.deleteLater()
+
+    # ------------------------------------------------------------------ checks, Tidy, preview
+    def _text_changed(self) -> None:
+        tab = self.current
+        if tab is None or self.sender() is not tab.document:
+            return
+        if self._tidy_note:
+            self._tidy_note = ""
+            self._update_note()
+        self._check_timer.start()
+        if self.preview_pane.isVisible():
+            self._preview_timer.start()
+
+    def run_check(self) -> None:
+        """Check the current tab now (JSON / YAML / XML under ``MAX_CHECK_BYTES``)."""
+        self._check_timer.stop()
+        tab = self.current
+        problems: list[Problem] = []
+        if tab is not None and tab.language_id in CHECKED:
+            text = raw_text(tab.document)
+            if len(text) <= MAX_CHECK_BYTES:
+                problems = check(tab.language_id, text)
+        self.problems = problems
+        self.view.set_problems(problems)
+        self._update_note()
+
+    def _update_note(self) -> None:
+        tab = self.current
+        if tab is None:
+            self.note.setText("")
+            return
+        if self._tidy_note:
+            self.note.setText(_html_escape(self._tidy_note))
+        elif self.problems:
+            p = self.problems[0]
+            self.note.setText(
+                f'<a href="line:{p.line}" style="color: inherit">'
+                f"Line {p.line}: {_html_escape(p.message)}</a>"
+            )
+        else:
+            self.note.setText("" if tab.colours else "Colours are off for files this big")
+
+    def _note_link(self, link: str) -> None:
+        if link.startswith("line:"):
+            self.view.go_to_line(int(link[5:]))
+            self.view.setFocus()
+
+    def tidy(self) -> None:
+        """Lay out the current JSON / XML neatly, as one undo step (refused while it has a
+        mistake: the note says where)."""
+        tab = self.current
+        if tab is None or tab.language_id not in TIDY:
+            return
+        old = raw_text(tab.document)
+        try:
+            new = tidy(tab.language_id, old)
+        except TidyError as exc:
+            self._tidy_note = str(exc)
+            self._update_note()
+            return
+        if new == old:
+            return
+        cursor = self.view.textCursor()
+        cursor.beginEditBlock()
+        cursor.select(cursor.SelectionType.Document)
+        cursor.insertText(new)
+        cursor.endEditBlock()
+        self.run_check()
+
+    def toggle_preview(self) -> None:
+        """Markdown: the side pane on / off. HTML: open a copy in the default browser."""
+        tab = self.current
+        if tab is None or tab.language_id not in PREVIEWS:
+            return
+        if tab.language_id == "markdown":
+            show = not self.preview_pane.isVisible()
+            self.preview_pane.setVisible(show)
+            if show:
+                self._refresh_preview()
+                self.splitter.setSizes([self.width() // 2, self.width() // 2])
+            return
+        path = html_preview_file(raw_text(tab.document), tab.path)
+        if not open_in_browser(path):
+            self.show_message("The browser couldn't be opened for the preview.", error=True)
+
+    def _refresh_preview(self) -> None:
+        tab = self.current
+        if tab is not None and tab.language_id == "markdown" and self.preview_pane.isVisible():
+            self.preview_pane.set_markdown(raw_text(tab.document))
 
     # ------------------------------------------------------------------ tab settings
     def set_language(self, language_id: str) -> None:
@@ -733,3 +855,7 @@ def _same(a: Path, b: Path) -> bool:
         return os.path.samefile(a, b)
     except OSError:
         return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
+
+
+def _html_escape(text: str) -> str:
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")

@@ -128,6 +128,88 @@ def test_replace_needs_the_whole_selection_to_match(qtbot, page, tmp_path):
     assert page.view.toPlainText() == "foo"  # selection "foo" isn't the match "fo": just finds
 
 
+def test_json_mistake_is_underlined_and_noted(qtbot, page, tmp_path):
+    f = tmp_path / "a.json"
+    f.write_text('{"a": 1 "b": 2}')
+    _open(qtbot, page, f)
+    qtbot.waitUntil(lambda: bool(page.problems), timeout=3000)
+    assert page.problems[0].line == 1
+    assert "Line 1" in page.note.text()
+    assert any(s.format.underlineStyle() for s in page.view.extraSelections())
+    page.view.setPlainText('{"a": 1, "b": 2}')
+    qtbot.waitUntil(lambda: not page.problems, timeout=3000)
+    assert "Line" not in page.note.text()
+
+
+def test_tidy_is_one_undo_step_and_keeps_crlf(qtbot, page, tmp_path):
+    f = tmp_path / "a.json"
+    f.write_bytes(b'{"a":[1,2]}\r\n')
+    _open(qtbot, page, f)
+    assert page.tidy_button.isVisibleTo(page)
+    page.tidy()
+    assert page.view.toPlainText() == '{\n  "a": [\n    1,\n    2\n  ]\n}\n'
+    page.view.undo()
+    assert page.view.toPlainText() == '{"a":[1,2]}\n'
+    page.view.redo()
+    _save(qtbot, page)
+    assert f.read_bytes() == b'{\r\n  "a": [\r\n    1,\r\n    2\r\n  ]\r\n}\r\n'
+
+
+def test_tidy_refuses_while_broken(qtbot, page, tmp_path):
+    f = tmp_path / "a.json"
+    f.write_text('{"a":1,}')
+    _open(qtbot, page, f)
+    page.tidy()
+    assert page.view.toPlainText() == '{"a":1,}'
+    assert "Fix the mistake on line 1" in page.note.text()
+
+
+def test_tidy_and_preview_only_where_they_fit(qtbot, page, tmp_path):
+    css = tmp_path / "a.css"
+    css.write_text("a {}")
+    _open(qtbot, page, css)
+    assert not page.tidy_button.isVisibleTo(page)
+    assert not page.preview_button.isVisibleTo(page)
+    md = tmp_path / "a.md"
+    md.write_text("# Title\n")
+    _open(qtbot, page, md)
+    assert page.preview_button.isVisibleTo(page)
+
+
+def test_markdown_preview_pane_follows_typing(qtbot, page, tmp_path):
+    md = tmp_path / "notes.md"
+    md.write_text("# Title\n")
+    _open(qtbot, page, md)
+    page.toggle_preview()
+    assert page.preview_pane.isVisibleTo(page)
+    assert "<h1>Title</h1>" in page.preview_pane.source_html
+    _type(page, "\nMore **bold**")
+    qtbot.waitUntil(lambda: "<strong>bold</strong>" in page.preview_pane.source_html, timeout=3000)
+    page.toggle_preview()
+    assert not page.preview_pane.isVisibleTo(page)
+
+
+def test_html_preview_file_points_back_to_the_folder(tmp_path):
+    from umc.gui.codeeditor.preview import html_preview_file
+
+    src = tmp_path / "site" / "index.html"
+    src.parent.mkdir()
+    out = html_preview_file("<html><head><title>x</title></head><body>hi</body></html>", src)
+    assert tmp_path not in out.parents  # never written into the user's folder
+    html = out.read_text(encoding="utf-8")
+    assert '<base href="' + src.parent.as_uri() + '/">' in html
+    assert html.index("<base") < html.index("<title>")
+
+
+def test_big_files_are_not_checked_while_typing(qtbot, page, tmp_path, monkeypatch):
+    monkeypatch.setattr(cep, "MAX_CHECK_BYTES", 5)
+    f = tmp_path / "a.json"
+    f.write_text('{"a": 1 "b": 2}')
+    _open(qtbot, page, f)
+    qtbot.wait(700)
+    assert page.problems == []
+
+
 def test_tabs_and_duplicates(qtbot, page, tmp_path):
     a, b = tmp_path / "a.css", tmp_path / "b.js"
     a.write_text("a {}")

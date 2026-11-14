@@ -6,7 +6,15 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from PySide6.QtCore import QRect, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QFontDatabase, QKeyEvent, QPainter, QTextCursor, QTextFormat
+from PySide6.QtGui import (
+    QColor,
+    QFontDatabase,
+    QKeyEvent,
+    QPainter,
+    QTextCharFormat,
+    QTextCursor,
+    QTextFormat,
+)
 from PySide6.QtWidgets import QPlainTextEdit, QTextEdit, QWidget
 
 from umc.codeedit import editing
@@ -53,6 +61,7 @@ class CodeView(QPlainTextEdit):
         self._unit = editing.DEFAULT_INDENT
         self._language = "text"
         self._find: list[tuple[int, int]] = []
+        self._problems: list = []  # codeedit.check.Problem
         self._point_size = BASE_POINT_SIZE
         self._family = _monospace_family()
         self.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
@@ -108,6 +117,11 @@ class CodeView(QPlainTextEdit):
         if document is not None and hasattr(self, "_gutter"):
             document.setDefaultFont(self.font())  # a new tab's document: the code font too
             self._update_margins()
+
+    def set_problems(self, problems: list) -> None:
+        """Wavy red underline under each problem (from its column, or the whole line)."""
+        self._problems = problems
+        self._refresh_selections()
 
     def set_find_matches(self, matches: list[tuple[int, int]]) -> None:
         self._find = matches
@@ -184,6 +198,20 @@ class CodeView(QPlainTextEdit):
             sel.cursor = QTextCursor(self.document())
             sel.cursor.setPosition(p)
             sel.cursor.setPosition(p + 1, QTextCursor.MoveMode.KeepAnchor)
+            selections.append(sel)
+        doc = self.document()
+        for p in self._problems:
+            block = doc.findBlockByNumber(p.line - 1)
+            if not block.isValid():
+                block = doc.lastBlock()
+            sel = QTextEdit.ExtraSelection()
+            sel.format.setUnderlineStyle(QTextCharFormat.UnderlineStyle.WaveUnderline)
+            sel.format.setUnderlineColor(QColor(pal["danger"]))
+            sel.cursor = QTextCursor(block)
+            col = max(0, min(p.column - 1, block.length() - 1)) if p.column else 0
+            sel.cursor.setPosition(block.position() + col)
+            end = block.position() + max(block.length() - 1, col + 1)
+            sel.cursor.setPosition(min(end, doc.characterCount() - 1), QTextCursor.MoveMode.KeepAnchor)
             selections.append(sel)
         self.setExtraSelections(selections)
 
