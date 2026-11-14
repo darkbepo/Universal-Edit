@@ -83,6 +83,16 @@ def test_read_text_encodings(tmp_path):
     assert read_text(p, limit=10) == ("x" * 10, True)
 
 
+def test_code_files_are_shown_as_text(tmp_path):
+    assert vf.kind_of_path(Path("a.css")) == vf.TEXT
+    assert vf.kind_of_path(Path("app.py")) == vf.TEXT
+    p = tmp_path / "Dockerfile"
+    p.write_text("FROM python\n")
+    assert vf.view_kind(detect(p)) == vf.TEXT
+    # no Edit yet: the document editor can't open code (the code editor comes next)
+    assert not vf.can_edit(vf.TEXT, Path("a.css"))
+
+
 def test_view_kind_of_detected(tmp_path):
     p = tmp_path / "a.md"
     p.write_text("# hi")

@@ -56,7 +56,7 @@ def kind_of(family: MediaFamily | None, ext: str) -> str:
         return MODEL
     if ext in PAGES_EXTS:
         return PAGES
-    if ext in TEXT_EXTS:
+    if ext in TEXT_EXTS or family == MediaFamily.CODE:
         return TEXT
     if family in PREVIEW_TARGETS:
         return CONVERT
