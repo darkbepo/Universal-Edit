@@ -72,10 +72,44 @@ def test_tiles_shown_until_files_are_added(window, media):
     assert enabled == ["image", "model", "video", "audio", "document"]
     assert hub.tiles["video"].badge.isHidden()
     assert hub.tiles["document"].badge.isHidden()
+    code = hub.tiles["code"]  # the code editor comes next: shown, greyed out
+    assert not code.isEnabled() and code.badge.text() == "Coming soon"
+    assert window.open_editor("code") is False
     window.add_files([str(media / "img0.png")])
     assert not hub.isVisible()
     window.clear_files()
     assert hub.isVisible()
+
+
+def test_tiles_are_three_per_row_with_the_icon_on_the_left(window):
+    tiles = list(window.hub.tiles.values())
+    tops = [t.geometry().top() for t in tiles]
+    assert len(tiles) == 6
+    assert tops[0] == tops[1] == tops[2] < tops[3] == tops[4] == tops[5]
+    for tile in tiles:
+        assert tile.icon.geometry().right() < tile.title.geometry().left()  # icon left of text
+
+
+def test_icons_sit_on_a_tinted_square(window):
+    from PySide6.QtWidgets import QApplication
+
+    from umc.gui import theme
+
+    app = QApplication.instance()
+    old = app.styleSheet()
+    app.setStyleSheet(theme.stylesheet())  # what app.py does at start
+    app.processEvents()
+
+    def box_colour(tile):  # left edge of the icon square, away from the glyph
+        g = tile.icon.geometry()
+        return tile.grab().toImage().pixelColor(g.left() + 3, g.center().y()).name()
+
+    pal = theme.palette()
+    try:
+        assert box_colour(window.hub.tiles["image"]) == pal["accent_soft"]
+        assert box_colour(window.hub.tiles["code"]) == pal["surface"]  # not ready: plain
+    finally:
+        app.setStyleSheet(old)
 
 
 def test_coming_soon_tiles_are_greyed_out_and_open_nothing(qtbot, monkeypatch):

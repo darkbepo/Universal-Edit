@@ -30,41 +30,50 @@ from umc.gui import icons, theme
 from umc.gui.widgets.flow_layout import FlowLayout
 
 CUSTOM = "Custom size"
-TILE_W = 196
+TILE_W = 296  # three tiles per row on a normal window (owner, Nov 2026)
+TILE_H = 92
+PER_ROW = 3
+ICON_BOX = 48
 
 
 class EditorTile(QPushButton):
-    """Icon, title and one line of description; a "Coming soon" badge when not available."""
+    """A big icon on the left; title, description and a badge ("Coming soon" when not available,
+    "Install" for an add-on not downloaded yet) on the right."""
 
     def __init__(self, info: EditorInfo, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.info = info
         self.setObjectName("EditorTile")
         self.setAccessibleName(info.title)
-        self.setFixedSize(TILE_W, 118)
+        self.setFixedSize(TILE_W, TILE_H)
         self.setEnabled(info.available)
         if info.available:
             self.setCursor(Qt.CursorShape.PointingHandCursor)
             self.setToolTip(f"Open the {info.title.lower()} without a file")
         else:
             self.setToolTip(f"The {info.title.lower()} is coming soon")
-        lay = QVBoxLayout(self)
+        lay = QHBoxLayout(self)
         lay.setContentsMargins(14, 12, 14, 12)
-        lay.setSpacing(4)
-        top = QHBoxLayout()
-        top.setSpacing(6)
-        self.icon = QLabel()
-        top.addWidget(self.icon)
-        top.addStretch(1)
-        # "Coming soon" (not ready) or "Install" (an add-on not downloaded yet)
-        self.badge = QLabel(COMING_SOON if not info.available else "Install", objectName="Badge")
-        top.addWidget(self.badge)
-        lay.addLayout(top)
+        lay.setSpacing(14)
+        self.icon = QLabel(objectName="EditorTileIcon")
+        self.icon.setFixedSize(ICON_BOX, ICON_BOX)
+        self.icon.setProperty("soon", not info.available)  # greyed box (style.qss)
+        self.icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lay.addWidget(self.icon, 0, Qt.AlignmentFlag.AlignVCenter)
+        text = QVBoxLayout()
+        text.setSpacing(3)
+        head = QHBoxLayout()
+        head.setSpacing(6)
         self.title = QLabel(info.title, objectName="EditorTileTitle")
+        head.addWidget(self.title)
+        head.addStretch(1)
+        self.badge = QLabel(COMING_SOON if not info.available else "Install", objectName="Badge")
+        head.addWidget(self.badge)
+        text.addLayout(head)
         self.blurb = QLabel(info.blurb, objectName="Muted")
         self.blurb.setWordWrap(True)
-        lay.addWidget(self.title)
-        lay.addWidget(self.blurb, 1, Qt.AlignmentFlag.AlignTop)
+        text.addWidget(self.blurb, 1, Qt.AlignmentFlag.AlignTop)
+        lay.addLayout(text, 1)
         for w in (self.icon, self.title, self.blurb, self.badge):
             w.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)  # clicks: the button
         self.refresh_install_state()
@@ -90,7 +99,7 @@ class EditorTile(QPushButton):
     def retint(self) -> None:
         pal = theme.palette()
         color = pal["accent"] if self.info.available else pal["border_strong"]
-        self.icon.setPixmap(icons.pixmap(self.info.icon, 26, color))
+        self.icon.setPixmap(icons.pixmap(self.info.icon, 28, color))
 
 
 class EditorHub(QFrame):
@@ -115,8 +124,8 @@ class EditorHub(QFrame):
             tile.clicked.connect(lambda _c=False, i=info.id: self.editor_chosen.emit(i))
             self._flow.addWidget(tile)
             self.tiles[info.id] = tile
-        # as wide as one row of all tiles at most, so the row sits centred; narrower wraps
-        holder.setMaximumWidth(len(EDITORS) * (TILE_W + 10))
+        # three tiles per row at most, centred; a narrow window wraps to fewer
+        holder.setMaximumWidth(PER_ROW * (TILE_W + 10))
         row = QHBoxLayout()
         row.addStretch(1)
         row.addWidget(holder, 100)

@@ -9,21 +9,43 @@ declare global {
   }
 }
 
-test("tiles: image, 3D, audio and document editors open, the video editor says Coming soon; hidden once files are added", async ({ page }) => {
+test("tiles: image, 3D, audio and document editors open, video and code say Coming soon; hidden once files are added", async ({ page }) => {
   await page.goto("./?e2e");
   const tiles = page.locator(".editor-tile");
-  await expect(tiles).toHaveCount(5);
+  await expect(tiles).toHaveCount(6);
   for (const id of ["image", "model", "audio", "document"]) {
     await expect(page.locator(`.editor-tile[data-editor=${id}]`)).toBeEnabled();
   }
   await expect(page.locator(".editor-tile[data-editor=document]")).not.toContainText("Coming soon");
-  const video = page.locator(".editor-tile[data-editor=video]");
-  await expect(video).toBeDisabled();
-  await expect(video).toContainText("Coming soon");
+  for (const id of ["video", "code"]) {
+    const soon = page.locator(`.editor-tile[data-editor=${id}]`);
+    await expect(soon).toBeDisabled();
+    await expect(soon).toContainText("Coming soon");
+  }
   await page.locator('input[type="file"]').first().setInputFiles([`${FIXTURES}img0.png`]);
   await expect(page.locator(".editor-hub")).toBeHidden();
   await page.getByRole("button", { name: "Clear" }).click();
   await expect(page.locator(".editor-hub")).toBeVisible();
+});
+
+test("tiles: three per row with the icon on the left; one per row on phones", async ({ page }) => {
+  const tops = async () => {
+    const boxes = await page.locator(".editor-tile").evaluateAll((els) => els.map((e) => e.getBoundingClientRect().top));
+    return boxes.map(Math.round);
+  };
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("./");
+  const t = await tops();
+  expect(t[0]).toBe(t[1]);
+  expect(t[1]).toBe(t[2]);
+  expect(t[3]).toBeGreaterThan(t[2]);
+  expect(t[3]).toBe(t[5]);
+  const icon = await page.locator(".editor-tile[data-editor=image] .tile-icon").boundingBox();
+  const title = await page.locator(".editor-tile[data-editor=image] .tile-title").boundingBox();
+  expect(icon!.x + icon!.width).toBeLessThan(title!.x);
+  await page.setViewportSize({ width: 375, height: 812 });
+  const p = await tops();
+  for (let i = 1; i < p.length; i++) expect(p[i]).toBeGreaterThan(p[i - 1]);
 });
 
 test("image editor tile: New picture window makes an empty picture of that size and colour", async ({ page }) => {
