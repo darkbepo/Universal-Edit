@@ -277,6 +277,7 @@ viewer that knows almost every format.
 | **Windows installer** (per user, no admin) · right-click **"Convert with Universal Edit"** (several files → one window) · **"Open with"** → viewer · switches in the app's Settings (cog) | ✅ | — |
 | **Editors as add-ons**: the app is the converter + viewer; the editors are installed when first used, picked in the installer, or managed in Settings · downloads are checked against fingerprints built into the app | ✅ | — |
 | One-click install of LibreOffice, Pandoc, Ghostscript, Calibre or LibreDWG when a conversion needs them | ✅ | — |
+| **Light / dark mode**: the sun / moon button in the top bar switches Same as the computer → Light → Dark and remembers it (also in the desktop Settings) · every editor and the viewer follow | ✅ | ✅ |
 | **Drop zone**: file-type badges orbit the text while it's empty and burst outward when you drop files · still when "reduce motion" is on | ✅ | ✅ |
 
 </details>

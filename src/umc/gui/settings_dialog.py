@@ -1,4 +1,5 @@
-"""App settings (the cog in the top bar): Windows right-click "Convert" and "Open with"."""
+"""App settings (the cog in the top bar): theme, Windows right-click "Convert" and "Open with",
+editor add-ons."""
 
 from __future__ import annotations
 
@@ -6,17 +7,20 @@ import logging
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QButtonGroup,
     QCheckBox,
     QDialog,
     QDialogButtonBox,
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QRadioButton,
     QVBoxLayout,
     QWidget,
 )
 
 from umc.core import addons
+from umc.gui import theme
 from umc.tools import shell_integration as shell
 
 log = logging.getLogger(__name__)
@@ -45,6 +49,20 @@ class SettingsDialog(QDialog):
         self.registry = registry if registry is not None else shell.registry()
         lay = QVBoxLayout(self)
         lay.setSpacing(6)
+        lay.addWidget(QLabel("Theme", objectName="CardTitle"))
+        theme_row = QHBoxLayout()
+        self.theme_group = QButtonGroup(self)
+        self.theme_buttons: dict[str, QRadioButton] = {}
+        for key in theme.CHOICES:
+            radio = QRadioButton(theme.LABELS[key])
+            radio.setChecked(key == theme.choice())
+            radio.toggled.connect(lambda on, k=key: on and theme.set_choice(k))
+            self.theme_group.addButton(radio)
+            theme_row.addWidget(radio)
+            self.theme_buttons[key] = radio
+        theme_row.addStretch(1)
+        lay.addLayout(theme_row)
+        lay.addSpacing(10)
         head = QLabel("Windows", objectName="CardTitle")
         lay.addWidget(head)
         self.boxes: dict[str, QCheckBox] = {}

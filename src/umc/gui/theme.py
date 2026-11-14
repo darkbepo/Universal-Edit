@@ -1,11 +1,22 @@
-"""Light/dark palettes and the application stylesheet."""
+"""Light/dark palettes, the application stylesheet and the user's theme choice.
+
+The choice ("system", "light" or "dark") is kept in QSettings ``appearance/theme``. "system"
+follows the OS colour scheme. Everything that paints with the palette listens to
+``notifier().changed``, which fires whenever the effective light / dark look changes, whether
+the user picked another mode or the OS switched while following it.
+"""
 
 from __future__ import annotations
 
 from importlib import resources
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QObject, QSettings, Qt, Signal
 from PySide6.QtGui import QGuiApplication
+
+CHOICES = ("system", "light", "dark")
+LABELS = {"system": "Same as the computer", "light": "Light", "dark": "Dark"}
+ICONS = {"system": "sun-moon", "light": "sun", "dark": "moon"}
+SETTING = "appearance/theme"
 
 LIGHT = {
     "bg": "#f3f4f7",
@@ -56,9 +67,109 @@ DARK = {
 }
 
 
-def is_dark() -> bool:
+_choice = "system"
+
+
+class _Notifier(QObject):
+    changed = Signal()  # the look switched between light and dark
+    choice_changed = Signal(str)  # the user's System / Light / Dark choice
+
+
+_notifier: _Notifier | None = None
+_last_dark: bool | None = None
+
+
+def notifier() -> _Notifier:
+    """``changed`` fires when the effective look switches between light and dark."""
+    global _notifier, _last_dark
+    if _notifier is None:
+        _notifier = _Notifier()
+        _last_dark = is_dark()
+        QGuiApplication.styleHints().colorSchemeChanged.connect(_scheme_changed)
+    return _notifier
+
+
+def _scheme_changed(_scheme=None) -> None:
+    _notify()
+
+
+def _notify() -> None:
+    global _last_dark
+    dark = is_dark()
+    if _notifier is not None and dark != _last_dark:
+        _last_dark = dark
+        from umc.gui import icons
+
+        # icons / colours that open pages and windows baked in when they were built
+        icons.retint(swap_colors(to_dark=dark))
+        _notifier.changed.emit()
+
+
+def swap_colors(to_dark: bool) -> dict[str, str]:
+    """Each colour of the palette being left → the same token's colour in the new one."""
+    old, new = (LIGHT, DARK) if to_dark else (DARK, LIGHT)
+    swap: dict[str, str] = {}
+    for key, value in old.items():
+        if value != new[key]:
+            swap.setdefault(value.lower(), new[key])
+    return swap
+
+
+def _hint_dark() -> bool:
+    return QGuiApplication.styleHints().colorScheme() == Qt.ColorScheme.Dark
+
+
+def choice() -> str:
+    return _choice
+
+
+def next_choice(current: str | None = None) -> str:
+    """System → Light → Dark → System."""
+    current = _choice if current is None else current
+    i = CHOICES.index(current) if current in CHOICES else -1
+    return CHOICES[(i + 1) % len(CHOICES)]
+
+
+def saved_choice() -> str:
+    value = QSettings().value(SETTING, "system", str)
+    return value if value in CHOICES else "system"
+
+
+def set_choice(value: str, save: bool = True) -> None:
+    """Switch to ``value`` (and remember it). Qt is told too, so native parts (title bars,
+    Fusion's palette) follow where the platform allows it."""
+    global _choice
+    if value not in CHOICES:
+        value = "system"
+    _choice = value
     hints = QGuiApplication.styleHints()
-    return hints.colorScheme() == Qt.ColorScheme.Dark
+    try:
+        if value == "system":
+            hints.unsetColorScheme()
+        else:
+            hints.setColorScheme(Qt.ColorScheme.Dark if value == "dark" else Qt.ColorScheme.Light)
+    except AttributeError:  # Qt older than 6.8: our own palette still follows the choice
+        pass
+    if save:
+        settings = QSettings()
+        settings.setValue(SETTING, value)
+        settings.sync()
+    _notify()
+    if _notifier is not None:
+        _notifier.choice_changed.emit(value)
+
+
+def load_choice() -> None:
+    """At startup, before the first window: apply the remembered choice."""
+    set_choice(saved_choice(), save=False)
+
+
+def is_dark() -> bool:
+    if _choice == "dark":
+        return True
+    if _choice == "light":
+        return False
+    return _hint_dark()
 
 
 def palette() -> dict[str, str]:

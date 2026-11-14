@@ -127,8 +127,9 @@ def main(argv: list[str] | None = None) -> int:
     _start_cleanup()
     branding.migrate_settings()
     app.setStyle("Fusion")
+    theme.load_choice()  # the remembered System / Light / Dark, before the first window
     app.setStyleSheet(theme.stylesheet())
-    app.styleHints().colorSchemeChanged.connect(lambda _: app.setStyleSheet(theme.stylesheet()))
+    theme.notifier().changed.connect(lambda: app.setStyleSheet(theme.stylesheet()))
 
     from umc.gui.launcher import AppController
 

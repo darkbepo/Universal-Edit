@@ -75,7 +75,18 @@ imports, but keep the defaults sensible so a user can convert with zero configur
      strip showing the chosen format). Only formats valid for the detected inputs are shown.
   4. Bottom bar: summary/status, save-to (desktop), overall progress, Convert / Cancel.
   Below 900 px wide everything stacks in one column.
-- Dark/light theme following the OS. Same tokens in `gui/theme.py` and `web/src/styles.css`.
+- Dark/light theme: follows the OS unless the user picks one with the sun / moon button in the
+  top bar (System → Light → Dark; desktop next to the cog, also in Settings; web beside the badge).
+  Desktop: `theme.set_choice` (QSettings `appearance/theme`, also tells Qt via
+  `styleHints().setColorScheme`), `theme.load_choice()` in `app.py` before the first window;
+  repaint on `theme.notifier().changed` (fires only when light ↔ dark really changes), never on
+  `colorSchemeChanged` directly. Before it fires, `icons.retint` redraws in every open window the
+  icons / pixmaps made by `icons.icon` / `icons.pixmap` and swaps palette hexes in widget
+  stylesheets, so pages that tint once when built (editors, viewer) follow without own code.
+  Connect window slots as bound methods (a lambda keeps a deleted window connected). Web: `ui/theme.ts` sets `<html data-theme>` + localStorage
+  `umc-theme`; an inline script in `index.html` applies it before the first paint; `styles.css`
+  has the dark tokens twice (OS dark + `[data-theme="dark"]`, `tests/theme.test.ts` checks they
+  match each other and `theme.py`). Same tokens in `gui/theme.py` and `web/src/styles.css`.
   Icons: Tabler line icons (MIT) in `gui/icon_data.py` / `web/src/ui/icon_data.ts` (same set).
 - Never block the UI thread — all conversions run in a worker thread with progress/cancel.
 - Errors are shown inline in plain language (no raw stack traces in the UI; log them instead).
@@ -958,6 +969,9 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
     anything (only the installer adds editors). Before it: pin `softprops/action-gh-release`
     to a commit SHA and make the installer report a failed `--install-addon`.
 12. Ideas: presets, batch queue.
+13. ✅ Light / dark mode switch (both apps; owner, Nov 2026): sun / moon button in the top bar,
+    System → Light → Dark, remembered (see "UI / UX requirements"). Tests `tests/test_theme.py`,
+    `web/tests/theme.test.ts`, `web/e2e/theme.spec.ts` (incl. the 375 px top bar).
 
 ## Handoff — read this first (for the next Claude account)
 

@@ -15,6 +15,7 @@ import { Orbit } from "./orbit";
 import { PropertiesPane } from "./properties";
 import { fmtSize, Queue } from "./queue";
 import { SettingsForm } from "./settings";
+import { themeButton } from "./theme";
 
 const NOUN: Record<string, [string, string]> = { image: ["image", "images"], video: ["video", "videos"], audio: ["audio file", "audio files"], document: ["document", "documents"], model: ["3D model", "3D models"], archive: ["archive", "archives"], subtitle: ["subtitle file", "subtitle files"], font: ["font", "fonts"], vector: ["vector graphic", "vector graphics"], cad: ["CAD drawing", "CAD drawings"] };
 
@@ -59,11 +60,12 @@ export function mountApp(root: HTMLElement): void {
   let audio: import("./audioeditor/page").AudioEditorPage | null = null;
   let docEditor: import("./doceditor/page").DocEditorPage | null = null;
   let editing = false;
-  // Three columns (badge | logo + name | Convert/Edit): the outer two are equally wide, so the
+  // Three columns (badge + theme | logo + name | Convert/Edit): the outer two are equally wide, so the
   // name stays centred on the page.
   const topbar = h("header", { class: "topbar" },
     h("div", { class: "topbar-start" },
-      h("span", { class: "badge", title: "Everything is processed in your browser. Nothing is uploaded." }, icon("lock", 14), "Files never leave your device")),
+      h("span", { class: "badge", title: "Everything is processed in your browser. Nothing is uploaded." }, icon("lock", 14), "Files never leave your device"),
+      themeButton()),
     h("div", { class: "brand" }, h("img", { class: "logo", src: "./icon.svg", alt: "" }), h("h1", {}, "Universal Edit")),
     h("div", { class: "topbar-end" }, modeBar));
 

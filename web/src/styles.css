@@ -42,6 +42,27 @@
     color-scheme: dark;
   }
 }
+/* chosen with the theme button (src/ui/theme.ts) — keep these the same as the block above */
+:root[data-theme="dark"] {
+  --bg: #0f1014;
+  --surface: #17191e;
+  --surface-alt: #20232a;
+  --border: #272a31;
+  --border-strong: #363a43;
+  --text: #eceef2;
+  --muted: #8e94a2;
+  --accent: #8385ff;
+  --accent-hover: #9b9dff;
+  --accent-text: #0c0c1c;
+  --accent-soft: #22234a;
+  --accent-border: #3e4185;
+  --danger: #ff6b70;
+  --danger-soft: #3a1d21;
+  --success: #3ccf8e;
+  --success-soft: #16301f;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 6px 20px rgba(0, 0, 0, .25);
+  color-scheme: dark;
+}
 
 * { box-sizing: border-box; }
 html, body { margin: 0; }
@@ -66,7 +87,8 @@ svg.ico { flex-shrink: 0; display: block; }
   gap: 14px; padding: 12px 22px;
   background: var(--surface); border-bottom: 1px solid var(--border);
 }
-.topbar-start { display: flex; align-items: center; min-width: 0; overflow: hidden; }
+.topbar-start { display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; }
+.theme-btn { flex-shrink: 0; }
 .topbar-end { display: flex; align-items: center; justify-content: flex-end; min-width: 0; }
 .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .logo { width: 30px; height: 30px; display: block; flex-shrink: 0; }
@@ -120,7 +142,7 @@ h1 { font-size: 15px; font-weight: 650; margin: 0; letter-spacing: -0.005em; whi
   h1 { font-size: 14px; }
   /* Phones: no room to centre the name beside Convert | Edit, so they share the row. */
   .topbar { display: flex; justify-content: space-between; gap: 10px; padding: 10px 12px; }
-  .topbar-start { display: none; }
+  .topbar-start { flex: none; } /* only the theme button is left (the badge is hidden) */
   .mode .seg { padding: 5px 10px; min-width: 0; }
 }
 /* small phones: the logo alone, so Convert | Edit | Properties never covers the name */

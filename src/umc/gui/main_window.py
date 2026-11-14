@@ -116,7 +116,18 @@ class MainWindow(QMainWindow):
         self.settings_button.setAutoRaise(True)
         self.settings_button.clicked.connect(self.open_settings)
         at_left = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
-        tl.addWidget(self.settings_button, 0, 0, at_left)
+        # next to it: System → Light → Dark (remembered in QSettings by theme.set_choice)
+        self.theme_button = QToolButton(objectName="Cog")
+        self.theme_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.theme_button.setAutoRaise(True)
+        self.theme_button.clicked.connect(self.cycle_theme)
+        corner = QWidget()
+        cl = QHBoxLayout(corner)
+        cl.setContentsMargins(0, 0, 0, 0)
+        cl.setSpacing(2)
+        cl.addWidget(self.settings_button)
+        cl.addWidget(self.theme_button)
+        tl.addWidget(corner, 0, 0, at_left)
         tl.setColumnStretch(0, 1)
         tl.setColumnStretch(2, 1)
 
@@ -279,7 +290,8 @@ class MainWindow(QMainWindow):
         saved = self.settings.value("output_dir", "", str)
         self._set_output_dir(Path(saved) if saved and Path(saved).is_dir() else None)
         self._restore_size()
-        QGuiApplication.styleHints().colorSchemeChanged.connect(lambda _s: self._retint())
+        theme.notifier().changed.connect(self._retint)
+        theme.notifier().choice_changed.connect(self._on_theme_choice)
         self._retint()
         self._apply_layout()
         self._refresh()
@@ -341,6 +353,7 @@ class MainWindow(QMainWindow):
         self.hub.retint()
         self.properties_panel.retint()
         self.settings_button.setIcon(icons.icon("settings", pal["muted"], 20))
+        self._show_theme_choice()
         self.picker.retint()
         self.tabs.retint()
         for i in range(self.results_list.count()):
@@ -504,6 +517,21 @@ class MainWindow(QMainWindow):
         else:
             tip = "Add images, videos, audio, one text document, or 3D models to edit them"
         self.edit_mode.setToolTip(tip)
+
+    def cycle_theme(self) -> None:
+        theme.set_choice(theme.next_choice())  # choice_changed updates this button
+
+    def _on_theme_choice(self, _choice: str) -> None:  # a bound method: dropped with the window
+        self._show_theme_choice()
+
+    def _show_theme_choice(self) -> None:
+        choice = theme.choice()
+        following = theme.next_choice(choice)
+        self.theme_button.setIcon(icons.icon(theme.ICONS[choice], theme.palette()["muted"], 20))
+        self.theme_button.setToolTip(
+            f"Theme: {theme.LABELS[choice]} — click for {theme.LABELS[following].lower()}"
+        )
+        self.theme_button.setAccessibleName(f"Theme: {theme.LABELS[choice]}")
 
     def open_settings(self) -> None:
         from umc.gui.settings_dialog import SettingsDialog
