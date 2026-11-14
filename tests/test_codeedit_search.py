@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from umc.codeedit.search import SearchError, find_all, replace_all
+from umc.codeedit.search import SearchError, find_all, replace_all, replacement_at
 
 PLAIN = {"case": False, "whole_word": False, "regex": False}
 
@@ -25,6 +25,13 @@ def test_find_regex():
     assert find_all("abc", "x*", **{**PLAIN, "regex": True}) == []
     with pytest.raises(SearchError):
         find_all("abc", "(", **{**PLAIN, "regex": True})
+
+
+def test_replacement_at():
+    regex = {**PLAIN, "regex": True}
+    assert replacement_at("x1 y2", r"(\w)(\d)", r"\2\1", 3, **regex) == (3, 5, "2y")
+    assert replacement_at("a-b", "-", "+", 1, **PLAIN) == (1, 2, "+")
+    assert replacement_at("a-b", "-", "+", 0, **PLAIN) is None  # no match starts there
 
 
 def test_replace_all():

@@ -29,6 +29,37 @@ def find_all(
     return [m.span() for m in pattern.finditer(text) if m.end() > m.start()]
 
 
+def _expand(m: re.Match[str], replacement: str, regex: bool) -> str:
+    if not regex:
+        return replacement
+    try:
+        return m.expand(replacement)
+    except (re.error, IndexError) as exc:
+        raise SearchError(f"That replacement isn't valid: {exc}") from exc
+
+
+def replacement_at(
+    text: str,
+    query: str,
+    replacement: str,
+    start: int,
+    *,
+    case: bool,
+    whole_word: bool,
+    regex: bool,
+) -> tuple[int, int, str] | None:
+    """(start, end, new text) for the match that starts at ``start``; None if none does."""
+    if not query:
+        return None
+    pattern = _pattern(query, case=case, whole_word=whole_word, regex=regex)
+    for m in pattern.finditer(text):
+        if m.start() == start and m.end() > m.start():
+            return m.start(), m.end(), _expand(m, replacement, regex)
+        if m.start() > start:
+            break
+    return None
+
+
 def replace_all(
     text: str, query: str, replacement: str, *, case: bool, whole_word: bool, regex: bool
 ) -> tuple[str, int]:
@@ -44,11 +75,6 @@ def replace_all(
         if m.end() == m.start():
             return m.group(0)
         count += 1
-        if not regex:
-            return replacement
-        try:
-            return m.expand(replacement)
-        except (re.error, IndexError) as exc:
-            raise SearchError(f"That replacement isn't valid: {exc}") from exc
+        return _expand(m, replacement, regex)
 
     return pattern.sub(swap, text), count
