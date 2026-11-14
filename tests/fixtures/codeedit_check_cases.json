@@ -1,0 +1,23 @@
+[
+ {"id": "json_ok", "language": "json", "text": "{\n  \"a\": [1, 2.5, -3e2, true, null],\n  \"b\": {\"c\": \"x\\\"y\\u00e9\"}\n}\n", "ok": true},
+ {"id": "json_missing_comma", "language": "json", "text": "{\"a\": 1 \"b\": 2}", "line": 1, "column": 9},
+ {"id": "json_missing_close_at_end", "language": "json", "text": "{\n  \"a\": 1,\n  \"b\": 2\n", "line": 4, "column": 1},
+ {"id": "json_trailing_comma", "language": "json", "text": "[\n  1,\n  2,\n]", "line": 4, "column": 1},
+ {"id": "json_unquoted_key", "language": "json", "text": "{\n  a: 1\n}", "line": 2, "column": 3},
+ {"id": "json_unclosed_string", "language": "json", "text": "{\"a\": \"hello\n}", "line": 1, "column": 7},
+ {"id": "json_after_end", "language": "json", "text": "{} x", "line": 1, "column": 4},
+ {"id": "json_bad_number", "language": "json", "text": "[01]", "line": 1, "column": 3},
+ {"id": "json_empty_is_fine", "language": "json", "text": "  \n", "ok": true},
+ {"id": "yaml_ok", "language": "yaml", "text": "a:\n  b: [1, 2]\n---\nc: d\n", "ok": true},
+ {"id": "yaml_tab_indent", "language": "yaml", "text": "a:\n\tb: 1\n", "line": 2},
+ {"id": "yaml_unclosed_quote", "language": "yaml", "text": "a: \"hello\nb: 2\n", "line": 3},
+ {"id": "yaml_bad_indent", "language": "yaml", "text": "a:\n  b: 1\n c: 2\n", "line": 3},
+ {"id": "yaml_unclosed_flow", "language": "yaml", "text": "a: [1, 2\nb: 3\n", "line": 2},
+ {"id": "xml_ok", "language": "xml", "text": "<?xml version=\"1.0\" encoding=\"windows-1252\"?>\n<!-- c -->\n<a x=\"1\"><b/>text &amp; more</a>\n", "ok": true},
+ {"id": "xml_unclosed_inner", "language": "xml", "text": "<a>\n  <b>\n</a>\n", "line": 3},
+ {"id": "xml_mismatch", "language": "xml", "text": "<a>\n  <b></c>\n</a>\n", "line": 2},
+ {"id": "xml_bare_amp", "language": "xml", "text": "<a>\n  x & y\n</a>\n", "line": 2},
+ {"id": "xml_unclosed_at_end", "language": "xml", "text": "<a>\n  <b/>\n", "line": 3},
+ {"id": "svg_is_xml", "language": "svg", "text": "<svg>\n<g>\n</svg>", "line": 3},
+ {"id": "css_not_checked", "language": "css", "text": "a { {{ ", "ok": true}
+]
