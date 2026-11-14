@@ -260,13 +260,16 @@ src/umc/
     viewer/              # "Open with" viewer: ViewerWindow, views (image/media/pages/text), tasks
     audioeditor/         # audio editor: AudioEditorPage (tool row, open/save on a QThread),
                          #   WaveView (ruler, lanes, selection), Player (QAudioSink, pulls int16)
+    codeeditor/          # code editor (add-on "code"): CodeEditorPage (tabs, open/save on a
+                         #   QThread, status bar), CodeView, ChunkedHighlighter, FindBar, shortcuts
     launcher.py          # AppController: converter windows + the viewer; single_instance.py
   editor3d/              # 3D viewer model — mesh.py (load + measurements), camera.py (orbit); no Qt
   viewer/                # viewer model — files.py (view kinds, folder list), preview.py; no Qt
   audioedit/             # audio editor model (numpy, no Qt) — document.py (AudioDoc, splice
                          #   undo), ops.py, peaks.py (waveform columns), wav.py, io.py (open/save)
   codeedit/              # code editor model (no Qt) — languages.py (language table → web
-                         #   languages.json), textfile.py (byte-exact read / write)
+                         #   languages.json), textfile.py (byte-exact read / write), lexing.py
+                         #   (Pygments, line by line), editing.py (indent / comments), search.py
   videoedit/             # video editor model (no Qt) — project.py (frozen dataclasses), edits.py
                          #   (pure edits), history.py (snapshot undo), projectfile.py (.umcvideo),
                          #   media.py (probe, new_project), render.py (one filter_complex),
@@ -815,8 +818,8 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       Next: basic editing for 3D printing (plan in the session handoff / owner's go-ahead).
    9. ✅ Start screen = hub (both apps): editor tiles under the empty drop zone, listed in
       `core/editors.py` / `web/src/core/editors.ts` (same order and text; `available` False =
-      greyed "Coming soon" — the code editor until roadmap 10.17 step 2, and the website's video
-      tile, `WEB_LATER`); tests/test_editor_hub.py checks both lists. Tiles are three per row
+      greyed "Coming soon" — on desktop none is left; the website's video and code tiles are,
+      `WEB_LATER`); tests/test_editor_hub.py checks both lists. Tiles are three per row
       (two on mid widths, one on phones) with a 48 px tinted icon square on the left; desktop
       marks a not-ready icon with the `soon` property — Qt ignores an ancestor's `:disabled` in
       a descendant selector, so `QPushButton:disabled QLabel#…` styled every tile. Image tile → "New picture" (`editor/blank.py` / `blank.ts`, presets in
@@ -1000,7 +1003,24 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
          (`shell_integration.convert_extensions` drops `CODE_EXTS`); runnable scripts
          (`RUNNABLE_EXTS`: bat, cmd, ps1, py, sh …) get neither, so double-click-to-run is never
          disturbed. Badges CSS + JS.
-      2. Desktop editor (add-on "code", Pygments). 3. Website editor (CodeMirror 6).
+      2. ✅ Desktop editor (plan `docs/superpowers/plans/2026-11-14-code-editor-step2-desktop.md`),
+         add-on "code" (`umc.gui.codeeditor` + Pygments in its `site/`; `umc.codeedit` stays in
+         the app, but only the add-on imports `codeedit.lexing`, which needs Pygments).
+         `lexing.LineLexer` colours one line at a time: a copy of Pygments' RegexLexer loop
+         keeps the state stack between lines, and block comments (`/* */`, `<!-- -->`, which
+         Pygments matches with one regex) are followed from the language table's marks.
+         `gui/codeeditor/highlight.ChunkedHighlighter` colours `CHUNK_LINES` blocks per timer
+         tick (blocks not reached yet get state −1); files over `MAX_HIGHLIGHT_BYTES` (2 MB) open
+         without colours, over `MAX_OPEN_BYTES` (50 MB) are refused. One `CodeView` swaps a
+         `QTextDocument` per tab; it sets its own font rule (the app's `* { font-size }` beat
+         setFont) and gives each new document the code font. Every question goes through
+         `page.ask` (tests answer it). Save: `textfile.encode`, temp file + `os.replace`; asks
+         before overwriting a file changed on disk, offers UTF-8 when the encoding can't hold the
+         text. Edit: `MainWindow.edit_choices()` — TXT / MD document editor first, HTML code
+         editor first; the ▾ next to Edit (`edit_more`) offers the other. Code colours are
+         `code_*` in `theme.py` and `--code-*` in `styles.css` (test keeps them equal).
+         Self-test step "code editor". Website: "Coming soon" (`WEB_LATER`).
+      3. Website editor (CodeMirror 6).
       4. Preview (HTML / Markdown), JSON / YAML / XML check, Tidy.
 11. **First public release** (owner, Nov 2026: wait until more editors are ready). Push a
     `v<__version__>` tag (bump `umc/__init__.py` first; the workflow checks they match): the

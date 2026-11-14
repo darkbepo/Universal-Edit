@@ -196,7 +196,7 @@ video), JSON / CSV / XML / YAML / Excel data, and ZIP / 7Z / RAR archives.
 | Data: JSON ↔ CSV ↔ TSV ↔ XML ↔ YAML ↔ XLSX | ✅ | ✅ |
 | Archives: open ZIP, 7Z, RAR, TAR(.GZ/.XZ/.BZ2) · extract · repack · pack any files | ✅ | ✅ |
 | Archives: create 7Z, password-protect (AES-256) | ✅ | ❌ |
-| Code and text files: CSS, JS, TS, Python, C / C++, C#, Java, Go, Rust, PHP, shell / PowerShell / batch scripts, SQL, INI / TOML / .env, Dockerfile, .gitignore and other plain text are accepted · packed into ZIP / 7Z / TAR.GZ · shown in the viewer · a code editor is on its way | ✅ | ✅ (no 7Z, no viewer) |
+| Code and text files: CSS, JS, TS, Python, C / C++, C#, Java, Go, Rust, PHP, shell / PowerShell / batch scripts, SQL, INI / TOML / .env, Dockerfile, .gitignore and other plain text are accepted · packed into ZIP / 7Z / TAR.GZ · shown in the viewer · edited in the code editor | ✅ | ✅ (no 7Z, no viewer; editor coming later) |
 
 </details>
 
@@ -246,7 +246,8 @@ screen to begin with an empty one.
 | **Audio editor** (laid out like a simple Audacity): several files joined end to end · waveform per channel with a time ruler, zoom and scroll · play / pause / stop with a volume slider · cut, copy, paste, delete, trim to the selection, silence, fade in / out, amplify (dB), normalize (−1 dB), reverse · undo / redo · save as MP3, M4A, WAV, FLAC, OGG, OPUS, AIFF, WMA or AC-3 | ✅ (≈ 45 min of stereo at most) | ✅ (≈ 15 min of stereo at most) |
 | **Document editor**: one DOCX, ODT, RTF, DOC, Markdown, TXT or HTML file · headings, fonts, colours, highlight, lists, tables, pictures, links, page breaks · find & replace · undo · save back or as PDF and every document format | ✅ | ✅ (DOC needs the desktop app) |
 | **3D viewer**: STL, OBJ, 3MF, PLY, GLB, OFF, STEP, IGES · rotate / pan / zoom, front / top / side / 3D views, shaded / edges / wireframe, print-bed grid · size in mm, triangles, parts, watertight check, volume | ✅ | ✅ (no OFF) |
-| **Start screen tiles** (three per row, big icon on the left): open the image editor (new picture: size presets, white / transparent / black), the 3D viewer, the audio editor, the video editor or the document editor (a new "Untitled" document) without a file · the code editor shows "Coming soon" | ✅ | ✅ (video editor: "Coming soon") |
+| **Code editor** (quick edits, Notepad++ style): a tab per file · colours for 40+ languages, line numbers, matching brackets · find & replace (match case, whole word, patterns) · Tab / Shift+Tab on lines, comment / uncomment (Ctrl+/), auto-indent, go to line, word wrap, zoom · status bar with line / column, language, encoding (UTF-8, UTF-16, Windows-1252, BOM) and line endings · saves byte for byte (an untouched file stays identical), asks before overwriting a file another program changed | ✅ | coming later |
+| **Start screen tiles** (three per row, big icon on the left): open the image editor (new picture: size presets, white / transparent / black), the 3D viewer, the audio editor, the video editor, the document editor (a new "Untitled" document) or the code editor (a new "Untitled" file) without a file | ✅ | ✅ (video and code editors: "Coming soon") |
 
 </details>
 
