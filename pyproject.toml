@@ -36,6 +36,7 @@ dependencies = [
     "opencv-python-headless>=4.8",  # content-aware fill (cv2.inpaint); also needed by pdf2docx
     "onnxruntime>=1.17",  # background removal (the model is downloaded on first use)
     "pygments>=2.17",  # code editor colours (BSD-2)
+    "mutagen>=1.47",  # music tags in Properties (GPL-2.0-or-later)
 ]
 
 [project.optional-dependencies]

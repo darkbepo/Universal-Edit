@@ -1,0 +1,40 @@
+{
+ "note": "clean_values (src/umc/properties/music.py) and cleanValues (web/src/properties/music.ts) must give the same result for each case.",
+ "clean": [
+  {"values": {"title": "  Song  "}, "expect": {"title": "Song"}},
+  {"values": {"title": " Song "}, "expect": {"title": " Song "}},
+  {"values": {"artist": ""}, "expect": {"artist": ""}},
+  {"values": {"album": "Bad \ud800 text"}, "expect": {"album": "Bad � text"}},
+  {"values": {"album_artist": "Ä & Ö", "genre": "Jazz"}, "expect": {"album_artist": "Ä & Ö", "genre": "Jazz"}},
+  {"values": {"track": "3"}, "expect": {"track": "3"}},
+  {"values": {"track": "03 / 12"}, "expect": {"track": "3/12"}},
+  {"values": {"track": " 7/7 "}, "expect": {"track": "7/7"}},
+  {"values": {"track": ""}, "expect": {"track": ""}},
+  {"values": {"track": "0"}, "error": "The track number can't be 0."},
+  {"values": {"track": "2/0"}, "error": "The track number can't be 0."},
+  {"values": {"track": "13/12"}, "error": "The track number can't be bigger than the number of tracks."},
+  {"values": {"track": "three"}, "error": "Write the track number like 3, or 3/12 with the number of tracks."},
+  {"values": {"track": "3/"}, "error": "Write the track number like 3, or 3/12 with the number of tracks."},
+  {"values": {"track": "12345"}, "error": "Write the track number like 3, or 3/12 with the number of tracks."},
+  {"values": {"track": "٣"}, "error": "Write the track number like 3, or 3/12 with the number of tracks."},
+  {"values": {"disc": "1/2"}, "expect": {"disc": "1/2"}},
+  {"values": {"disc": "3/2"}, "error": "The disc number can't be bigger than the number of discs."},
+  {"values": {"disc": "x"}, "error": "Write the disc number like 1, or 1/2 with the number of discs."},
+  {"values": {"year": "2026"}, "expect": {"year": "2026"}},
+  {"values": {"year": " 1999 "}, "expect": {"year": "1999"}},
+  {"values": {"year": ""}, "expect": {"year": ""}},
+  {"values": {"year": "26"}, "error": "Write the year with four digits, like 2026."},
+  {"values": {"year": "2026-05-01"}, "error": "Write the year with four digits, like 2026."},
+  {"values": {"title": "ok", "year": "x", "track": "x"}, "error": "Write the track number like 3, or 3/12 with the number of tracks."}
+ ],
+ "common": [
+  {"details": [{"title": "A", "artist": "X", "album": "", "album_artist": "", "track": "1", "disc": "", "year": "2026", "genre": ""},
+               {"title": "B", "artist": "X", "album": "", "album_artist": "", "track": "2", "disc": "", "year": "2026", "genre": ""}],
+   "expect": {"title": null, "artist": "X", "album": "", "album_artist": "", "track": null, "disc": "", "year": "2026", "genre": ""}}
+ ],
+ "cover": [
+  {"hex": "ffd8ffe000104a464946", "expect": "image/jpeg"},
+  {"hex": "89504e470d0a1a0a0000", "expect": "image/png"},
+  {"hex": "47494638396101000100", "error": "The cover has to be a JPG or PNG picture."}
+ ]
+}

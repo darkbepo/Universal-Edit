@@ -491,6 +491,29 @@ def _video_editor_check(d: Path) -> list[Path]:
     return [saved, dest]
 
 
+def _music_tags_check(d: Path, out: Path) -> list[Path]:
+    """Music tags (mutagen): an MP3 gets new tags + a cover, read back from the saved copy."""
+    import io
+
+    from PIL import Image
+
+    from umc.properties import music
+    from umc.tools import ffmpeg, process
+
+    d.mkdir(parents=True, exist_ok=True)
+    src = d / "song.mp3"
+    process.run([ffmpeg.ffmpeg_path(), "-y", "-f", "lavfi", "-i", "sine=d=1",
+                 "-c:a", "libmp3lame", str(src)])  # fmt: skip
+    cover = io.BytesIO()
+    Image.new("RGB", (8, 8), "red").save(cover, "JPEG")
+    edit = music.MusicEdit({"title": "Self test", "track": "3/12"}, cover.getvalue(), False)
+    saved = music.save_file(src, edit, as_copy=True)
+    got = music.read_details(saved)
+    if (got.title, got.track, got.has_cover) != ("Self test", "3/12", True):
+        raise RuntimeError(f"tags not written: {got}")
+    return [saved]
+
+
 def run(report: Path) -> int:
     from PIL import Image
 
@@ -556,6 +579,7 @@ def run(report: Path) -> int:
                 "code editor (colours, save byte-exact)",
                 lambda: _code_editor_check(d / "codeedit"),
             ),
+            ("music tags: mp3 title / track / cover", lambda: _music_tags_check(d / "music", out)),
             ("mp4 -> webm", lambda: _convert([out / "img0 slideshow.mp4"], "webm", out)),
             ("mp4 -> gif", lambda: _convert([out / "img0 slideshow.mp4"], "video:gif", out)),
             ("mp4 -> frames", lambda: _convert([out / "img0 slideshow.mp4"], "frames:png", out)),

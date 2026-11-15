@@ -11,18 +11,16 @@ The matching XMP properties are removed when a detail changes, so an old value c
 
 from __future__ import annotations
 
-import os
 import re
-import shutil
 import struct
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from umc.properties import containers, exif, xmp
+from umc.properties import containers, exif, saving, xmp
 from umc.properties.exif import TAG
 
 WRITABLE_EXTS = {"jpg", "png", "webp"}
-TEMP_PREFIX = ".umc-saving-"  # the new file, next to the original, until it replaces it
+TEMP_PREFIX = saving.TEMP_PREFIX
 FIELDS = ("title", "comment", "author", "copyright", "tags", "taken")
 ROTATIONS = {1: "Upright", 6: "Turned 90° right", 3: "Upside down", 8: "Turned 90° left"}
 
@@ -253,30 +251,4 @@ def common(details: list[PhotoDetails]) -> dict[str, str | None]:
 def save_file(path: Path, edit: PhotoEdit, as_copy: bool = False) -> Path:
     """Write ``edit`` into ``path`` (or into a copy next to it, "name (1).jpg"). The original
     is replaced only once the new file is complete, and keeps its modified date."""
-    from umc.core.job import unique_path
-
-    path = path.resolve()  # a link: change the file it points to, keep the link
-    data = path.read_bytes()
-    out = apply(data, edit)
-    if as_copy:
-        stem = path.name[: -len(path.suffix)] if path.suffix else path.name
-        dest = unique_path(path.parent, stem, path.suffix.lstrip("."))
-        dest.write_bytes(out)
-        return dest
-    st = path.stat()
-    tmp = path.with_name(f"{TEMP_PREFIX}{path.name}")
-    try:
-        tmp.write_bytes(out)
-        shutil.copymode(path, tmp)  # a private picture stays private
-        os.utime(tmp, ns=(st.st_atime_ns, st.st_mtime_ns))
-        os.replace(tmp, path)
-    except PermissionError as exc:
-        tmp.unlink(missing_ok=True)
-        raise PhotoError(
-            f"“{path.name}” couldn't be changed — it may be open in another program, or the "
-            "folder is read-only. Close it there and try again, or save a copy."
-        ) from exc
-    except OSError:
-        tmp.unlink(missing_ok=True)
-        raise
-    return path
+    return saving.save_bytes(path, lambda data: apply(data, edit), as_copy, PhotoError)

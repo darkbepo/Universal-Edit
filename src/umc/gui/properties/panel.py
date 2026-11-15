@@ -2,8 +2,9 @@
 
 A file picker on top when there are several; the sections (``properties.read.describe``) are read
 off the UI thread — PDFs on the PyMuPDF thread — and the newest request wins. JPG / PNG / WebP
-pictures also get the "Change details" card (``photo_form.PhotoForm``); saving runs on a thread
-too, after asking once before it changes an original."""
+pictures get the "Change details" card ``photo_form.PhotoForm``, MP3 / M4A / FLAC / OGG / Opus
+songs ``music_form.MusicForm``; saving runs on a thread too, after asking once before it changes
+an original."""
 
 from __future__ import annotations
 
@@ -26,32 +27,49 @@ from PySide6.QtWidgets import (
 
 from umc.core.detect import DetectedFile
 from umc.gui import icons, theme
+from umc.gui.properties.music_form import MusicForm
 from umc.gui.properties.photo_form import PhotoForm
 from umc.gui.viewer.tasks import TaskRunner
-from umc.properties import photo
+from umc.properties import music, photo
 from umc.properties.info import Section, build
-from umc.properties.photo import PhotoEdit
 from umc.properties.read import NOTE, describe, file_facts, uses_pdf_engine
 
 ASK_KEY = "properties/ask_before_changing"
 
+# kind → (can it change this extension, read the form's values, save, its error, one, many)
+KINDS = {
+    "photo": (photo.can_change, lambda p: photo.read_details(p.read_bytes()), photo.save_file,
+              photo.PhotoError, "picture", "pictures"),
+    "music": (music.can_change, music.read_details, music.save_file, music.MusicError,
+              "song", "songs"),
+}  # fmt: skip
+
+
+def kind_of(f: DetectedFile | None) -> str | None:
+    """Which "Change details" card a file gets (None: read-only)."""
+    if f is None:
+        return None
+    return next((k for k, spec in KINDS.items() if spec[0](f.ext)), None)
+
 
 def _read(f: DetectedFile, others: list[DetectedFile]):
-    """Runs on a thread: the sections, plus the details form's values for changeable pictures."""
+    """Runs on a thread: the sections, plus the details form's values for changeable files."""
     sections = describe(f)
-    if not photo.can_change(f.ext):
-        return sections, None, []
-    everyone = []  # (file, details) of every picture whose details could be read
+    kind = kind_of(f)
+    if kind is None:
+        return sections, None, None, []
+    read = KINDS[kind][1]
+    everyone = []  # (file, details) of every file of this kind whose details could be read
     current = None
     for g in others:
         try:
-            d = photo.read_details(g.path.read_bytes())
+            d = read(g.path)
         except (OSError, ValueError, struct.error):
             continue
         everyone.append((g, d))
         if g == f:
             current = d
-    return sections, current, everyone
+    return sections, kind, current, everyone
 
 
 LABEL_W = 110
@@ -97,10 +115,14 @@ class PropertiesPanel(QWidget):
         self.body_lay.setSpacing(10)
         self._keep_message: tuple[str, bool] | None = None
         self._readable: list[DetectedFile] = []
+        self.kind: str | None = None  # whose card is shown
         self.form = PhotoForm()
-        self.form.setVisible(False)
-        self.form.save_requested.connect(self._save)
-        self.body_lay.addWidget(self.form)
+        self.music_form = MusicForm()
+        self.forms = {"photo": self.form, "music": self.music_form}
+        for form in self.forms.values():
+            form.setVisible(False)
+            form.save_requested.connect(self._save)
+            self.body_lay.addWidget(form)
         self.body_lay.addStretch(1)
         self.scroll.setWidget(self.body)
         lay.addWidget(self.scroll, 1)
@@ -153,21 +175,28 @@ class PropertiesPanel(QWidget):
         )
 
     def changeable(self) -> list[DetectedFile]:
-        """The added pictures whose details can be changed."""
-        return [g for g in self.files if photo.can_change(g.ext)]
+        """The added files whose details can be changed with the shown file's card."""
+        kind = kind_of(self.current)
+        return [g for g in self.files if kind is not None and kind_of(g) == kind]
+
+    def active_form(self) -> PhotoForm | MusicForm:
+        return self.forms.get(self.kind or "", self.form)
 
     def _loaded(self, result) -> None:
-        sections, current, readable = result
+        sections, kind, current, readable = result
         self._readable = [g for g, _d in readable]
         everyone = [d for _g, d in readable]
         self.status.clear()
         self.status.setVisible(False)
         self._show(sections)
-        self.form.setVisible(current is not None)
+        self.kind = kind if current is not None else None
+        for k, form in self.forms.items():
+            form.setVisible(k == self.kind)
         if current is not None:
-            self.form.set_details(current, everyone)
+            self.active_form().set_details(current, everyone)
         if self._keep_message is not None:  # after a save: say how it went
-            self.form.show_message(*self._keep_message)
+            if self.kind is not None:
+                self.active_form().show_message(*self._keep_message)
             self._keep_message = None
 
     def _failed(self, message: str) -> None:
@@ -178,18 +207,21 @@ class PropertiesPanel(QWidget):
         f = self.current
         facts = {"file": file_facts(f) if f else {}, "note": message or NOTE}
         self._show(build(facts))
-        self.form.setVisible(False)
+        self.kind = None
+        for form in self.forms.values():
+            form.setVisible(False)
 
     # ------------------------------------------------------------------ drawing
     def _show(self, sections: list[Section]) -> None:
         self.sections = sections
-        # the layout holds: the details form, the cards, a stretch
-        while self.body_lay.count() > 2:
-            item = self.body_lay.takeAt(1)
+        # the layout holds: the details forms, the cards, a stretch
+        first = len(self.forms)
+        while self.body_lay.count() > first + 1:
+            item = self.body_lay.takeAt(first)
             if item.widget() is not None:
                 item.widget().deleteLater()
         for i, s in enumerate(sections):
-            self.body_lay.insertWidget(1 + i, self._card(s))
+            self.body_lay.insertWidget(first + i, self._card(s))
 
     @staticmethod
     def _card(s: Section) -> QFrame:
@@ -224,12 +256,14 @@ class PropertiesPanel(QWidget):
         settings = QSettings()
         if not settings.value(ASK_KEY, True, bool):
             return True
-        what = "this picture" if count == 1 else f"these {count} pictures"
+        one, many = self._nouns()
+        what = f"this {one}" if count == 1 else f"these {count} {many}"
+        inside = "picture" if self.kind == "photo" else "sound"
         box = QMessageBox(self)
         box.setWindowTitle("Change the original?")
         box.setText(f"This writes the new details into {what}.")
         box.setInformativeText(
-            "The picture itself isn't touched — only its details. To keep the original as it "
+            f"The {inside} itself isn't touched — only its details. To keep the original as it "
             "is, use Save as copy instead."
         )
         box.setStandardButtons(QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Cancel)
@@ -241,19 +275,25 @@ class PropertiesPanel(QWidget):
             settings.setValue(ASK_KEY, False)
         return ok
 
-    def _save(self, edit: PhotoEdit, as_copy: bool, every: bool) -> None:
-        # "Apply to all N pictures" = the pictures the form counted (whose details could be read)
+    def _nouns(self) -> tuple[str, str]:
+        spec = KINDS.get(self.kind or "photo")
+        return spec[4], spec[5]
+
+    def _save(self, edit, as_copy: bool, every: bool) -> None:
+        # "Apply to all N songs" = the files the form counted (whose details could be read)
         targets = list(self._readable) if every else [self.current] if self.current else []
-        if not targets:
+        if not targets or self.kind is None:
             return
         if not as_copy and not self.confirm_original(len(targets)):
             return
         paths = [t.path for t in targets]
-        self.form.set_busy(True)
-        self.form.show_message("Saving…")
+        kind = self.kind
+        form = self.active_form()
+        form.set_busy(True)
+        form.show_message("Saving…")
         self.tasks.submit(
             "save",
-            lambda: _save_all(paths, edit, as_copy),
+            lambda: _save_all(kind, paths, edit, as_copy),
             self._saved,
             lambda m: self._save_failed(m),
             exclusive=False,
@@ -261,27 +301,29 @@ class PropertiesPanel(QWidget):
 
     def _saved(self, result) -> None:
         written, problems = result
-        self.form.set_busy(False)
+        form = self.active_form()
+        form.set_busy(False)
         if problems:
-            self.form.show_message(problems[0], error=True)
+            form.show_message(problems[0], error=True)
         elif any(p not in self._paths() for p in written):
             names = ", ".join(p.name for p in written[:3]) + ("…" if len(written) > 3 else "")
-            self.form.show_message(f"Saved: {names}")
+            form.show_message(f"Saved: {names}")
         else:
             n = len(written)
-            self.form.show_message("Saved." if n == 1 else f"Saved {n} pictures.")
+            form.show_message("Saved." if n == 1 else f"Saved {n} {self._nouns()[1]}.")
         changed = [p for p in written if p in self._paths()]
         if changed:
             self.files_saved.emit(changed)
         if self.current is not None:  # show what's in the file now
-            message = self.form.note.text()
+            message = form.note.text()
             error = bool(problems)
             self.show_file(self.files.index(self.current))
             self._keep_message = (message, error)
 
     def _save_failed(self, message: str) -> None:
-        self.form.set_busy(False)
-        self.form.show_message(message or "The details couldn't be saved.", error=True)
+        form = self.active_form()
+        form.set_busy(False)
+        form.show_message(message or "The details couldn't be saved.", error=True)
 
     def _paths(self) -> list[Path]:
         return [f.path for f in self.files]
@@ -291,19 +333,20 @@ class PropertiesPanel(QWidget):
         return {s.title: dict(s.rows) for s in self.sections}
 
     def save_message(self) -> str:
-        return self.form.note.text()
+        return self.active_form().note.text()
 
     def shutdown(self) -> None:
         self.tasks.shutdown()
 
 
-def _save_all(paths: list[Path], edit: PhotoEdit, as_copy: bool) -> tuple[list[Path], list[str]]:
-    """Runs on a thread: save each picture; plain-language problems are collected, not raised."""
+def _save_all(kind: str, paths: list[Path], edit, as_copy: bool) -> tuple[list[Path], list[str]]:
+    """Runs on a thread: save each file; plain-language problems are collected, not raised."""
+    save, error = KINDS[kind][2], KINDS[kind][3]
     written, problems = [], []
     for path in paths:
         try:
-            written.append(photo.save_file(path, edit, as_copy))
-        except photo.PhotoError as exc:
+            written.append(save(path, edit, as_copy))
+        except error as exc:
             problems.append(str(exc))
         except OSError:
             problems.append(f"“{path.name}” couldn't be saved.")
