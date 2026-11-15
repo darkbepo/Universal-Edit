@@ -1,5 +1,6 @@
 // Properties mode: Convert | Edit | Properties shows "About this file" for the added files.
 import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import { FIXTURES, findPython } from "./global-setup";
 
@@ -129,7 +130,7 @@ test.describe("change photo details", () => {
     const out = execFileSync("python3", ["-c",
       "import sys, json; sys.path.insert(0, sys.argv[1]); from dataclasses import asdict; " +
       "from umc.properties.photo import read_details; print(json.dumps(asdict(read_details(open(sys.argv[2], 'rb').read()))))",
-      new URL("../../src", import.meta.url).pathname, saved]).toString();
+      fileURLToPath(new URL("../../src", import.meta.url)), saved]).toString();
     expect(JSON.parse(out)).toEqual(d);
   });
 
@@ -185,7 +186,7 @@ test.describe("change music tags", () => {
     const out = execFileSync(python, ["-c",
       "import sys, json; sys.path.insert(0, sys.argv[1]); from dataclasses import asdict; from pathlib import Path; " +
       "from umc.properties.music import read_details; print(json.dumps(asdict(read_details(Path(sys.argv[2])))))",
-      new URL("../../src", import.meta.url).pathname, path]).toString();
+      fileURLToPath(new URL("../../src", import.meta.url)), path]).toString();
     return JSON.parse(out);
   };
 
