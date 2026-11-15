@@ -1433,8 +1433,12 @@ def test_inspector_keeps_a_font_that_is_not_installed(qtbot, monkeypatch):
     insp = Inspector()
     qtbot.addWidget(insp)
     missing = "No Such Font Umc 123"
+    # Windows Qt shows a substitute for a font that isn't installed (Linux Qt keeps the
+    # name), so the substitute is stood in for: the box shows another family than the item's.
+    substitute = QFont("Substitute Font Umc")
+    monkeypatch.setattr(insp.font_box, "currentFont", lambda: substitute)
     insp.show_item(_font_project(missing), "t1")
-    assert insp.font_box.currentFont().family() != missing  # Qt shows a substitute
+    assert insp.font_box.currentFont().family() != missing
     got = []
     insp.changed.connect(got.append)
     insp.panel.field_widget("text").setPlainText("Hi")

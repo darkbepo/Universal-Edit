@@ -113,13 +113,16 @@ def _tag_end(html: str, i: int) -> tuple[int, bool]:
     return -1, False
 
 
-def html5_text(html: str) -> str:
+def html5_text(html: str, escape_raw: bool = True) -> str:
     """Prepare ``html`` for libxml2 so it reads what an HTML5 parser (the website) reads:
     numeric references, the content of raw text / RCDATA elements (escaped, so libxml2
     keeps it as text), the "/" of a self-closing start tag (dropped: HTML5 ignores it, so
     ``<p/>x</p>`` is one paragraph), and ``</br>`` (a line break in HTML5, so written ``<br>``).
     One pass from left to right; the tags in between are read with their attributes, so a tag
-    name written inside a quoted value starts nothing."""
+    name written inside a quoted value starts nothing.
+
+    ``escape_raw`` False: libxml2 reads raw text elements as text itself (2.14 and later),
+    so their content is left as written (escaping it would show "&amp;" for "&")."""
     if (
         "&#" not in html
         and "/>" not in html
@@ -165,7 +168,20 @@ def html5_text(html: str) -> str:
             end = close.start() if close else len(html)
         body = html[i:end]
         if name in _RAW_TEXT:
-            body = body.replace("&", "&amp;").replace("<", "&lt;")
+            if escape_raw:
+                body = body.replace("&", "&amp;").replace("<", "&lt;")
+            elif end == len(html):
+                # Runs to the end: libxml2 would swallow the closing tags lxml adds around a
+                # fragment, so it is closed here. <plaintext> never ends, even at
+                # "</plaintext>", so it becomes an <xmp> (which reads the same).
+                if name == "plaintext":
+                    # (a reference never spans a "<", so the pieces convert like the whole)
+                    out[-1] = (
+                        _num_refs(html[pos : m.start()]) + "<xmp" + _num_refs(html[m.end() : i])
+                    )
+                    body = re.sub("</xmp", "&lt;/xmp", body, flags=re.I) + "</xmp>"
+                else:
+                    body += f"</{name}>"
         elif name in _RCDATA:
             body = _num_refs(body.replace("<", "&lt;"))
         else:  # script / style: libxml2 keeps them as text already
@@ -173,4 +189,60 @@ def html5_text(html: str) -> str:
         out.append(body)
         pos = i = end
     out.append(_num_refs(html[pos:]))
+    return "".join(out)
+
+
+# Elements that never have content (a start tag opens nothing).
+_VOID = frozenset(
+    {
+        "area",
+        "base",
+        "br",
+        "col",
+        "embed",
+        "hr",
+        "img",
+        "input",
+        "link",
+        "meta",
+        "param",
+        "source",
+        "track",
+        "wbr",
+    }
+)
+
+
+def without_deep_tags(html: str, limit: int) -> str:
+    """``html`` with the start / end tags nested more than ``limit`` deep removed (their text,
+    <br>s and pictures stay). libxml2 2.14 drops whatever is nested past ~2048 elements, even
+    with huge_tree; the normaliser flattens anything that deep anyway, so only the tags go.
+    The depth is counted from the tags as written (an implied end isn't seen), so call this
+    only for a page libxml2 really read that deep."""
+    out: list[str] = []
+    pos = i = 0
+    depth = 0
+    while (m := _TAG_START.search(html, i)) is not None:
+        if m.group(1):  # a comment, up to "-->"
+            end = html.find("-->", m.end())
+            i = len(html) if end < 0 else end + 3
+            continue
+        gt, _ = _tag_end(html, m.end())
+        if gt < 0:
+            break
+        i = gt + 1
+        name = m.group(3).lower()
+        if name in _VOID:
+            continue
+        if m.group(2):  # an end tag
+            depth = max(depth - 1, 0)
+            if depth >= limit:
+                out.append(html[pos : m.start()])
+                pos = i
+            continue
+        depth += 1
+        if depth > limit:
+            out.append(html[pos : m.start()])
+            pos = i
+    out.append(html[pos:])
     return "".join(out)

@@ -15,9 +15,10 @@ import html as _html
 import re
 from copy import deepcopy
 
-import lxml.html
 from lxml import etree
 from markdown_it.common.normalize_url import normalizeLink, validateLink
+
+from umc.doceditor.html_subset import subset_fragment
 
 NBSP = "\xa0"
 # Escaped wherever they appear in text (CommonMark reads "\\x" back as "x").
@@ -374,6 +375,6 @@ def to_markdown(html: str) -> str:
     """The editor's (normalised) HTML subset as Markdown, ending with one newline."""
     if not html.strip() or html == "<p></p>":  # the empty document (opening "" gives "<p></p>")
         return ""
-    root = lxml.html.fragment_fromstring(html, create_parent="div")
+    root = subset_fragment(html)
     blocks = _Writer().blocks(root)
     return "\n\n".join(blocks) + "\n" if blocks else ""
