@@ -23,7 +23,8 @@ different rules per kind of file. Both apps.
    on desktop; ID3v2.3 for MP3 so Windows and every player read it). Web: FFmpeg remux
    (`-c copy`). MP3 / M4A / FLAC / OGG / Opus. The web can't add or keep an OGG / Opus cover
    (FFmpeg can't write it back): it hides the cover button there and refuses a change that
-   would lose an existing cover (removing it works); the desktop app can.
+   would lose an existing cover (removing it works); the desktop app can. The remux may also drop
+   or rename tags the card doesn't show (lyrics, ReplayGain, sort names); the card says so.
 4. Video: title, description, date, rotation flag, track language / default (FFmpeg
    `-map 0 -c copy`; check first which streams the container can't keep and warn).
 5. PDF (incremental save keeps signatures; password asked) and Word / Excel / PowerPoint / ODF

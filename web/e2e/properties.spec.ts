@@ -258,6 +258,24 @@ test.describe("change music tags", () => {
     await expect(page.locator(".mf-note")).toContainText("bigger than the number of tracks");
   });
 
+  test("photos and songs each get their own card", async ({ page }) => {
+    test.skip(!existsSync(`${FIXTURES}camera.jpg`), "python3 missing: no sample photo");
+    await page.goto("./");
+    await add(page, ["camera.jpg", "song.mp3", "song.flac"]);
+    await propertiesButton(page).click();
+    await expect(page.locator(".ph-form")).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator(".mf-form")).toBeHidden();
+    await page.locator(".prop-file").selectOption({ index: 1 });
+    await expect(page.locator(".mf-form")).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator(".ph-form")).toBeHidden();
+    await expect(page.locator("#mf-title")).toHaveValue("Song");
+    await expect(page.locator(".mf-form")).toContainText("Apply to all 2 songs"); // the photo isn't counted
+    await expect(page.locator(".mf-limit")).toContainText("lyrics");
+    await page.locator(".prop-file").selectOption({ index: 0 });
+    await expect(page.locator(".ph-form")).toBeVisible();
+    await expect(page.locator(".mf-form")).toBeHidden();
+  });
+
   test("no form for songs it can't change", async ({ page }) => {
     test.skip(!existsSync(`${FIXTURES}tone.wav`), "ffmpeg missing");
     await page.goto("./");

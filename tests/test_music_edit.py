@@ -332,3 +332,53 @@ def test_card_not_for_wav(qtbot, window, media):
     assert window.properties_panel.music_form.isHidden()
     assert window.properties_panel.form.isHidden()
     _settle(qtbot, window)
+
+
+@needs_ffmpeg
+def test_photos_and_songs_each_get_their_card(qtbot, window, tmp_path):
+    from umc.core.samples import write_test_photo
+
+    photo_file = write_test_photo(tmp_path / "phone.jpg")
+    a = _song(tmp_path / "a.mp3")
+    b = _song(tmp_path / "b.m4a")
+    panel = window.properties_panel
+    window.add_files([str(photo_file), str(a), str(b)])
+    window.enter_properties()
+    qtbot.waitUntil(lambda: not panel.form.isHidden() and "File" in panel.rows(), timeout=10000)
+    assert panel.music_form.isHidden()
+    assert panel.form.apply_all.isHidden()  # one picture: no "Apply to all"
+    panel.show_file(1)
+    form = _form(qtbot, window)
+    assert panel.form.isHidden()
+    assert form.apply_all.text() == "Apply to all 2 songs"  # the photo isn't counted
+    # save a song, then show the photo before it's done: the song card gets the result
+    _type(form, "title", "Mid-save")
+    form.copy_button.click()
+    panel.show_file(0)
+    qtbot.waitUntil(lambda: (tmp_path / "a (1).mp3").exists(), timeout=10000)
+    qtbot.waitUntil(lambda: not panel.form.isHidden() and panel.form.isEnabled(), timeout=10000)
+    _settle(qtbot, window)
+    assert "song" not in panel.form.note.text()
+    assert music.read_details(tmp_path / "a (1).mp3").title == "Mid-save"
+    assert all(e.isEnabled() for e in form.edits.values())  # not stuck "busy"
+    panel.show_file(1)
+    _form(qtbot, window)
+    qtbot.waitUntil(lambda: form.isEnabled(), timeout=10000)
+    assert form.edits["title"].isEnabled() and form.edits["title"].text() == ""
+    _settle(qtbot, window)
+
+
+def test_no_saving_while_another_file_is_read(qtbot, window, tmp_path, monkeypatch):
+    from umc.core.samples import write_test_photo
+
+    p = write_test_photo(tmp_path / "phone.jpg")
+    panel = window.properties_panel
+    window.add_files([str(p)])
+    window.enter_properties()
+    qtbot.waitUntil(lambda: not panel.form.isHidden() and "File" in panel.rows(), timeout=10000)
+    panel.show_file(0)  # reading again
+    assert not panel.form.isEnabled()
+    submitted = []
+    monkeypatch.setattr(panel.tasks, "submit", lambda *a, **k: submitted.append(a))
+    panel._save(object(), True, False)
+    assert submitted == []

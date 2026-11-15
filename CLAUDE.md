@@ -970,6 +970,8 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       the page with Mediabunny). Shared cases `tests/fixtures/music_cases.json` — the web reads it
       with `?raw` (a lone-surrogate case breaks Vite's JSON loader). FFmpeg can't write OGG / Opus
       covers: the web hides "Choose picture…" there and refuses a change that would drop one.
+      The remux can drop or rename tags the card doesn't show (lyrics, ReplayGain, sort names);
+      the card says so (`.mf-limit`) — mutagen on the desktop keeps them.
       e2e reads web-saved songs with the desktop reader (`findPython("import mutagen")`).
       Next steps: video, PDF / Office, file name + dates.
    15. Orbiting drop-zone badges (both apps): 14 file-type badges (icon + type, own colour,

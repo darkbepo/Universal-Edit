@@ -87,7 +87,9 @@ export class MusicForm {
     this.applyAllRow = h("label", { class: "ph-check" }, this.applyAll, this.applyAllText);
     this.save.addEventListener("click", () => void this.download());
     this.el = h("section", { class: "prop-card mf-form", ariaLabel: "Change details", hidden: true },
-      h("h3", {}, "Change details"), rows, this.applyAllRow, this.note, h("div", { class: "ph-actions" }, this.save));
+      h("h3", {}, "Change details"), rows, this.applyAllRow,
+      h("div", { class: "hint mf-limit" }, "In the browser only these details are kept for sure — others, like lyrics or loudness info, may be lost. The desktop app keeps them."),
+      this.note, h("div", { class: "ph-actions" }, this.save));
     this.el.dataset.title = "Change details";
   }
 

@@ -113,7 +113,7 @@ class PropertiesPanel(QWidget):
         self.body_lay = QVBoxLayout(self.body)
         self.body_lay.setContentsMargins(0, 0, 4, 0)
         self.body_lay.setSpacing(10)
-        self._keep_message: tuple[str, bool] | None = None
+        self._keep_message: tuple[str, bool, str] | None = None
         self._readable: list[DetectedFile] = []
         self.kind: str | None = None  # whose card is shown
         self.form = PhotoForm()
@@ -165,6 +165,8 @@ class PropertiesPanel(QWidget):
             self.picker.blockSignals(False)
         self.status.setText(f"Reading {f.name}…")
         self.status.setVisible(True)
+        for form in self.forms.values():  # the shown card still belongs to the last file
+            form.setEnabled(False)
         others = self.changeable()
         self.tasks.submit(
             "describe",
@@ -192,11 +194,13 @@ class PropertiesPanel(QWidget):
         self.kind = kind if current is not None else None
         for k, form in self.forms.items():
             form.setVisible(k == self.kind)
+            form.setEnabled(True)
         if current is not None:
             self.active_form().set_details(current, everyone)
-        if self._keep_message is not None:  # after a save: say how it went
-            if self.kind is not None:
-                self.active_form().show_message(*self._keep_message)
+        if self._keep_message is not None:  # after a save: say how it went, on that card
+            message, error, saved_kind = self._keep_message
+            if self.kind is not None and self.kind == saved_kind:
+                self.active_form().show_message(message, error)
             self._keep_message = None
 
     def _failed(self, message: str) -> None:
@@ -210,6 +214,7 @@ class PropertiesPanel(QWidget):
         self.kind = None
         for form in self.forms.values():
             form.setVisible(False)
+            form.setEnabled(True)
 
     # ------------------------------------------------------------------ drawing
     def _show(self, sections: list[Section]) -> None:
@@ -280,6 +285,8 @@ class PropertiesPanel(QWidget):
         return spec[4], spec[5]
 
     def _save(self, edit, as_copy: bool, every: bool) -> None:
+        if not self.status.isHidden():  # a file is still being read: the card isn't its yet
+            return
         # "Apply to all N songs" = the files the form counted (whose details could be read)
         targets = list(self._readable) if every else [self.current] if self.current else []
         if not targets or self.kind is None:
@@ -291,17 +298,18 @@ class PropertiesPanel(QWidget):
         form = self.active_form()
         form.set_busy(True)
         form.show_message("Saving…")
+        # the results go to this card, even if another file (or kind) is shown by then
         self.tasks.submit(
             "save",
             lambda: _save_all(kind, paths, edit, as_copy),
-            self._saved,
-            lambda m: self._save_failed(m),
+            lambda result: self._saved(result, kind),
+            lambda m: self._save_failed(m, kind),
             exclusive=False,
         )
 
-    def _saved(self, result) -> None:
+    def _saved(self, result, kind: str) -> None:
         written, problems = result
-        form = self.active_form()
+        form = self.forms[kind]
         form.set_busy(False)
         if problems:
             form.show_message(problems[0], error=True)
@@ -310,7 +318,7 @@ class PropertiesPanel(QWidget):
             form.show_message(f"Saved: {names}")
         else:
             n = len(written)
-            form.show_message("Saved." if n == 1 else f"Saved {n} {self._nouns()[1]}.")
+            form.show_message("Saved." if n == 1 else f"Saved {n} {KINDS[kind][5]}.")
         changed = [p for p in written if p in self._paths()]
         if changed:
             self.files_saved.emit(changed)
@@ -318,10 +326,10 @@ class PropertiesPanel(QWidget):
             message = form.note.text()
             error = bool(problems)
             self.show_file(self.files.index(self.current))
-            self._keep_message = (message, error)
+            self._keep_message = (message, error, kind)
 
-    def _save_failed(self, message: str) -> None:
-        form = self.active_form()
+    def _save_failed(self, message: str, kind: str) -> None:
+        form = self.forms[kind]
         form.set_busy(False)
         form.show_message(message or "The details couldn't be saved.", error=True)
 

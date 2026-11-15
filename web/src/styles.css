@@ -767,3 +767,4 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 .ph-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
 .mf-cover { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
 .mf-cover-status { flex: 1 1 10em; min-width: 0; }
+.mf-limit { margin-top: 8px; }
