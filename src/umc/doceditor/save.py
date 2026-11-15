@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import base64
-import contextlib
 import logging
 import os
 import re
@@ -183,7 +182,8 @@ def save_document(
             msg = f"Couldn't save “{dest.name}”: {exc.strerror or exc}."
         raise ConversionError(msg) from exc
     finally:
-        # Linux: NotADirectoryError when the folder is really a file
-        with contextlib.suppress(OSError):
+        try:
             saving.unlink(missing_ok=True)
+        except OSError as exc:  # e.g. locked by antivirus; Linux: the folder is really a file
+            log.warning("Could not remove %s: %s", saving, exc)
     return dest

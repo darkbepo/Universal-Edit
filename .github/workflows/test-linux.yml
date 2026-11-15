@@ -17,6 +17,9 @@ on:
 env:
   QT_QPA_PLATFORM: offscreen
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest

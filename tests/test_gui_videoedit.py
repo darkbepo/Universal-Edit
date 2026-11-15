@@ -1438,7 +1438,6 @@ def test_inspector_keeps_a_font_that_is_not_installed(qtbot, monkeypatch):
     substitute = QFont("Substitute Font Umc")
     monkeypatch.setattr(insp.font_box, "currentFont", lambda: substitute)
     insp.show_item(_font_project(missing), "t1")
-    assert insp.font_box.currentFont().family() != missing
     got = []
     insp.changed.connect(got.append)
     insp.panel.field_widget("text").setPlainText("Hi")

@@ -142,6 +142,7 @@ def html5_text(html: str, escape_raw: bool = True) -> str:
         gt, self_closing = _tag_end(html, m.end())
         if gt < 0:
             break
+        tag_out, tag_pos = len(out), pos  # to rewrite this tag later (<plaintext>)
         i = gt + 1
         name = m.group(3).lower()
         if name in _HEADING_TAGS:
@@ -175,11 +176,14 @@ def html5_text(html: str, escape_raw: bool = True) -> str:
                 # fragment, so it is closed here. <plaintext> never ends, even at
                 # "</plaintext>", so it becomes an <xmp> (which reads the same).
                 if name == "plaintext":
-                    # (a reference never spans a "<", so the pieces convert like the whole)
-                    out[-1] = (
-                        _num_refs(html[pos : m.start()]) + "<xmp" + _num_refs(html[m.end() : i])
-                    )
-                    body = re.sub("</xmp", "&lt;/xmp", body, flags=re.I) + "</xmp>"
+                    # Written again from where this tag started (a self-closing one was
+                    # already split at its "/"); a reference never spans a "<", so the
+                    # pieces convert like the whole.
+                    attrs = html[m.end() : gt - 1] + ">" if self_closing else html[m.end() : i]
+                    del out[tag_out:]
+                    out.append(_num_refs(html[tag_pos : m.start()]) + "<xmp" + _num_refs(attrs))
+                    # "</xmp" in it would end the <xmp>: it goes between two, as text
+                    body = re.sub("(</)(xmp)", r"</xmp>&lt;/\2<xmp>", body, flags=re.I) + "</xmp>"
                 else:
                     body += f"</{name}>"
         elif name in _RCDATA:
@@ -233,6 +237,14 @@ def without_deep_tags(html: str, limit: int) -> str:
         i = gt + 1
         name = m.group(3).lower()
         if name in _VOID:
+            continue
+        if name in _SPECIAL:  # kept, never counted; their content is text, not tags
+            if m.group(2):
+                continue
+            if name == "plaintext":  # the rest of the page is its text
+                break
+            close = _SPECIAL_END[name].search(html, i)
+            i = close.start() if close else len(html)
             continue
         if m.group(2):  # an end tag
             depth = max(depth - 1, 0)
