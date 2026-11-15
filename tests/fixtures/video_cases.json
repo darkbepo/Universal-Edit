@@ -1,0 +1,2290 @@
+{
+ "note": "src/umc/properties/video.py and web/src/properties/video.ts must give the same result for each case. Written by a script from video.py \u2014 regenerate only on purpose. 'log' = FFmpeg's -i output; the web turns it into the same JSON ffprobe gives (only the fields used).",
+ "languages": [
+  [
+   "ara",
+   "Arabic"
+  ],
+  [
+   "baq",
+   "Basque"
+  ],
+  [
+   "bul",
+   "Bulgarian"
+  ],
+  [
+   "cat",
+   "Catalan"
+  ],
+  [
+   "chi",
+   "Chinese"
+  ],
+  [
+   "hrv",
+   "Croatian"
+  ],
+  [
+   "cze",
+   "Czech"
+  ],
+  [
+   "dan",
+   "Danish"
+  ],
+  [
+   "dut",
+   "Dutch"
+  ],
+  [
+   "eng",
+   "English"
+  ],
+  [
+   "est",
+   "Estonian"
+  ],
+  [
+   "fin",
+   "Finnish"
+  ],
+  [
+   "fre",
+   "French"
+  ],
+  [
+   "ger",
+   "German"
+  ],
+  [
+   "gre",
+   "Greek"
+  ],
+  [
+   "heb",
+   "Hebrew"
+  ],
+  [
+   "hin",
+   "Hindi"
+  ],
+  [
+   "hun",
+   "Hungarian"
+  ],
+  [
+   "ice",
+   "Icelandic"
+  ],
+  [
+   "ind",
+   "Indonesian"
+  ],
+  [
+   "ita",
+   "Italian"
+  ],
+  [
+   "jpn",
+   "Japanese"
+  ],
+  [
+   "kor",
+   "Korean"
+  ],
+  [
+   "lav",
+   "Latvian"
+  ],
+  [
+   "lit",
+   "Lithuanian"
+  ],
+  [
+   "nor",
+   "Norwegian"
+  ],
+  [
+   "nob",
+   "Norwegian Bokm\u00e5l"
+  ],
+  [
+   "nno",
+   "Norwegian Nynorsk"
+  ],
+  [
+   "per",
+   "Persian"
+  ],
+  [
+   "pol",
+   "Polish"
+  ],
+  [
+   "por",
+   "Portuguese"
+  ],
+  [
+   "rum",
+   "Romanian"
+  ],
+  [
+   "rus",
+   "Russian"
+  ],
+  [
+   "srp",
+   "Serbian"
+  ],
+  [
+   "slo",
+   "Slovak"
+  ],
+  [
+   "slv",
+   "Slovenian"
+  ],
+  [
+   "spa",
+   "Spanish"
+  ],
+  [
+   "swe",
+   "Swedish"
+  ],
+  [
+   "tha",
+   "Thai"
+  ],
+  [
+   "tur",
+   "Turkish"
+  ],
+  [
+   "ukr",
+   "Ukrainian"
+  ],
+  [
+   "vie",
+   "Vietnamese"
+  ]
+ ],
+ "clean": [
+  {
+   "values": {
+    "title": "  Trip  "
+   },
+   "offset": 60,
+   "expect": {
+    "title": "Trip"
+   }
+  },
+  {
+   "values": {
+    "description": "a\r\nb"
+   },
+   "offset": 60,
+   "expect": {
+    "description": "a\r\nb"
+   }
+  },
+  {
+   "values": {
+    "title": "Bad \ud800 text"
+   },
+   "offset": 60,
+   "expect": {
+    "title": "Bad \ufffd text"
+   }
+  },
+  {
+   "values": {
+    "date": "2026-11-15"
+   },
+   "offset": 60,
+   "expect": {
+    "date": "2026-11-14T23:00:00Z"
+   }
+  },
+  {
+   "values": {
+    "date": "2026-11-15 14:30"
+   },
+   "offset": 60,
+   "expect": {
+    "date": "2026-11-15T13:30:00Z"
+   }
+  },
+  {
+   "values": {
+    "date": "2026-11-15T14:30:05"
+   },
+   "offset": 60,
+   "expect": {
+    "date": "2026-11-15T13:30:05Z"
+   }
+  },
+  {
+   "values": {
+    "date": " 2026-1-5 9:05 "
+   },
+   "offset": 60,
+   "expect": {
+    "date": "2026-01-05T08:05:00Z"
+   }
+  },
+  {
+   "values": {
+    "date": ""
+   },
+   "offset": 60,
+   "expect": {
+    "date": ""
+   }
+  },
+  {
+   "values": {
+    "date": "2026-02-30"
+   },
+   "offset": 60,
+   "error": "Write the date like 2026-11-15, or 2026-11-15 14:30 with the time."
+  },
+  {
+   "values": {
+    "date": "15/11/2026"
+   },
+   "offset": 60,
+   "error": "Write the date like 2026-11-15, or 2026-11-15 14:30 with the time."
+  },
+  {
+   "values": {
+    "date": "2026-11-15 24:00"
+   },
+   "offset": 60,
+   "error": "Write the date like 2026-11-15, or 2026-11-15 14:30 with the time."
+  },
+  {
+   "values": {
+    "date": "1900-01-01"
+   },
+   "offset": 60,
+   "error": "The date has to be between the years 1904 and 2100."
+  },
+  {
+   "values": {
+    "date": "2101-01-01"
+   },
+   "offset": 60,
+   "error": "The date has to be between the years 1904 and 2100."
+  },
+  {
+   "values": {
+    "date": "2026-01-01 00:30"
+   },
+   "offset": 60,
+   "expect": {
+    "date": "2025-12-31T23:30:00Z"
+   }
+  },
+  {
+   "values": {
+    "rotation": "90"
+   },
+   "offset": 60,
+   "expect": {
+    "rotation": 90
+   }
+  },
+  {
+   "values": {
+    "rotation": " 270 "
+   },
+   "offset": 60,
+   "expect": {
+    "rotation": 270
+   }
+  },
+  {
+   "values": {
+    "rotation": "45"
+   },
+   "offset": 60,
+   "error": "The rotation has to be 0, 90, 180 or 270 degrees."
+  },
+  {
+   "values": {
+    "rotation": "x"
+   },
+   "offset": 60,
+   "error": "The rotation has to be 0, 90, 180 or 270 degrees."
+  }
+ ],
+ "local": [
+  {
+   "iso": "2026-11-15T14:30:00Z",
+   "offset": 60,
+   "expect": "2026-11-15 15:30"
+  },
+  {
+   "iso": "2026-11-15T23:30:05Z",
+   "offset": 120,
+   "expect": "2026-11-16 01:30:05"
+  },
+  {
+   "iso": "2026-01-01T00:10:00Z",
+   "offset": -300,
+   "expect": "2025-12-31 19:10"
+  },
+  {
+   "iso": "junk",
+   "offset": 0,
+   "expect": ""
+  }
+ ],
+ "stored": [
+  {
+   "stamp": "2021-05-06T07:08:09.000000Z",
+   "expect": "2021-05-06T07:08:09Z"
+  },
+  {
+   "stamp": "2021-05-06 07:08:09",
+   "expect": "2021-05-06T07:08:09Z"
+  },
+  {
+   "stamp": "1904-01-01T00:00:00Z",
+   "expect": ""
+  },
+  {
+   "stamp": "1970-01-01T00:00:00.000000Z",
+   "expect": ""
+  },
+  {
+   "stamp": "",
+   "expect": ""
+  },
+  {
+   "stamp": "soon",
+   "expect": ""
+  }
+ ],
+ "common": [
+  {
+   "details": [
+    {
+     "title": "A",
+     "description": "",
+     "date": "",
+     "rotation": 0
+    },
+    {
+     "title": "A",
+     "description": "x",
+     "date": "",
+     "rotation": 90
+    }
+   ],
+   "expect": {
+    "title": "A",
+    "description": null,
+    "date": "",
+    "rotation": null
+   }
+  }
+ ],
+ "probe": [
+  {
+   "name": "rich.mp4",
+   "ext": "mp4",
+   "probe": {
+    "format": {
+     "tags": {
+      "creation_time": "2021-05-06T07:08:09.000000Z",
+      "title": "My \"clip\": one",
+      "comment": "Line one"
+     }
+    },
+    "streams": [
+     {
+      "index": 0,
+      "codec_type": "video",
+      "codec_name": "h264",
+      "codec_tag_string": "avc1",
+      "disposition": {
+       "default": 1
+      },
+      "tags": {
+       "language": "und"
+      }
+     },
+     {
+      "index": 1,
+      "codec_type": "audio",
+      "codec_name": "aac",
+      "codec_tag_string": "mp4a",
+      "disposition": {},
+      "tags": {
+       "language": "eng"
+      }
+     },
+     {
+      "index": 2,
+      "codec_type": "audio",
+      "codec_name": "aac",
+      "codec_tag_string": "mp4a",
+      "disposition": {
+       "default": 1
+      },
+      "tags": {
+       "language": "dan"
+      }
+     },
+     {
+      "index": 3,
+      "codec_type": "subtitle",
+      "codec_name": "mov_text",
+      "codec_tag_string": "tx3g",
+      "disposition": {
+       "default": 1
+      },
+      "tags": {
+       "language": "ger"
+      }
+     }
+    ]
+   },
+   "expect": {
+    "container": "mp4",
+    "title": "My \"clip\": one",
+    "description": "Line one",
+    "date": "2021-05-06T07:08:09Z",
+    "rotation": 0,
+    "tracks": [
+     {
+      "index": 1,
+      "kind": "audio",
+      "codec": "aac",
+      "language": "eng",
+      "default": false,
+      "title": ""
+     },
+     {
+      "index": 2,
+      "kind": "audio",
+      "codec": "aac",
+      "language": "dan",
+      "default": true,
+      "title": ""
+     },
+     {
+      "index": 3,
+      "kind": "subtitle",
+      "codec": "mov_text",
+      "language": "ger",
+      "default": true,
+      "title": ""
+     }
+    ],
+    "lost": [],
+    "streams": [
+     {
+      "index": 0,
+      "type": "video",
+      "codec": "h264",
+      "cover": false,
+      "keep": true
+     },
+     {
+      "index": 1,
+      "type": "audio",
+      "codec": "aac",
+      "cover": false,
+      "keep": true
+     },
+     {
+      "index": 2,
+      "type": "audio",
+      "codec": "aac",
+      "cover": false,
+      "keep": true
+     },
+     {
+      "index": 3,
+      "type": "subtitle",
+      "codec": "mov_text",
+      "cover": false,
+      "keep": true
+     }
+    ]
+   }
+  },
+  {
+   "name": "rot.mp4",
+   "ext": "mp4",
+   "probe": {
+    "format": {
+     "tags": {
+      "title": "My \"clip\": one",
+      "comment": "Line one"
+     }
+    },
+    "streams": [
+     {
+      "index": 0,
+      "codec_type": "video",
+      "codec_name": "h264",
+      "codec_tag_string": "avc1",
+      "disposition": {
+       "default": 1
+      },
+      "tags": {
+       "language": "und"
+      },
+      "side_data_list": [
+       {
+        "rotation": 90
+       }
+      ]
+     },
+     {
+      "index": 1,
+      "codec_type": "audio",
+      "codec_name": "aac",
+      "codec_tag_string": "mp4a",
+      "disposition": {},
+      "tags": {
+       "language": "eng"
+      }
+     },
+     {
+      "index": 2,
+      "codec_type": "audio",
+      "codec_name": "aac",
+      "codec_tag_string": "mp4a",
+      "disposition": {
+       "default": 1
+      },
+      "tags": {
+       "language": "dan"
+      }
+     },
+     {
+      "index": 3,
+      "codec_type": "subtitle",
+      "codec_name": "mov_text",
+      "codec_tag_string": "tx3g",
+      "disposition": {
+       "default": 1
+      },
+      "tags": {
+       "language": "ger"
+      }
+     }
+    ]
+   },
+   "expect": {
+    "container": "mp4",
+    "title": "My \"clip\": one",
+    "description": "Line one",
+    "date": "",
+    "rotation": 270,
+    "tracks": [
+     {
+      "index": 1,
+      "kind": "audio",
+      "codec": "aac",
+      "language": "eng",
+      "default": false,
+      "title": ""
+     },
+     {
+      "index": 2,
+      "kind": "audio",
+      "codec": "aac",
+      "language": "dan",
+      "default": true,
+      "title": ""
+     },
+     {
+      "index": 3,
+      "kind": "subtitle",
+      "codec": "mov_text",
+      "language": "ger",
+      "default": true,
+      "title": ""
+     }
+    ],
+    "lost": [],
+    "streams": [
+     {
+      "index": 0,
+      "type": "video",
+      "codec": "h264",
+      "cover": false,
+      "keep": true
+     },
+     {
+      "index": 1,
+      "type": "audio",
+      "codec": "aac",
+      "cover": false,
+      "keep": true
+     },
+     {
+      "index": 2,
+      "type": "audio",
+      "codec": "aac",
+      "cover": false,
+      "keep": true
+     },
+     {
+      "index": 3,
+      "type": "subtitle",
+      "codec": "mov_text",
+      "cover": false,
+      "keep": true
+     }
+    ]
+   }
+  },
+  {
+   "name": "rich.mkv",
+   "ext": "mkv",
+   "probe": {
+    "format": {
+     "tags": {
+      "title": "My \"clip\": one",
+      "COMMENT": "Line one"
+     }
+    },
+    "streams": [
+     {
+      "index": 0,
+      "codec_type": "video",
+      "codec_name": "h264",
+      "codec_tag_string": "[0][0][0][0]",
+      "disposition": {
+       "default": 1
+      },
+      "tags": {}
+     },
+     {
+      "index": 1,
+      "codec_type": "audio",
+      "codec_name": "aac",
+      "codec_tag_string": "[0][0][0][0]",
+      "disposition": {},
+      "tags": {
+       "language": "eng"
+      }
+     },
+     {
+      "index": 2,
+      "codec_type": "audio",
+      "codec_name": "aac",
+      "codec_tag_string": "[0][0][0][0]",
+      "disposition": {
+       "default": 1
+      },
+      "tags": {
+       "language": "dan"
+      }
+     },
+     {
+      "index": 3,
+      "codec_type": "subtitle",
+      "codec_name": "subrip",
+      "codec_tag_string": "[0][0][0][0]",
+      "disposition": {
+       "default": 1
+      },
+      "tags": {
+       "language": "ger"
+      }
+     }
+    ]
+   },
+   "expect": {
+    "container": "mkv",
+    "title": "My \"clip\": one",
+    "description": "Line one",
+    "date": "",
+    "rotation": 0,
+    "tracks": [
+     {
+      "index": 1,
+      "kind": "audio",
+      "codec": "aac",
+      "language": "eng",
+      "default": false,
+      "title": ""
+     },
+     {
+      "index": 2,
+      "kind": "audio",
+      "codec": "aac",
+      "language": "dan",
+      "default": true,
+      "title": ""
+     },
+     {
+      "index": 3,
+      "kind": "subtitle",
+      "codec": "subrip",
+      "language": "ger",
+      "default": true,
+      "title": ""
+     }
+    ],
+    "lost": [],
+    "streams": [
+     {
+      "index": 0,
+      "type": "video",
+      "codec": "h264",
+      "cover": false,
+      "keep": true
+     },
+     {
+      "index": 1,
+      "type": "audio",
+      "codec": "aac",
+      "cover": false,
+      "keep": true
+     },
+     {
+      "index": 2,
+      "type": "audio",
+      "codec": "aac",
+      "cover": false,
+      "keep": true
+     },
+     {
+      "index": 3,
+      "type": "subtitle",
+      "codec": "subrip",
+      "cover": false,
+      "keep": true
+     }
+    ]
+   }
+  },
+  {
+   "name": "plain.webm",
+   "ext": "webm",
+   "probe": {
+    "format": {
+     "tags": {
+      "title": "Trip"
+     }
+    },
+    "streams": [
+     {
+      "index": 0,
+      "codec_type": "video",
+      "codec_name": "vp8",
+      "codec_tag_string": "[0][0][0][0]",
+      "disposition": {},
+      "tags": {}
+     },
+     {
+      "index": 1,
+      "codec_type": "audio",
+      "codec_name": "vorbis",
+      "codec_tag_string": "[0][0][0][0]",
+      "disposition": {},
+      "tags": {
+       "language": "swe"
+      }
+     }
+    ]
+   },
+   "expect": {
+    "container": "webm",
+    "title": "Trip",
+    "description": "",
+    "date": "",
+    "rotation": 0,
+    "tracks": [
+     {
+      "index": 1,
+      "kind": "audio",
+      "codec": "vorbis",
+      "language": "swe",
+      "default": false,
+      "title": ""
+     }
+    ],
+    "lost": [],
+    "streams": [
+     {
+      "index": 0,
+      "type": "video",
+      "codec": "vp8",
+      "cover": false,
+      "keep": true
+     },
+     {
+      "index": 1,
+      "type": "audio",
+      "codec": "vorbis",
+      "cover": false,
+      "keep": true
+     }
+    ]
+   }
+  },
+  {
+   "name": "cover.mp4",
+   "ext": "mp4",
+   "probe": {
+    "format": {
+     "tags": {
+      "creation_time": "2021-05-06T07:08:09.000000Z",
+      "title": "My \"clip\": one",
+      "comment": "Line one"
+     }
+    },
+    "streams": [
+     {
+      "index": 0,
+      "codec_type": "video",
+      "codec_name": "h264",
+      "codec_tag_string": "avc1",
+      "disposition": {
+       "default": 1
+      },
+      "tags": {
+       "language": "und"
+      }
+     },
+     {
+      "index": 1,
+      "codec_type": "audio",
+      "codec_name": "aac",
+      "codec_tag_string": "mp4a",
+      "disposition": {},
+      "tags": {
+       "language": "eng"
+      }
+     },
+     {
+      "index": 2,
+      "codec_type": "audio",
+      "codec_name": "aac",
+      "codec_tag_string": "mp4a",
+      "disposition": {
+       "default": 1
+      },
+      "tags": {
+       "language": "dan"
+      }
+     },
+     {
+      "index": 3,
+      "codec_type": "subtitle",
+      "codec_name": "mov_text",
+      "codec_tag_string": "tx3g",
+      "disposition": {
+       "default": 1
+      },
+      "tags": {
+       "language": "ger"
+      }
+     },
+     {
+      "index": 4,
+      "codec_type": "video",
+      "codec_name": "mjpeg",
+      "codec_tag_string": "[0][0][0][0]",
+      "disposition": {
+       "attached_pic": 1
+      }
+     }
+    ]
+   },
+   "expect": {
+    "container": "mp4",
+    "title": "My \"clip\": one",
+    "description": "Line one",
+    "date": "2021-05-06T07:08:09Z",
+    "rotation": 0,
+    "tracks": [
+     {
+      "index": 1,
+      "kind": "audio",
+      "codec": "aac",
+      "language": "eng",
+      "default": false,
+      "title": ""
+     },
+     {
+      "index": 2,
+      "kind": "audio",
+      "codec": "aac",
+      "language": "dan",
+      "default": true,
+      "title": ""
+     },
+     {
+      "index": 3,
+      "kind": "subtitle",
+      "codec": "mov_text",
+      "language": "ger",
+      "default": true,
+      "title": ""
+     }
+    ],
+    "lost": [],
+    "streams": [
+     {
+      "index": 0,
+      "type": "video",
+      "codec": "h264",
+      "cover": false,
+      "keep": true
+     },
+     {
+      "index": 1,
+      "type": "audio",
+      "codec": "aac",
+      "cover": false,
+      "keep": true
+     },
+     {
+      "index": 2,
+      "type": "audio",
+      "codec": "aac",
+      "cover": false,
+      "keep": true
+     },
+     {
+      "index": 3,
+      "type": "subtitle",
+      "codec": "mov_text",
+      "cover": false,
+      "keep": true
+     },
+     {
+      "index": 4,
+      "type": "video",
+      "codec": "mjpeg",
+      "cover": true,
+      "keep": true
+     }
+    ]
+   }
+  },
+  {
+   "name": "gopro.mp4",
+   "ext": "mp4",
+   "probe": {
+    "format": {
+     "tags": {
+      "title": "GoPro",
+      "creation_time": "1904-01-01T00:00:00.000000Z",
+      "com.apple.quicktime.make": "GoPro"
+     }
+    },
+    "streams": [
+     {
+      "index": 0,
+      "codec_type": "video",
+      "codec_name": "h264",
+      "disposition": {
+       "default": 1
+      },
+      "tags": {
+       "rotate": "180"
+      }
+     },
+     {
+      "index": 1,
+      "codec_type": "audio",
+      "codec_name": "aac",
+      "disposition": {
+       "default": 1
+      },
+      "tags": {
+       "language": "und"
+      }
+     },
+     {
+      "index": 2,
+      "codec_type": "data",
+      "codec_name": "none",
+      "codec_tag_string": "tmcd"
+     },
+     {
+      "index": 3,
+      "codec_type": "data",
+      "codec_name": "none",
+      "codec_tag_string": "gpmd"
+     },
+     {
+      "index": 4,
+      "codec_type": "subtitle",
+      "codec_name": "subrip",
+      "tags": {
+       "language": "deu"
+      }
+     }
+    ]
+   },
+   "expect": {
+    "container": "mp4",
+    "title": "GoPro",
+    "description": "",
+    "date": "",
+    "rotation": 180,
+    "tracks": [
+     {
+      "index": 1,
+      "kind": "audio",
+      "codec": "aac",
+      "language": "",
+      "default": true,
+      "title": ""
+     }
+    ],
+    "lost": [
+     "a data track (like GPS from an action camera)",
+     "a subtitle track this format can't hold",
+     "the camera details (make, model, place)"
+    ],
+    "streams": [
+     {
+      "index": 0,
+      "type": "video",
+      "codec": "h264",
+      "cover": false,
+      "keep": true
+     },
+     {
+      "index": 1,
+      "type": "audio",
+      "codec": "aac",
+      "cover": false,
+      "keep": true
+     },
+     {
+      "index": 2,
+      "type": "data",
+      "codec": "none",
+      "cover": false,
+      "keep": false
+     },
+     {
+      "index": 3,
+      "type": "data",
+      "codec": "none",
+      "cover": false,
+      "keep": false
+     },
+     {
+      "index": 4,
+      "type": "subtitle",
+      "codec": "subrip",
+      "cover": false,
+      "keep": false
+     }
+    ]
+   }
+  },
+  {
+   "name": "fonts.mkv",
+   "ext": "mkv",
+   "probe": {
+    "format": {
+     "tags": {
+      "DESCRIPTION": "From the description",
+      "creation_time": "1970-01-01T00:00:00Z"
+     }
+    },
+    "streams": [
+     {
+      "index": 0,
+      "codec_type": "video",
+      "codec_name": "hevc"
+     },
+     {
+      "index": 1,
+      "codec_type": "audio",
+      "codec_name": "opus",
+      "tags": {
+       "language": "jpn",
+       "title": "Original"
+      },
+      "disposition": {
+       "default": 1
+      }
+     },
+     {
+      "index": 2,
+      "codec_type": "subtitle",
+      "codec_name": "ass",
+      "tags": {
+       "language": "eng"
+      }
+     },
+     {
+      "index": 3,
+      "codec_type": "attachment",
+      "codec_name": "ttf"
+     }
+    ]
+   },
+   "expect": {
+    "container": "mkv",
+    "title": "",
+    "description": "From the description",
+    "date": "",
+    "rotation": 0,
+    "tracks": [
+     {
+      "index": 1,
+      "kind": "audio",
+      "codec": "opus",
+      "language": "jpn",
+      "default": true,
+      "title": "Original"
+     },
+     {
+      "index": 2,
+      "kind": "subtitle",
+      "codec": "ass",
+      "language": "eng",
+      "default": false,
+      "title": ""
+     }
+    ],
+    "lost": [],
+    "streams": [
+     {
+      "index": 0,
+      "type": "video",
+      "codec": "hevc",
+      "cover": false,
+      "keep": true
+     },
+     {
+      "index": 1,
+      "type": "audio",
+      "codec": "opus",
+      "cover": false,
+      "keep": true
+     },
+     {
+      "index": 2,
+      "type": "subtitle",
+      "codec": "ass",
+      "cover": false,
+      "keep": true
+     },
+     {
+      "index": 3,
+      "type": "attachment",
+      "codec": "ttf",
+      "cover": false,
+      "keep": true
+     }
+    ]
+   }
+  },
+  {
+   "name": "clip.mov",
+   "ext": "mov",
+   "probe": {
+    "format": {
+     "tags": {
+      "creation_time": "2021-05-06T07:08:09.000000Z",
+      "title": "My \"clip\": one",
+      "comment": "Line one"
+     }
+    },
+    "streams": [
+     {
+      "index": 0,
+      "codec_type": "video",
+      "codec_name": "h264",
+      "codec_tag_string": "avc1",
+      "disposition": {
+       "default": 1
+      },
+      "tags": {
+       "language": "und"
+      }
+     },
+     {
+      "index": 1,
+      "codec_type": "audio",
+      "codec_name": "aac",
+      "codec_tag_string": "mp4a",
+      "disposition": {},
+      "tags": {
+       "language": "eng"
+      }
+     },
+     {
+      "index": 2,
+      "codec_type": "audio",
+      "codec_name": "aac",
+      "codec_tag_string": "mp4a",
+      "disposition": {
+       "default": 1
+      },
+      "tags": {
+       "language": "dan"
+      }
+     },
+     {
+      "index": 3,
+      "codec_type": "subtitle",
+      "codec_name": "mov_text",
+      "codec_tag_string": "tx3g",
+      "disposition": {
+       "default": 1
+      },
+      "tags": {
+       "language": "ger"
+      }
+     }
+    ]
+   },
+   "expect": {
+    "container": "mov",
+    "title": "My \"clip\": one",
+    "description": "Line one",
+    "date": "2021-05-06T07:08:09Z",
+    "rotation": 0,
+    "tracks": [
+     {
+      "index": 1,
+      "kind": "audio",
+      "codec": "aac",
+      "language": "eng",
+      "default": false,
+      "title": ""
+     },
+     {
+      "index": 2,
+      "kind": "audio",
+      "codec": "aac",
+      "language": "dan",
+      "default": true,
+      "title": ""
+     },
+     {
+      "index": 3,
+      "kind": "subtitle",
+      "codec": "mov_text",
+      "language": "ger",
+      "default": true,
+      "title": ""
+     }
+    ],
+    "lost": [],
+    "streams": [
+     {
+      "index": 0,
+      "type": "video",
+      "codec": "h264",
+      "cover": false,
+      "keep": true
+     },
+     {
+      "index": 1,
+      "type": "audio",
+      "codec": "aac",
+      "cover": false,
+      "keep": true
+     },
+     {
+      "index": 2,
+      "type": "audio",
+      "codec": "aac",
+      "cover": false,
+      "keep": true
+     },
+     {
+      "index": 3,
+      "type": "subtitle",
+      "codec": "mov_text",
+      "cover": false,
+      "keep": true
+     }
+    ]
+   }
+  },
+  {
+   "name": "x.avi",
+   "ext": "avi",
+   "probe": {
+    "format": {
+     "tags": {
+      "creation_time": "2021-05-06T07:08:09.000000Z",
+      "title": "My \"clip\": one",
+      "comment": "Line one"
+     }
+    },
+    "streams": [
+     {
+      "index": 0,
+      "codec_type": "video",
+      "codec_name": "h264",
+      "codec_tag_string": "avc1",
+      "disposition": {
+       "default": 1
+      },
+      "tags": {
+       "language": "und"
+      }
+     },
+     {
+      "index": 1,
+      "codec_type": "audio",
+      "codec_name": "aac",
+      "codec_tag_string": "mp4a",
+      "disposition": {},
+      "tags": {
+       "language": "eng"
+      }
+     },
+     {
+      "index": 2,
+      "codec_type": "audio",
+      "codec_name": "aac",
+      "codec_tag_string": "mp4a",
+      "disposition": {
+       "default": 1
+      },
+      "tags": {
+       "language": "dan"
+      }
+     },
+     {
+      "index": 3,
+      "codec_type": "subtitle",
+      "codec_name": "mov_text",
+      "codec_tag_string": "tx3g",
+      "disposition": {
+       "default": 1
+      },
+      "tags": {
+       "language": "ger"
+      }
+     }
+    ]
+   },
+   "error": "Only MP4, MOV, M4V, MKV and WebM videos can be changed here."
+  }
+ ],
+ "args": [
+  {
+   "file": "rich.mp4",
+   "edit": {
+    "values": {
+     "title": "New",
+     "description": "Two\nlines",
+     "date": "2024-02-03 10:20"
+    },
+    "languages": {},
+    "defaults": {}
+   },
+   "major": 7,
+   "offset": 60,
+   "expect": [
+    "-i",
+    "/in/rich.mp4",
+    "-map",
+    "0:0",
+    "-map",
+    "0:1",
+    "-map",
+    "0:2",
+    "-map",
+    "0:3",
+    "-c",
+    "copy",
+    "-map_metadata",
+    "0",
+    "-map_chapters",
+    "0",
+    "-metadata",
+    "title=New",
+    "-metadata",
+    "comment=Two\nlines",
+    "-metadata",
+    "description=Two\nlines",
+    "-metadata",
+    "creation_time=2024-02-03T09:20:00Z",
+    "/out/rich.mp4"
+   ]
+  },
+  {
+   "file": "rich.mp4",
+   "edit": {
+    "values": {
+     "date": ""
+    },
+    "languages": {},
+    "defaults": {}
+   },
+   "major": 7,
+   "offset": 60,
+   "expect": [
+    "-i",
+    "/in/rich.mp4",
+    "-map",
+    "0:0",
+    "-map",
+    "0:1",
+    "-map",
+    "0:2",
+    "-map",
+    "0:3",
+    "-c",
+    "copy",
+    "-map_metadata",
+    "0",
+    "-map_chapters",
+    "0",
+    "-metadata",
+    "creation_time=",
+    "/out/rich.mp4"
+   ]
+  },
+  {
+   "file": "rich.mp4",
+   "edit": {
+    "values": {
+     "rotation": "90"
+    },
+    "languages": {},
+    "defaults": {}
+   },
+   "major": 7,
+   "offset": 60,
+   "expect": [
+    "-display_rotation:0",
+    "270",
+    "-i",
+    "/in/rich.mp4",
+    "-map",
+    "0:0",
+    "-map",
+    "0:1",
+    "-map",
+    "0:2",
+    "-map",
+    "0:3",
+    "-c",
+    "copy",
+    "-map_metadata",
+    "0",
+    "-map_chapters",
+    "0",
+    "/out/rich.mp4"
+   ]
+  },
+  {
+   "file": "rich.mp4",
+   "edit": {
+    "values": {
+     "rotation": "90"
+    },
+    "languages": {},
+    "defaults": {}
+   },
+   "major": 6,
+   "offset": 60,
+   "expect": [
+    "-display_rotation:0",
+    "270",
+    "-i",
+    "/in/rich.mp4",
+    "-map",
+    "0:0",
+    "-map",
+    "0:1",
+    "-map",
+    "0:2",
+    "-map",
+    "0:3",
+    "-c",
+    "copy",
+    "-map_metadata",
+    "0",
+    "-map_chapters",
+    "0",
+    "/out/rich.mp4"
+   ]
+  },
+  {
+   "file": "rich.mp4",
+   "edit": {
+    "values": {
+     "rotation": "270"
+    },
+    "languages": {},
+    "defaults": {}
+   },
+   "major": 5,
+   "offset": 60,
+   "expect": [
+    "-i",
+    "/in/rich.mp4",
+    "-map",
+    "0:0",
+    "-map",
+    "0:1",
+    "-map",
+    "0:2",
+    "-map",
+    "0:3",
+    "-c",
+    "copy",
+    "-map_metadata",
+    "0",
+    "-map_chapters",
+    "0",
+    "-metadata:s:0",
+    "rotate=270",
+    "/out/rich.mp4"
+   ]
+  },
+  {
+   "file": "rich.mp4",
+   "edit": {
+    "values": {
+     "rotation": "0"
+    },
+    "languages": {},
+    "defaults": {}
+   },
+   "major": null,
+   "offset": 60,
+   "expect": [
+    "-display_rotation:0",
+    "0",
+    "-i",
+    "/in/rich.mp4",
+    "-map",
+    "0:0",
+    "-map",
+    "0:1",
+    "-map",
+    "0:2",
+    "-map",
+    "0:3",
+    "-c",
+    "copy",
+    "-map_metadata",
+    "0",
+    "-map_chapters",
+    "0",
+    "/out/rich.mp4"
+   ]
+  },
+  {
+   "file": "rich.mp4",
+   "edit": {
+    "values": {},
+    "languages": {
+     "1": "fre",
+     "2": "",
+     "3": "DEU"
+    },
+    "defaults": {}
+   },
+   "major": 7,
+   "offset": 60,
+   "expect": [
+    "-i",
+    "/in/rich.mp4",
+    "-map",
+    "0:0",
+    "-map",
+    "0:1",
+    "-map",
+    "0:2",
+    "-map",
+    "0:3",
+    "-c",
+    "copy",
+    "-map_metadata",
+    "0",
+    "-map_chapters",
+    "0",
+    "-metadata:s:1",
+    "language=fre",
+    "-metadata:s:2",
+    "language=und",
+    "-metadata:s:3",
+    "language=ger",
+    "/out/rich.mp4"
+   ]
+  },
+  {
+   "file": "rich.mp4",
+   "edit": {
+    "values": {},
+    "languages": {},
+    "defaults": {
+     "audio": 1,
+     "subtitle": 3
+    }
+   },
+   "major": 7,
+   "offset": 60,
+   "expect": [
+    "-i",
+    "/in/rich.mp4",
+    "-map",
+    "0:0",
+    "-map",
+    "0:1",
+    "-map",
+    "0:2",
+    "-map",
+    "0:3",
+    "-c",
+    "copy",
+    "-map_metadata",
+    "0",
+    "-map_chapters",
+    "0",
+    "-disposition:1",
+    "+default",
+    "-disposition:2",
+    "-default",
+    "-disposition:3",
+    "+default",
+    "/out/rich.mp4"
+   ]
+  },
+  {
+   "file": "rich.mp4",
+   "edit": {
+    "values": {},
+    "languages": {},
+    "defaults": {
+     "subtitle": null
+    }
+   },
+   "major": 7,
+   "offset": 60,
+   "error": "MP4, MOV and M4V videos always have a default track of each kind."
+  },
+  {
+   "file": "rich.mkv",
+   "edit": {
+    "values": {},
+    "languages": {},
+    "defaults": {
+     "subtitle": null,
+     "audio": 1
+    }
+   },
+   "major": 7,
+   "offset": 60,
+   "expect": [
+    "-i",
+    "/in/rich.mkv",
+    "-map",
+    "0:0",
+    "-map",
+    "0:1",
+    "-map",
+    "0:2",
+    "-map",
+    "0:3",
+    "-c",
+    "copy",
+    "-map_metadata",
+    "0",
+    "-map_chapters",
+    "0",
+    "-disposition:1",
+    "+default",
+    "-disposition:2",
+    "-default",
+    "-disposition:3",
+    "-default",
+    "/out/rich.mkv"
+   ]
+  },
+  {
+   "file": "rich.mkv",
+   "edit": {
+    "values": {
+     "rotation": "90"
+    },
+    "languages": {},
+    "defaults": {}
+   },
+   "major": 7,
+   "offset": 60,
+   "error": "MKV and WebM videos can't store a rotation \u2014 only MP4, MOV and M4V can."
+  },
+  {
+   "file": "rich.mkv",
+   "edit": {
+    "values": {
+     "title": ""
+    },
+    "languages": {},
+    "defaults": {}
+   },
+   "major": 7,
+   "offset": 60,
+   "expect": [
+    "-i",
+    "/in/rich.mkv",
+    "-map",
+    "0:0",
+    "-map",
+    "0:1",
+    "-map",
+    "0:2",
+    "-map",
+    "0:3",
+    "-c",
+    "copy",
+    "-map_metadata",
+    "0",
+    "-map_chapters",
+    "0",
+    "-metadata",
+    "title=",
+    "/out/rich.mkv"
+   ]
+  },
+  {
+   "file": "rich.mp4",
+   "edit": {
+    "values": {},
+    "languages": {
+     "1": "english"
+    },
+    "defaults": {}
+   },
+   "major": 7,
+   "offset": 60,
+   "error": "A language has to be a 3-letter code like eng."
+  },
+  {
+   "file": "rich.mp4",
+   "edit": {
+    "values": {},
+    "languages": {
+     "9": "eng"
+    },
+    "defaults": {}
+   },
+   "major": 7,
+   "offset": 60,
+   "error": "That track isn't in this video any more."
+  },
+  {
+   "file": "cover.mp4",
+   "edit": {
+    "values": {
+     "rotation": "180"
+    },
+    "languages": {},
+    "defaults": {}
+   },
+   "major": 5,
+   "offset": 60,
+   "expect": [
+    "-i",
+    "/in/cover.mp4",
+    "-map",
+    "0:0",
+    "-map",
+    "0:1",
+    "-map",
+    "0:2",
+    "-map",
+    "0:3",
+    "-map",
+    "0:4",
+    "-c",
+    "copy",
+    "-map_metadata",
+    "0",
+    "-map_chapters",
+    "0",
+    "-metadata:s:0",
+    "rotate=180",
+    "/out/cover.mp4"
+   ]
+  },
+  {
+   "file": "cover.mp4",
+   "edit": {
+    "values": {
+     "rotation": "180"
+    },
+    "languages": {},
+    "defaults": {}
+   },
+   "major": 7,
+   "offset": 60,
+   "expect": [
+    "-display_rotation:0",
+    "180",
+    "-i",
+    "/in/cover.mp4",
+    "-map",
+    "0:0",
+    "-map",
+    "0:1",
+    "-map",
+    "0:2",
+    "-map",
+    "0:3",
+    "-map",
+    "0:4",
+    "-c",
+    "copy",
+    "-map_metadata",
+    "0",
+    "-map_chapters",
+    "0",
+    "/out/cover.mp4"
+   ]
+  },
+  {
+   "file": "gopro.mp4",
+   "edit": {
+    "values": {
+     "title": "Ride"
+    },
+    "languages": {},
+    "defaults": {}
+   },
+   "major": 7,
+   "offset": 60,
+   "expect": [
+    "-i",
+    "/in/gopro.mp4",
+    "-map",
+    "0:0",
+    "-map",
+    "0:1",
+    "-c",
+    "copy",
+    "-map_metadata",
+    "0",
+    "-map_chapters",
+    "0",
+    "-metadata",
+    "title=Ride",
+    "/out/gopro.mp4"
+   ]
+  },
+  {
+   "file": "fonts.mkv",
+   "edit": {
+    "values": {},
+    "languages": {
+     "2": "dan"
+    },
+    "defaults": {}
+   },
+   "major": 7,
+   "offset": 60,
+   "expect": [
+    "-i",
+    "/in/fonts.mkv",
+    "-map",
+    "0:0",
+    "-map",
+    "0:1",
+    "-map",
+    "0:2",
+    "-map",
+    "0:3",
+    "-c",
+    "copy",
+    "-map_metadata",
+    "0",
+    "-map_chapters",
+    "0",
+    "-metadata:s:2",
+    "language=dan",
+    "/out/fonts.mkv"
+   ]
+  },
+  {
+   "file": "plain.webm",
+   "edit": {
+    "values": {
+     "date": "2026-11-15 14:30:05"
+    },
+    "languages": {},
+    "defaults": {}
+   },
+   "major": 7,
+   "offset": 60,
+   "expect": [
+    "-i",
+    "/in/plain.webm",
+    "-map",
+    "0:0",
+    "-map",
+    "0:1",
+    "-c",
+    "copy",
+    "-map_metadata",
+    "0",
+    "-map_chapters",
+    "0",
+    "-metadata",
+    "creation_time=2026-11-15T13:30:05Z",
+    "/out/plain.webm"
+   ]
+  },
+  {
+   "file": "clip.mov",
+   "edit": {
+    "values": {},
+    "languages": {
+     "1": "fre",
+     "2": "swe",
+     "3": "ger"
+    },
+    "defaults": {}
+   },
+   "major": 7,
+   "offset": 60,
+   "expect": [
+    "-i",
+    "/in/clip.mov",
+    "-map",
+    "0:0",
+    "-map",
+    "0:1",
+    "-map",
+    "0:2",
+    "-map",
+    "0:3",
+    "-c",
+    "copy",
+    "-map_metadata",
+    "0",
+    "-map_chapters",
+    "0",
+    "-metadata:s:1",
+    "language=fra",
+    "-metadata:s:2",
+    "language=sve",
+    "-metadata:s:3",
+    "language=ger",
+    "/out/clip.mov"
+   ]
+  },
+  {
+   "file": "clip.mov",
+   "edit": {
+    "values": {},
+    "languages": {
+     "1": "hrv"
+    },
+    "defaults": {}
+   },
+   "major": 7,
+   "offset": 60,
+   "error": "MOV videos can't store that language \u2014 choose another or save as MP4."
+  }
+ ],
+ "log": [
+  {
+   "name": "rich.mp4",
+   "log": "Input #0, mov,mp4,m4a,3gp,3g2,mj2, from '/tmp/claude-0/-home-user/289a1127-38bf-536c-bcc7-bdf06e3b83d2/scratchpad/vt/rich.mp4':\n  Metadata:\n    major_brand     : isom\n    minor_version   : 512\n    compatible_brands: isomiso2avc1mp41\n    creation_time   : 2021-05-06T07:08:09.000000Z\n    title           : My \"clip\": one\n    encoder         : Lavf60.16.100\n    comment         : Line one\n  Duration: 00:00:01.00, start: 0.000000, bitrate: 192 kb/s\n  Stream #0:0[0x1](und): Video: h264 (High 4:4:4 Predictive) (avc1 / 0x31637661), yuv444p(progressive), 64x48 [SAR 1:1 DAR 4:3], 18 kb/s, 25 fps, 25 tbr, 12800 tbn (default)\n    Metadata:\n      creation_time   : 2021-05-06T07:08:09.000000Z\n      handler_name    : VideoHandler\n      vendor_id       : [0][0][0][0]\n      encoder         : Lavc60.31.102 libx264\n  Stream #0:1[0x2](eng): Audio: aac (LC) (mp4a / 0x6134706D), 44100 Hz, mono, fltp, 70 kb/s\n    Metadata:\n      creation_time   : 2021-05-06T07:08:09.000000Z\n      handler_name    : SoundHandler\n      vendor_id       : [0][0][0][0]\n  Stream #0:2[0x3](dan): Audio: aac (LC) (mp4a / 0x6134706D), 44100 Hz, mono, fltp, 70 kb/s (default)\n    Metadata:\n      creation_time   : 2021-05-06T07:08:09.000000Z\n      handler_name    : SoundHandler\n      vendor_id       : [0][0][0][0]\n  Stream #0:3[0x4](ger): Subtitle: mov_text (tx3g / 0x67337874), 0 kb/s (default)\n    Metadata:\n      creation_time   : 2021-05-06T07:08:09.000000Z\n      handler_name    : SubtitleHandler\nAt least one output file must be specified\n",
+   "expect": {
+    "format": {
+     "tags": {
+      "creation_time": "2021-05-06T07:08:09.000000Z",
+      "title": "My \"clip\": one",
+      "comment": "Line one"
+     }
+    },
+    "streams": [
+     {
+      "index": 0,
+      "codec_type": "video",
+      "codec_name": "h264",
+      "codec_tag_string": "avc1",
+      "disposition": {
+       "default": 1
+      },
+      "tags": {
+       "language": "und"
+      }
+     },
+     {
+      "index": 1,
+      "codec_type": "audio",
+      "codec_name": "aac",
+      "codec_tag_string": "mp4a",
+      "disposition": {},
+      "tags": {
+       "language": "eng"
+      }
+     },
+     {
+      "index": 2,
+      "codec_type": "audio",
+      "codec_name": "aac",
+      "codec_tag_string": "mp4a",
+      "disposition": {
+       "default": 1
+      },
+      "tags": {
+       "language": "dan"
+      }
+     },
+     {
+      "index": 3,
+      "codec_type": "subtitle",
+      "codec_name": "mov_text",
+      "codec_tag_string": "tx3g",
+      "disposition": {
+       "default": 1
+      },
+      "tags": {
+       "language": "ger"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "rot.mp4",
+   "log": "Input #0, mov,mp4,m4a,3gp,3g2,mj2, from '/tmp/claude-0/-home-user/289a1127-38bf-536c-bcc7-bdf06e3b83d2/scratchpad/vt/rot.mp4':\n  Metadata:\n    major_brand     : isom\n    minor_version   : 512\n    compatible_brands: isomiso2avc1mp41\n    title           : My \"clip\": one\n    encoder         : Lavf60.16.100\n    comment         : Line one\n  Duration: 00:00:01.00, start: 0.000000, bitrate: 192 kb/s\n  Stream #0:0[0x1](und): Video: h264 (High 4:4:4 Predictive) (avc1 / 0x31637661), yuv444p(progressive), 64x48 [SAR 1:1 DAR 4:3], 18 kb/s, 25 fps, 25 tbr, 12800 tbn (default)\n    Metadata:\n      handler_name    : VideoHandler\n      vendor_id       : [0][0][0][0]\n      encoder         : Lavc60.31.102 libx264\n    Side data:\n      displaymatrix: rotation of 90.00 degrees\n  Stream #0:1[0x2](eng): Audio: aac (LC) (mp4a / 0x6134706D), 44100 Hz, mono, fltp, 70 kb/s\n    Metadata:\n      handler_name    : SoundHandler\n      vendor_id       : [0][0][0][0]\n  Stream #0:2[0x3](dan): Audio: aac (LC) (mp4a / 0x6134706D), 44100 Hz, mono, fltp, 70 kb/s (default)\n    Metadata:\n      handler_name    : SoundHandler\n      vendor_id       : [0][0][0][0]\n  Stream #0:3[0x4](ger): Subtitle: mov_text (tx3g / 0x67337874), 0 kb/s (default)\n    Metadata:\n      handler_name    : SubtitleHandler\nAt least one output file must be specified\n",
+   "expect": {
+    "format": {
+     "tags": {
+      "title": "My \"clip\": one",
+      "comment": "Line one"
+     }
+    },
+    "streams": [
+     {
+      "index": 0,
+      "codec_type": "video",
+      "codec_name": "h264",
+      "codec_tag_string": "avc1",
+      "disposition": {
+       "default": 1
+      },
+      "tags": {
+       "language": "und"
+      },
+      "side_data_list": [
+       {
+        "rotation": 90
+       }
+      ]
+     },
+     {
+      "index": 1,
+      "codec_type": "audio",
+      "codec_name": "aac",
+      "codec_tag_string": "mp4a",
+      "disposition": {},
+      "tags": {
+       "language": "eng"
+      }
+     },
+     {
+      "index": 2,
+      "codec_type": "audio",
+      "codec_name": "aac",
+      "codec_tag_string": "mp4a",
+      "disposition": {
+       "default": 1
+      },
+      "tags": {
+       "language": "dan"
+      }
+     },
+     {
+      "index": 3,
+      "codec_type": "subtitle",
+      "codec_name": "mov_text",
+      "codec_tag_string": "tx3g",
+      "disposition": {
+       "default": 1
+      },
+      "tags": {
+       "language": "ger"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "rich.mkv",
+   "log": "Input #0, matroska,webm, from '/tmp/claude-0/-home-user/289a1127-38bf-536c-bcc7-bdf06e3b83d2/scratchpad/vt/rich.mkv':\n  Metadata:\n    title           : My \"clip\": one\n    COMMENT         : Line one\n    MAJOR_BRAND     : isom\n    MINOR_VERSION   : 512\n    COMPATIBLE_BRANDS: isomiso2avc1mp41\n    ENCODER         : Lavf60.16.100\n  Duration: 00:00:01.02, start: 0.000000, bitrate: 176 kb/s\n  Stream #0:0: Video: h264 (High 4:4:4 Predictive), yuv444p(progressive), 64x48 [SAR 1:1 DAR 4:3], 25 fps, 25 tbr, 1k tbn (default)\n    Metadata:\n      HANDLER_NAME    : VideoHandler\n      VENDOR_ID       : [0][0][0][0]\n      ENCODER         : Lavc60.31.102 libx264\n      DURATION        : 00:00:01.023000000\n  Stream #0:1(eng): Audio: aac (LC), 44100 Hz, mono, fltp\n    Metadata:\n      HANDLER_NAME    : SoundHandler\n      VENDOR_ID       : [0][0][0][0]\n      DURATION        : 00:00:01.023000000\n  Stream #0:2(dan): Audio: aac (LC), 44100 Hz, mono, fltp (default)\n    Metadata:\n      HANDLER_NAME    : SoundHandler\n      VENDOR_ID       : [0][0][0][0]\n      DURATION        : 00:00:01.023000000\n  Stream #0:3(ger): Subtitle: subrip (default)\n    Metadata:\n      HANDLER_NAME    : SubtitleHandler\n      ENCODER         : Lavc60.31.102 srt\n      DURATION        : 00:00:00.923000000\nAt least one output file must be specified\n",
+   "expect": {
+    "format": {
+     "tags": {
+      "title": "My \"clip\": one",
+      "COMMENT": "Line one"
+     }
+    },
+    "streams": [
+     {
+      "index": 0,
+      "codec_type": "video",
+      "codec_name": "h264",
+      "codec_tag_string": "[0][0][0][0]",
+      "disposition": {
+       "default": 1
+      },
+      "tags": {}
+     },
+     {
+      "index": 1,
+      "codec_type": "audio",
+      "codec_name": "aac",
+      "codec_tag_string": "[0][0][0][0]",
+      "disposition": {},
+      "tags": {
+       "language": "eng"
+      }
+     },
+     {
+      "index": 2,
+      "codec_type": "audio",
+      "codec_name": "aac",
+      "codec_tag_string": "[0][0][0][0]",
+      "disposition": {
+       "default": 1
+      },
+      "tags": {
+       "language": "dan"
+      }
+     },
+     {
+      "index": 3,
+      "codec_type": "subtitle",
+      "codec_name": "subrip",
+      "codec_tag_string": "[0][0][0][0]",
+      "disposition": {
+       "default": 1
+      },
+      "tags": {
+       "language": "ger"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "plain.webm",
+   "log": "Input #0, matroska,webm, from '/tmp/claude-0/-home-user/289a1127-38bf-536c-bcc7-bdf06e3b83d2/scratchpad/vt/plain.webm':\n  Metadata:\n    title           : Trip\n    ENCODER         : Lavf60.16.100\n  Duration: 00:00:00.52, start: 0.000000, bitrate: 114 kb/s\n  Stream #0:0: Video: vp8, yuv420p(tv, progressive), 64x48, SAR 1:1 DAR 4:3, 25 fps, 25 tbr, 1k tbn\n    Metadata:\n      ENCODER         : Lavc60.31.102 libvpx\n      DURATION        : 00:00:00.523000000\n  Stream #0:1(swe): Audio: vorbis, 44100 Hz, mono, fltp\n    Metadata:\n      ENCODER         : Lavc60.31.102 libvorbis\n      DURATION        : 00:00:00.503000000\nAt least one output file must be specified\n",
+   "expect": {
+    "format": {
+     "tags": {
+      "title": "Trip"
+     }
+    },
+    "streams": [
+     {
+      "index": 0,
+      "codec_type": "video",
+      "codec_name": "vp8",
+      "codec_tag_string": "[0][0][0][0]",
+      "disposition": {},
+      "tags": {}
+     },
+     {
+      "index": 1,
+      "codec_type": "audio",
+      "codec_name": "vorbis",
+      "codec_tag_string": "[0][0][0][0]",
+      "disposition": {},
+      "tags": {
+       "language": "swe"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "cover.mp4",
+   "log": "[mov,mp4,m4a,3gp,3g2,mj2 @ 0x55a72a511e80] stream 0, timescale not set\n[mjpeg @ 0x55a72a525140] EOI missing, emulating\nInput #0, mov,mp4,m4a,3gp,3g2,mj2, from '/tmp/claude-0/-home-user/289a1127-38bf-536c-bcc7-bdf06e3b83d2/scratchpad/vt/cover.mp4':\n  Metadata:\n    major_brand     : isom\n    minor_version   : 512\n    compatible_brands: isomiso2avc1mp41\n    creation_time   : 2021-05-06T07:08:09.000000Z\n    title           : My \"clip\": one\n    encoder         : Lavf60.16.100\n    comment         : Line one\n  Duration: 00:00:01.00, start: 0.000000, bitrate: 194 kb/s\n  Stream #0:0[0x1](und): Video: h264 (High 4:4:4 Predictive) (avc1 / 0x31637661), yuv444p(progressive), 64x48 [SAR 1:1 DAR 4:3], 18 kb/s, 25 fps, 25 tbr, 12800 tbn (default)\n    Metadata:\n      creation_time   : 2021-05-06T07:08:09.000000Z\n      handler_name    : VideoHandler\n      vendor_id       : [0][0][0][0]\n      encoder         : Lavc60.31.102 libx264\n  Stream #0:1[0x2](eng): Audio: aac (LC) (mp4a / 0x6134706D), 44100 Hz, mono, fltp, 70 kb/s\n    Metadata:\n      creation_time   : 2021-05-06T07:08:09.000000Z\n      handler_name    : SoundHandler\n      vendor_id       : [0][0][0][0]\n  Stream #0:2[0x3](dan): Audio: aac (LC) (mp4a / 0x6134706D), 44100 Hz, mono, fltp, 70 kb/s (default)\n    Metadata:\n      creation_time   : 2021-05-06T07:08:09.000000Z\n      handler_name    : SoundHandler\n      vendor_id       : [0][0][0][0]\n  Stream #0:3[0x4](ger): Subtitle: mov_text (tx3g / 0x67337874), 0 kb/s (default)\n    Metadata:\n      creation_time   : 2021-05-06T07:08:09.000000Z\n      handler_name    : SubtitleHandler\n  Stream #0:4[0x0]: Video: mjpeg (Baseline), yuvj420p(pc, bt470bg/unknown/unknown), 16x16 [SAR 1:1 DAR 1:1], 90k tbr, 90k tbn (attached pic)\nAt least one output file must be specified\n",
+   "expect": {
+    "format": {
+     "tags": {
+      "creation_time": "2021-05-06T07:08:09.000000Z",
+      "title": "My \"clip\": one",
+      "comment": "Line one"
+     }
+    },
+    "streams": [
+     {
+      "index": 0,
+      "codec_type": "video",
+      "codec_name": "h264",
+      "codec_tag_string": "avc1",
+      "disposition": {
+       "default": 1
+      },
+      "tags": {
+       "language": "und"
+      }
+     },
+     {
+      "index": 1,
+      "codec_type": "audio",
+      "codec_name": "aac",
+      "codec_tag_string": "mp4a",
+      "disposition": {},
+      "tags": {
+       "language": "eng"
+      }
+     },
+     {
+      "index": 2,
+      "codec_type": "audio",
+      "codec_name": "aac",
+      "codec_tag_string": "mp4a",
+      "disposition": {
+       "default": 1
+      },
+      "tags": {
+       "language": "dan"
+      }
+     },
+     {
+      "index": 3,
+      "codec_type": "subtitle",
+      "codec_name": "mov_text",
+      "codec_tag_string": "tx3g",
+      "disposition": {
+       "default": 1
+      },
+      "tags": {
+       "language": "ger"
+      }
+     },
+     {
+      "index": 4,
+      "codec_type": "video",
+      "codec_name": "mjpeg",
+      "codec_tag_string": "[0][0][0][0]",
+      "disposition": {
+       "attached_pic": 1
+      }
+     }
+    ]
+   }
+  }
+ ]
+}

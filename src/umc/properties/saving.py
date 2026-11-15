@@ -22,19 +22,35 @@ def save_bytes(
 ) -> Path:
     """Write ``change(original bytes)`` into ``path`` (or a copy). ``change`` raises ``error``
     with a plain-language reason; a file that can't be replaced raises ``error`` too."""
+    path = path.resolve()
+    out = change(path.read_bytes())
+    return save_with(path, lambda dest: dest.write_bytes(out), as_copy, error)
+
+
+def save_with(
+    path: Path,
+    write: Callable[[Path], object],
+    as_copy: bool,
+    error: type[Exception],
+) -> Path:
+    """``write(dest)`` makes the new file at ``dest``: a copy next to ``path``, or a temp file
+    that then replaces ``path``. If ``write`` raises, nothing is left behind."""
     from umc.core.job import unique_path
 
     path = path.resolve()
-    out = change(path.read_bytes())
     if as_copy:
         stem = path.name[: -len(path.suffix)] if path.suffix else path.name
         dest = unique_path(path.parent, stem, path.suffix.lstrip("."))
-        dest.write_bytes(out)
+        try:
+            write(dest)
+        except BaseException:
+            dest.unlink(missing_ok=True)
+            raise
         return dest
     st = path.stat()
     tmp = path.with_name(f"{TEMP_PREFIX}{path.name}")
     try:
-        tmp.write_bytes(out)
+        write(tmp)
         shutil.copymode(path, tmp)  # a private file stays private
         os.utime(tmp, ns=(st.st_atime_ns, st.st_mtime_ns))
         os.replace(tmp, path)
@@ -44,7 +60,7 @@ def save_bytes(
             f"“{path.name}” couldn't be changed — it may be open in another program, or the "
             "folder is read-only. Close it there and try again, or save a copy."
         ) from exc
-    except OSError:
+    except BaseException:
         tmp.unlink(missing_ok=True)
         raise
     return path

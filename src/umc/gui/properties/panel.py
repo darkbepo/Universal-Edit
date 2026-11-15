@@ -3,12 +3,14 @@
 A file picker on top when there are several; the sections (``properties.read.describe``) are read
 off the UI thread — PDFs on the PyMuPDF thread — and the newest request wins. JPG / PNG / WebP
 pictures get the "Change details" card ``photo_form.PhotoForm``, MP3 / M4A / FLAC / OGG / Opus
-songs ``music_form.MusicForm``; saving runs on a thread too, after asking once before it changes
-an original."""
+songs ``music_form.MusicForm``, MP4 / MOV / M4V / MKV / WebM videos ``video_form.VideoForm``;
+saving runs on a thread too, after asking once before it changes an original (videos report
+progress and can be cancelled)."""
 
 from __future__ import annotations
 
 import struct
+import threading
 from pathlib import Path
 
 from PySide6.QtCore import QSettings, Qt, Signal
@@ -26,11 +28,13 @@ from PySide6.QtWidgets import (
 )
 
 from umc.core.detect import DetectedFile
+from umc.core.errors import ConversionCancelled
 from umc.gui import icons, theme
 from umc.gui.properties.music_form import MusicForm
 from umc.gui.properties.photo_form import PhotoForm
+from umc.gui.properties.video_form import VideoForm
 from umc.gui.viewer.tasks import TaskRunner
-from umc.properties import music, photo
+from umc.properties import music, photo, video
 from umc.properties.info import Section, build
 from umc.properties.read import NOTE, describe, file_facts, uses_pdf_engine
 
@@ -42,7 +46,10 @@ KINDS = {
               photo.PhotoError, "picture", "pictures"),
     "music": (music.can_change, music.read_details, music.save_file, music.MusicError,
               "song", "songs"),
+    "video": (video.can_change, video.read_details, video.save_file, video.VideoError,
+              "video", "videos"),
 }  # fmt: skip
+INSIDE = {"photo": "picture", "music": "sound", "video": "video and its sound"}
 
 
 def kind_of(f: DetectedFile | None) -> str | None:
@@ -77,6 +84,7 @@ LABEL_W = 110
 
 class PropertiesPanel(QWidget):
     files_saved = Signal(list)  # [Path] changed in place (the queue refreshes their thumbnails)
+    _save_progress = Signal(str, float)  # kind, 0..1 (from the saving thread)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -118,7 +126,11 @@ class PropertiesPanel(QWidget):
         self.kind: str | None = None  # whose card is shown
         self.form = PhotoForm()
         self.music_form = MusicForm()
-        self.forms = {"photo": self.form, "music": self.music_form}
+        self.video_form = VideoForm()
+        self.forms = {"photo": self.form, "music": self.music_form, "video": self.video_form}
+        self._cancel = threading.Event()
+        self.video_form.cancel_requested.connect(self._cancel.set)
+        self._save_progress.connect(self._show_progress)
         for form in self.forms.values():
             form.setVisible(False)
             form.save_requested.connect(self._save)
@@ -181,7 +193,7 @@ class PropertiesPanel(QWidget):
         kind = kind_of(self.current)
         return [g for g in self.files if kind is not None and kind_of(g) == kind]
 
-    def active_form(self) -> PhotoForm | MusicForm:
+    def active_form(self) -> PhotoForm | MusicForm | VideoForm:
         return self.forms.get(self.kind or "", self.form)
 
     def _loaded(self, result) -> None:
@@ -263,7 +275,7 @@ class PropertiesPanel(QWidget):
             return True
         one, many = self._nouns()
         what = f"this {one}" if count == 1 else f"these {count} {many}"
-        inside = "picture" if self.kind == "photo" else "sound"
+        inside = INSIDE.get(self.kind or "photo", "picture")
         box = QMessageBox(self)
         box.setWindowTitle("Change the original?")
         box.setText(f"This writes the new details into {what}.")
@@ -298,14 +310,28 @@ class PropertiesPanel(QWidget):
         form = self.active_form()
         form.set_busy(True)
         form.show_message("Saving…")
+        self._cancel = threading.Event()
+        cancel = self._cancel
+
+        def progress(fraction: float) -> None:
+            self._save_progress.emit(kind, fraction)
+
         # the results go to this card, even if another file (or kind) is shown by then
         self.tasks.submit(
             "save",
-            lambda: _save_all(kind, paths, edit, as_copy),
+            lambda: _save_all(kind, paths, edit, as_copy, progress, cancel),
             lambda result: self._saved(result, kind),
             lambda m: self._save_failed(m, kind),
             exclusive=False,
         )
+
+    def _show_progress(self, kind: str, fraction: float) -> None:
+        form = self.forms.get(kind)
+        if isinstance(form, VideoForm):
+            form.set_progress(fraction)
+
+    def cancel_save(self) -> None:
+        self._cancel.set()
 
     def _saved(self, result, kind: str) -> None:
         written, problems = result
@@ -344,16 +370,44 @@ class PropertiesPanel(QWidget):
         return self.active_form().note.text()
 
     def shutdown(self) -> None:
+        self._cancel.set()  # a video being saved stops (the original stays as it was)
         self.tasks.shutdown()
 
 
-def _save_all(kind: str, paths: list[Path], edit, as_copy: bool) -> tuple[list[Path], list[str]]:
-    """Runs on a thread: save each file; plain-language problems are collected, not raised."""
+def _save_all(
+    kind: str,
+    paths: list[Path],
+    edit,
+    as_copy: bool,
+    progress=None,
+    cancel: threading.Event | None = None,
+) -> tuple[list[Path], list[str]]:
+    """Runs on a thread: save each file; plain-language problems are collected, not raised.
+    Videos report ``progress`` (0..1 over all of them) and stop when ``cancel`` is set."""
     save, error = KINDS[kind][2], KINDS[kind][3]
+    cancel = cancel or threading.Event()
     written, problems = [], []
-    for path in paths:
+    for i, path in enumerate(paths):
+        if cancel.is_set():
+            problems.append("Cancelled — the rest were left as they were.")
+            break
         try:
-            written.append(save(path, edit, as_copy))
+            if kind == "video":
+
+                def part(p: float, i: int = i) -> None:
+                    if progress is not None:
+                        progress((i + p) / len(paths))
+
+                written.append(save(path, edit, as_copy, part, cancel))
+            else:
+                written.append(save(path, edit, as_copy))
+        except ConversionCancelled:
+            problems.append(
+                "Cancelled — nothing was changed."
+                if not written
+                else "Cancelled — the rest were left as they were."
+            )
+            break
         except error as exc:
             problems.append(str(exc))
         except OSError:
