@@ -19,8 +19,11 @@ different rules per kind of file. Both apps.
    location / remove all hidden details. Lossless: only the EXIF / XMP segment is replaced
    (JPEG APP1, PNG eXIf / iTXt, WebP EXIF chunk), the picture bytes stay. Windows reads Title /
    Authors / Tags from the XP* tags (UTF-16), so they are written too. HEIC / RAW read-only.
-3. Music: title, artist, album, album artist, track / disc, year, genre, cover picture (mutagen
-   on desktop; ID3v2.3 for MP3 so Windows and every player read it). Web: FFmpeg remux.
+3. ✅ Music: title, artist, album, album artist, track / disc, year, genre, cover picture (mutagen
+   on desktop; ID3v2.3 for MP3 so Windows and every player read it). Web: FFmpeg remux
+   (`-c copy`). MP3 / M4A / FLAC / OGG / Opus. The web can't add or keep an OGG / Opus cover
+   (FFmpeg can't write it back): it hides the cover button there and refuses a change that
+   would lose an existing cover (removing it works); the desktop app can.
 4. Video: title, description, date, rotation flag, track language / default (FFmpeg
    `-map 0 -c copy`; check first which streams the container can't keep and warn).
 5. PDF (incremental save keeps signatures; password asked) and Word / Excel / PowerPoint / ODF

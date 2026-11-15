@@ -8,12 +8,12 @@ export const FIXTURES = fileURLToPath(new URL("./fixtures/", import.meta.url));
 
 /** A Python that can run the desktop code (python-docx + lxml), or null: `UMC_PYTHON`, then
  * `python3` (CI), then the desktop venv next to `web/` (local Windows runs). */
-export function findPython(): string | null {
+export function findPython(check = "import docx, lxml"): string | null {
   const venv = fileURLToPath(new URL(`../../.venv/${process.platform === "win32" ? "Scripts/python.exe" : "bin/python"}`, import.meta.url));
   for (const exe of [process.env.UMC_PYTHON, "python3", venv]) {
     if (!exe) continue;
     try {
-      execFileSync(exe, ["-c", "import docx, lxml"], { stdio: "ignore" });
+      execFileSync(exe, ["-c", check], { stdio: "ignore" });
       return exe;
     } catch {
       /* next one */
@@ -241,6 +241,14 @@ export default async function globalSetup() {
         "-metadata", "title=Song", "-metadata", "artist=Band", "-metadata", "date=2019-05-01", "-id3v2_version", "3", `${FIXTURES}song.mp3`]);
     } catch {
       // no ffmpeg: the Properties music test is skipped
+    }
+  }
+  if (!existsSync(`${FIXTURES}song.flac`)) {
+    try {
+      execFileSync("ffmpeg", ["-loglevel", "error", "-y", "-f", "lavfi", "-i", "sine=duration=1",
+        "-metadata", "title=Other", "-metadata", "artist=Band", "-metadata", "track=2", `${FIXTURES}song.flac`]);
+    } catch {
+      // no ffmpeg: the music tags tests are skipped
     }
   }
   if (!existsSync(`${FIXTURES}beep.mp3`)) {

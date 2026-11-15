@@ -960,7 +960,18 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       (Save changes asks once, QSettings `properties/ask_before_changing`; Save as copy =
       `name (1).jpg`), web `ui/photoform.ts` (downloads; replaces the queue's File so later
       conversions use it). e2e checks the desktop reader on a web-saved photo (python3).
-      Next steps: music tags (mutagen, GPL-2.0+, approved), video, PDF / Office, file name + dates.
+      Step 3 ✅ music tags (MP3 / M4A / FLAC / OGG / Opus): desktop `properties/music.py` (mutagen;
+      MP3 always saved as ID3v2.3 with an APIC front cover; Vorbis numbers + TRACKTOTAL /
+      DISCTOTAL), `saving.save_bytes` (shared temp file + `os.replace` for photo and music),
+      card `gui/properties/music_form.py`; the panel picks the card by `panel.kind_of(file)`.
+      Web `properties/music.ts` (same `cleanValues` / `common`; `ffmpegArgs` = `-c copy` remux),
+      hidden converter `music-tags` on its own worker (`PropertiesPane.tagClient`, so a cancelled
+      read never stops a save), card `ui/musicform.ts` (`.mf-form`, ids `#mf-*`; reads tags on
+      the page with Mediabunny). Shared cases `tests/fixtures/music_cases.json` — the web reads it
+      with `?raw` (a lone-surrogate case breaks Vite's JSON loader). FFmpeg can't write OGG / Opus
+      covers: the web hides "Choose picture…" there and refuses a change that would drop one.
+      e2e reads web-saved songs with the desktop reader (`findPython("import mutagen")`).
+      Next steps: video, PDF / Office, file name + dates.
    15. Orbiting drop-zone badges (both apps): 14 file-type badges (icon + type, own colour,
       dimmed to 62 %) on three tilted rings around the empty drop zone's text, smaller / fainter
       on the far side, faded near the text. Dragging a file over pulls them in and speeds them up;

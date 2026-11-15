@@ -13,6 +13,7 @@ import { pdfToSvgConverter, traceConverter, vectorConverter } from "../converter
 import { subtitleConverter, subtitleExtractConverter, subtitleVideoConverter } from "../converters/subtitles";
 import { documentConverter, pagesConverter, splitConverter } from "../converters/pdf";
 import { pdfToolsConverter } from "../converters/pdftools";
+import { musicTagsConverter } from "../converters/musictags";
 import { propertiesConverter } from "../converters/properties";
 import { slideshowConverter } from "../converters/slideshow";
 import { audioConverter, audioFileConverter, framesConverter, gifConverter, videoConverter } from "../converters/video";
@@ -49,6 +50,7 @@ export const CONVERTERS: Converter[] = [
   bgremoveConverter, // image editor only (no targets)
   model3dViewConverter, // 3D viewer only (no targets)
   propertiesConverter, // Properties mode only (no targets)
+  musicTagsConverter, // Properties mode only (no targets)
   audioEditOpenConverter, // audio editor only (no targets)
 ];
 

@@ -2,12 +2,14 @@
 // on top when there are several. The facts are read by the hidden "properties-info" converter in
 // a worker of its own (so a slow read never holds up a conversion); picking another file stops
 // a read still running.
+import { MUSIC_TAGS_TARGET } from "../converters/musictags";
 import { PROPERTIES_TARGET } from "../converters/properties";
 import type { InputFile } from "../core/types";
 import { build, type Facts, type Section } from "../properties/info";
 import { fileFacts } from "../properties/read";
 import { ConversionClient } from "../worker/client";
 import { icon } from "./icons";
+import { MusicForm, readMusicDetails } from "./musicform";
 import { PhotoForm } from "./photoform";
 
 const h = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> & { class?: string } = {}, ...children: (Node | string)[]) => {
@@ -31,16 +33,24 @@ export class PropertiesPane {
   private readonly client = new ConversionClient(); // its worker starts on the first read
   sections: Section[] = [];
   readonly form: PhotoForm;
+  readonly musicForm: MusicForm;
+  // saving songs has its own worker, so a read cancelled by moving on never stops a save
+  private readonly tagClient = new ConversionClient();
 
   /** ``onChanged``: pictures whose details were changed (their bytes in the queue are new). */
   constructor(private readonly onChanged: (files: InputFile[]) => void = () => {}) {
-    this.form = new PhotoForm((changed) => {
+    const saved = (changed: InputFile[]) => {
       this.onChanged(changed);
       if (this.current) void this.show(this.files.indexOf(this.current), true);
-    });
+    };
+    this.form = new PhotoForm(saved);
+    this.musicForm = new MusicForm(
+      (f, edit, cover) => this.tagClient.run(MUSIC_TAGS_TARGET, [f], { edit, cover }, () => {}),
+      saved,
+    );
     this.el = h("section", { class: "pane properties-pane", hidden: true, ariaLabel: "Properties" },
       h("div", { class: "pane-head" }, h("span", { class: "pane-icon" }, icon("info-circle", 18)), h("h2", {}, "About this file"), h("div", { class: "spacer" }), this.picker),
-      h("div", { class: "pane-body" }, this.status, this.form.el, this.body));
+      h("div", { class: "pane-body" }, this.status, this.form.el, this.musicForm.el, this.body));
     this.picker.addEventListener("change", () => void this.show(this.picker.selectedIndex));
   }
 
@@ -86,9 +96,27 @@ export class PropertiesPane {
     this.render(build({ ...facts, file: base }));
   }
 
-  /** The "Change details" form, for JPG / PNG / WebP pictures. */
+  /** The "Change details" form: JPG / PNG / WebP pictures, or MP3 / M4A / FLAC / OGG / Opus songs. */
   private async fillForm(f: InputFile, ticket: number, keepNote: boolean): Promise<void> {
     const changeable = (g: InputFile) => ["jpg", "png", "webp"].includes(g.ext);
+    const song = (g: InputFile) => ["mp3", "m4a", "flac", "ogg", "opus"].includes(g.ext);
+    if (!song(f)) this.musicForm.set(null, []);
+    if (song(f)) {
+      this.form.set(null, []);
+      const read = async (g: InputFile) => {
+        try {
+          return { file: g, details: await readMusicDetails(g.file) };
+        } catch {
+          return null;
+        }
+      };
+      const everyone = (await Promise.all(this.files.filter(song).map(read))).filter((x) => x !== null);
+      if (ticket !== this.ticket) return;
+      const note = keepNote ? this.musicForm.noteText : "";
+      this.musicForm.set(everyone.find((x) => x.file === f) ?? null, everyone);
+      if (note) this.musicForm.keepNote(note);
+      return;
+    }
     if (!changeable(f)) {
       this.form.set(null, []);
       return;

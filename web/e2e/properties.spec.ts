@@ -1,7 +1,7 @@
 // Properties mode: Convert | Edit | Properties shows "About this file" for the added files.
 import { existsSync } from "node:fs";
 import { expect, type Page, test } from "@playwright/test";
-import { FIXTURES } from "./global-setup";
+import { FIXTURES, findPython } from "./global-setup";
 
 async function add(page: Page, names: string[]) {
   await page.locator('input[type="file"]').first().setInputFiles(names.map((n) => `${FIXTURES}${n}`));
@@ -162,7 +162,7 @@ test.describe("change photo details", () => {
     await page.locator("#ph-taken").fill("12/11/2026");
     await expect(page.locator("#ph-taken")).toHaveClass(/invalid/);
     await page.getByRole("button", { name: "Download with changes" }).click();
-    await expect(page.locator(".ph-note")).toContainText("year-month-day");
+    await expect(page.locator(".ph-form .ph-note")).toContainText("year-month-day");
   });
 
   test("no form for pictures it can't change", async ({ page }) => {
@@ -171,5 +171,99 @@ test.describe("change photo details", () => {
     await propertiesButton(page).click();
     await expect(page.locator('.prop-card[data-title="File"]')).toBeVisible();
     await expect(page.locator(".ph-form")).toBeHidden();
+  });
+});
+
+test.describe("change music tags", () => {
+  test.skip(!existsSync(`${FIXTURES}song.mp3`) || !existsSync(`${FIXTURES}song.flac`), "ffmpeg missing: no sample songs");
+
+  /** What the desktop app reads from ``path`` (null when no Python with mutagen is found). */
+  const desktopReads = async (path: string): Promise<Record<string, unknown> | null> => {
+    const python = findPython("import mutagen");
+    if (!python) return null;
+    const { execFileSync } = await import("node:child_process");
+    const out = execFileSync(python, ["-c",
+      "import sys, json; sys.path.insert(0, sys.argv[1]); from dataclasses import asdict; from pathlib import Path; " +
+      "from umc.properties.music import read_details; print(json.dumps(asdict(read_details(Path(sys.argv[2])))))",
+      new URL("../../src", import.meta.url).pathname, path]).toString();
+    return JSON.parse(out);
+  };
+
+  test("change, add a cover, download; the desktop reads the same tags", async ({ page }) => {
+    await page.goto("./");
+    await add(page, ["song.mp3"]);
+    await propertiesButton(page).click();
+    const form = page.locator(".mf-form");
+    await expect(form).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator(".ph-form")).toBeHidden();
+    await expect(page.locator("#mf-title")).toHaveValue("Song");
+    await expect(page.locator("#mf-artist")).toHaveValue("Band");
+    await expect(page.locator("#mf-year")).toHaveValue("2019");
+    await expect(form.locator(".mf-cover-status")).toHaveText("No cover picture");
+    const save = form.getByRole("button", { name: "Download with changes" });
+    await expect(save).toBeDisabled();
+    await page.locator("#mf-title").fill("Blue in Green");
+    await page.locator("#mf-track").fill("03 / 9");
+    await page.locator("#mf-cover-file").setInputFiles(`${FIXTURES}img0.png`);
+    await expect(form.locator(".mf-cover-status")).toHaveText("New cover: img0.png");
+    const download = page.waitForEvent("download");
+    await save.click();
+    const file = await download;
+    expect(file.suggestedFilename()).toBe("song.mp3");
+    await expect(form).toContainText("Downloaded “song.mp3”", { timeout: 60_000 });
+    // the queue holds the changed song: the form shows its tags now
+    await expect(page.locator("#mf-title")).toHaveValue("Blue in Green");
+    await expect(page.locator("#mf-track")).toHaveValue("3/9");
+    await expect(form.locator(".mf-cover-status")).toHaveText("Has a cover picture");
+    const d = await desktopReads(await file.path());
+    if (d) expect(d).toEqual({ title: "Blue in Green", artist: "Band", album: "", album_artist: "", track: "3/9", disc: "", year: "2019", genre: "", has_cover: true });
+  });
+
+  test("several songs: apply to all, several values stay, a ZIP download", async ({ page }) => {
+    await page.goto("./");
+    await add(page, ["song.mp3", "song.flac"]);
+    await propertiesButton(page).click();
+    await expect(page.locator(".mf-form")).toBeVisible({ timeout: 60_000 });
+    await page.locator("#mf-apply-all").check();
+    await expect(page.locator("#mf-title")).toHaveValue("");
+    await expect(page.locator("#mf-title")).toHaveAttribute("placeholder", "Several values");
+    await expect(page.locator("#mf-artist")).toHaveValue("Band");
+    await page.locator("#mf-album").fill("Kind of Blue");
+    const download = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Download changed songs (.zip)" }).click();
+    const file = await download;
+    expect(file.suggestedFilename()).toBe("songs (changed details).zip");
+    const { unzipSync } = await import("fflate");
+    const { readFileSync, writeFileSync, mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const zip = unzipSync(new Uint8Array(readFileSync(await file.path())));
+    expect(Object.keys(zip).sort()).toEqual(["song.flac", "song.mp3"]);
+    const dir = mkdtempSync(`${tmpdir()}/umc-music-`);
+    for (const [name, data] of Object.entries(zip)) {
+      writeFileSync(`${dir}/${name}`, data);
+      const d = await desktopReads(`${dir}/${name}`);
+      if (d) expect(d).toMatchObject({ album: "Kind of Blue", artist: "Band", title: name.endsWith(".mp3") ? "Song" : "Other" });
+    }
+  });
+
+  test("a bad track number is refused in plain words", async ({ page }) => {
+    await page.goto("./");
+    await add(page, ["song.flac"]);
+    await propertiesButton(page).click();
+    await expect(page.locator(".mf-form")).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator("#mf-track")).toHaveValue("2");
+    await page.locator("#mf-track").fill("13/12");
+    await expect(page.locator("#mf-track")).toHaveClass(/invalid/);
+    await page.getByRole("button", { name: "Download with changes" }).click();
+    await expect(page.locator(".mf-note")).toContainText("bigger than the number of tracks");
+  });
+
+  test("no form for songs it can't change", async ({ page }) => {
+    test.skip(!existsSync(`${FIXTURES}tone.wav`), "ffmpeg missing");
+    await page.goto("./");
+    await add(page, ["tone.wav"]);
+    await propertiesButton(page).click();
+    await expect(page.locator('.prop-card[data-title="File"]')).toBeVisible();
+    await expect(page.locator(".mf-form")).toBeHidden();
   });
 });
