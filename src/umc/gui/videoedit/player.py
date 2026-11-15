@@ -248,7 +248,7 @@ def wave_buckets(source: Source) -> int:
 
 
 class _ScanWorker(QObject):
-    thumbs = Signal(str, object)  # Source.key, list of JPEG paths
+    thumbs = Signal(str, object)  # Source.key, list of thumbnail paths
     wave = Signal(str, object)  # Source.key, peaks
 
     def __init__(self, tmp: Path) -> None:
