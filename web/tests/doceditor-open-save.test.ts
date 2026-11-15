@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { strFromU8, unzipSync, zipSync } from "fflate";
+import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import { describe, expect, test, vi } from "vitest";
 import * as markdown from "../src/doceditor/markdown";
 import * as subset from "../src/doceditor/subset";
@@ -76,6 +76,35 @@ async function blobBytes(blob: Blob): Promise<Uint8Array> {
 }
 
 describe("openDocument", () => {
+  test("normalised documents are marked, so loading doesn't normalise them again", async () => {
+    const sources: [string | Uint8Array, string][] = [
+      ["# T\n\n*x*\n", "a.md"],
+      ["<h1>T</h1><p><b>x</b></p>", "a.html"],
+      [writeDocx("<h1>T</h1><p>x</p>", new Map()), "a.docx"],
+      [zipSync({ "a.md": strToU8("# T\n\n*x*\n") }), "a.zip"],
+    ];
+    for (const [data, name] of sources) {
+      const doc = await openDocument(fileOf(data, name), noConvert);
+      expect([name, doc.normalised]).toEqual([name, true]);
+      // the mark is only true when a second pass would change nothing
+      expect(subset.normaliseHtml(doc.html).html).toBe(doc.html);
+    }
+    const txt = await openDocument(fileOf("a  b\n", "a.txt"), noConvert);
+    expect(txt.normalised).toBeFalsy();
+  });
+
+  test("pauses between the heavy steps of opening", async () => {
+    const pause = vi.fn(async () => {});
+    await openDocument(fileOf("# T\n", "a.md"), noConvert, pause);
+    expect(pause).toHaveBeenCalledTimes(2);
+    pause.mockClear();
+    await openDocument(fileOf("<p>x</p>", "a.html"), noConvert, pause);
+    expect(pause).toHaveBeenCalledTimes(1);
+    pause.mockClear();
+    await openDocument(fileOf(zipSync({ "a.md": strToU8("# T\n") }), "a.zip"), noConvert, pause);
+    expect(pause).toHaveBeenCalledTimes(2);
+  });
+
   test("relative pictures the website can't read are reported", async () => {
     const md = await openDocument(fileOf("![](pics/x.png)\n", "a.md"), noConvert);
     expect([md.html, md.warnings]).toEqual(["<p></p>", [W_PICTURES]]);

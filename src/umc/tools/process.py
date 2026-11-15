@@ -127,8 +127,11 @@ def run(
 
 
 def _kill(proc: subprocess.Popen) -> None:
+    """Stop ``proc`` at once (cancel / time-out). kill(), not terminate(): on Windows both
+    end the process immediately, but on Linux / macOS terminate() is SIGTERM, which FFmpeg
+    answers by flushing its output — into a pipe nobody reads any more, so it hung."""
     try:
-        proc.terminate()
+        proc.kill()
         proc.wait(timeout=3)
     except Exception:
-        proc.kill()
+        log.warning("Couldn't stop process %s", proc.pid, exc_info=True)

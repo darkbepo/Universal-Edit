@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
+import re
 import subprocess
 import threading
 import time
@@ -216,6 +217,36 @@ def encoders() -> frozenset[str]:
     return frozenset(names)
 
 
+@cache
+def major_version() -> int | None:
+    """FFmpeg's major version (``ffmpeg version 6.1.1-3ubuntu5`` → 6, ``n7.1`` → 7); None for
+    a build from git (``N-117…``, always new) or when it can't be run."""
+    try:
+        out = subprocess.run(
+            [ffmpeg_path(), "-hide_banner", "-version"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            creationflags=process._creationflags(),
+        ).stdout
+    except (subprocess.SubprocessError, OSError, ToolMissingError):
+        return None
+    m = re.match(r"ffmpeg version n?(\d+)\.", out)
+    return int(m.group(1)) if m else None
+
+
+def _compat(args: Sequence[str]) -> list[str]:
+    """``args`` for the FFmpeg that is installed. ``-/filter_complex FILE`` (read the graph from
+    a file) is FFmpeg 7+; older ones (Debian 12: 5.1, Ubuntu 24.04: 6.1) spell it
+    ``-filter_complex_script FILE``."""
+    args = list(args)
+    if "-/filter_complex" in args:
+        major = major_version()
+        if major is not None and major < 7:
+            args = ["-filter_complex_script" if a == "-/filter_complex" else a for a in args]
+    return args
+
+
 def pick_encoder(candidates: Sequence[str]) -> str | None:
     available = encoders()
     return next((c for c in candidates if c in available), None)
@@ -244,7 +275,7 @@ def run_ffmpeg(
         "-progress",
         "pipe:1",
         "-nostats",
-        *args,
+        *_compat(args),
     ]
 
     def on_line(line: str) -> None:
@@ -271,7 +302,7 @@ def run_ffmpeg(
 
 
 def _base_cmd(args: Sequence[str]) -> list[str]:
-    return [ffmpeg_path(), "-hide_banner", "-nostdin", "-loglevel", "error", *args]
+    return [ffmpeg_path(), "-hide_banner", "-nostdin", "-loglevel", "error", *_compat(args)]
 
 
 def ffmpeg_popen(

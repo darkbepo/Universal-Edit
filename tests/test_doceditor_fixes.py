@@ -11,7 +11,16 @@ from umc.doceditor.html_subset import normalise_html
 
 
 @pytest.mark.parametrize(
-    "src", [r"\host\share\a.png", "//host/share/a.png", r"C:\x.png", "/etc/x.png", "C:/x.png"]
+    "src",
+    [
+        r"\host\share\a.png",
+        r"\\host\share\a.png",
+        r"\a.png",
+        "//host/share/a.png",
+        r"C:\x.png",
+        "/etc/x.png",
+        "C:/x.png",
+    ],
 )
 def test_picture_paths_never_touch_other_places(tmp_path, monkeypatch, src):
     def guard(name):

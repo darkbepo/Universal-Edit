@@ -454,7 +454,8 @@ export class DocView {
   load(opened: OpenedDocument): void {
     let doc: PMNode;
     try {
-      doc = htmlToDoc(normaliseHtml(opened.html).html);
+      // openDocument / readDocx already normalised it (a second pass froze big files ~1 s)
+      doc = htmlToDoc(opened.normalised ? opened.html : normaliseHtml(opened.html).html);
     } catch (err) {
       if (err instanceof RangeError) throw new Error(TOO_DEEP, { cause: err }); // the call stack
       throw err;

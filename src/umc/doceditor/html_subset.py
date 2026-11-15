@@ -31,7 +31,7 @@ from lxml import etree
 from PIL import ImageColor
 
 from umc.core.errors import ConversionError
-from umc.doceditor.html_scan import html5_text
+from umc.doceditor.html_scan import html5_text, without_deep_tags
 from umc.doceditor.types import (
     MAX_FILE_BYTES,
     W_PAGESTYLE,
@@ -369,7 +369,9 @@ def _merge_adjacent(tokens: list[_Token]) -> list[_Token]:
 
 def _is_plain_relative(base_dir: Path, rel: str) -> bool:
     """``rel`` is a relative path that stays inside ``base_dir`` (decided without any I/O)."""
-    if rel.startswith(("\\\\", "//")) or PureWindowsPath(rel).drive:
+    # A Windows root ("\\x", "C:", "\\\\host") is refused on every system: on Linux a
+    # backslash is a plain file-name character, so "\\host\\a.png" would look relative there.
+    if rel.startswith(("\\\\", "//")) or PureWindowsPath(rel).anchor:
         return False
     if PurePosixPath(rel).is_absolute() or PureWindowsPath(rel).is_absolute():
         return False
@@ -878,30 +880,96 @@ def _flatten(el: etree._Element) -> None:
             last = item
 
 
+# libxml2 2.14 reads raw text elements (<xmp>, <iframe>, …) as text itself, like HTML5; older
+# versions parse tags inside them (lxml's Windows wheels have stayed on an older libxml2).
+_RAW_TEXT_PROBE = "<xmp>&amp;</xmp>"
+_raw_text_native: bool | None = None
+
+
+def _libxml_reads_raw_text() -> bool:
+    global _raw_text_native
+    if _raw_text_native is None:
+        el = lxml.html.fragment_fromstring(_RAW_TEXT_PROBE, create_parent="div")
+        _raw_text_native = len(el) > 0 and el[0].text == "&amp;"
+    return _raw_text_native
+
+
+# Literal control characters in text: libxml2 before 2.14 dropped them (NUL became a space),
+# 2.14 keeps them. Done here so every libxml2 version gives the same text.
+_TEXT_CONTROLS = re.compile(r"[\x01-\x08\x0b\x0c\x0e-\x1f]")
+# Past this many tags a page may be nested deeper than libxml2 2.14 reads (~2048).
+_DEEP_CHECK_TAGS = 2000
+_LIBXML_DEPTH = 2000  # a tree at least this deep may have lost content
+_KEEP_DEPTH = 1000  # tags past this depth are removed before parsing again
+
+
+def _prepare(html: str) -> str:
+    return html5_text(
+        _XML_DECL.sub("", html).replace("\x00", " "), escape_raw=not _libxml_reads_raw_text()
+    )
+
+
+def _depth(root: etree._Element) -> int:
+    deepest = 0
+    stack = [(root, 0)]
+    while stack:
+        el, d = stack.pop()
+        deepest = max(deepest, d)
+        stack.extend((c, d + 1) for c in el)
+    return deepest
+
+
+def _clean_controls(root: etree._Element) -> None:
+    for el in root.iter():
+        if el.text and _TEXT_CONTROLS.search(el.text):
+            el.text = _TEXT_CONTROLS.sub("", el.text)
+        if el.tail and _TEXT_CONTROLS.search(el.tail):
+            el.tail = _TEXT_CONTROLS.sub("", el.tail)
+
+
+def _fragment(html: str) -> etree._Element:
+    return lxml.html.fragment_fromstring(
+        html, create_parent="div", parser=lxml.html.HTMLParser(huge_tree=True)
+    )
+
+
+def subset_fragment(html: str) -> etree._Element:
+    """The editor's own (already normalised) HTML as a tree under a <div>, for the writers.
+    Control characters are dropped the same way with every libxml2 version."""
+    root = lxml.html.fragment_fromstring(html.replace("\x00", " "), create_parent="div")
+    _clean_controls(root)
+    return root
+
+
 def _parse(html: str) -> etree._Element | None:
-    html = html5_text(_XML_DECL.sub("", html))
+    html = _prepare(html)
     if not html.strip():
         return None
     try:
-        return lxml.html.fragment_fromstring(
-            html, create_parent="div", parser=lxml.html.HTMLParser(huge_tree=True)
-        )
+        root = _fragment(html)
+        if html.count("<") > _DEEP_CHECK_TAGS and _depth(root) >= _LIBXML_DEPTH:
+            root = _fragment(without_deep_tags(html, _KEEP_DEPTH))
     except (AssertionError, IndexError):  # a page without a <body>: nothing to show
-        if _page(html) is None:
+        if _page(html, prepared=True) is None:
             raise ConversionError(_UNREADABLE, details="no body") from None
         return lxml.html.Element("div")
     except (etree.LxmlError, ValueError) as exc:
         raise ConversionError(_UNREADABLE, details=str(exc)) from exc
+    _clean_controls(root)
+    return root
 
 
-def _page(html: str) -> etree._Element | None:
+def _page(html: str, prepared: bool = False) -> etree._Element | None:
     """The whole page, <head> included (the fragment parser drops it)."""
     try:
-        return etree.fromstring(
-            html5_text(_XML_DECL.sub("", html)), lxml.html.HTMLParser(huge_tree=True)
+        page = etree.fromstring(
+            html if prepared else _prepare(html), lxml.html.HTMLParser(huge_tree=True)
         )
     except (etree.LxmlError, ValueError):
         return None
+    if page is not None:
+        _clean_controls(page)
+    return page
 
 
 def _is_language_class(value: str) -> bool:

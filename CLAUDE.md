@@ -234,6 +234,22 @@ See `web/README.md` for commands and deployment.
 
 Primary target platform is **Windows** (`.exe`); keep code cross-platform (macOS/Linux) where it costs nothing.
 
+**Linux (Debian / Ubuntu, roadmap 14):** `.github/workflows/test-linux.yml` runs pytest + ruff on
+ubuntu-latest with apt's FFmpeg / Pandoc / LibreOffice / Ghostscript / bsdtar; Qt needs `libegl1
+libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3 libglib2.0-0 libpulse0` (else "libEGL.so.1" on
+import). Things that differ there:
+- Distro FFmpeg is old (Debian 12: 5.1, Ubuntu 24.04: 6.1): `-/filter_complex FILE` is FFmpeg 7+,
+  so every command goes through `ffmpeg._compat` (→ `-filter_complex_script`). Use those helpers.
+- lxml's Linux wheels carry libxml2 2.14, the Windows ones an older one. 2.14 reads raw text
+  tags (`<xmp>`, `<iframe>` …) as HTML5 does, keeps control characters and drops content nested
+  past ~2048. `html_subset` probes which it has (`_libxml_reads_raw_text`) and evens the rest out
+  (`_clean_controls`, `without_deep_tags`); the writers parse through `subset_fragment`. Test
+  doc-editor changes with both: `pip install "lxml==5.3.0"` in a spare venv gives libxml2 2.12.
+- A backslash is a file-name character on Linux: path checks must refuse Windows roots
+  (`PureWindowsPath(...).anchor`) explicitly. `process._kill` uses `kill()` (SIGTERM made FFmpeg
+  hang writing into a pipe no one reads).
+- Qt keeps the name of a font that isn't installed (Windows shows a substitute).
+
 ## Architecture
 
 ```
@@ -803,6 +819,9 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       or the part gets two and won't parse. e2e `e2e/doceditor.spec.ts`
       (`test_cross_app_docx` runs the desktop reader on a web-saved DOCX; needs a Python with
       python-docx: `python3`, `UMC_PYTHON` or the desktop `.venv`).
+      Opening must not freeze the page ≥ 3 s ("big table stays responsive", 20 000 rows): MD /
+      HTML / DOCX come back `normalised: true` (`view.load` skips a second pass, ~0.8 s), and
+      `openDocument(…, pause)` waits a frame between its heavy steps (page: `nextFrame`).
    8. ✅ 3D viewer (both apps; first step of the 3D editor): Convert | Edit when every file is a 3D
       model. Qt-free model `editor3d/` (`mesh.py` = `load_view_model` via the converter's
       `load_model`, so mm rules match converting; stood on the bed like "Centre on the print bed";
@@ -1082,6 +1101,12 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
 13. ✅ Light / dark mode switch (both apps; owner, Nov 2026): sun / moon button in the top bar,
     System → Light → Dark, remembered (see "UI / UX requirements"). Tests `tests/test_theme.py`,
     `web/tests/theme.test.ts`, `web/e2e/theme.spec.ts` (incl. the 375 px top bar).
+14. Linux (Debian) port (owner, Nov 2026; one step at a time, built from the same `v*` tag as
+    Windows): 1. ✅ runs on Linux — whole pytest suite and `--self-test` pass on Ubuntu 24.04,
+    Linux CI (see "Linux" under Tech stack). 2. Linux messages instead of "Install it for me"
+    (`sudo apt install …`). 3. `.deb` (all editors included, depends on the distro's FFmpeg etc.)
+    + `build-linux.yml` publishing it in the same release. 4. "Open with" (`.desktop` + MIME
+    types). 5. Optional: an apt repository on GitHub Pages (signed) for `apt upgrade`.
 
 ## Handoff — read this first (for the next Claude account)
 

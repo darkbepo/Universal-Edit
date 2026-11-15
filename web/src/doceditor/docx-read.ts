@@ -787,6 +787,7 @@ export function readDocx(bytes: Uint8Array): OpenedDocument {
     collectWarnings(ctx, root, body);
     return {
       html: normaliseHtml(html).html,
+      normalised: true,
       images: ctx.images,
       sourceFormat: "docx",
       warnings: ctx.warnings,

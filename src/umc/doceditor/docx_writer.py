@@ -22,7 +22,6 @@ from pathlib import Path
 from typing import Any
 
 import docx
-import lxml.html
 from docx.enum.style import WD_STYLE_TYPE
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.opc.constants import CONTENT_TYPE as CT
@@ -34,7 +33,7 @@ from docx.parts.numbering import NumberingPart
 from docx.shared import Emu, Pt, RGBColor
 from lxml import etree
 
-from umc.doceditor.html_subset import normalise_html
+from umc.doceditor.html_subset import normalise_html, subset_fragment
 from umc.doceditor.types import DocImages
 
 log = logging.getLogger(__name__)
@@ -589,7 +588,7 @@ def write(
         document = docx.Document()
     _ensure_styles(document)
     ctx = _Ctx(images, _numbering(document))
-    root = lxml.html.fragment_fromstring(html or "<p></p>", create_parent="div")
+    root = subset_fragment(html or "<p></p>")
     _write_blocks(ctx, document, [], root)
     if not document.paragraphs:
         document.add_paragraph()

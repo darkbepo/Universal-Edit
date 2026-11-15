@@ -414,7 +414,7 @@ class PlaybackStreams:
 def thumbnails(
     source: Source, count: int, height: int, tmp: Path, cancel: threading.Event | None = None
 ) -> list[Path]:
-    """``count`` JPEG thumbnails spread over a video (one for a picture).
+    """``count`` thumbnails spread over a video (one for a picture).
 
     Setting ``cancel`` stops FFmpeg and raises ``ConversionCancelled``.
     """
@@ -436,11 +436,13 @@ def thumbnails(
         # Key frames only: decoding every frame of a long video would take minutes.
         args = ["-skip_frame", "nokey"] if key_frames_only else []
         args += ["-i", str(source.path), "-an", "-vf", f"fps={rate:.6f},scale=-2:{height}"]
-        args += ["-frames:v", str(count), "-q:v", "5", "-y", f"{stem}_%03d.jpg"]
+        # PNG, not JPEG: newer FFmpeg (8, Ubuntu 26.04) refuses to write a JPEG from a
+        # limited-range video frame, older ones don't take the options that would fix it.
+        args += ["-frames:v", str(count), "-y", f"{stem}_%03d.png"]
         ffmpeg.ffmpeg_bytes(
             args, cwd=tmp, timeout=timeout, cancel_event=cancel, error_message=ERROR
         )
-        return sorted(tmp.glob(f"{stem}_*.jpg"))
+        return sorted(tmp.glob(f"{stem}_*.png"))
 
     found = run(True)
     if len(found) < count and source.duration <= _FULL_DECODE_SECONDS:
