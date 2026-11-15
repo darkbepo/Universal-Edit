@@ -34,6 +34,10 @@ export type Convert = (
 
 export { isEditableMarkdownZip };
 
+/** Lets the page draw a frame between the heavy steps of opening (no-op by default). */
+export type Pause = () => Promise<void>;
+const noPause: Pause = async () => {};
+
 export const EMPTY = "<p></p>";
 export const CANT_EDIT = "This file type can't be edited.";
 const NBSP = "\xa0";
@@ -98,21 +102,29 @@ function decodeLimited(bytes: Uint8Array): string {
 }
 
 /** Open a Markdown ZIP: the `.md`, its pictures read from `<stem>_files/` in the ZIP. */
-function openMarkdownZip(bytes: Uint8Array, md: string): OpenedDocument {
+async function openMarkdownZip(bytes: Uint8Array, md: string, pause: Pause): Promise<OpenedDocument> {
   const files = unzipPackage(bytes);
   const folder = `${md.slice(0, -3)}_files/`;
   const [front, text] = splitFrontMatter(decodeLimited(files.get(md) ?? new Uint8Array()));
   // Only exact names inside the folder are ever looked up.
   const resolveImage = (rel: string) =>
     rel.startsWith(folder) && !hasDotDot(rel) ? (files.get(rel) ?? null) : null;
-  const { html, images, warnings } = normaliseHtmlReport(mdToHtml(text), { resolveImage });
+  const mdHtml = mdToHtml(text);
+  await pause();
+  const { html, images, warnings } = normaliseHtmlReport(mdHtml, { resolveImage });
+  await pause();
   if (hasMarkdownExtras(text)) warnings.push(W_MDEXTRA);
   if (hasDroppedFormats(text)) warnings.push(W_MDFORMAT);
-  return opened(html, "md", { images, warnings, frontMatter: front });
+  return opened(html, "md", { images, warnings, frontMatter: front, normalised: true });
 }
 
-/** Open `file` for editing; ODT / RTF go through DOCX with `convert`. */
-export async function openDocument(file: File, convert: Convert): Promise<OpenedDocument> {
+/** Open `file` for editing; ODT / RTF go through DOCX with `convert`. `pause` runs between
+ * the heavy steps (the page passes "wait for one frame", so a big file doesn't freeze it). */
+export async function openDocument(
+  file: File,
+  convert: Convert,
+  pause: Pause = noPause,
+): Promise<OpenedDocument> {
   if (file.size > MAX_FILE_BYTES) throw new Error(TOO_LARGE); // before reading anything
   const ext = canonicalExt(file.name);
   const isZip = ext === "zip";
@@ -122,21 +134,25 @@ export async function openDocument(file: File, convert: Convert): Promise<Opened
   if (isZip) {
     const md = markdownZipName(bytes);
     if (md === null) throw new Error(CANT_EDIT);
-    doc = openMarkdownZip(bytes, md);
+    doc = await openMarkdownZip(bytes, md, pause);
   } else if (ext === "docx") {
     doc = readDocx(bytes);
   } else if (ext === "md") {
     const [front, text] = splitFrontMatter(decodeLimited(bytes));
-    const { html, images, warnings } = normaliseHtmlReport(mdToHtml(text));
+    const mdHtml = mdToHtml(text);
+    await pause();
+    const { html, images, warnings } = normaliseHtmlReport(mdHtml);
+    await pause();
     if (hasMarkdownExtras(text)) warnings.push(W_MDEXTRA);
     if (hasDroppedFormats(text)) warnings.push(W_MDFORMAT);
-    doc = opened(html, "md", { images, warnings, frontMatter: front });
+    doc = opened(html, "md", { images, warnings, frontMatter: front, normalised: true });
   } else if (ext === "txt") {
     doc = opened(txtToHtml(decodeLimited(bytes)), "txt");
   } else if (ext === "html") {
     const source = decodeText(bytes);
     const { html, images, warnings } = normaliseHtmlReport(source);
-    doc = opened(html, "html", { images, warnings, title: htmlTitle(source) });
+    await pause();
+    doc = opened(html, "html", { images, warnings, title: htmlTitle(source), normalised: true });
   } else {
     // odt / rtf
     doc = readDocx(await convert(bytes, ext, "docx", file.name));

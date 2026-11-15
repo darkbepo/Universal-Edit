@@ -819,6 +819,9 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       or the part gets two and won't parse. e2e `e2e/doceditor.spec.ts`
       (`test_cross_app_docx` runs the desktop reader on a web-saved DOCX; needs a Python with
       python-docx: `python3`, `UMC_PYTHON` or the desktop `.venv`).
+      Opening must not freeze the page ≥ 3 s ("big table stays responsive", 20 000 rows): MD /
+      HTML / DOCX come back `normalised: true` (`view.load` skips a second pass, ~0.8 s), and
+      `openDocument(…, pause)` waits a frame between its heavy steps (page: `nextFrame`).
    8. ✅ 3D viewer (both apps; first step of the 3D editor): Convert | Edit when every file is a 3D
       model. Qt-free model `editor3d/` (`mesh.py` = `load_view_model` via the converter's
       `load_model`, so mm rules match converting; stood on the bed like "Centre on the print bed";

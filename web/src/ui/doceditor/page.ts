@@ -81,6 +81,14 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text = ""):
 /** The name without its extension ("a.tar.gz" keeps "a.tar"; a name without one stays). */
 const stemOf = (name: string) => (name.includes(".") ? name.slice(0, name.lastIndexOf(".")) : name);
 
+/** Wait until the page has drawn one frame (at most 100 ms: a hidden tab draws none). */
+function nextFrame(): Promise<void> {
+  return new Promise<void>((r) => {
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => setTimeout(r, 0));
+    setTimeout(r, typeof requestAnimationFrame === "function" ? 100 : 0);
+  });
+}
+
 const WINDOWS = typeof navigator !== "undefined" && /Win/.test(navigator.platform);
 
 /** The names `e` is looked up by, like ProseMirror's keymaps ("Mod-Shift-s", "Mod-Alt-1",
@@ -456,15 +464,19 @@ export class DocEditorPage {
       if (token !== this.opens) return null;
     }
     this.showMessage(`Opening “${file.name}”…`);
-    // one frame first, so "Opening…" is drawn before the (synchronous) parse freezes the page;
-    // a hidden tab draws no frames, so it doesn't wait longer than 100 ms for one
-    await new Promise<void>((r) => {
-      if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => setTimeout(r, 0));
-      setTimeout(r, typeof requestAnimationFrame === "function" ? 100 : 0);
-    });
+    // one frame first, so "Opening…" is drawn before the parse; then one between its heavy
+    // steps, so a big file never freezes the page in one block
+    await nextFrame();
     if (token !== this.opens) return null;
     try {
-      const doc = await openDocument(file.file, this.makeConvert(() => token === this.opens));
+      // a later open stops this one at its next pause (the catch drops it: token changed)
+      const pause = async () => {
+        await nextFrame();
+        if (token !== this.opens) throw new Error("superseded");
+      };
+      const doc = await openDocument(file.file, this.makeConvert(() => token === this.opens), pause);
+      if (token !== this.opens) return null;
+      await nextFrame();
       if (token !== this.opens) return null;
       this.view.load(doc);
       this.loads++;

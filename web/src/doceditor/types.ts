@@ -60,6 +60,9 @@ export interface OpenedDocument {
   title: string;
   /** The original DOCX bytes when the source was DOCX (styles, page setup and headers are kept). */
   template: Uint8Array | null;
+  /** `html` is already the normalised subset (normaliseHtml output), so loading it into the
+   * editor needn't normalise it again — on a big file that second pass froze the page ~1 s. */
+  normalised?: boolean;
 }
 
 export interface SaveContent {
