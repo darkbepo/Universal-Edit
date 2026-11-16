@@ -6,7 +6,8 @@ pictures get the "Change details" card ``photo_form.PhotoForm``, MP3 / M4A / FLA
 songs ``music_form.MusicForm``, MP4 / MOV / M4V / MKV / WebM videos ``video_form.VideoForm``,
 PDF / Office / OpenDocument files ``document_form.DocumentForm`` (a locked PDF asks for its
 password first; it's kept in memory for this window only); saving runs on a thread too, after
-asking once before it changes an original (videos report progress and can be cancelled)."""
+asking once before it changes an original (videos report progress and can be cancelled).
+Every file also gets ``file_form.FileForm`` ("Name and date": rename, modified date)."""
 
 from __future__ import annotations
 
@@ -32,11 +33,12 @@ from umc.core.detect import DetectedFile
 from umc.core.errors import ConversionCancelled
 from umc.gui import icons, theme
 from umc.gui.properties.document_form import DocumentForm
+from umc.gui.properties.file_form import FileForm
 from umc.gui.properties.music_form import MusicForm
 from umc.gui.properties.photo_form import PhotoForm
 from umc.gui.properties.video_form import VideoForm
 from umc.gui.viewer.tasks import TaskRunner
-from umc.properties import document, music, photo, video
+from umc.properties import document, fileinfo, music, photo, video
 from umc.properties.info import Section, build
 from umc.properties.read import NOTE, describe, file_facts, uses_pdf_engine
 
@@ -95,6 +97,7 @@ LABEL_W = 110
 
 class PropertiesPanel(QWidget):
     files_saved = Signal(list)  # [Path] changed in place (the queue refreshes their thumbnails)
+    file_renamed = Signal(object, object)  # old Path, new Path (the queue swaps the entry)
     _save_progress = Signal(str, float)  # kind, 0..1 (from the saving thread)
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -150,6 +153,11 @@ class PropertiesPanel(QWidget):
             form.setVisible(False)
             form.save_requested.connect(self._save)
             self.body_lay.addWidget(form)
+        self.file_form = FileForm()
+        self.file_form.setVisible(False)
+        self.file_form.save_requested.connect(self._rename)
+        self.body_lay.addWidget(self.file_form)
+        self._saving = 0  # details saves running (no rename meanwhile)
         self.body_lay.addStretch(1)
         self.scroll.setWidget(self.body)
         lay.addWidget(self.scroll, 1)
@@ -192,7 +200,7 @@ class PropertiesPanel(QWidget):
             self.picker.blockSignals(False)
         self.status.setText(f"Reading {f.name}…")
         self.status.setVisible(True)
-        for form in self.forms.values():  # the shown card still belongs to the last file
+        for form in (*self.forms.values(), self.file_form):  # still the last file's cards
             form.setEnabled(False)
         others = self.changeable()
         passwords = dict(self.passwords)
@@ -226,6 +234,7 @@ class PropertiesPanel(QWidget):
         self.status.clear()
         self.status.setVisible(False)
         self._show(sections)
+        self._show_file_form()
         self.kind = kind if current is not None else None
         for k, form in self.forms.items():
             form.setVisible(k == self.kind)
@@ -250,6 +259,7 @@ class PropertiesPanel(QWidget):
         f = self.current
         facts = {"file": file_facts(f) if f else {}, "note": message or NOTE}
         self._show(build(facts))
+        self._show_file_form()
         self.kind = None
         for form in self.forms.values():
             form.setVisible(False)
@@ -258,8 +268,8 @@ class PropertiesPanel(QWidget):
     # ------------------------------------------------------------------ drawing
     def _show(self, sections: list[Section]) -> None:
         self.sections = sections
-        # the layout holds: the details forms, the cards, a stretch
-        first = len(self.forms)
+        # the layout holds: the details forms, the name and date card, the cards, a stretch
+        first = len(self.forms) + 1
         while self.body_lay.count() > first + 1:
             item = self.body_lay.takeAt(first)
             if item.widget() is not None:
@@ -293,6 +303,52 @@ class PropertiesPanel(QWidget):
                 grid.addWidget(text, row, 0, 1, 2)
         cl.addLayout(grid)
         return card
+
+    # ------------------------------------------------------------------ name and date
+    def _show_file_form(self) -> None:
+        f = self.current
+        self.file_form.setVisible(f is not None)
+        self.file_form.setEnabled(True)
+        if f is not None:
+            self.file_form.set_file(f.path)
+            if self._keep_file_message is not None:
+                self.file_form.show_message(*self._keep_file_message)
+        self._keep_file_message = None
+
+    _keep_file_message: tuple[str, bool] | None = None
+
+    def _rename(self, name: str, date: str) -> None:
+        """Rename the shown file and / or set its modified date (instant, so on this thread)."""
+        f = self.current
+        if f is None or not self.status.isHidden():
+            return
+        form = self.file_form
+        if self._saving:
+            form.show_message("Wait until the details are saved.", error=True)
+            return
+        try:
+            new_name = fileinfo.clean_name(name, f.path) if name else None
+            modified = fileinfo.parse_modified(date) if date else None
+            target = fileinfo.apply(f.path, new_name, modified)
+        except fileinfo.FileError as exc:
+            form.show_message(str(exc), error=True)
+            return
+        done = []
+        if target != f.path:
+            done.append(f"renamed to “{target.name}”")
+        if modified is not None:
+            done.append("date changed")
+        message = ("Saved — " + " and ".join(done) + ".") if done else "Saved."
+        if target != f.path:
+            new = DetectedFile(target, f.family, f.ext)
+            if f.path in self.passwords:
+                self.passwords[target] = self.passwords.pop(f.path)
+            self.files = [new if g == f else g for g in self.files]
+            self.current = new
+            self.picker.setItemText(self.files.index(new), new.name)
+            self.file_renamed.emit(f.path, target)
+        self._keep_file_message = (message, False)
+        self.show_file(self.files.index(self.current))
 
     # ------------------------------------------------------------------ saving
     def confirm_original(self, count: int) -> bool:
@@ -337,6 +393,7 @@ class PropertiesPanel(QWidget):
         form = self.active_form()
         form.set_busy(True)
         form.show_message("Saving…")
+        self._saving += 1
         self._cancel = threading.Event()
         cancel = self._cancel
 
@@ -364,6 +421,7 @@ class PropertiesPanel(QWidget):
 
     def _saved(self, result, kind: str) -> None:
         written, problems = result
+        self._saving = max(0, self._saving - 1)
         form = self.forms[kind]
         form.set_busy(False)
         if problems:
@@ -384,6 +442,7 @@ class PropertiesPanel(QWidget):
             self._keep_message = (message, error, kind)
 
     def _save_failed(self, message: str, kind: str) -> None:
+        self._saving = max(0, self._saving - 1)
         form = self.forms[kind]
         form.set_busy(False)
         form.show_message(message or "The details couldn't be saved.", error=True)

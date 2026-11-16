@@ -1013,7 +1013,11 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       PDF without Info gets one through `setMetaData`; a locked PDF fails with the
       `NEEDS_PASSWORD` prefix), card `ui/documentform.ts` (`.df-form`, ids `#df-*`). Shared cases
       `tests/fixtures/document_cases.json` (`python scripts/make_document_cases.py`).
-      Next step: file name + dates (desktop).
+      Step 6 ✅ name and modified date (desktop only): `properties/fileinfo.py` (`clean_name`
+      adds a missing extension back and refuses another one, Windows-forbidden names / chars;
+      `apply` renames — never over another file — and sets mtime keeping atime), card
+      `gui/properties/file_form.py` under every file's details card; the panel renames on the GUI
+      thread (refused while a details save runs) and `file_renamed` swaps the queue entry.
    15. Orbiting drop-zone badges (both apps): 14 file-type badges (icon + type, own colour,
       dimmed to 62 %) on three tilted rings around the empty drop zone's text, smaller / fainter
       on the far side, faded near the text. Dragging a file over pulls them in and speeds them up;

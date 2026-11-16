@@ -45,7 +45,10 @@ different rules per kind of file. Both apps.
    the XML is changed as text and every other zip entry is copied as it is (ODF's `mimetype`
    stays first and stored). Shared cases `tests/fixtures/document_cases.json` (same XML bytes
    in both apps). Web: MuPDF in the worker; files over 1 GB and ZIP64 need the desktop app.
-6. Desktop only: file name and "modified" date.
+6. ✅ Desktop only: file name and "modified" date — a "Name and date" card for every file.
+   The extension stays (a missing one is added back; changing it would only relabel the file,
+   Convert changes the type); never renames over another file; the access time is kept; the
+   queue then holds the file under its new name. Dates between 1980 and 2099, local time.
 
 Several files at once: fields that differ show "(several values)" and only change when typed in.
 Every save writes a new file next to the original and swaps it in when complete; a file another

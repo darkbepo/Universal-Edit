@@ -264,6 +264,7 @@ class MainWindow(QMainWindow):
         self.empty_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.properties_panel = PropertiesPanel()
         self.properties_panel.files_saved.connect(self._files_saved)
+        self.properties_panel.file_renamed.connect(self._file_renamed)
         self.right = QStackedWidget(objectName="RightColumn")
         self.right.addWidget(self.empty_hint)
         self.right.addWidget(self.tabs)
@@ -435,6 +436,14 @@ class MainWindow(QMainWindow):
     def _files_saved(self, paths: list) -> None:
         """Properties changed these files' details: new previews (a rotation shows there)."""
         self.file_list.forget_thumbnails([str(p) for p in paths])
+        self._rebuild_list()
+
+    def _file_renamed(self, old: Path, new: Path) -> None:
+        """Properties renamed a file: the queue now holds it under its new name."""
+        self.file_list.forget_thumbnails([str(old)])
+        self.files = [
+            DetectedFile(new, f.family, f.ext) if f.path == old else f for f in self.files
+        ]
         self._rebuild_list()
 
     def _sync_order(self, *_args) -> None:
