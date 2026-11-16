@@ -36,8 +36,15 @@ different rules per kind of file. Both apps.
    each kind, so "None" as the default is MKV / WebM only. The web reads the details from
    FFmpeg's `-i` report (`probeFromLog`, also the longer stream lines of a chatty log level)
    and refuses files over 1.5 GB. Shared cases `tests/fixtures/video_cases.json`.
-5. PDF (incremental save keeps signatures; password asked) and Word / Excel / PowerPoint / ODF
-   (core.xml / meta.xml replaced in the zip).
+5. ✅ Documents: title, subject, author, keywords. PDF: the Info dictionary, saved
+   incrementally (appended after the original bytes, so a signature stays valid for what it
+   signed — the card says readers will show a change after signing); a changed field's XMP twin
+   is removed; a locked PDF asks for its password and stays locked. Word / Excel / PowerPoint
+   (`docProps/core.xml`, made with its relationship and content type when missing) and ODF
+   (`meta.xml`, one `meta:keyword` per keyword, made with its manifest entry when missing):
+   the XML is changed as text and every other zip entry is copied as it is (ODF's `mimetype`
+   stays first and stored). Shared cases `tests/fixtures/document_cases.json` (same XML bytes
+   in both apps). Web: MuPDF in the worker; files over 1 GB and ZIP64 need the desktop app.
 6. Desktop only: file name and "modified" date.
 
 Several files at once: fields that differ show "(several values)" and only change when typed in.

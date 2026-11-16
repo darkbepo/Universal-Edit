@@ -1002,7 +1002,18 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       old `rotate` tag counter-clockwise, ≤ 4 clockwise. ffmpeg.wasm can keep a chatty log level
       from an earlier command: `Engine.inputLog` passes `-loglevel info`, and stream lines may
       read `Stream #0:1(eng), 3, 1/1000: Audio` — parse both forms.
-      Next steps: PDF / Office, file name + dates.
+      Step 5 ✅ document details (PDF, DOCX/XLSX/PPTX + macro/template kinds, ODT/ODS/ODP/ODG):
+      desktop `properties/document.py` (XML changed as text by `set_text` / `core_xml` /
+      `odf_meta`; only the root's own namespace declarations count — openpyxl declares `dc` on
+      each element; PDF via `tools/pdf.py` `read_info` / `write_info`, `saveIncr`), card
+      `gui/properties/document_form.py` (password box for locked PDFs; passwords kept per path in
+      the panel; documents read and saved on the "pdf" lane). Web `properties/document.ts` (same
+      functions + `rewriteZip`, which copies untouched entries byte for byte), hidden converter
+      `document-tags` (MuPDF: a trailer changed by hand isn't kept by an incremental save, so a
+      PDF without Info gets one through `setMetaData`; a locked PDF fails with the
+      `NEEDS_PASSWORD` prefix), card `ui/documentform.ts` (`.df-form`, ids `#df-*`). Shared cases
+      `tests/fixtures/document_cases.json` (`python scripts/make_document_cases.py`).
+      Next step: file name + dates (desktop).
    15. Orbiting drop-zone badges (both apps): 14 file-type badges (icon + type, own colour,
       dimmed to 62 %) on three tilted rings around the empty drop zone's text, smaller / fainter
       on the far side, faded near the text. Dragging a file over pulls them in and speeds them up;

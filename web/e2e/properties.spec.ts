@@ -1,5 +1,5 @@
 // Properties mode: Convert | Edit | Properties shows "About this file" for the added files.
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { type Download, expect, type Page, test } from "@playwright/test";
 import { FIXTURES, findPython } from "./global-setup";
@@ -118,7 +118,6 @@ test.describe("change photo details", () => {
     expect(file.suggestedFilename()).toBe("camera.jpg");
     const saved = await file.path();
     const { readDetails } = await import("../src/properties/photo");
-    const { readFileSync } = await import("node:fs");
     const d = readDetails(new Uint8Array(readFileSync(saved)));
     expect([d.title, d.author, d.orientation, d.has_location]).toEqual(["Pier", "Grace Hopper", 1, false]);
     await expect(form).toContainText("Downloaded “camera.jpg”");
@@ -421,5 +420,106 @@ test.describe("change video details", () => {
     await propertiesButton(page).click();
     await expect(page.locator('.prop-card[data-title="File"]')).toBeVisible({ timeout: 60_000 });
     await expect(page.locator(".vf-form")).toBeHidden();
+  });
+});
+
+test.describe("change document details", () => {
+  /** What the desktop app reads from ``path`` (null when no Python with PyMuPDF is found). */
+  const desktopReads = async (path: string, password = ""): Promise<Record<string, unknown> | null> => {
+    const python = findPython("import pymupdf, docx");
+    if (!python) return null;
+    const { execFileSync } = await import("node:child_process");
+    const out = execFileSync(python, ["-c",
+      "import sys, json; sys.path.insert(0, sys.argv[1]); from dataclasses import asdict; from pathlib import Path; " +
+      "from umc.properties.document import read_details; print(json.dumps(asdict(read_details(Path(sys.argv[2]), sys.argv[3]))))",
+      fileURLToPath(new URL("../../src", import.meta.url)), path, password]).toString();
+    return JSON.parse(out);
+  };
+  const named = async (file: Download): Promise<string> => {
+    const { mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const path = `${mkdtempSync(`${tmpdir()}/umc-doc-`)}/${file.suggestedFilename()}`;
+    await file.saveAs(path);
+    return path;
+  };
+
+  test("a Word file: change the title and keywords, download; the desktop reads the same", async ({ page }) => {
+    await page.goto("./");
+    await add(page, ["report.docx"]);
+    await propertiesButton(page).click();
+    const form = page.locator(".df-form");
+    await expect(form).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator(".ph-form")).toBeHidden();
+    const save = form.getByRole("button", { name: "Download with changes" });
+    await expect(save).toBeDisabled();
+    await page.locator("#df-title").fill("Quarterly report & <notes>");
+    await page.locator("#df-keywords").fill("plans, 2026");
+    const download = page.waitForEvent("download");
+    await save.click();
+    const file = await download;
+    expect(file.suggestedFilename()).toBe("report.docx");
+    await expect(page.locator(".df-note")).toContainText("Downloaded “report.docx”");
+    await expect(page.locator("#df-title")).toHaveValue("Quarterly report & <notes>"); // read back from the queue
+    const d = await desktopReads(await named(file));
+    if (d) expect(d).toMatchObject({ kind: "office", title: "Quarterly report & <notes>", keywords: "plans, 2026" });
+  });
+
+  test("a PDF and an ODT: apply to all gives a ZIP", async ({ page }) => {
+    await page.goto("./");
+    await add(page, ["three.pdf", "editable.odt"]);
+    await propertiesButton(page).click();
+    await expect(page.locator(".df-form")).toBeVisible({ timeout: 60_000 });
+    await page.locator("#df-apply-all").check();
+    await page.locator("#df-author").fill("Bo Berg");
+    const download = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Download changed documents (.zip)" }).click();
+    const file = await download;
+    expect(file.suggestedFilename()).toBe("documents (changed details).zip");
+    const { unzipSync } = await import("fflate");
+    const { mkdtempSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const entries = unzipSync(new Uint8Array(readFileSync(await file.path())));
+    expect(Object.keys(entries).sort()).toEqual(["editable.odt", "three.pdf"]);
+    const dir = mkdtempSync(`${tmpdir()}/umc-docs-`);
+    for (const [name, data] of Object.entries(entries)) {
+      writeFileSync(`${dir}/${name}`, data);
+      const d = await desktopReads(`${dir}/${name}`);
+      if (d) expect(d).toMatchObject({ author: "Bo Berg" });
+    }
+    // the PDF was saved incrementally: the original bytes come first, unchanged
+    const original = readFileSync(`${FIXTURES}three.pdf`);
+    expect(Buffer.from(entries["three.pdf"].subarray(0, original.length)).equals(original)).toBe(true);
+  });
+
+  test("a locked PDF asks for its password first and stays locked", async ({ page }) => {
+    await page.goto("./");
+    await add(page, ["locked.pdf"]);
+    await propertiesButton(page).click();
+    const form = page.locator(".df-form");
+    await expect(form).toContainText("locked with a password", { timeout: 60_000 });
+    await expect(page.locator("#df-title")).toBeHidden();
+    await page.locator("#df-password").fill("wrong");
+    await form.getByRole("button", { name: "Open" }).click();
+    await expect(form).toContainText("That password isn't right.");
+    await page.locator("#df-password").fill("pw");
+    await page.locator("#df-password").press("Enter");
+    await expect(page.locator("#df-title")).toHaveValue("Three pages");
+    await page.locator("#df-title").fill("Opened");
+    const download = page.waitForEvent("download");
+    await form.getByRole("button", { name: "Download with changes" }).click();
+    const file = await download;
+    await expect(page.locator("#df-title")).toHaveValue("Opened"); // the password is remembered
+    const path = await named(file);
+    expect(readFileSync(path).includes(Buffer.from("/Encrypt"))).toBe(true);
+    const d = await desktopReads(path, "pw");
+    if (d) expect(d).toMatchObject({ kind: "pdf", title: "Opened" });
+  });
+
+  test("no form for documents it can't change", async ({ page }) => {
+    await page.goto("./");
+    await add(page, ["notes.txt"]);
+    await propertiesButton(page).click();
+    await expect(page.locator('.prop-card[data-title="File"]')).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator(".df-form")).toBeHidden();
   });
 });

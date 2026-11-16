@@ -87,6 +87,13 @@ function xmlText(xml: string, tag: string): string | undefined {
   return text || undefined;
 }
 
+/** The text of every element called ``tag`` (any prefix), empty ones left out. */
+function xmlTexts(xml: string, tag: string): string[] {
+  const local = tag.includes(":") ? tag.split(":")[1] : tag;
+  const re = new RegExp(`<(?:[\\w-]+:)?${local}(?:\\s[^>]*)?>([\\s\\S]*?)</(?:[\\w-]+:)?${local}>`, "g");
+  return [...xml.matchAll(re)].map((m) => xmlText(m[0], tag)).filter((t): t is string => t !== undefined);
+}
+
 const numOrUndef = (v: string | undefined) => (Number(v) ? Math.trunc(Number(v)) : undefined);
 
 export function officeFacts(core: string, app: string): Facts {
@@ -116,7 +123,7 @@ export function odfFacts(meta: string): Facts {
     subject: xmlText(meta, "dc:subject"),
     author: xmlText(meta, "meta:initial-creator"),
     last_saved_by: xmlText(meta, "dc:creator"),
-    keywords: xmlText(meta, "meta:keyword"),
+    keywords: xmlTexts(meta, "meta:keyword").join(", ") || undefined, // one element per keyword
     created: created ? isoLocal(created) : undefined,
     modified: modified ? isoLocal(modified) : undefined,
     application: app ? app.split("/")[0] : undefined,

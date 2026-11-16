@@ -64,6 +64,13 @@ export default async function globalSetup() {
     doc.insertPage(-1, page);
   }
   writeFileSync(`${FIXTURES}three.pdf`, doc.saveToBuffer("compress").asUint8Array());
+  // Properties: a PDF with a title, locked with the password "pw".
+  const info = doc.getTrailer().get("Info");
+  const meta = info.isNull() ? doc.addObject(doc.newDictionary()) : info;
+  if (info.isNull()) doc.getTrailer().put("Info", meta);
+  meta.put("Title", doc.newString("Three pages"));
+  writeFileSync(`${FIXTURES}locked.pdf`,
+    doc.saveToBuffer("compress,encrypt=aes-256,user-password=pw,owner-password=own").asUint8Array());
   // One page holding a large, noisy (hard to compress) photo, for "Compress".
   if (!existsSync(`${FIXTURES}photo.pdf`)) {
     const photo = new mupdf.PDFDocument();
