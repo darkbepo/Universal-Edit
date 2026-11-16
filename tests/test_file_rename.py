@@ -86,6 +86,28 @@ def test_apply_never_replaces_another_file(tmp_path):
     assert src.read_bytes() == b"a" and other.read_bytes() == b"b"
 
 
+def test_move_never_replaces_a_file_made_meanwhile(tmp_path):
+    src = _file(tmp_path / "a.txt", b"a")
+    late = _file(tmp_path / "b.txt", b"b")  # appeared after the check
+    with pytest.raises(FileExistsError):
+        F._move(src, late)
+    assert src.read_bytes() == b"a" and late.read_bytes() == b"b"
+
+
+def test_a_failed_rename_leaves_name_and_date_as_they_were(tmp_path, monkeypatch):
+    src = _file(tmp_path / "a.txt")
+    before = src.stat().st_mtime_ns
+
+    def refuse(path, target):
+        raise PermissionError("held open")
+
+    monkeypatch.setattr(F, "_move", refuse)
+    with pytest.raises(F.FileError, match="open in another program"):
+        F.apply(src, "b.txt", datetime(2020, 1, 1))
+    assert src.exists() and not (tmp_path / "b.txt").exists()
+    assert src.stat().st_mtime_ns == before
+
+
 def test_apply_reports_a_missing_file(tmp_path):
     with pytest.raises(F.FileError, match="isn't there any more"):
         F.apply(tmp_path / "gone.txt", "new.txt")

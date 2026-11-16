@@ -7,6 +7,7 @@ access time is kept)."""
 
 from __future__ import annotations
 
+import contextlib
 import os
 from datetime import datetime
 from pathlib import Path
@@ -79,22 +80,56 @@ def _same_file(a: Path, b: Path) -> bool:
         return False
 
 
+def _move(path: Path, target: Path) -> None:
+    """Rename without ever replacing another file. POSIX ``os.rename`` would silently replace
+    one made in the meantime, so a hard link (which fails if the name is taken) comes first;
+    Windows' rename refuses by itself. A different spelling of the same name is a plain rename."""
+    if os.name == "nt" or _same_file(path, target):
+        os.rename(path, target)
+        return
+    try:
+        os.link(path, target)
+    except FileExistsError:
+        raise
+    except OSError:  # a file system without hard links (FAT, some network drives)
+        if target.exists() or target.is_symlink():
+            raise FileExistsError(target) from None
+        os.rename(path, target)
+        return
+    try:
+        os.unlink(path)
+    except OSError:
+        os.unlink(target)  # don't leave the file under both names
+        raise
+
+
 def apply(path: Path, name: str | None = None, modified: datetime | None = None) -> Path:
     """Rename ``path`` to ``name`` (None = keep) and/or set its modified date; the new path.
-    Never replaces another file; a file another program holds open is reported plainly."""
+    Never replaces another file; a file another program holds open is reported plainly. The
+    date is set first and put back if the rename fails, so a failure leaves the file as it was."""
     target = path
+    renaming = name is not None and name != path.name
+    old_times = None
     try:
-        if name is not None and name != path.name:
+        if renaming:
             target = path.with_name(name)
             # a different spelling of the same name on Windows / macOS is the file itself
             if (target.exists() or target.is_symlink()) and not _same_file(path, target):
-                raise FileError(f"There's already a file called “{name}” in that folder.")
-            os.rename(path, target)
+                raise FileExistsError(target)
         if modified is not None:
-            st = target.stat()
-            os.utime(target, ns=(st.st_atime_ns, int(modified.timestamp() * 1e9)))
-    except FileError:
-        raise
+            st = path.stat()
+            old_times = (st.st_atime_ns, st.st_mtime_ns)
+            os.utime(path, ns=(st.st_atime_ns, int(modified.timestamp() * 1e9)))
+        if renaming:
+            try:
+                _move(path, target)
+            except BaseException:
+                if old_times is not None:
+                    with contextlib.suppress(OSError):
+                        os.utime(path, ns=old_times)
+                raise
+    except FileExistsError as exc:
+        raise FileError(f"There's already a file called “{name}” in that folder.") from exc
     except PermissionError as exc:
         raise FileError(
             f"“{path.name}” couldn't be changed — it may be open in another program, "

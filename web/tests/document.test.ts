@@ -98,3 +98,21 @@ describe("zip rewrite", () => {
     expect(() => D.cleanValues({ title: "x".repeat(2001) })).toThrow("2000");
   });
 });
+
+describe("PDF Info written inside the trailer", () => {
+  it("is moved into its own object so an incremental save keeps the change", async () => {
+    const mupdf = await import("mupdf");
+    const { writePdfInfo } = await import("../src/converters/documenttags");
+    const { remove } = await import("../src/properties/xmp");
+    const base = new mupdf.PDFDocument();
+    base.insertPage(-1, base.addPage([0, 0, 200, 200], 0, null, ""));
+    const plain = new TextDecoder("latin1").decode(base.saveToBuffer("").asUint8Array());
+    const text = plain.replace(/trailer\s*<</, "trailer\n<</Info<</Title(Old)/Author(Ann)>>");
+    const doc = mupdf.Document.openDocument(Uint8Array.from(text, (c) => c.charCodeAt(0)), "application/pdf").asPDF()!;
+    expect(doc.getTrailer().get("Info").isIndirect()).toBe(false);
+    writePdfInfo(doc, { title: "New", author: "" }, D, remove);
+    const again = mupdf.Document.openDocument(doc.saveToBuffer("incremental").asUint8Array(), "application/pdf");
+    expect(again.getMetaData("info:Title")).toBe("New");
+    expect(again.getMetaData("info:Author") ?? "").toBe("");
+  });
+});

@@ -80,14 +80,20 @@ function pdfDetails(doc: Doc, D: DocModule) {
   return d;
 }
 
-function writePdfInfo(
+export function writePdfInfo(
   doc: Doc,
   values: import("../properties/document").Values,
   D: DocModule,
   removeXmp: (xmp: string, props: string[]) => string,
 ): void {
   const trailer = doc.getTrailer();
-  const info = trailer.get("Info");
+  let info = trailer.get("Info");
+  if (info.isDictionary() && !info.isIndirect()) {
+    // written inside the trailer itself: an incremental save keeps neither our changes nor
+    // MuPDF's, so it becomes an object of its own first
+    trailer.put("Info", doc.addObject(info));
+    info = trailer.get("Info");
+  }
   for (const name of D.FIELDS) {
     const text = values[name];
     if (text === undefined) continue;
