@@ -756,11 +756,15 @@ body.no-select { user-select: none; -webkit-user-select: none; }
   .doc-format .doc-size { width: 58px; }
 }
 /* "Change details" (ui/photoform.ts) */
-.ph-form, .mf-form { margin-bottom: 10px; }
+.ph-form, .mf-form, .vf-form { margin-bottom: 10px; }
 .ph-grid { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 14px; align-items: center; }
 .ph-grid label { color: var(--muted); }
 .ph-grid input, .ph-grid select { font: inherit; padding: 5px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); min-width: 0; }
 .ph-grid input.invalid { border-color: var(--danger); }
+.ph-grid textarea { font: inherit; padding: 5px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); min-width: 0; resize: vertical; }
+.vf-tracks { margin-top: 10px; }
+.vf-limit, .vf-lost { margin-top: 8px; }
+.vf-progress { width: 100%; margin-top: 8px; }
 .ph-check { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
 .ph-note { margin-top: 8px; }
 .ph-note.error { color: var(--danger); }

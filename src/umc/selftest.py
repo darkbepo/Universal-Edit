@@ -514,6 +514,23 @@ def _music_tags_check(d: Path, out: Path) -> list[Path]:
     return [saved]
 
 
+def _video_details_check(d: Path) -> list[Path]:
+    """Video details (FFmpeg remux): an MP4 gets a title, a date and a rotation, read back."""
+    from umc.properties import video
+    from umc.tools import ffmpeg, process
+
+    d.mkdir(parents=True, exist_ok=True)
+    src = d / "clip.mp4"
+    process.run([ffmpeg.ffmpeg_path(), "-y", "-f", "lavfi", "-i", "testsrc=d=1:s=64x48",
+                 "-pix_fmt", "yuv420p", str(src)])  # fmt: skip
+    edit = video.VideoEdit({"title": "Self test", "date": "2026-06-01 12:00", "rotation": "90"})
+    saved = video.save_file(src, edit, as_copy=True)
+    got = video.read_details(saved)
+    if (got.title, got.rotation, bool(got.date)) != ("Self test", 90, True):
+        raise RuntimeError(f"details not written: {got}")
+    return [saved]
+
+
 def run(report: Path) -> int:
     from PIL import Image
 
@@ -580,6 +597,7 @@ def run(report: Path) -> int:
                 lambda: _code_editor_check(d / "codeedit"),
             ),
             ("music tags: mp3 title / track / cover", lambda: _music_tags_check(d / "music", out)),
+            ("video details: mp4 title / date / turn", lambda: _video_details_check(d / "video")),
             ("mp4 -> webm", lambda: _convert([out / "img0 slideshow.mp4"], "webm", out)),
             ("mp4 -> gif", lambda: _convert([out / "img0 slideshow.mp4"], "video:gif", out)),
             ("mp4 -> frames", lambda: _convert([out / "img0 slideshow.mp4"], "frames:png", out)),

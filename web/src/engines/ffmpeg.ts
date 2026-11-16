@@ -101,13 +101,41 @@ export class Engine {
     };
   }
 
+  /** FFmpeg's whole ``-i`` report for ``path`` (every line, not only the last 400). */
+  /** FFmpeg's whole ``-i`` report of ``path`` (every stream, tag and side data line), at the
+   * normal log level: ffmpeg.wasm can keep a chattier level from an earlier command. */
+  async inputLog(path: string): Promise<string> {
+    const lines: string[] = [];
+    const listen = ({ message }: { message: string }) => lines.push(message);
+    this.ff.on("log", listen);
+    try {
+      await this.ff.exec(["-hide_banner", "-loglevel", "info", "-i", path]);
+    } finally {
+      this.ff.off("log", listen);
+    }
+    return lines.join("\n");
+  }
+
+  private majorVersion: number | null | undefined;
+
+  /** FFmpeg's major version ("ffmpeg version 5.1.2" → 5); null when it can't tell. */
+  async major(): Promise<number | null> {
+    if (this.majorVersion === undefined) {
+      this.log = [];
+      await this.ff.exec(["-hide_banner", "-version"]);
+      const m = /ffmpeg version n?(\d+)\./.exec(this.log.join("\n"));
+      this.majorVersion = m ? Number(m[1]) : null;
+    }
+    return this.majorVersion;
+  }
+
   /** Subtitle tracks of a file, in order (index = N for -map 0:s:N). */
   async subtitleStreams(path: string): Promise<{ index: number; codec: string; language: string }[]> {
     this.log = [];
     await this.ff.exec(["-hide_banner", "-i", path]);
     const out: { index: number; codec: string; language: string }[] = [];
     for (const line of this.log) {
-      const m = /Stream #\d+:\d+(?:\[\w+\])?(?:\((\w+)\))?: Subtitle: (\w+)/.exec(line);
+      const m = /Stream #\d+:\d+(?:\[\w+\])?(?:\((\w+)\))?(?:, \d+, \d+\/\d+)?: Subtitle: (\w+)/.exec(line);
       if (m) out.push({ index: out.length, codec: m[2], language: m[1] && m[1] !== "und" ? m[1] : "" });
     }
     return out;

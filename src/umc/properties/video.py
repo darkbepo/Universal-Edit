@@ -383,7 +383,9 @@ def ffmpeg_args(
         args += ["-map", f"0:{s['index']}"]
     args += ["-c", "copy", "-map_metadata", "0", "-map_chapters", "0"]
     if turn is not None and not new_style and video is not None:
-        args += [f"-metadata:s:{out_of[video]}", f"rotate={turn}"]
+        # FFmpeg 5 reads the old "rotate" tag counter-clockwise too (4 and older: clockwise)
+        tag = (360 - turn) % 360 if major == 5 else turn
+        args += [f"-metadata:s:{out_of[video]}", f"rotate={tag}"]
     if "title" in clean:
         args += ["-metadata", f"title={clean['title']}"]
     if "description" in clean:

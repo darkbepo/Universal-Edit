@@ -409,7 +409,6 @@
       "index": 0,
       "codec_type": "video",
       "codec_name": "h264",
-      "codec_tag_string": "avc1",
       "disposition": {
        "default": 1
       },
@@ -421,8 +420,6 @@
       "index": 1,
       "codec_type": "audio",
       "codec_name": "aac",
-      "codec_tag_string": "mp4a",
-      "disposition": {},
       "tags": {
        "language": "eng"
       }
@@ -431,7 +428,6 @@
       "index": 2,
       "codec_type": "audio",
       "codec_name": "aac",
-      "codec_tag_string": "mp4a",
       "disposition": {
        "default": 1
       },
@@ -443,7 +439,6 @@
       "index": 3,
       "codec_type": "subtitle",
       "codec_name": "mov_text",
-      "codec_tag_string": "tx3g",
       "disposition": {
        "default": 1
       },
@@ -533,7 +528,6 @@
       "index": 0,
       "codec_type": "video",
       "codec_name": "h264",
-      "codec_tag_string": "avc1",
       "disposition": {
        "default": 1
       },
@@ -550,8 +544,6 @@
       "index": 1,
       "codec_type": "audio",
       "codec_name": "aac",
-      "codec_tag_string": "mp4a",
-      "disposition": {},
       "tags": {
        "language": "eng"
       }
@@ -560,7 +552,6 @@
       "index": 2,
       "codec_type": "audio",
       "codec_name": "aac",
-      "codec_tag_string": "mp4a",
       "disposition": {
        "default": 1
       },
@@ -572,7 +563,6 @@
       "index": 3,
       "codec_type": "subtitle",
       "codec_name": "mov_text",
-      "codec_tag_string": "tx3g",
       "disposition": {
        "default": 1
       },
@@ -662,18 +652,14 @@
       "index": 0,
       "codec_type": "video",
       "codec_name": "h264",
-      "codec_tag_string": "[0][0][0][0]",
       "disposition": {
        "default": 1
-      },
-      "tags": {}
+      }
      },
      {
       "index": 1,
       "codec_type": "audio",
       "codec_name": "aac",
-      "codec_tag_string": "[0][0][0][0]",
-      "disposition": {},
       "tags": {
        "language": "eng"
       }
@@ -682,7 +668,6 @@
       "index": 2,
       "codec_type": "audio",
       "codec_name": "aac",
-      "codec_tag_string": "[0][0][0][0]",
       "disposition": {
        "default": 1
       },
@@ -694,7 +679,6 @@
       "index": 3,
       "codec_type": "subtitle",
       "codec_name": "subrip",
-      "codec_tag_string": "[0][0][0][0]",
       "disposition": {
        "default": 1
       },
@@ -782,17 +766,12 @@
      {
       "index": 0,
       "codec_type": "video",
-      "codec_name": "vp8",
-      "codec_tag_string": "[0][0][0][0]",
-      "disposition": {},
-      "tags": {}
+      "codec_name": "vp8"
      },
      {
       "index": 1,
       "codec_type": "audio",
       "codec_name": "vorbis",
-      "codec_tag_string": "[0][0][0][0]",
-      "disposition": {},
       "tags": {
        "language": "swe"
       }
@@ -850,7 +829,6 @@
       "index": 0,
       "codec_type": "video",
       "codec_name": "h264",
-      "codec_tag_string": "avc1",
       "disposition": {
        "default": 1
       },
@@ -862,8 +840,6 @@
       "index": 1,
       "codec_type": "audio",
       "codec_name": "aac",
-      "codec_tag_string": "mp4a",
-      "disposition": {},
       "tags": {
        "language": "eng"
       }
@@ -872,7 +848,6 @@
       "index": 2,
       "codec_type": "audio",
       "codec_name": "aac",
-      "codec_tag_string": "mp4a",
       "disposition": {
        "default": 1
       },
@@ -884,7 +859,6 @@
       "index": 3,
       "codec_type": "subtitle",
       "codec_name": "mov_text",
-      "codec_tag_string": "tx3g",
       "disposition": {
        "default": 1
       },
@@ -896,7 +870,6 @@
       "index": 4,
       "codec_type": "video",
       "codec_name": "mjpeg",
-      "codec_tag_string": "[0][0][0][0]",
       "disposition": {
        "attached_pic": 1
       }
@@ -1207,7 +1180,6 @@
       "index": 0,
       "codec_type": "video",
       "codec_name": "h264",
-      "codec_tag_string": "avc1",
       "disposition": {
        "default": 1
       },
@@ -1219,8 +1191,6 @@
       "index": 1,
       "codec_type": "audio",
       "codec_name": "aac",
-      "codec_tag_string": "mp4a",
-      "disposition": {},
       "tags": {
        "language": "eng"
       }
@@ -1229,7 +1199,6 @@
       "index": 2,
       "codec_type": "audio",
       "codec_name": "aac",
-      "codec_tag_string": "mp4a",
       "disposition": {
        "default": 1
       },
@@ -1241,7 +1210,6 @@
       "index": 3,
       "codec_type": "subtitle",
       "codec_name": "mov_text",
-      "codec_tag_string": "tx3g",
       "disposition": {
        "default": 1
       },
@@ -1332,7 +1300,6 @@
       "index": 0,
       "codec_type": "video",
       "codec_name": "h264",
-      "codec_tag_string": "avc1",
       "disposition": {
        "default": 1
       },
@@ -1344,8 +1311,6 @@
       "index": 1,
       "codec_type": "audio",
       "codec_name": "aac",
-      "codec_tag_string": "mp4a",
-      "disposition": {},
       "tags": {
        "language": "eng"
       }
@@ -1354,7 +1319,6 @@
       "index": 2,
       "codec_type": "audio",
       "codec_name": "aac",
-      "codec_tag_string": "mp4a",
       "disposition": {
        "default": 1
       },
@@ -1366,7 +1330,6 @@
       "index": 3,
       "codec_type": "subtitle",
       "codec_name": "mov_text",
-      "codec_tag_string": "tx3g",
       "disposition": {
        "default": 1
       },
@@ -1549,7 +1512,73 @@
     "-map_chapters",
     "0",
     "-metadata:s:0",
+    "rotate=90",
+    "/out/rich.mp4"
+   ]
+  },
+  {
+   "file": "rich.mp4",
+   "edit": {
+    "values": {
+     "rotation": "90"
+    },
+    "languages": {},
+    "defaults": {}
+   },
+   "major": 5,
+   "offset": 60,
+   "expect": [
+    "-i",
+    "/in/rich.mp4",
+    "-map",
+    "0:0",
+    "-map",
+    "0:1",
+    "-map",
+    "0:2",
+    "-map",
+    "0:3",
+    "-c",
+    "copy",
+    "-map_metadata",
+    "0",
+    "-map_chapters",
+    "0",
+    "-metadata:s:0",
     "rotate=270",
+    "/out/rich.mp4"
+   ]
+  },
+  {
+   "file": "rich.mp4",
+   "edit": {
+    "values": {
+     "rotation": "90"
+    },
+    "languages": {},
+    "defaults": {}
+   },
+   "major": 4,
+   "offset": 60,
+   "expect": [
+    "-i",
+    "/in/rich.mp4",
+    "-map",
+    "0:0",
+    "-map",
+    "0:1",
+    "-map",
+    "0:2",
+    "-map",
+    "0:3",
+    "-c",
+    "copy",
+    "-map_metadata",
+    "0",
+    "-map_chapters",
+    "0",
+    "-metadata:s:0",
+    "rotate=90",
     "/out/rich.mp4"
    ]
   },
@@ -2017,7 +2046,6 @@
       "index": 0,
       "codec_type": "video",
       "codec_name": "h264",
-      "codec_tag_string": "avc1",
       "disposition": {
        "default": 1
       },
@@ -2029,8 +2057,6 @@
       "index": 1,
       "codec_type": "audio",
       "codec_name": "aac",
-      "codec_tag_string": "mp4a",
-      "disposition": {},
       "tags": {
        "language": "eng"
       }
@@ -2039,7 +2065,6 @@
       "index": 2,
       "codec_type": "audio",
       "codec_name": "aac",
-      "codec_tag_string": "mp4a",
       "disposition": {
        "default": 1
       },
@@ -2051,7 +2076,6 @@
       "index": 3,
       "codec_type": "subtitle",
       "codec_name": "mov_text",
-      "codec_tag_string": "tx3g",
       "disposition": {
        "default": 1
       },
@@ -2077,7 +2101,6 @@
       "index": 0,
       "codec_type": "video",
       "codec_name": "h264",
-      "codec_tag_string": "avc1",
       "disposition": {
        "default": 1
       },
@@ -2094,8 +2117,6 @@
       "index": 1,
       "codec_type": "audio",
       "codec_name": "aac",
-      "codec_tag_string": "mp4a",
-      "disposition": {},
       "tags": {
        "language": "eng"
       }
@@ -2104,7 +2125,6 @@
       "index": 2,
       "codec_type": "audio",
       "codec_name": "aac",
-      "codec_tag_string": "mp4a",
       "disposition": {
        "default": 1
       },
@@ -2116,7 +2136,6 @@
       "index": 3,
       "codec_type": "subtitle",
       "codec_name": "mov_text",
-      "codec_tag_string": "tx3g",
       "disposition": {
        "default": 1
       },
@@ -2142,18 +2161,14 @@
       "index": 0,
       "codec_type": "video",
       "codec_name": "h264",
-      "codec_tag_string": "[0][0][0][0]",
       "disposition": {
        "default": 1
-      },
-      "tags": {}
+      }
      },
      {
       "index": 1,
       "codec_type": "audio",
       "codec_name": "aac",
-      "codec_tag_string": "[0][0][0][0]",
-      "disposition": {},
       "tags": {
        "language": "eng"
       }
@@ -2162,7 +2177,6 @@
       "index": 2,
       "codec_type": "audio",
       "codec_name": "aac",
-      "codec_tag_string": "[0][0][0][0]",
       "disposition": {
        "default": 1
       },
@@ -2174,7 +2188,6 @@
       "index": 3,
       "codec_type": "subtitle",
       "codec_name": "subrip",
-      "codec_tag_string": "[0][0][0][0]",
       "disposition": {
        "default": 1
       },
@@ -2198,17 +2211,12 @@
      {
       "index": 0,
       "codec_type": "video",
-      "codec_name": "vp8",
-      "codec_tag_string": "[0][0][0][0]",
-      "disposition": {},
-      "tags": {}
+      "codec_name": "vp8"
      },
      {
       "index": 1,
       "codec_type": "audio",
       "codec_name": "vorbis",
-      "codec_tag_string": "[0][0][0][0]",
-      "disposition": {},
       "tags": {
        "language": "swe"
       }
@@ -2218,7 +2226,7 @@
   },
   {
    "name": "cover.mp4",
-   "log": "[mov,mp4,m4a,3gp,3g2,mj2 @ 0x55a72a511e80] stream 0, timescale not set\n[mjpeg @ 0x55a72a525140] EOI missing, emulating\nInput #0, mov,mp4,m4a,3gp,3g2,mj2, from '/tmp/claude-0/-home-user/289a1127-38bf-536c-bcc7-bdf06e3b83d2/scratchpad/vt/cover.mp4':\n  Metadata:\n    major_brand     : isom\n    minor_version   : 512\n    compatible_brands: isomiso2avc1mp41\n    creation_time   : 2021-05-06T07:08:09.000000Z\n    title           : My \"clip\": one\n    encoder         : Lavf60.16.100\n    comment         : Line one\n  Duration: 00:00:01.00, start: 0.000000, bitrate: 194 kb/s\n  Stream #0:0[0x1](und): Video: h264 (High 4:4:4 Predictive) (avc1 / 0x31637661), yuv444p(progressive), 64x48 [SAR 1:1 DAR 4:3], 18 kb/s, 25 fps, 25 tbr, 12800 tbn (default)\n    Metadata:\n      creation_time   : 2021-05-06T07:08:09.000000Z\n      handler_name    : VideoHandler\n      vendor_id       : [0][0][0][0]\n      encoder         : Lavc60.31.102 libx264\n  Stream #0:1[0x2](eng): Audio: aac (LC) (mp4a / 0x6134706D), 44100 Hz, mono, fltp, 70 kb/s\n    Metadata:\n      creation_time   : 2021-05-06T07:08:09.000000Z\n      handler_name    : SoundHandler\n      vendor_id       : [0][0][0][0]\n  Stream #0:2[0x3](dan): Audio: aac (LC) (mp4a / 0x6134706D), 44100 Hz, mono, fltp, 70 kb/s (default)\n    Metadata:\n      creation_time   : 2021-05-06T07:08:09.000000Z\n      handler_name    : SoundHandler\n      vendor_id       : [0][0][0][0]\n  Stream #0:3[0x4](ger): Subtitle: mov_text (tx3g / 0x67337874), 0 kb/s (default)\n    Metadata:\n      creation_time   : 2021-05-06T07:08:09.000000Z\n      handler_name    : SubtitleHandler\n  Stream #0:4[0x0]: Video: mjpeg (Baseline), yuvj420p(pc, bt470bg/unknown/unknown), 16x16 [SAR 1:1 DAR 1:1], 90k tbr, 90k tbn (attached pic)\nAt least one output file must be specified\n",
+   "log": "[mov,mp4,m4a,3gp,3g2,mj2 @ 0x55ec4e88ce80] stream 0, timescale not set\n[mjpeg @ 0x55ec4e8a0140] EOI missing, emulating\nInput #0, mov,mp4,m4a,3gp,3g2,mj2, from '/tmp/claude-0/-home-user/289a1127-38bf-536c-bcc7-bdf06e3b83d2/scratchpad/vt/cover.mp4':\n  Metadata:\n    major_brand     : isom\n    minor_version   : 512\n    compatible_brands: isomiso2avc1mp41\n    creation_time   : 2021-05-06T07:08:09.000000Z\n    title           : My \"clip\": one\n    encoder         : Lavf60.16.100\n    comment         : Line one\n  Duration: 00:00:01.00, start: 0.000000, bitrate: 194 kb/s\n  Stream #0:0[0x1](und): Video: h264 (High 4:4:4 Predictive) (avc1 / 0x31637661), yuv444p(progressive), 64x48 [SAR 1:1 DAR 4:3], 18 kb/s, 25 fps, 25 tbr, 12800 tbn (default)\n    Metadata:\n      creation_time   : 2021-05-06T07:08:09.000000Z\n      handler_name    : VideoHandler\n      vendor_id       : [0][0][0][0]\n      encoder         : Lavc60.31.102 libx264\n  Stream #0:1[0x2](eng): Audio: aac (LC) (mp4a / 0x6134706D), 44100 Hz, mono, fltp, 70 kb/s\n    Metadata:\n      creation_time   : 2021-05-06T07:08:09.000000Z\n      handler_name    : SoundHandler\n      vendor_id       : [0][0][0][0]\n  Stream #0:2[0x3](dan): Audio: aac (LC) (mp4a / 0x6134706D), 44100 Hz, mono, fltp, 70 kb/s (default)\n    Metadata:\n      creation_time   : 2021-05-06T07:08:09.000000Z\n      handler_name    : SoundHandler\n      vendor_id       : [0][0][0][0]\n  Stream #0:3[0x4](ger): Subtitle: mov_text (tx3g / 0x67337874), 0 kb/s (default)\n    Metadata:\n      creation_time   : 2021-05-06T07:08:09.000000Z\n      handler_name    : SubtitleHandler\n  Stream #0:4[0x0]: Video: mjpeg (Baseline), yuvj420p(pc, bt470bg/unknown/unknown), 16x16 [SAR 1:1 DAR 1:1], 90k tbr, 90k tbn (attached pic)\nAt least one output file must be specified\n",
    "expect": {
     "format": {
      "tags": {
@@ -2232,7 +2240,6 @@
       "index": 0,
       "codec_type": "video",
       "codec_name": "h264",
-      "codec_tag_string": "avc1",
       "disposition": {
        "default": 1
       },
@@ -2244,8 +2251,6 @@
       "index": 1,
       "codec_type": "audio",
       "codec_name": "aac",
-      "codec_tag_string": "mp4a",
-      "disposition": {},
       "tags": {
        "language": "eng"
       }
@@ -2254,7 +2259,6 @@
       "index": 2,
       "codec_type": "audio",
       "codec_name": "aac",
-      "codec_tag_string": "mp4a",
       "disposition": {
        "default": 1
       },
@@ -2266,7 +2270,6 @@
       "index": 3,
       "codec_type": "subtitle",
       "codec_name": "mov_text",
-      "codec_tag_string": "tx3g",
       "disposition": {
        "default": 1
       },
@@ -2278,7 +2281,6 @@
       "index": 4,
       "codec_type": "video",
       "codec_name": "mjpeg",
-      "codec_tag_string": "[0][0][0][0]",
       "disposition": {
        "attached_pic": 1
       }

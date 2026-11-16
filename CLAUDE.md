@@ -992,7 +992,17 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       The remux can drop or rename tags the card doesn't show (lyrics, ReplayGain, sort names);
       the card says so (`.mf-limit`) — mutagen on the desktop keeps them.
       e2e reads web-saved songs with the desktop reader (`findPython("import mutagen")`).
-      Next steps: video, PDF / Office, file name + dates.
+      Step 4 ✅ video details (MP4 / MOV / M4V / MKV / WebM): desktop `properties/video.py`
+      (ffprobe JSON → `VideoDetails`; save = one FFmpeg `-c copy` remux through
+      `saving.save_with` with progress / Cancel and a disk-space check; card
+      `gui/properties/video_form.py`). Web `properties/video.ts` (same functions; reads FFmpeg's
+      `-i` report with `probeFromLog`), hidden converter `video-tags` on the tag worker, card
+      `ui/videoform.ts` (`.vf-form`, ids `#vf-*`). Shared cases `tests/fixtures/video_cases.json`.
+      Rotation: FFmpeg ≥ 6 `-display_rotation`; FFmpeg 5 (ffmpeg.wasm, Debian 12) reads the
+      old `rotate` tag counter-clockwise, ≤ 4 clockwise. ffmpeg.wasm can keep a chatty log level
+      from an earlier command: `Engine.inputLog` passes `-loglevel info`, and stream lines may
+      read `Stream #0:1(eng), 3, 1/1000: Audio` — parse both forms.
+      Next steps: PDF / Office, file name + dates.
    15. Orbiting drop-zone badges (both apps): 14 file-type badges (icon + type, own colour,
       dimmed to 62 %) on three tilted rings around the empty drop zone's text, smaller / fainter
       on the far side, faded near the text. Dragging a file over pulls them in and speeds them up;

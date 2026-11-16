@@ -1,7 +1,7 @@
 // Properties mode: Convert | Edit | Properties shows "About this file" for the added files.
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { expect, type Page, test } from "@playwright/test";
+import { type Download, expect, type Page, test } from "@playwright/test";
 import { FIXTURES, findPython } from "./global-setup";
 
 async function add(page: Page, names: string[]) {
@@ -284,5 +284,142 @@ test.describe("change music tags", () => {
     await propertiesButton(page).click();
     await expect(page.locator('.prop-card[data-title="File"]')).toBeVisible();
     await expect(page.locator(".mf-form")).toBeHidden();
+  });
+});
+
+test.describe("change video details", () => {
+  test.skip(!existsSync(`${FIXTURES}clip.mp4`), "ffmpeg missing: no sample video");
+  test.use({ timezoneId: "Europe/Copenhagen" }); // the typed date is local time: UTC+2 in June
+
+  /** What the desktop app reads from ``path`` (null when no Python is found). */
+  const desktopReads = async (path: string): Promise<Record<string, unknown> | null> => {
+    const python = findPython("import PIL");
+    if (!python) return null;
+    const { execFileSync } = await import("node:child_process");
+    try {
+      const out = execFileSync(python, ["-c",
+        "import sys, json; sys.path.insert(0, sys.argv[1]); from dataclasses import asdict; from pathlib import Path; " +
+        "from umc.properties.video import read_details; print(json.dumps(asdict(read_details(Path(sys.argv[2])))))",
+        fileURLToPath(new URL("../../src", import.meta.url)), path]).toString();
+      return JSON.parse(out);
+    } catch {
+      return null; // no ffprobe for the desktop reader
+    }
+  };
+
+  /** The download under its own name (the desktop reader goes by the extension). */
+  const named = async (file: Download): Promise<string> => {
+    const { mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const path = `${mkdtempSync(`${tmpdir()}/umc-video-`)}/${file.suggestedFilename()}`;
+    await file.saveAs(path);
+    return path;
+  };
+
+  test("change title, date and rotation, download; the desktop reads the same", async ({ page }) => {
+    await page.goto("./");
+    await add(page, ["clip.mp4"]);
+    await propertiesButton(page).click();
+    const form = page.locator(".vf-form");
+    await expect(form).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator(".ph-form")).toBeHidden();
+    await expect(page.locator(".mf-form")).toBeHidden();
+    const save = form.getByRole("button", { name: "Download with changes" });
+    await expect(save).toBeDisabled();
+    await page.locator("#vf-title").fill("Beach day");
+    await page.locator("#vf-description").fill("Two lines\nof notes");
+    await page.locator("#vf-date").fill("2026-06-01 12:00");
+    await page.locator("#vf-rotation").selectOption("90");
+    const download = page.waitForEvent("download");
+    await save.click();
+    const file = await download;
+    expect(file.suggestedFilename()).toBe("clip.mp4");
+    await expect(form).toContainText("Downloaded “clip.mp4”", { timeout: 60_000 });
+    // the queue holds the changed video: the form shows its details now
+    await expect(page.locator("#vf-title")).toHaveValue("Beach day");
+    await expect(page.locator("#vf-description")).toHaveValue("Two lines\nof notes");
+    await expect(page.locator("#vf-date")).toHaveValue("2026-06-01 12:00");
+    await expect(page.locator("#vf-rotation")).toHaveValue("90");
+    expect(await card(page, "Video")).toMatchObject({ Rotation: "90°" });
+    const d = await desktopReads(await named(file));
+    if (d) expect(d).toMatchObject({ title: "Beach day", description: "Two lines\nof notes", date: "2026-06-01T10:00:00Z", rotation: 90 });
+  });
+
+  test("tracks: languages and the default sound; two videos give a ZIP", async ({ page }) => {
+    test.skip(!existsSync(`${FIXTURES}tracks.mkv`), "no sample with tracks");
+    await page.goto("./");
+    await add(page, ["tracks.mkv"]);
+    await propertiesButton(page).click();
+    await expect(page.locator(".vf-form")).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator("#vf-title")).toHaveValue("Holiday");
+    await expect(page.locator("#vf-rotation")).toBeHidden(); // MKV has no rotation tag
+    const ids = await page.locator(".vf-tracks select[id^='vf-language-']").evaluateAll((els) => els.map((e) => e.id));
+    expect(ids).toHaveLength(3);
+    await expect(page.locator(`#${ids[0]}`)).toHaveValue("eng");
+    await expect(page.locator(`#${ids[1]}`)).toHaveValue("");
+    await expect(page.locator(`#${ids[2]}`)).toHaveValue("dan");
+    await page.locator(`#${ids[1]}`).selectOption("fre");
+    const second = ids[1].replace("vf-language-", "");
+    await page.locator("#vf-default-audio").selectOption(second);
+    await page.locator("#vf-default-subtitle").selectOption(ids[2].replace("vf-language-", ""));
+    const download = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Download with changes" }).click();
+    const file = await download;
+    await expect(page.locator(".vf-note")).toContainText("Downloaded", { timeout: 60_000 });
+    await expect(page.locator(`#${ids[1]}`)).toHaveValue("fre");
+    await expect(page.locator("#vf-default-audio")).toHaveValue(second);
+    const d = await desktopReads(await named(file));
+    if (d) {
+      const tracks = d.tracks as { language: string; default: boolean; kind: string }[];
+      expect(tracks.map((t) => [t.kind, t.language, t.default])).toEqual([["audio", "eng", false], ["audio", "fre", true], ["subtitle", "dan", true]]);
+    }
+  });
+
+  test("several videos: apply to all, a ZIP download", async ({ page }) => {
+    test.skip(!existsSync(`${FIXTURES}tracks.mkv`), "no second sample");
+    await page.goto("./");
+    await add(page, ["clip.mp4", "tracks.mkv"]);
+    await propertiesButton(page).click();
+    await expect(page.locator(".vf-form")).toBeVisible({ timeout: 60_000 });
+    await page.locator("#vf-apply-all").check();
+    await expect(page.locator("#vf-title")).toHaveAttribute("placeholder", "Several values");
+    await expect(page.locator("#vf-rotation")).toBeHidden(); // not every video can be turned
+    await expect(page.locator(".vf-tracks")).toBeHidden();
+    await page.locator("#vf-title").fill("Same for both");
+    const download = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Download changed videos (.zip)" }).click();
+    const file = await download;
+    expect(file.suggestedFilename()).toBe("videos (changed details).zip");
+    const { unzipSync } = await import("fflate");
+    const { readFileSync, writeFileSync, mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const zip = unzipSync(new Uint8Array(readFileSync(await file.path())));
+    expect(Object.keys(zip).sort()).toEqual(["clip.mp4", "tracks.mkv"]);
+    const dir = mkdtempSync(`${tmpdir()}/umc-video-`);
+    for (const [name, data] of Object.entries(zip)) {
+      writeFileSync(`${dir}/${name}`, data);
+      const d = await desktopReads(`${dir}/${name}`);
+      if (d) expect(d).toMatchObject({ title: "Same for both" });
+    }
+  });
+
+  test("a bad date is refused in plain words", async ({ page }) => {
+    await page.goto("./");
+    await add(page, ["clip.mp4"]);
+    await propertiesButton(page).click();
+    await expect(page.locator(".vf-form")).toBeVisible({ timeout: 60_000 });
+    await page.locator("#vf-date").fill("next tuesday");
+    await expect(page.locator("#vf-date")).toHaveClass(/invalid/);
+    await page.getByRole("button", { name: "Download with changes" }).click();
+    await expect(page.locator(".vf-note")).toContainText("Write the date like");
+  });
+
+  test("no form for videos it can't change", async ({ page }) => {
+    test.skip(!existsSync(`${FIXTURES}clip.avi`), "no AVI sample");
+    await page.goto("./");
+    await add(page, ["clip.avi"]);
+    await propertiesButton(page).click();
+    await expect(page.locator('.prop-card[data-title="File"]')).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator(".vf-form")).toBeHidden();
   });
 });

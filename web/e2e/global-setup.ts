@@ -274,4 +274,14 @@ export default async function globalSetup() {
       // older ffmpeg without -display_rotation: the rotation check is skipped
     }
   }
+  if (!existsSync(`${FIXTURES}tracks.mkv`) && existsSync(`${FIXTURES}clip.mp4`)) {
+    try { // two sound tracks (English default, the other unset) and Danish subtitles: the details card
+      execFileSync("ffmpeg", ["-loglevel", "error", "-y", "-i", `${FIXTURES}clip.mp4`, "-i", `${FIXTURES}movie.da.srt`,
+        "-map", "0:v", "-map", "0:a", "-map", "0:a", "-map", "1:s", "-c", "copy",
+        "-metadata", "title=Holiday", "-metadata:s:a:0", "language=eng", "-metadata:s:s:0", "language=dan",
+        "-disposition:a:0", "default", "-disposition:a:1", "0", "-disposition:s:0", "0", `${FIXTURES}tracks.mkv`]);
+    } catch {
+      // the track test is skipped
+    }
+  }
 }

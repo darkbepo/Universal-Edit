@@ -14,6 +14,7 @@ import { subtitleConverter, subtitleExtractConverter, subtitleVideoConverter } f
 import { documentConverter, pagesConverter, splitConverter } from "../converters/pdf";
 import { pdfToolsConverter } from "../converters/pdftools";
 import { musicTagsConverter } from "../converters/musictags";
+import { videoTagsConverter } from "../converters/videotags";
 import { propertiesConverter } from "../converters/properties";
 import { slideshowConverter } from "../converters/slideshow";
 import { audioConverter, audioFileConverter, framesConverter, gifConverter, videoConverter } from "../converters/video";
@@ -51,6 +52,7 @@ export const CONVERTERS: Converter[] = [
   model3dViewConverter, // 3D viewer only (no targets)
   propertiesConverter, // Properties mode only (no targets)
   musicTagsConverter, // Properties mode only (no targets)
+  videoTagsConverter, // Properties mode only (no targets)
   audioEditOpenConverter, // audio editor only (no targets)
 ];
 

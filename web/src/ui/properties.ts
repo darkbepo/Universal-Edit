@@ -4,6 +4,7 @@
 // a read still running.
 import { MUSIC_TAGS_TARGET } from "../converters/musictags";
 import { PROPERTIES_TARGET } from "../converters/properties";
+import { VIDEO_TAGS_TARGET } from "../converters/videotags";
 import type { InputFile } from "../core/types";
 import { build, type Facts, type Section } from "../properties/info";
 import { fileFacts } from "../properties/read";
@@ -11,6 +12,7 @@ import { ConversionClient } from "../worker/client";
 import { icon } from "./icons";
 import { MusicForm, readMusicDetails } from "./musicform";
 import { PhotoForm } from "./photoform";
+import { readVideoDetails, VIDEO_EXTS, VideoForm, type VideoRunner } from "./videoform";
 
 const h = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> & { class?: string } = {}, ...children: (Node | string)[]) => {
   const el = document.createElement(tag);
@@ -34,8 +36,10 @@ export class PropertiesPane {
   sections: Section[] = [];
   readonly form: PhotoForm;
   readonly musicForm: MusicForm;
+  readonly videoForm: VideoForm;
   // saving songs has its own worker, so a read cancelled by moving on never stops a save
   private readonly tagClient = new ConversionClient();
+  private readonly runVideo: VideoRunner;
 
   /** ``onChanged``: pictures whose details were changed (their bytes in the queue are new). */
   constructor(private readonly onChanged: (files: InputFile[]) => void = () => {}) {
@@ -48,9 +52,11 @@ export class PropertiesPane {
       (f, edit, cover) => this.tagClient.run(MUSIC_TAGS_TARGET, [f], { edit, cover }, () => {}),
       saved,
     );
+    this.runVideo = (f, options) => this.tagClient.run(VIDEO_TAGS_TARGET, [f], options, () => {});
+    this.videoForm = new VideoForm(this.runVideo, saved);
     this.el = h("section", { class: "pane properties-pane", hidden: true, ariaLabel: "Properties" },
       h("div", { class: "pane-head" }, h("span", { class: "pane-icon" }, icon("info-circle", 18)), h("h2", {}, "About this file"), h("div", { class: "spacer" }), this.picker),
-      h("div", { class: "pane-body" }, this.status, this.form.el, this.musicForm.el, this.body));
+      h("div", { class: "pane-body" }, this.status, this.form.el, this.musicForm.el, this.videoForm.el, this.body));
     this.picker.addEventListener("change", () => void this.show(this.picker.selectedIndex));
   }
 
@@ -96,11 +102,34 @@ export class PropertiesPane {
     this.render(build({ ...facts, file: base }));
   }
 
-  /** The "Change details" form: JPG / PNG / WebP pictures, or MP3 / M4A / FLAC / OGG / Opus songs. */
+  /** The "Change details" form: JPG / PNG / WebP pictures, MP3 / M4A / FLAC / OGG / Opus songs, or
+   * MP4 / MOV / M4V / MKV / WebM videos. */
   private async fillForm(f: InputFile, ticket: number, keepNote: boolean): Promise<void> {
     const changeable = (g: InputFile) => ["jpg", "png", "webp"].includes(g.ext);
     const song = (g: InputFile) => ["mp3", "m4a", "flac", "ogg", "opus"].includes(g.ext);
+    const clip = (g: InputFile) => VIDEO_EXTS.includes(g.ext);
     if (!song(f)) this.musicForm.set(null, []);
+    if (!clip(f)) void this.videoForm.set(null, []);
+    if (clip(f)) {
+      this.form.set(null, []);
+      const read = async (g: InputFile) => {
+        try {
+          return { file: g, details: await readVideoDetails(this.runVideo, g) };
+        } catch {
+          return null;
+        }
+      };
+      const everyone = [];
+      for (const g of this.files.filter(clip)) { // one at a time: one FFmpeg in the worker
+        const x = await read(g);
+        if (ticket !== this.ticket) return;
+        if (x) everyone.push(x);
+      }
+      const note = keepNote ? this.videoForm.noteText : "";
+      await this.videoForm.set(everyone.find((x) => x.file === f) ?? null, everyone);
+      if (note) this.videoForm.keepNote(note);
+      return;
+    }
     if (song(f)) {
       this.form.set(null, []);
       const read = async (g: InputFile) => {

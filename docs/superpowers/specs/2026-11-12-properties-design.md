@@ -25,8 +25,17 @@ different rules per kind of file. Both apps.
    (FFmpeg can't write it back): it hides the cover button there and refuses a change that
    would lose an existing cover (removing it works); the desktop app can. The remux may also drop
    or rename tags the card doesn't show (lyrics, ReplayGain, sort names); the card says so.
-4. Video: title, description, date, rotation flag, track language / default (FFmpeg
-   `-map 0 -c copy`; check first which streams the container can't keep and warn).
+4. ✅ Video (MP4 / MOV / M4V / MKV / WebM): title, description, date recorded (typed in local
+   time, stored as UTC), rotation flag (MP4 / MOV / M4V), each sound / subtitle track's language
+   and which one plays by default. Both apps: one FFmpeg `-c copy` remux of the kept streams
+   (`-map_metadata 0 -map_chapters 0`); tracks the container can't keep (data tracks such as
+   GPS, timecodes) are listed in the card before saving. Rotation: FFmpeg ≥ 6
+   `-display_rotation`, FFmpeg 5 (ffmpeg.wasm, Debian 12) the old `rotate` tag counter-clockwise,
+   FFmpeg ≤ 4 clockwise. MOV stores only the old Mac language list (some spellings differ,
+   Croatian / Serbian / Norwegian can't be stored). MP4 / MOV / M4V always play one track of
+   each kind, so "None" as the default is MKV / WebM only. The web reads the details from
+   FFmpeg's `-i` report (`probeFromLog`, also the longer stream lines of a chatty log level)
+   and refuses files over 1.5 GB. Shared cases `tests/fixtures/video_cases.json`.
 5. PDF (incremental save keeps signatures; password asked) and Word / Excel / PowerPoint / ODF
    (core.xml / meta.xml replaced in the zip).
 6. Desktop only: file name and "modified" date.
