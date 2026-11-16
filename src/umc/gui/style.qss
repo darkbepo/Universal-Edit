@@ -730,6 +730,7 @@ QToolButton#PanelButton {
 }
 QToolButton#PanelButton:hover {
     background: @accent_soft;
+}
 
 /* Document editor: the page column */
 #DocPage {
@@ -737,6 +738,18 @@ QToolButton#PanelButton:hover {
     color: black;
 }
 
+QPushButton#UpdatePill {
+    background: @accent_soft;
+    color: @accent;
+    border: none;
+    border-radius: 10px;
+    padding: 3px 10px;
+    font-weight: 600;
+}
+QPushButton#UpdatePill:hover {
+    background: @accent;
+    color: @accent_text;
+}
 QToolButton#Cog {
     border: none;
     border-radius: 8px;

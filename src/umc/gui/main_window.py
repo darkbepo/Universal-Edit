@@ -129,6 +129,15 @@ class MainWindow(QMainWindow):
         cl.setSpacing(2)
         cl.addWidget(self.settings_button)
         cl.addWidget(self.theme_button)
+        # shown when the daily check found something (update_dialog.BackgroundCheck)
+        self.update_available = QPushButton("Update available", objectName="UpdatePill")
+        self.update_available.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.update_available.setToolTip("See what's new and update in one click")
+        self.update_available.clicked.connect(self.open_updates)
+        self.update_available.hide()
+        self._update_report = None
+        cl.addSpacing(6)
+        cl.addWidget(self.update_available)
         tl.addWidget(corner, 0, 0, at_left)
         tl.setColumnStretch(0, 1)
         tl.setColumnStretch(2, 1)
@@ -594,6 +603,16 @@ class MainWindow(QMainWindow):
             f"Theme: {theme.LABELS[choice]} — click for {theme.LABELS[following].lower()}"
         )
         self.theme_button.setAccessibleName(f"Theme: {theme.LABELS[choice]}")
+
+    def show_update(self, report) -> None:
+        """The daily check found an update: show the button that opens the Updates window."""
+        self._update_report = report
+        self.update_available.setVisible(report is not None)
+
+    def open_updates(self) -> None:
+        from umc.gui.update_dialog import UpdateDialog
+
+        UpdateDialog(self, self._update_report).exec()
 
     def open_settings(self) -> None:
         from umc.gui.settings_dialog import SettingsDialog

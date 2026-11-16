@@ -160,3 +160,24 @@ def test_pages_built_earlier_follow_the_switch(choice, qtbot):
     choice.set_choice("light", save=False)
     assert icons._made_icons[rail.buttons[some].icon().cacheKey()][1] == light["text"]
     assert light["accent_soft"] in banner.styleSheet()
+
+
+def test_stylesheet_parses(qtbot):
+    """A missing "}" made Qt drop every rule after it, without failing anything else."""
+    from PySide6.QtCore import qInstallMessageHandler
+    from PySide6.QtWidgets import QWidget
+
+    from umc.gui import theme
+
+    sheet = theme.stylesheet()
+    assert sheet.count("{") == sheet.count("}")
+    messages = []
+    previous = qInstallMessageHandler(lambda _t, _c, m: messages.append(m))
+    try:
+        w = QWidget()
+        qtbot.addWidget(w)
+        w.setStyleSheet(sheet)
+        w.ensurePolished()
+    finally:
+        qInstallMessageHandler(previous)
+    assert not [m for m in messages if "parse" in m.lower()]

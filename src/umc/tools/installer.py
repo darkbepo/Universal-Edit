@@ -192,6 +192,7 @@ def install_pandoc(progress: Progress, cancel_event: threading.Event) -> str:
     exe = find_in_tools("pandoc", "pandoc.exe")
     if exe is None:
         raise InstallError("Pandoc was downloaded but pandoc.exe wasn't found in it.")
+    record_version("Pandoc", version)
     progress(1.0, f"Pandoc {version} installed.")
     return exe
 
@@ -268,6 +269,7 @@ def install_libreoffice(progress: Progress, cancel_event: threading.Event) -> st
         exe = find_in_tools("libreoffice", "soffice.exe")
         progress(0.9, "Testing LibreOffice…")
         if exe and _works(exe, cancel_event):
+            record_version("LibreOffice", version)
             progress(1.0, f"LibreOffice {version} installed.")
             return exe
 
@@ -285,6 +287,7 @@ def install_libreoffice(progress: Progress, cancel_event: threading.Event) -> st
         exe = libreoffice.soffice_path()
         if exe is None or not _works(exe, cancel_event):
             raise InstallError("LibreOffice was installed but doesn't start on this computer.")
+        record_version("LibreOffice", version)
         progress(1.0, f"LibreOffice {version} installed.")
         return exe
     finally:
@@ -394,6 +397,7 @@ def install_ghostscript(progress: Progress, cancel_event: threading.Event) -> st
         found = ghostscript.gs_path()
         if found is None:
             raise InstallError("Ghostscript was installed but gswin64c.exe wasn't found.")
+        record_version("Ghostscript", version)
         progress(1.0, f"Ghostscript {version} installed.")
         return found
     finally:
@@ -439,7 +443,7 @@ def install_calibre(progress: Progress, cancel_event: threading.Event) -> str:
     root = tools_dir()
     _check_space(root, CALIBRE_SPACE_BYTES, "Calibre")
     progress(0.0, "Finding the latest Calibre…")
-    version, url = latest_calibre()
+    version, url, sha = latest_calibre()
     downloads = root / "downloads"
     downloads.mkdir(exist_ok=True)
     msi = downloads / url.rsplit("/", 1)[1]
@@ -449,6 +453,7 @@ def install_calibre(progress: Progress, cancel_event: threading.Event) -> str:
             url,
             msi,
             label=f"Calibre {version}",
+            expected_sha256=sha,
             progress=lambda f, m: progress(0.7 * f, m),
             cancel_event=cancel_event,
         )
@@ -472,6 +477,7 @@ def install_calibre(progress: Progress, cancel_event: threading.Event) -> str:
             src = Path(tmp) / "test.txt"
             src.write_text("Universal Edit test\n", encoding="utf-8")
             calibre.convert(src, Path(tmp) / "test.epub", cancel_event=cancel_event, exe=exe)
+        record_version("Calibre", version)
         progress(1.0, f"Calibre {version} installed.")
         return exe
     finally:
@@ -523,8 +529,88 @@ def install_libredwg(progress: Progress, cancel_event: threading.Event) -> str:
     exe = find_in_tools("libredwg", "dwg2dxf.exe")
     if exe is None:
         raise InstallError("LibreDWG was downloaded but dwg2dxf.exe wasn't found in it.")
+    record_version("LibreDWG", version)
     progress(1.0, f"LibreDWG {version} installed.")
     return exe
+
+
+# --------------------------------------------------------------------------- versions (updates)
+VERSIONS_FILE = "versions.json"  # in the tools folder: {tool: version this app installed}
+TOOL_FOLDERS = {
+    "Pandoc": "pandoc",
+    "LibreOffice": "libreoffice",
+    "Ghostscript": "ghostscript",
+    "Calibre": "calibre",
+    "LibreDWG": "libredwg",
+}
+TOOL_EXES = {
+    "Pandoc": "pandoc.exe",
+    "LibreOffice": "soffice.com",
+    "Ghostscript": "gswin64c.exe",
+    "Calibre": "ebook-convert.exe",
+    "LibreDWG": "dwg2dxf.exe",
+}
+
+
+def record_version(tool: str, version: str) -> None:
+    path = tools_dir() / VERSIONS_FILE
+    data = recorded_versions()
+    data[tool] = version
+    try:
+        path.write_text(json.dumps(data, indent=1, sort_keys=True) + "\n", encoding="utf-8")
+    except OSError:
+        log.exception("couldn't record %s %s", tool, version)
+
+
+def recorded_versions() -> dict[str, str]:
+    try:
+        data = json.loads((tools_dir() / VERSIONS_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return {str(k): str(v) for k, v in data.items()} if isinstance(data, dict) else {}
+
+
+def private_tools() -> list[str]:
+    """The tools this app installed into its own folder (the ones it can also update)."""
+    return [t for t, folder in TOOL_FOLDERS.items() if (tools_dir() / folder).is_dir()]
+
+
+def installed_version(tool: str) -> str | None:
+    """The version recorded when it was installed, else what the program itself says."""
+    recorded = recorded_versions().get(tool)
+    if recorded:
+        return recorded
+    from umc.core.paths import find_in_tools
+
+    exe = find_in_tools(TOOL_FOLDERS[tool], TOOL_EXES[tool])
+    if exe is None:
+        return None
+    lines: list[str] = []
+    try:
+        err = process.run([exe, "--version"], on_stdout_line=lines.append, timeout=30)
+    except Exception:
+        log.info("no version from %s", exe)
+        return None
+    text = "\n".join(lines) + "\n" + (err or "")
+    found = re.search(r"\d+(?:\.\d+)+", text)
+    return found.group(0) if found else None
+
+
+def latest_version(tool: str) -> str:
+    """The newest version the one-click installer would install now."""
+    if tool == "Pandoc":
+        return latest_pandoc()[0]
+    if tool == "LibreOffice":
+        return latest_libreoffice()[0]
+    if tool == "Calibre":
+        return latest_calibre()[0]
+    if tool == "Ghostscript":
+        with _get(GS_LATEST) as resp:
+            return pick_ghostscript_asset(json.load(resp))[0]
+    if tool == "LibreDWG":
+        with _get(LIBREDWG_LATEST) as resp:
+            return pick_libredwg_asset(json.load(resp))[0]
+    raise KeyError(tool)
 
 
 INSTALLERS: dict[str, Callable[[Progress, threading.Event], str]] = {

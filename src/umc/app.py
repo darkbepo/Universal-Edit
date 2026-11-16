@@ -178,6 +178,7 @@ def main(argv: list[str] | None = None) -> int:
     from umc.gui.launcher import AppController
 
     controller = AppController(lock=lock)
+    controller.start_update_check()
     if quick is not None:
         controller.quick_convert(quick["target"], quick["paths"])
     elif choose:

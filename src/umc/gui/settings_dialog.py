@@ -100,6 +100,19 @@ class SettingsDialog(QDialog):
                 self.message.setObjectName("Help")
                 self.message.setText("These settings are only available on Windows.")
         lay.addSpacing(10)
+        lay.addWidget(QLabel("Updates", objectName="CardTitle"))
+        updates_row = QHBoxLayout()
+        updates_note = QLabel(
+            "Universal Edit, its editors and the tools it installed, in one go.",
+            objectName="Help",
+        )
+        updates_note.setWordWrap(True)
+        self.updates_button = QPushButton("Check for updates…", objectName="Small")
+        self.updates_button.clicked.connect(self._open_updates)
+        updates_row.addWidget(updates_note, 1)
+        updates_row.addWidget(self.updates_button)
+        lay.addLayout(updates_row)
+        lay.addSpacing(10)
         lay.addWidget(QLabel("Editors", objectName="CardTitle"))
         self.addon_rows: dict[str, tuple[QLabel, QPushButton]] = {}
         for addon in addons.ADDONS.values():
@@ -117,6 +130,11 @@ class SettingsDialog(QDialog):
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         buttons.rejected.connect(self.reject)
         lay.addWidget(buttons)
+
+    def _open_updates(self) -> None:
+        from umc.gui.update_dialog import UpdateDialog
+
+        UpdateDialog(self).exec()
 
     def _linux_section(self, lay: QVBoxLayout) -> None:
         from umc.tools import linux_filemanagers as lf

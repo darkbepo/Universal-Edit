@@ -382,6 +382,8 @@ src/umc/
     libredwg.py          # AutoCAD DWG → DXF via LibreDWG's dwg2dxf, found or one-click installed
     tessdata.py          # OCR language files: bundled English, pinned SHA-256 downloads
     winsign.py           # Authenticode check via WinVerifyTrust/crypt32 (PowerShell's module is unreliable)
+    updater.py           # the Update button: app (installer / apt), editors, tools
+    linux_filemanagers.py, linux_integration.py  # Linux Quick Convert menus, default viewer
     ffmpeg.py, libreoffice.py, pandoc.py, pdf.py
 tests/                   # fixtures are generated in conftest.py — no binary files in git
 packaging/
@@ -1234,6 +1236,25 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
        [Default Applications] / [Added Associations], earlier ones back), and `run_cli` for
        `--register` / `--unregister` without a registry; the .deb's prerm runs
        `--unregister all --all-users` on remove (every home, owners kept).
+    5. ✅ Update button. `tools/updater.py` (no Qt): `check_all` → `Report` (app = newest
+       non-prerelease GitHub release newer than `__version__`, `UMC_UPDATE_URL` overrides; Windows
+       asset `UniversalEdit-setup.exe`, Linux `universal-edit_*_amd64.deb`; tools = the app's own
+       copies (`installer.private_tools`) with a newer `latest_version` — installed versions are
+       recorded in `tools/versions.json` by every install_*, else asked with `--version`;
+       `is_newer` compares only the parts the latest has and never guesses an unknown one;
+       add-ons whose manifest is for another version; Linux `apt-get -s` dry run of
+       `LINUX_TOOL_PACKAGES`). Windows: `download_app` (SHA-256 required) → `start_windows_update`
+       = `cmd /s /c "start "" /wait setup /SILENT /CLOSEAPPLICATIONS & start "" app"` (one string:
+       list quoting breaks cmd) and the app quits; with a new app version add-ons are left to the
+       installer's components (an add-on only loads in its own version). Linux: one `pkexec sh -c`
+       (apt-get update, the .deb when there's no apt source, `--only-upgrade` tools), then
+       "Restart now". GUI `gui/update_dialog.py` (`UpdateDialog`, `_Job` thread → signals),
+       Settings "Check for updates…", `BackgroundCheck` once a day (installed builds;
+       QSettings `updates/last_check`) → `MainWindow.show_update` ("Update available" pill).
+       Until a release is published (roadmap 11) there is nothing to update to. Also fixed:
+       `install_calibre` unpacked `latest_calibre()` into two names (it returns three), and a
+       missing `}` in `style.qss` made Qt drop every rule after `PanelButton:hover`
+       (`test_stylesheet_parses` now guards it).
 
 ## Handoff — read this first (for the next Claude account)
 

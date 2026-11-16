@@ -26,6 +26,7 @@ class AppController(QObject):
         self._convert_window = None  # where right-clicked files went last, and when
         self._convert_time = 0.0
         self.quick = None  # the Quick Convert window (one, reused)
+        self.updates = None  # update_dialog.BackgroundCheck, once started
         self.server = InstanceServer(self)
         self.server.message_received.connect(self._on_message)
         if listen:
@@ -43,6 +44,20 @@ class AppController(QObject):
                 self.quick_convert(q["target"], [p for p in paths if isinstance(p, str)])
         elif isinstance(msg.get("choose"), list):
             self.quick_choose([p for p in msg["choose"] if isinstance(p, str)])
+
+    # ------------------------------------------------------------ updates
+    def start_update_check(self) -> None:
+        """Once a day (installed builds): look for updates and show "Update available"."""
+        from umc.gui.update_dialog import BackgroundCheck
+
+        if self.updates is None:
+            self.updates = BackgroundCheck(self)
+            self.updates.found.connect(self._update_found)
+        self.updates.start()
+
+    def _update_found(self, report) -> None:
+        for w in self.windows:
+            w.show_update(report)
 
     # ------------------------------------------------------------ Quick Convert
     def _quick_window(self):
@@ -99,6 +114,8 @@ class AppController(QObject):
 
         w = MainWindow()
         self.windows.append(w)
+        if self.updates is not None and self.updates.report is not None:
+            w.show_update(self.updates.report)
         return w
 
     def show_main(self, files: list[str] | None = None):
