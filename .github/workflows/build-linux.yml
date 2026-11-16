@@ -117,11 +117,39 @@ jobs:
     needs: [build, install-test]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           name: UniversalEdit-linux-deb
+          path: dist
 
-      - name: Add the .deb to the release (the Windows build adds its files to the same one)
+      # The signed flat apt repository (scripts/build_apt_repo.py): apt reads it from
+      # releases/latest/download, so "sudo apt upgrade" finds every new version. Needs the
+      # APT_SIGNING_KEY secret (an armored private gpg key without a passphrase); without
+      # it the release just carries the .deb.
+      - name: Sign the apt repository index
+        id: apt
+        env:
+          APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
+        run: |
+          if [ -z "$APT_SIGNING_KEY" ]; then
+            echo "::notice::APT_SIGNING_KEY isn't set: no apt repository in this release (the .deb is still published)."
+            echo "files=dist/universal-edit_*.deb" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          export GNUPGHOME="$(mktemp -d)"
+          echo "$APT_SIGNING_KEY" | gpg --batch --import
+          key=$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')
+          python3 scripts/build_apt_repo.py dist/universal-edit_*.deb --out dist/apt --key "$key"
+          {
+            echo "files<<EOF"
+            echo "dist/universal-edit_*.deb"
+            echo "dist/apt/*"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Add the files to the release (the Windows build adds its files to the same one)
         uses: softprops/action-gh-release@v2
         with:
-          files: universal-edit_*.deb
+          files: ${{ steps.apt.outputs.files }}

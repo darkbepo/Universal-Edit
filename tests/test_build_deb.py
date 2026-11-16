@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import importlib.util
+import sys
 from pathlib import Path
 
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
+# The package is built on Linux only (symlinks, dpkg-deb); Windows CI needn't make symlinks.
+pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="Linux packaging")
 
 
 @pytest.fixture(scope="module")

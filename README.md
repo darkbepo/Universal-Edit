@@ -283,7 +283,8 @@ viewer that knows almost every format.
 | Save straight into a folder | ✅ | ✅ Chrome/Edge · ❌ Firefox/Safari (zip instead) |
 | **Windows installer** (per user, no admin) · right-click **"Convert with Universal Edit"** (several files → one window) · **"Open with"** → viewer · switches in the app's Settings (cog) | ✅ | — |
 | **Editors as add-ons**: the app is the converter + viewer; the editors are installed when first used, picked in the installer, or managed in Settings · downloads are checked against fingerprints built into the app | ✅ | — |
-| One-click install of LibreOffice, Pandoc, Ghostscript, Calibre or LibreDWG when a conversion needs them | ✅ | — |
+| One-click install of LibreOffice, Pandoc, Ghostscript, Calibre or LibreDWG when a conversion needs them | ✅ Windows · Linux shows the `sudo apt install …` command to copy | — |
+| **Linux package** (Debian 12+, Ubuntu 22.04+): every editor included · menu entry · **"Open with"** → viewer and **"Convert with Universal Edit"** in the file manager · updates with `sudo apt upgrade` | ✅ | — |
 | **Light / dark mode**: the sun / moon button in the top bar switches Same as the computer → Light → Dark and remembers it (also in the desktop Settings) · every editor and the viewer follow | ✅ | ✅ |
 | **Drop zone**: file-type badges orbit the text while it's empty and burst outward when you drop files · still when "reduce motion" is on | ✅ | ✅ |
 
@@ -317,6 +318,35 @@ To make the viewer your default for pictures or videos, pick it once in Windows'
 (setup offers a shortcut there). Each release also has a zip for those who prefer no installer:
 extract it and run `UniversalEdit.exe`.
 
+## 🐧 The Linux app (Debian / Ubuntu)
+
+The same desktop app as a `.deb` package for Debian 12 or newer and Ubuntu 22.04 or newer, with
+every editor included. Like the Windows app it appears on the
+[Releases page](https://github.com/darkbepo/Universal-Edit/releases) with the first release.
+
+Once it's out, the easiest way is to add the app's package source once — then it updates with
+the rest of your system (`sudo apt upgrade`):
+
+```bash
+sudo curl -fsSLo /usr/share/keyrings/universal-edit.gpg https://github.com/darkbepo/Universal-Edit/releases/latest/download/universal-edit-archive-keyring.gpg
+```
+
+```bash
+echo "deb [signed-by=/usr/share/keyrings/universal-edit.gpg] https://github.com/darkbepo/Universal-Edit/releases/latest/download ./" | sudo tee /etc/apt/sources.list.d/universal-edit.list
+```
+
+```bash
+sudo apt update && sudo apt install universal-edit
+```
+
+Or download `universal-edit_<version>_amd64.deb` from the release and install it with
+`sudo apt install ./universal-edit_<version>_amd64.deb` (no automatic updates then).
+
+Universal Edit then appears in your app menu, and in each file's **Open with** list (the
+viewer) next to **Convert with Universal Edit**. FFmpeg comes from your distribution; Pandoc,
+LibreOffice and Ghostscript are installed with it when your system installs recommended
+packages (the default), and if one is missing the app shows the command that adds it.
+
 ## Running from source
 
 ```bash
@@ -339,6 +369,10 @@ The website's source is in [`web/`](web/README.md). The screenshots above are ma
 For developers: on GitHub, **Actions → Build Windows executable → Run workflow** builds a test
 copy (download it from the finished run). Locally on Windows: `python scripts/build_addons.py`,
 then `pyinstaller packaging/umc.spec` → `dist/UniversalEdit/`.
+
+The Linux package: **Actions → Build Linux package → Run workflow** (it also installs and
+tests it on clean Debian and Ubuntu). Locally on Linux: `pyinstaller packaging/umc.spec`, then
+`python scripts/build_deb.py` → `dist/universal-edit_<version>_amd64.deb`.
 
 ## License
 

@@ -249,6 +249,30 @@ import). Things that differ there:
   (`PureWindowsPath(...).anchor`) explicitly. `process._kill` uses `kill()` (SIGTERM made FFmpeg
   hang writing into a pipe no one reads).
 - Qt keeps the name of a font that isn't installed (Windows shows a substitute).
+- ubuntu-latest is Ubuntu 26.04 (FFmpeg 8): its mjpeg encoder refuses limited-range frames, so
+  video-editor thumbnails are PNG. Check new FFmpeg JPEG output against it.
+- Missing tools: `tools/linux_packages.py` (tool → apt package; LibreDWG isn't packaged) — the tool
+  dialog shows `sudo apt install …` + "Copy command" where `has_apt()`.
+- **Packaging (`build-linux.yml`, Actions → "Build Linux package"):** built on ubuntu-22.04 (glibc
+  2.35 → Debian 12+ / Ubuntu 22.04+), then installed + `--self-test`ed + removed on clean
+  debian:12 / 13 and ubuntu:22.04 / 24.04 containers. On Linux `packaging/umc.spec` bundles every
+  editor (no add-ons) and writes the `editors_bundled` marker: `addons.bundled()` /
+  `from_source()` then treat them as present. `scripts/build_deb.py` → `/opt/universal-edit`,
+  `/usr/bin/universal-edit`; its `DEPENDS` list came from ldd + `dpkg -S` on the build (re-check
+  after a Qt / PySide6 upgrade: a missing xcb library stops Qt's xcb platform from loading).
+  Desktop files come from `tools/linux_desktop.py` (`Exec=universal-edit --view %f`, a hidden
+  "Convert with" entry with `--convert %F`, same extension rules as Windows: no runnable scripts,
+  no Convert for code). Linux desktops match MIME types: `tools/linux_mime.json` is generated
+  from shared-mime-info (`python -m umc.tools.linux_desktop --refresh-mime`); `app.py` calls
+  `setDesktopFileName` so windows get the menu icon.
+- **apt repository:** `scripts/build_apt_repo.py` makes a signed *flat* repo (Packages, Release,
+  InRelease, Release.gpg, public keyring) that the release job uploads next to the .deb; apt
+  reads `releases/latest/download ./` (GitHub redirects to the newest release), so updates
+  need no hosting. Signing needs the repo secret `APT_SIGNING_KEY` (armored private key, no
+  passphrase); without it releases carry only the .deb. Never change that key once users have
+  it (they'd have to reinstall the keyring). Make one with `gpg --quick-gen-key "Universal Edit
+  apt <…>" ed25519 sign never` then `gpg --armor --export-secret-keys <fingerprint>`.
+  Local test: gpg needs `/run/user/<uid>` for its socket (`gpgconf --create-socketdir`).
 
 ## Architecture
 
@@ -1126,12 +1150,12 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
 13. ✅ Light / dark mode switch (both apps; owner, Nov 2026): sun / moon button in the top bar,
     System → Light → Dark, remembered (see "UI / UX requirements"). Tests `tests/test_theme.py`,
     `web/tests/theme.test.ts`, `web/e2e/theme.spec.ts` (incl. the 375 px top bar).
-14. Linux (Debian) port (owner, Nov 2026; one step at a time, built from the same `v*` tag as
-    Windows): 1. ✅ runs on Linux — whole pytest suite and `--self-test` pass on Ubuntu 24.04,
-    Linux CI (see "Linux" under Tech stack). 2. Linux messages instead of "Install it for me"
-    (`sudo apt install …`). 3. `.deb` (all editors included, depends on the distro's FFmpeg etc.)
-    + `build-linux.yml` publishing it in the same release. 4. "Open with" (`.desktop` + MIME
-    types). 5. Optional: an apt repository on GitHub Pages (signed) for `apt upgrade`.
+14. ✅ Linux (Debian) port (owner, Nov 2026; built from the same `v*` tag as Windows; details
+    under "Linux" in Tech stack): 1. ✅ runs on Linux — pytest + `--self-test`, Linux CI.
+    2. ✅ the tool dialog shows `sudo apt install …` instead of "Install it for me". 3. ✅ `.deb`
+    with every editor (`scripts/build_deb.py`, `build-linux.yml` → same release). 4. ✅ menu
+    entry, "Open with" and "Convert with" (`.desktop` + MIME types). 5. ✅ signed flat apt
+    repository as release assets (`apt upgrade`) — needs the owner's `APT_SIGNING_KEY` secret.
 
 ## Handoff — read this first (for the next Claude account)
 
