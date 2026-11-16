@@ -14,7 +14,7 @@ env:
   QT_QPA_PLATFORM: offscreen
 
 permissions:
-  contents: write  # publishing to the release on version tags
+  contents: read  # only the publish job writes (the release and the apt repository)
 
 jobs:
   build:
@@ -95,9 +95,12 @@ jobs:
         run: |
           test -x /usr/bin/universal-edit
           desktop-file-validate /usr/share/applications/universal-edit.desktop
-          desktop-file-validate /usr/share/applications/universal-edit-convert.desktop
+          desktop-file-validate /usr/share/applications/universal-edit_convert.desktop
           update-desktop-database /usr/share/applications  # installed in the same apt run
-          grep -q "application/pdf=.*universal-edit.desktop" /usr/share/applications/mimeinfo.cache
+          # the viewer is listed first (a double-click with no default set opens the first)
+          grep -q "^application/pdf=universal-edit.desktop;universal-edit_convert.desktop;" \
+            /usr/share/applications/mimeinfo.cache
+          grep -q "^model/obj=universal-edit.desktop;" /usr/share/applications/mimeinfo.cache
           test -f /usr/share/icons/hicolor/256x256/apps/universal-edit.png
 
       - name: Self-test the installed app
@@ -116,6 +119,8 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [build, install-test]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -124,32 +129,40 @@ jobs:
           name: UniversalEdit-linux-deb
           path: dist
 
-      # The signed flat apt repository (scripts/build_apt_repo.py): apt reads it from
-      # releases/latest/download, so "sudo apt upgrade" finds every new version. Needs the
-      # APT_SIGNING_KEY secret (an armored private gpg key without a passphrase); without
-      # it the release just carries the .deb.
-      - name: Sign the apt repository index
-        id: apt
+      - name: Add the .deb to the release (the Windows build adds its files to the same one)
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/universal-edit_*.deb
+
+      # The signed flat apt repository (scripts/build_apt_repo.py) lives in its own release,
+      # "apt" (a pre-release, so it's never "latest"), updated only here, after the install
+      # tests passed: apt users never see a half-published version. Needs the APT_SIGNING_KEY
+      # secret (an armored private gpg key without a passphrase); without it the apt release
+      # simply stays at the previous version.
+      - name: Update the apt repository
         env:
           APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           if [ -z "$APT_SIGNING_KEY" ]; then
-            echo "::notice::APT_SIGNING_KEY isn't set: no apt repository in this release (the .deb is still published)."
-            echo "files=dist/universal-edit_*.deb" >> "$GITHUB_OUTPUT"
+            echo "::warning::APT_SIGNING_KEY isn't set: the apt repository wasn't updated (the .deb is in the release)."
             exit 0
           fi
           export GNUPGHOME="$(mktemp -d)"
-          echo "$APT_SIGNING_KEY" | gpg --batch --import
+          echo "$APT_SIGNING_KEY" | gpg --batch --quiet --import
           key=$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')
           python3 scripts/build_apt_repo.py dist/universal-edit_*.deb --out dist/apt --key "$key"
-          {
-            echo "files<<EOF"
-            echo "dist/universal-edit_*.deb"
-            echo "dist/apt/*"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Add the files to the release (the Windows build adds its files to the same one)
-        uses: softprops/action-gh-release@v2
-        with:
-          files: ${{ steps.apt.outputs.files }}
+          gh release view apt >/dev/null 2>&1 || gh release create apt --prerelease --latest=false \
+            --title "apt repository" --notes "The Debian / Ubuntu package source (see the README). Updated by every release."
+          # the package first, then the index that points at it, the signed Release last
+          gh release upload apt dist/universal-edit_*.deb --clobber
+          gh release upload apt dist/apt/Packages dist/apt/Packages.gz dist/apt/universal-edit-archive-keyring.gpg --clobber
+          gh release upload apt dist/apt/Release dist/apt/Release.gpg dist/apt/InRelease --clobber
+          # older packages the index no longer lists
+          new=$(basename dist/universal-edit_*.deb)
+          for asset in $(gh release view apt --json assets -q '.assets[].name'); do
+            case "$asset" in
+              universal-edit_*.deb) [ "$asset" = "$new" ] || gh release delete-asset apt "$asset" -y ;;
+            esac
+          done

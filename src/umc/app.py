@@ -112,9 +112,10 @@ def main(argv: list[str] | None = None) -> int:
     app.setOrganizationName(branding.ORG_NAME)
     app.setApplicationVersion(__version__)
     app.setWindowIcon(branding.app_icon())
-    from umc.tools.linux_desktop import APP_ID
+    if sys.platform.startswith("linux"):
+        from umc.tools.linux_desktop import APP_ID
 
-    app.setDesktopFileName(APP_ID)  # Linux: windows belong to universal-edit.desktop (its icon)
+        app.setDesktopFileName(APP_ID)  # windows belong to universal-edit.desktop (its icon)
     from umc.gui.clipboard_owner import release_clipboard
 
     app.aboutToQuit.connect(release_clipboard)  # else a copied picture crashes the exit

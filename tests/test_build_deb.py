@@ -38,7 +38,9 @@ def test_stage_lays_out_the_package(tmp_path, build_deb):
     assert link.is_symlink() and str(link.readlink()) == "/opt/universal-edit/UniversalEdit"
     apps = root / "usr" / "share" / "applications"
     assert "Exec=universal-edit --view %f" in (apps / "universal-edit.desktop").read_text()
-    assert "--convert %F" in (apps / "universal-edit-convert.desktop").read_text()
+    assert "--convert %F" in (apps / "universal-edit_convert.desktop").read_text()
+    # the viewer's entry sorts first: with no default set, a double-click opens the first one
+    assert sorted(p.name for p in apps.iterdir())[0] == "universal-edit.desktop"
     icons = root / "usr" / "share" / "icons" / "hicolor"
     assert (icons / "scalable" / "apps" / "universal-edit.svg").is_file()
     assert (icons / "256x256" / "apps" / "universal-edit.png").is_file()

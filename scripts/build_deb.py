@@ -6,13 +6,16 @@
 Layout: the app in /opt/universal-edit, the command /usr/bin/universal-edit (a link), the menu
 entry and "Open with" / "Convert with" desktop files (umc.tools.linux_desktop), the icon in
 the hicolor theme. FFmpeg and the system libraries Qt needs come from the distribution
-(Depends); Pandoc, LibreOffice, Ghostscript and bsdtar are recommended, Calibre suggested.
+(Depends); Pandoc, Ghostscript and bsdtar are recommended; LibreOffice (~1 GB) and Calibre are
+only suggested, like on Windows where they're installed when a conversion first needs them
+(the tool dialog shows the apt command).
 Built with dpkg-deb only (no extra tools).
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -58,8 +61,8 @@ DEPENDS = [
     "libwayland-egl1",
     "libpulse0",
 ]
-RECOMMENDS = ["pandoc", "libreoffice", "ghostscript", "libarchive-tools", "xdg-utils"]
-SUGGESTS = ["calibre"]
+RECOMMENDS = ["pandoc", "ghostscript", "libarchive-tools", "xdg-utils"]
+SUGGESTS = ["libreoffice", "calibre"]
 
 DESCRIPTION = """\
 Convert, view and edit documents, pictures, video, audio and more
@@ -68,8 +71,8 @@ Convert, view and edit documents, pictures, video, audio and more
  settings. It also has editors for pictures, documents, audio, video, code and
  3D models, a file viewer and a properties panel.
  .
- Everything runs on your computer. LibreOffice, Pandoc and Ghostscript are used
- when installed for the formats that need them."""
+ Everything runs on your computer. Pandoc, Ghostscript and LibreOffice are used
+ for the formats that need them; the app shows how to install a missing one."""
 
 # Menus and file managers pick up new desktop files / icons through these caches.
 POSTINST = """\
@@ -136,7 +139,7 @@ def stage(app: Path, root: Path, arch: str) -> None:
     (root / "usr" / "bin" / PACKAGE).symlink_to(f"{INSTALL_DIR}/{EXE}")
     apps = root / "usr" / "share" / "applications"
     _write(apps / f"{PACKAGE}.desktop", linux_desktop.desktop_entry())
-    _write(apps / f"{PACKAGE}-convert.desktop", linux_desktop.convert_entry())
+    _write(apps / f"{linux_desktop.CONVERT_ID}.desktop", linux_desktop.convert_entry())
     icons = root / "usr" / "share" / "icons" / "hicolor"
     svg = icons / "scalable" / "apps" / f"{PACKAGE}.svg"
     svg.parent.mkdir(parents=True)
@@ -160,6 +163,7 @@ def _png_icons(icons: Path) -> None:
 
 
 def build(app: Path, out_dir: Path, arch: str = "amd64") -> Path:
+    os.umask(0o022)  # folders in the package are 0755 whatever the build machine's umask is
     out_dir.mkdir(parents=True, exist_ok=True)
     deb = out_dir / f"{PACKAGE}_{__version__}_{arch}.deb"
     work = out_dir / "deb-root"

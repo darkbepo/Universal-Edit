@@ -328,11 +328,11 @@ Once it's out, the easiest way is to add the app's package source once — then 
 the rest of your system (`sudo apt upgrade`):
 
 ```bash
-sudo curl -fsSLo /usr/share/keyrings/universal-edit.gpg https://github.com/darkbepo/Universal-Edit/releases/latest/download/universal-edit-archive-keyring.gpg
+sudo curl -fsSLo /usr/share/keyrings/universal-edit.gpg https://github.com/darkbepo/Universal-Edit/releases/download/apt/universal-edit-archive-keyring.gpg
 ```
 
 ```bash
-echo "deb [signed-by=/usr/share/keyrings/universal-edit.gpg] https://github.com/darkbepo/Universal-Edit/releases/latest/download ./" | sudo tee /etc/apt/sources.list.d/universal-edit.list
+echo "deb [signed-by=/usr/share/keyrings/universal-edit.gpg] https://github.com/darkbepo/Universal-Edit/releases/download/apt ./" | sudo tee /etc/apt/sources.list.d/universal-edit.list
 ```
 
 ```bash
@@ -343,9 +343,10 @@ Or download `universal-edit_<version>_amd64.deb` from the release and install it
 `sudo apt install ./universal-edit_<version>_amd64.deb` (no automatic updates then).
 
 Universal Edit then appears in your app menu, and in each file's **Open with** list (the
-viewer) next to **Convert with Universal Edit**. FFmpeg comes from your distribution; Pandoc,
-LibreOffice and Ghostscript are installed with it when your system installs recommended
-packages (the default), and if one is missing the app shows the command that adds it.
+viewer) next to **Convert with Universal Edit**. FFmpeg comes from your distribution, and
+Pandoc and Ghostscript come along with it (unless your system skips recommended packages).
+LibreOffice (about 1 GB, for old Office formats) isn't installed automatically: when a
+conversion needs it, the app shows the command that adds it — `sudo apt install libreoffice`.
 
 ## Running from source
 

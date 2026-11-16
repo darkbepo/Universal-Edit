@@ -2,9 +2,10 @@
 
     python scripts/build_apt_repo.py dist/universal-edit_*.deb --out dist/apt --key KEYID
 
-apt reads it from ``https://github.com/darkbepo/Universal-Edit/releases/latest/download`` —
-GitHub redirects that to the newest release's files, so ``sudo apt upgrade`` finds each new
-version (the README has the two setup commands). Every release carries:
+apt reads it from ``https://github.com/darkbepo/Universal-Edit/releases/download/apt`` — a
+release of its own ("apt", a pre-release) that build-linux.yml updates after each version's
+install tests pass, so ``sudo apt upgrade`` finds it (the README has the setup commands) and
+never sees a half-published version. It holds the newest .deb plus:
 
 * ``Packages`` / ``Packages.gz`` — the package's control fields + its file name, size, hashes;
 * ``Release`` (hashes of those), ``InRelease`` (clear-signed) and ``Release.gpg`` (detached);
@@ -25,7 +26,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 KEYRING = "universal-edit-archive-keyring.gpg"
-BASE_URL = "https://github.com/darkbepo/Universal-Edit/releases/latest/download"
+BASE_URL = "https://github.com/darkbepo/Universal-Edit/releases/download/apt"
 HASHES = (("MD5Sum", "md5"), ("SHA1", "sha1"), ("SHA256", "sha256"))
 
 

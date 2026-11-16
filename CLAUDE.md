@@ -260,16 +260,21 @@ import). Things that differ there:
   `from_source()` then treat them as present. `scripts/build_deb.py` → `/opt/universal-edit`,
   `/usr/bin/universal-edit`; its `DEPENDS` list came from ldd + `dpkg -S` on the build (re-check
   after a Qt / PySide6 upgrade: a missing xcb library stops Qt's xcb platform from loading).
-  Desktop files come from `tools/linux_desktop.py` (`Exec=universal-edit --view %f`, a hidden
-  "Convert with" entry with `--convert %F`, same extension rules as Windows: no runnable scripts,
-  no Convert for code). Linux desktops match MIME types: `tools/linux_mime.json` is generated
-  from shared-mime-info (`python -m umc.tools.linux_desktop --refresh-mime`); `app.py` calls
-  `setDesktopFileName` so windows get the menu icon.
+  Desktop files come from `tools/linux_desktop.py` (`Exec=universal-edit --view %f`; the hidden
+  "Convert with" entry `universal-edit_convert.desktop` (`--convert %F`) must sort *after* the
+  main one — with no default set a double-click opens the first listed; same extension rules as
+  Windows: no runnable scripts, no Convert for code). Linux desktops match MIME types:
+  `tools/linux_mime.json` is generated from shared-mime-info (`python -m
+  umc.tools.linux_desktop --refresh-mime`), keeping every top-weight type of the right kind
+  (`KIND_TYPES`: `.otf` → font/otf, not the ODF formula template); `app.py` calls
+  `setDesktopFileName` (Linux only) so windows get the menu icon. LibreOffice is only Suggested
+  (~1 GB; the tool dialog shows the apt command).
 - **apt repository:** `scripts/build_apt_repo.py` makes a signed *flat* repo (Packages, Release,
-  InRelease, Release.gpg, public keyring) that the release job uploads next to the .deb; apt
-  reads `releases/latest/download ./` (GitHub redirects to the newest release), so updates
-  need no hosting. Signing needs the repo secret `APT_SIGNING_KEY` (armored private key, no
-  passphrase); without it releases carry only the .deb. Never change that key once users have
+  InRelease, Release.gpg, public keyring) that the publish job uploads, with the newest .deb, to
+  a release of its own: tag `apt`, a pre-release (never "latest"), updated only after the
+  install tests pass, so users (`releases/download/apt ./`) never see a half-published version.
+  Signing needs the repo secret `APT_SIGNING_KEY` (armored private key, no passphrase); without
+  it the apt release stays at the previous version. Never change that key once users have
   it (they'd have to reinstall the keyring). Make one with `gpg --quick-gen-key "Universal Edit
   apt <…>" ed25519 sign never` then `gpg --armor --export-secret-keys <fingerprint>`.
   Local test: gpg needs `/run/user/<uid>` for its socket (`gpgconf --create-socketdir`).
