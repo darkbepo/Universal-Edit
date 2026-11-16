@@ -305,19 +305,61 @@ QLabel#ViewerPage {
     background: #ffffff;
     border: 1px solid @border;
 }
-QListWidget#ViewerList {
+QFrame#ViewerSide {
+    background: @surface;
+    border-left: 1px solid @border;
+}
+QTreeWidget#ViewerList {
     background: @surface;
     border: none;
-    border-left: 1px solid @border;
     outline: none;
     padding: 6px;
 }
-QListWidget#ViewerList::item {
+QTreeWidget#ViewerList::item {
     border-radius: 8px;
     padding: 2px 4px;
 }
-QListWidget#ViewerList::item:selected {
+QTreeWidget#ViewerList::item:selected {
     background: @accent_soft;
+    color: @accent;
+}
+QTreeWidget#ViewerList::item:hover:!selected {
+    background: @bg;
+}
+QFrame#ViewerNav {
+    background: @surface;
+    border-bottom: 1px solid @border;
+}
+QPushButton#NavButton {
+    padding: 5px;
+    border-radius: 8px;
+    min-width: 22px;
+}
+QPushButton#NavButton:disabled {
+    background: transparent;
+    border-color: transparent;
+}
+QLabel#ViewerAddressNote {
+    color: @danger;
+}
+QLabel#ViewerVolumeNote {
+    background: @surface;
+    color: @text;
+    border: 1px solid @border;
+    border-radius: 10px;
+}
+QFrame#MiniPlayer {
+    background: @bg;
+    border-top: 1px solid @border;
+}
+QPushButton#MiniPlayerName {
+    background: transparent;
+    border: none;
+    text-align: left;
+    padding: 2px 0;
+    font-weight: 600;
+}
+QPushButton#MiniPlayerName:hover {
     color: @accent;
 }
 QFrame#ViewerControls {

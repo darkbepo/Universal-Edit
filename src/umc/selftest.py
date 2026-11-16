@@ -263,6 +263,12 @@ def _viewer_check(d: Path, video: Path) -> list[Path]:
         (d / name).write_bytes(b"x")
     if [p.name for p in vf.folder_items(d / "b.png")] != ["a.mp4", "b.png", "c.pdf"]:
         raise RuntimeError("viewer folder list is wrong")
+    from umc.viewer import browse
+
+    (d / "sub").mkdir(exist_ok=True)
+    listing = browse.list_location(d)  # the side list's groups: pictures, videos, documents
+    if [p.name for p in listing.files()] != ["b.png", "a.mp4", "c.pdf"] or not listing.folders:
+        raise RuntimeError("viewer side-list groups are wrong")
     return []
 
 

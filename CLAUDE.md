@@ -306,14 +306,16 @@ src/umc/
                          #   timeline (painted rows), player + preview_view (frames + sound),
                          #   qt_audio_out (Qt Multimedia sink), threads (worker helper), dialogs
     editor3d/            # 3D viewer: ViewerPage (top bar, info panel, loads on a QThread), gl_view
-    viewer/              # "Open with" viewer: ViewerWindow, views (image/media/pages/text), tasks
+    viewer/              # "Open with" viewer: ViewerWindow (nav bar, grouped side list), media
+                         #   (Playback, MediaView, MiniPlayer, waveform), views, tasks
     audioeditor/         # audio editor: AudioEditorPage (tool row, open/save on a QThread),
                          #   WaveView (ruler, lanes, selection), Player (QAudioSink, pulls int16)
     codeeditor/          # code editor (add-on "code"): CodeEditorPage (tabs, open/save on a
                          #   QThread, status bar), CodeView, ChunkedHighlighter, FindBar, shortcuts
     launcher.py          # AppController: converter windows + the viewer; single_instance.py
   editor3d/              # 3D viewer model — mesh.py (load + measurements), camera.py (orbit); no Qt
-  viewer/                # viewer model — files.py (view kinds, folder list), preview.py; no Qt
+  viewer/                # viewer model — files.py (view kinds), browse.py (folders, groups,
+                         #   history, address line), waveform.py, preview.py; no Qt
   audioedit/             # audio editor model (numpy, no Qt) — document.py (AudioDoc, splice
                          #   undo), ops.py, peaks.py (waveform columns), wav.py, io.py (open/save)
   codeedit/              # code editor model (no Qt) — languages.py (language table → web
@@ -1165,6 +1167,26 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
     with every editor (`scripts/build_deb.py`, `build-linux.yml` → same release). 4. ✅ menu
     entry, "Open with" and "Convert with" (`.desktop` + MIME types). 5. ✅ signed flat apt
     repository as release assets (`apt upgrade`) — needs the owner's `APT_SIGNING_KEY` secret.
+15. Shell, viewer and updates round (owner, Nov 2026; desktop, Windows + Linux; in this order):
+    1. ✅ Viewer v2. Model `viewer/browse.py` (no Qt): `list_location` → `Listing` (sub-folders +
+       files grouped by `CATEGORIES`: Folders, Pictures, Videos, Music, Documents, 3D models,
+       Text & code; empty groups hidden), `History` (Back / Forward), `parent_of` (Up; a Windows
+       drive root → `COMPUTER` = the drive list, Linux stops at `/`), `resolve_address` (quotes,
+       `~`, `%VAR%` / `$VAR`, relative, a file → its folder + that file), `step_index` (← / →
+       skip files in folded groups). `viewer/waveform.py`: FFmpeg → 2 kHz mono f32 → peak per
+       column (`levels_from_samples`). Window `gui/viewer/viewer_window.py`: nav bar (Back /
+       Forward / Up, address line with ClickFocus so Space / arrows stay the viewer's; Alt+← / → /
+       ↑, Backspace, Ctrl+L, mouse side buttons via an app event filter), side list =
+       `QTreeWidget` (groups ▾ / ▸, folds in QSettings `viewer/folded`), `QFileSystemWatcher` +
+       300 ms `refresh()` keeps the shown file (or the one now at its place). Player
+       `gui/viewer/media.py`: `Playback` (QMediaPlayer + QAudioOutput of one file), attached to
+       `MediaView` (big) or `MiniPlayer` (under the list) — a file left while playing moves to the
+       mini player without restarting; with the mini player going a new media file opens paused.
+       Click on picture / waveform = play / pause only (never seeks); `JumpSlider` jumps to the
+       click; wheel = volume ±5 (QSettings `viewer/volume`). **No sound device → no
+       QAudioOutput** (`QMediaDevices.audioOutputs()` empty): with one, Qt's FFmpeg backend
+       deadlocked in `stop()` / `setVideoOutput()` (headless CI); without, playback still runs
+       at real speed. `TaskRunner` treats `ConversionCancelled` as a quiet cancel.
 
 ## Handoff — read this first (for the next Claude account)
 

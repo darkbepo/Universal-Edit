@@ -5,17 +5,13 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from PySide6.QtCore import QPointF, QRect, QRectF, QSize, Qt, QTimer, QUrl, Signal
+from PySide6.QtCore import QPointF, QRect, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QImage, QImageReader, QMovie, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QFrame,
-    QHBoxLayout,
     QLabel,
     QPlainTextEdit,
-    QPushButton,
     QScrollArea,
-    QSlider,
-    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -198,110 +194,6 @@ class ImageCanvas(QWidget):
 
 
 # --------------------------------------------------------------------------- video and music
-def _clock(ms: int) -> str:
-    s = max(ms, 0) // 1000
-    h, rest = divmod(s, 3600)
-    m, s = divmod(rest, 60)
-    return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
-
-
-class MediaView(QWidget):
-    """Plays a video or a sound file: play / pause, seek, volume. Space toggles."""
-
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
-        from PySide6.QtMultimediaWidgets import QVideoWidget
-
-        self.player = QMediaPlayer(self)
-        self.audio = QAudioOutput(self)
-        self.player.setAudioOutput(self.audio)
-        self.video = QVideoWidget()
-        self.player.setVideoOutput(self.video)
-        self.music = QLabel(objectName="ViewerMusic")
-        self.music.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.screen = QStackedWidget()
-        self.screen.addWidget(self.video)
-        self.screen.addWidget(self.music)
-
-        self.play_button = QPushButton(objectName="Small")
-        self.play_button.setToolTip("Play / pause (Space)")
-        self.play_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.play_button.clicked.connect(self.toggle)
-        self.position = QSlider(Qt.Orientation.Horizontal)
-        self.position.setToolTip("Position")
-        self.position.sliderMoved.connect(self.player.setPosition)
-        self.time = QLabel("0:00 / 0:00", objectName="Muted")
-        self.volume = QSlider(Qt.Orientation.Horizontal)
-        self.volume.setRange(0, 100)
-        self.volume.setValue(80)
-        self.volume.setFixedWidth(110)
-        self.volume.setToolTip("Volume")
-        self.volume.valueChanged.connect(lambda v: self.audio.setVolume(v / 100))
-        self.audio.setVolume(0.8)
-
-        controls = QFrame(objectName="ViewerControls")
-        cl = QHBoxLayout(controls)
-        cl.setContentsMargins(12, 6, 12, 6)
-        cl.addWidget(self.play_button)
-        cl.addWidget(self.position, 1)
-        cl.addWidget(self.time)
-        cl.addSpacing(8)
-        cl.addWidget(QLabel("Volume", objectName="Muted"))
-        cl.addWidget(self.volume)
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(0)
-        lay.addWidget(self.screen, 1)
-        lay.addWidget(controls)
-
-        self.error = ""
-        self.player.durationChanged.connect(self._on_duration)
-        self.player.positionChanged.connect(self._on_position)
-        self.player.playbackStateChanged.connect(lambda _s: self._update_button())
-        self.player.errorOccurred.connect(self._on_error)
-        self._update_button()
-
-    def open(self, path: Path, sound_only: bool) -> None:
-        self.error = ""
-        self.screen.setCurrentWidget(self.music if sound_only else self.video)
-        pal = theme.palette()
-        self.music.setPixmap(icons.pixmap("music", 96, pal["border_strong"]))
-        self.player.setSource(QUrl.fromLocalFile(str(path)))
-        self.player.play()
-
-    def stop(self) -> None:
-        self.player.stop()
-        self.player.setSource(QUrl())
-
-    def toggle(self) -> None:
-        from PySide6.QtMultimedia import QMediaPlayer
-
-        if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
-            self.player.pause()
-        else:
-            self.player.play()
-
-    def _update_button(self) -> None:
-        from PySide6.QtMultimedia import QMediaPlayer
-
-        playing = self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState
-        self.play_button.setText("Pause" if playing else "Play")
-
-    def _on_duration(self, ms: int) -> None:
-        self.position.setRange(0, max(ms, 0))
-        self._on_position(self.player.position())
-
-    def _on_position(self, ms: int) -> None:
-        if not self.position.isSliderDown():
-            self.position.setValue(ms)
-        self.time.setText(f"{_clock(ms)} / {_clock(self.player.duration())}")
-
-    def _on_error(self, _error, message: str) -> None:
-        self.error = message or "This file can't be played."
-        log.warning("viewer: can't play %s: %s", self.player.source().toLocalFile(), message)
-
-
 # --------------------------------------------------------------------------- pages
 class PagesView(QScrollArea):
     """Pages under each other, drawn as they scroll into view (``request_page`` asks the window

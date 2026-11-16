@@ -20,7 +20,7 @@ from typing import Any
 
 from PySide6.QtCore import QObject, QThreadPool, Signal
 
-from umc.core.errors import ConversionError
+from umc.core.errors import ConversionCancelled, ConversionError
 
 log = logging.getLogger(__name__)
 
@@ -74,6 +74,8 @@ class TaskRunner(QObject):
                         ok, result = True, fn()
                 else:
                     ok, result = True, fn()
+            except ConversionCancelled:
+                ok, result = False, ""
             except ConversionError as exc:
                 ok, result = False, str(exc)
             except Exception:

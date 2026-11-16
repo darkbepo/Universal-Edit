@@ -40,12 +40,12 @@ def _shows(qtbot, w, widget, timeout=8000):
 
 def test_picture_and_folder_list(qtbot, viewer, folder):
     viewer.open_path(folder / "img0.png")
-    names = [p.name for p in viewer.items]
-    assert names == ["anim.gif", "clip.mp4", "img0.png", "notes.txt", "three.pdf", "tone.wav"]
-    assert viewer.list.currentRow() == names.index("img0.png")
+    names = [p.name for p in viewer.items]  # grouped: pictures, videos, music, documents, text
+    assert names == ["anim.gif", "img0.png", "clip.mp4", "tone.wav", "three.pdf", "notes.txt"]
+    assert viewer.current_index() == names.index("img0.png")
     _shows(qtbot, viewer, viewer.canvas)
     assert viewer.canvas.image is not None and not viewer.canvas.image.isNull()
-    assert "Picture" in viewer.detail_label.text() and "3 of 6" in viewer.detail_label.text()
+    assert "Picture" in viewer.detail_label.text() and "2 of 6" in viewer.detail_label.text()
     assert viewer.edit_button.isEnabled() and viewer.convert_button.isEnabled()
     assert viewer.windowTitle().startswith("img0.png")
 
@@ -53,11 +53,11 @@ def test_picture_and_folder_list(qtbot, viewer, folder):
 def test_arrows_go_through_the_folder(qtbot, viewer, folder):
     viewer.open_path(folder / "img0.png")
     viewer.step(1)
-    assert viewer.current.name == "notes.txt"
-    viewer.go_to(len(viewer.items) - 1)
+    assert viewer.current.name == "clip.mp4"
+    viewer.last()
     viewer.step(1)  # stays on the last
-    assert viewer.current.name == "tone.wav"
-    viewer.go_to(0)
+    assert viewer.current.name == "notes.txt"
+    viewer.first()
     assert viewer.current.name == "anim.gif"
     _shows(qtbot, viewer, viewer.canvas)
     assert viewer.canvas.movie is not None  # animated GIF plays
@@ -88,8 +88,14 @@ def test_video_plays(qtbot, viewer, folder):
     qtbot.waitUntil(lambda: viewer.media.player.duration() > 0, timeout=10000)
     qtbot.waitUntil(lambda: len(frames) > 0, timeout=10000)
     assert not viewer.media.error
-    viewer.step(1)  # leaving stops it
-    assert viewer.media.player.source().isEmpty()
+    player = viewer.media.player
+    viewer.step(1)  # leaving it while it plays: it goes on in the mini player
+    assert viewer.current.name == "tone.wav" and viewer.media.player is not player
+    assert not viewer.media.playback.playing()  # the next song waits while the mini one plays
+    assert viewer.mini.playback is not None and viewer.mini.playback.player is player
+    assert not viewer.mini.isHidden()
+    viewer.mini.stop()
+    assert viewer.mini.playback is None and viewer.mini.isHidden()
 
 
 def test_sound_shows_the_music_screen(qtbot, viewer, folder):
@@ -230,3 +236,160 @@ def test_closed_converter_window_is_reused(qtbot, folder):
     first.close()
     assert c.show_main() is first and len(c.windows) == 1
     first.close()
+
+
+# --------------------------------------------------------------------------- grouped list, folders
+def _group_titles(w):
+    count = w.list.topLevelItemCount()
+    return [w.list.topLevelItem(i).text(0).split("  ")[1] for i in range(count)]
+
+
+def test_side_list_is_grouped_and_folds_are_remembered(qtbot, viewer, folder):
+    (folder / "inner").mkdir()
+    viewer.open_path(folder / "img0.png")
+    assert _group_titles(viewer) == [
+        "Folders",
+        "Pictures",
+        "Videos",
+        "Music",
+        "Documents",
+        "Text & code",
+    ]
+    pictures = viewer.list.topLevelItem(1)
+    assert pictures.childCount() == 2
+    pictures.setExpanded(False)
+    viewer.go_to(viewer.items.index(folder / "clip.mp4"))
+    viewer.step(-1)  # anim.gif / img0.png are folded away: stays on the first open file
+    assert viewer.current.name == "clip.mp4"
+    from umc.gui.viewer.viewer_window import ViewerWindow
+
+    again = ViewerWindow()  # a new window starts with the same folds
+    qtbot.addWidget(again)
+    again.open_path(folder / "notes.txt")
+    assert not again.list.topLevelItem(1).isExpanded()
+    again.close()
+    pictures.setExpanded(True)
+
+
+def test_empty_groups_are_hidden(qtbot, viewer, tmp_path):
+    (tmp_path / "a.txt").write_text("hello", encoding="utf-8")
+    viewer.open_path(tmp_path / "a.txt")
+    assert _group_titles(viewer) == ["Text & code"]
+
+
+def test_folders_up_back_forward(qtbot, viewer, folder, media):
+    sub = folder / "inner"
+    sub.mkdir()
+    shutil.copy(media / "img0.png", sub / "inside.png")
+    viewer.open_path(folder / "notes.txt")
+    assert not viewer.back_button.isEnabled() and viewer.up_button.isEnabled()
+    folders = viewer.list.topLevelItem(0)
+    viewer._on_click(folders.child(0), 0)  # a click on "inner" opens it
+    assert viewer.location == sub and viewer.current.name == "inside.png"
+    assert viewer.address.text() == str(sub)
+    viewer.go_up()
+    assert viewer.location == folder
+    viewer.go_up()  # past where it started
+    assert viewer.location == folder.parent
+    viewer.go_back()
+    viewer.go_back()
+    assert viewer.location == sub and viewer.forward_button.isEnabled()
+    viewer.go_forward()
+    assert viewer.location == folder
+    viewer.go_back()
+    assert viewer.location == sub
+
+
+def test_address_line_opens_folders_and_files(qtbot, viewer, folder):
+    viewer.open_path(folder / "notes.txt")
+    viewer.address.setText(str(folder / "tone.wav"))
+    viewer._address_entered()
+    assert viewer.location == folder and viewer.current.name == "tone.wav"
+    viewer.address.setText(str(folder / "no such place"))
+    viewer._address_entered()
+    assert not viewer.address_note.isHidden()
+    assert viewer.address.text() == str(folder)  # back to where it is
+    viewer.address.setText(str(folder.parent))
+    viewer._address_entered()
+    assert viewer.location == folder.parent and viewer.back_button.isEnabled()
+
+
+def test_list_follows_the_folder(qtbot, viewer, folder, media):
+    viewer.open_path(folder / "notes.txt")
+    shutil.copy(media / "img0.png", folder / "new picture.png")
+    qtbot.waitUntil(lambda: folder / "new picture.png" in viewer.items, timeout=5000)
+    assert viewer.current.name == "notes.txt"  # what's shown stays
+    (folder / "notes.txt").unlink()
+    qtbot.waitUntil(lambda: folder / "notes.txt" not in viewer.items, timeout=5000)
+    assert viewer.current is not None and viewer.current.path.exists()
+    (folder / "inner").mkdir()
+    qtbot.waitUntil(lambda: "Folders" in _group_titles(viewer), timeout=5000)
+
+
+# --------------------------------------------------------------------------- player
+def test_sliders_jump_where_clicked(qtbot):
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtWidgets import QSlider
+
+    from umc.gui.viewer.media import JumpSlider
+
+    s = JumpSlider(Qt.Orientation.Horizontal)
+    qtbot.addWidget(s)
+    s.setRange(0, 1000)
+    s.resize(400, 24)
+    s.show()
+    moved = []
+    s.sliderMoved.connect(moved.append)
+    qtbot.mouseClick(s, Qt.MouseButton.LeftButton, pos=QPoint(300, 12))
+    assert 650 < s.value() < 850 and moved and moved[-1] == s.value()
+    plain = QSlider(Qt.Orientation.Horizontal)  # Qt's own only steps a page
+    qtbot.addWidget(plain)
+    plain.setRange(0, 1000)
+    plain.resize(400, 24)
+    plain.show()
+    qtbot.mouseClick(plain, Qt.MouseButton.LeftButton, pos=QPoint(300, 12))
+    assert plain.value() < 650
+
+
+def test_waveform_click_pauses_and_wheel_sets_volume(qtbot, viewer, folder):
+    from PySide6.QtCore import QPoint, QPointF, Qt
+    from PySide6.QtGui import QWheelEvent
+    from PySide6.QtWidgets import QApplication
+
+    viewer.open_path(folder / "tone.wav")
+    media = viewer.media
+    qtbot.waitUntil(lambda: media.wave.levels is not None, timeout=10000)
+    assert max(media.wave.levels) == 1.0
+    qtbot.waitUntil(lambda: media.playback.playing(), timeout=10000)
+    before = media.playback.player.position()
+    qtbot.mouseClick(media.wave, Qt.MouseButton.LeftButton, pos=QPoint(media.wave.width() - 30, 60))
+    assert not media.playback.playing()
+    assert abs(media.playback.player.position() - before) < 500  # paused, didn't jump
+    viewer._space()
+    assert media.playback.playing()
+    start = media.volume.value()
+    pos = QPointF(40, 40)
+    no_button, no_mod = Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier
+    phase = Qt.ScrollPhase.NoScrollPhase
+    glob = media.wave.mapToGlobal(pos)
+    event = QWheelEvent(pos, glob, QPoint(), QPoint(0, 240), no_button, no_mod, phase, False)
+    QApplication.sendEvent(media.wave, event)
+    assert media.volume.value() == min(100, start + 10)
+    assert media.playback.volume == media.volume.value()
+    assert not media.volume_note.isHidden()
+    media.wheel(-30)
+    assert media.volume.value() == 0
+
+
+def test_mini_player_keeps_playing_and_comes_back(qtbot, viewer, folder):
+    viewer.open_path(folder / "tone.wav")
+    qtbot.waitUntil(lambda: viewer.media.playback.playing(), timeout=10000)
+    song = viewer.media.playback
+    viewer.open_path(folder / "img0.png")
+    assert viewer.mini.playback is song and song.playing()
+    viewer.mini.name.click()  # back to it: the same playback, still going
+    assert viewer.current.name == "tone.wav" and viewer.media.playback is song
+    assert viewer.mini.playback is None and viewer.mini.isHidden()
+    song.player.pause()
+    viewer.step(1)  # a paused file isn't kept
+    assert viewer.mini.playback is None
