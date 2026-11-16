@@ -121,6 +121,10 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    # one release at a time updates the apt repository (an older one must never land last)
+    concurrency:
+      group: apt-publish
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
 
@@ -149,18 +153,27 @@ jobs:
             echo "::warning::APT_SIGNING_KEY isn't set: the apt repository wasn't updated (the .deb is in the release)."
             exit 0
           fi
+          new=$(cd dist && ls universal-edit_*.deb)
+          [ "$(echo "$new" | wc -l)" -eq 1 ] || { echo "expected exactly one .deb: $new"; exit 1; }
+          version=$(dpkg-deb -f "dist/$new" Version)
+          gh release view apt >/dev/null 2>&1 || gh release create apt --prerelease --latest=false \
+            --title "apt repository" --notes "The Debian / Ubuntu package source (see the README). Updated by every release."
+          # never replace a newer version (an older tag published late, or a re-run)
+          current=$(gh release view apt --json assets -q '.assets[].name' \
+            | sed -n 's/^universal-edit_\(.*\)_amd64\.deb$/\1/p' | head -n 1)
+          if [ -n "$current" ] && dpkg --compare-versions "$current" gt "$version"; then
+            echo "::warning::The apt repository already has $current (newer than $version): left as it is."
+            exit 0
+          fi
           export GNUPGHOME="$(mktemp -d)"
           echo "$APT_SIGNING_KEY" | gpg --batch --quiet --import
           key=$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')
-          python3 scripts/build_apt_repo.py dist/universal-edit_*.deb --out dist/apt --key "$key"
-          gh release view apt >/dev/null 2>&1 || gh release create apt --prerelease --latest=false \
-            --title "apt repository" --notes "The Debian / Ubuntu package source (see the README). Updated by every release."
+          python3 scripts/build_apt_repo.py "dist/$new" --out dist/apt --key "$key"
           # the package first, then the index that points at it, the signed Release last
-          gh release upload apt dist/universal-edit_*.deb --clobber
+          gh release upload apt "dist/$new" --clobber
           gh release upload apt dist/apt/Packages dist/apt/Packages.gz dist/apt/universal-edit-archive-keyring.gpg --clobber
           gh release upload apt dist/apt/Release dist/apt/Release.gpg dist/apt/InRelease --clobber
           # older packages the index no longer lists
-          new=$(basename dist/universal-edit_*.deb)
           for asset in $(gh release view apt --json assets -q '.assets[].name'); do
             case "$asset" in
               universal-edit_*.deb) [ "$asset" = "$new" ] || gh release delete-asset apt "$asset" -y ;;

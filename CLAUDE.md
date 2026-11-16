@@ -274,7 +274,11 @@ import). Things that differ there:
   a release of its own: tag `apt`, a pre-release (never "latest"), updated only after the
   install tests pass, so users (`releases/download/apt ./`) never see a half-published version.
   Signing needs the repo secret `APT_SIGNING_KEY` (armored private key, no passphrase); without
-  it the apt release stays at the previous version. Never change that key once users have
+  it the apt release stays at the previous version. The publish job runs one at a time
+  (`concurrency: apt-publish`) and never replaces a newer version (`dpkg --compare-versions`).
+  Known limit: assets are swapped one by one, so an `apt update` in those seconds can fail once
+  (retrying works). MIME limit: `.ts` / `.tsx` TypeScript files get no Open with (Linux only
+  knows them as MPEG-TS video / Tiled tilesets). Never change that key once users have
   it (they'd have to reinstall the keyring). Make one with `gpg --quick-gen-key "Universal Edit
   apt <…>" ed25519 sign never` then `gpg --armor --export-secret-keys <fingerprint>`.
   Local test: gpg needs `/run/user/<uid>` for its socket (`gpgconf --create-socketdir`).
