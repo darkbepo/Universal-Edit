@@ -311,3 +311,20 @@ def test_installer_and_ci_offer_every_addon():
     assert "foreach ($a in " + ", ".join(f'"{i}"' for i in ids) + ")" in workflow
     # the silent install picks its components explicitly: every add-on must be in that list
     assert '/COMPONENTS="main,' + ",".join(ids) + '"' in workflow
+
+
+def test_a_build_with_every_editor_bundled_needs_no_add_ons(monkeypatch, tmp_path):
+    """Linux builds carry the editors themselves (editors_bundled marker, packaging/umc.spec)."""
+    import sys
+
+    from umc.core import addons
+
+    monkeypatch.delenv("UMC_ADDONS_TEST", raising=False)
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(addons, "BUNDLED_FILE", tmp_path / "editors_bundled")
+    monkeypatch.setenv("UMC_ADDONS_DIR", str(tmp_path / "none"))
+    assert not addons.bundled() and not addons.from_source()
+    assert not addons.ready("image")  # a Windows build without the add-on installed
+    (tmp_path / "editors_bundled").write_text("x")
+    assert addons.bundled() and addons.from_source()
+    assert all(addons.ready(editor) for editor in addons.ADDONS)

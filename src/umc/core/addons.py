@@ -36,6 +36,8 @@ log = logging.getLogger(__name__)
 
 RELEASES = "https://github.com/darkbepo/Universal-Edit/releases/download"
 HASHES_FILE = Path(__file__).resolve().parent.parent / "addon_hashes.json"
+# Written into builds that carry every editor themselves (Linux .deb, packaging/umc.spec).
+BUNDLED_FILE = Path(__file__).resolve().parent.parent / "editors_bundled"
 MANIFEST = "addon.json"
 
 
@@ -93,9 +95,17 @@ _activated: set[str] = set()
 _lock = threading.Lock()
 
 
+def bundled() -> bool:
+    """A build that carries every editor itself (Linux): nothing to download or install."""
+    return getattr(sys, "frozen", False) and BUNDLED_FILE.is_file()
+
+
 def from_source() -> bool:
-    """Running from a checkout (not the built .exe): every add-on is simply there."""
-    return not getattr(sys, "frozen", False) and not os.environ.get("UMC_ADDONS_TEST")
+    """Every add-on is simply there: running from a checkout (not the built .exe), or a
+    build with all editors bundled."""
+    if os.environ.get("UMC_ADDONS_TEST"):
+        return False
+    return not getattr(sys, "frozen", False) or BUNDLED_FILE.is_file()
 
 
 def addons_root() -> Path:

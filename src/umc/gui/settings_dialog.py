@@ -111,7 +111,7 @@ class SettingsDialog(QDialog):
     def _refresh_addons(self) -> None:
         for addon_id, (state, button) in self.addon_rows.items():
             if addons.from_source():
-                state.setText("included (running from source)")
+                state.setText("included" if addons.bundled() else "included (running from source)")
                 button.setText("Remove")
                 button.setEnabled(False)
             elif addons.installed(addon_id):
