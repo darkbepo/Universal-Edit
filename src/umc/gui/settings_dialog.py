@@ -1,9 +1,10 @@
-"""App settings (the cog in the top bar): theme, Windows right-click "Convert" and "Open with",
-editor add-ons."""
+"""App settings (the cog in the top bar): theme, Windows right-click "Quick Convert" and "Open
+with" (on Linux: Quick Convert in Thunar), editor add-ons."""
 
 from __future__ import annotations
 
 import logging
+import sys
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -28,9 +29,9 @@ log = logging.getLogger(__name__)
 ITEMS = (
     (
         "context-menu",
-        'Add "Convert with Universal Edit" to the right-click menu',
-        "For every kind of file the converter reads. On Windows 11 it's under "
-        '"Show more options".',
+        'Add "Quick Convert" to the right-click menu',
+        "Pick a format and the file is converted next to the original, or open it in "
+        'Universal Edit. On Windows 11 it\'s under "Show more options".',
     ),
     (
         "open-with",
@@ -83,12 +84,21 @@ class SettingsDialog(QDialog):
         self.message = QLabel(objectName="Error")
         self.message.setWordWrap(True)
         lay.addWidget(self.message)
+        self.thunar_box: QCheckBox | None = None
         if self.registry is None:
-            for box in self.boxes.values():
+            for box in (*self.boxes.values(), self.default_apps):
                 box.setEnabled(False)
-            self.default_apps.setEnabled(False)
-            self.message.setObjectName("Help")
-            self.message.setText("These settings are only available on Windows.")
+            if sys.platform.startswith("linux"):
+                for w in (head, *self.boxes.values(), self.default_apps):
+                    w.hide()
+                for i in range(lay.count()):  # their help lines too
+                    w = lay.itemAt(i).widget()
+                    if isinstance(w, QLabel) and w.objectName() == "Help":
+                        w.hide()
+                self._linux_section(lay)
+            else:
+                self.message.setObjectName("Help")
+                self.message.setText("These settings are only available on Windows.")
         lay.addSpacing(10)
         lay.addWidget(QLabel("Editors", objectName="CardTitle"))
         self.addon_rows: dict[str, tuple[QLabel, QPushButton]] = {}
@@ -107,6 +117,77 @@ class SettingsDialog(QDialog):
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         buttons.rejected.connect(self.reject)
         lay.addWidget(buttons)
+
+    def _linux_section(self, lay: QVBoxLayout) -> None:
+        from umc.tools import linux_filemanagers as lf
+
+        box = QCheckBox('Add "Quick Convert" to Thunar\'s right-click menu')
+        box.setChecked(lf.thunar_registered())
+        box.setEnabled(lf.thunar_present())
+        box.toggled.connect(self._toggle_thunar)
+        note = QLabel(
+            "GNOME Files (Nautilus), Dolphin and Nemo get Quick Convert from the installed "
+            "package. Thunar keeps its menu entries in your own settings, so it's switched here."
+            if lf.thunar_present()
+            else "Thunar isn't installed. GNOME Files (Nautilus), Dolphin and Nemo get Quick "
+            "Convert from the installed package.",
+            objectName="Help",
+        )
+        note.setWordWrap(True)
+        note.setContentsMargins(26, 0, 0, 8)
+        from umc.tools import linux_integration as li
+
+        viewer = QCheckBox("Open pictures, video, music and documents in Universal Edit's viewer")
+        viewer.setChecked(li.is_default_viewer())
+        viewer.toggled.connect(self._toggle_default_viewer)
+        viewer_note = QLabel(
+            "Makes the viewer the default app for every kind of file it shows. Switching it "
+            "off (or removing Universal Edit) gives your earlier choices back.",
+            objectName="Help",
+        )
+        viewer_note.setWordWrap(True)
+        viewer_note.setContentsMargins(26, 0, 0, 8)
+        for w in (
+            QLabel("File manager", objectName="CardTitle"),
+            box,
+            note,
+            viewer,
+            viewer_note,
+        ):
+            lay.insertWidget(lay.indexOf(self.message), w)  # above the message line
+        self.thunar_box = box
+        self.viewer_box = viewer
+
+    def _toggle_default_viewer(self, on: bool) -> None:
+        from umc.tools import linux_integration as li
+
+        try:
+            if on:
+                li.set_default_viewer()
+            else:
+                li.restore_defaults()
+            self.message.setText("")
+        except OSError as exc:
+            log.exception("settings: default viewer")
+            self.message.setText(f"That didn't work: {exc}")
+            self.viewer_box.blockSignals(True)
+            self.viewer_box.setChecked(not on)
+            self.viewer_box.blockSignals(False)
+
+    def _toggle_thunar(self, on: bool) -> None:
+        from PySide6.QtCore import QSettings
+
+        from umc.tools import linux_filemanagers as lf
+
+        QSettings().setValue(lf.THUNAR_SETTING, on)
+        if lf.set_thunar(on):
+            self.message.setText("")
+        else:
+            self.message.setText("Thunar's settings file couldn't be changed (see the log).")
+            assert self.thunar_box is not None
+            self.thunar_box.blockSignals(True)
+            self.thunar_box.setChecked(not on)
+            self.thunar_box.blockSignals(False)
 
     def _refresh_addons(self) -> None:
         for addon_id, (state, button) in self.addon_rows.items():

@@ -51,6 +51,17 @@ def test_stage_lays_out_the_package(tmp_path, build_deb):
     assert f"Version: {__version__}\n" in control and "Architecture: amd64\n" in control
     assert "Depends: ffmpeg, " in control and "libxcb-cursor0" in control
     assert (root / "DEBIAN" / "postinst").stat().st_mode & 0o111
+    prerm = root / "DEBIAN" / "prerm"  # removing cleans users' own settings, never fails
+    assert prerm.stat().st_mode & 0o111
+    assert "--unregister all --all-users" in prerm.read_text() and '"remove"' in prerm.read_text()
+    share = root / "usr" / "share"  # right-click Quick Convert in the file managers
+    assert (share / "nautilus-python" / "extensions" / "universal-edit-quick-convert.py").is_file()
+    assert (share / "universal-edit" / "quick-convert.json").is_file()
+    assert list((share / "kio" / "servicemenus").glob("universal-edit-quick-convert-*.desktop"))
+    assert (share / "nemo" / "actions" / "universal-edit-quick-convert.nemo_action").is_file()
+    mime_icon = icons / "scalable" / "mimetypes" / "image-png.svg"  # its own file-type icon
+    assert mime_icon.read_text().startswith("<svg")
+    assert "python3-nautilus" in control
 
 
 def test_description_is_valid_for_dpkg(build_deb):

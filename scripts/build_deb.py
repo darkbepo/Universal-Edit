@@ -5,7 +5,9 @@
 
 Layout: the app in /opt/universal-edit, the command /usr/bin/universal-edit (a link), the menu
 entry and "Open with" / "Convert with" desktop files (umc.tools.linux_desktop), the icon in
-the hicolor theme. FFmpeg and the system libraries Qt needs come from the distribution
+the hicolor theme, and the right-click "Quick Convert" for Nautilus (extension + its menu
+table), Dolphin (service menus) and Nemo (an action) — umc.tools.linux_filemanagers; Thunar's
+are per user, added by the app. FFmpeg and the system libraries Qt needs come from the distribution
 (Depends); Pandoc, Ghostscript and bsdtar are recommended; LibreOffice (~1 GB) and Calibre are
 only suggested, like on Windows where they're installed when a conversion first needs them
 (the tool dialog shows the apt command).
@@ -25,7 +27,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from umc import __version__  # noqa: E402
-from umc.tools import linux_desktop  # noqa: E402
+from umc.tools import linux_desktop, linux_filemanagers  # noqa: E402
 
 PACKAGE = linux_desktop.APP_ID
 INSTALL_DIR = f"/opt/{PACKAGE}"
@@ -61,7 +63,8 @@ DEPENDS = [
     "libwayland-egl1",
     "libpulse0",
 ]
-RECOMMENDS = ["pandoc", "ghostscript", "libarchive-tools", "xdg-utils"]
+# python3-nautilus: GNOME Files loads the Quick Convert extension through it (small).
+RECOMMENDS = ["pandoc", "ghostscript", "libarchive-tools", "xdg-utils", "python3-nautilus"]
 SUGGESTS = ["libreoffice", "calibre"]
 
 DESCRIPTION = """\
@@ -86,6 +89,17 @@ if command -v gtk-update-icon-cache >/dev/null 2>&1; then
 fi
 """
 POSTRM = POSTINST
+
+# Removing the package (not upgrading it): undo what the app wrote into users' own settings —
+# Thunar's Quick Convert and the default-viewer choices in mimeapps.list (tools/
+# linux_integration.py). Never fails the removal.
+PRERM = f"""\
+#!/bin/sh
+set -e
+if [ "$1" = "remove" ] && [ -x {INSTALL_DIR}/{EXE} ]; then
+    {INSTALL_DIR}/{EXE} --unregister all --all-users >/dev/null 2>&1 || true
+fi
+"""
 
 
 def control(installed_kb: int, arch: str) -> str:
@@ -140,6 +154,7 @@ def stage(app: Path, root: Path, arch: str) -> None:
     apps = root / "usr" / "share" / "applications"
     _write(apps / f"{PACKAGE}.desktop", linux_desktop.desktop_entry())
     _write(apps / f"{linux_desktop.CONVERT_ID}.desktop", linux_desktop.convert_entry())
+    linux_filemanagers.write_system_files(root)
     icons = root / "usr" / "share" / "icons" / "hicolor"
     svg = icons / "scalable" / "apps" / f"{PACKAGE}.svg"
     svg.parent.mkdir(parents=True)
@@ -150,6 +165,7 @@ def stage(app: Path, root: Path, arch: str) -> None:
     _write(debian / "control", control(_size_kb(root), arch))
     _write(debian / "postinst", POSTINST, 0o755)
     _write(debian / "postrm", POSTRM, 0o755)
+    _write(debian / "prerm", PRERM, 0o755)
 
 
 def _png_icons(icons: Path) -> None:

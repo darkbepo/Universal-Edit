@@ -272,6 +272,33 @@ def _viewer_check(d: Path, video: Path) -> list[Path]:
     return []
 
 
+def _quick_convert_check(d: Path) -> list[Path]:
+    """Right-click Quick Convert: every file type's menu can be worked out inside the build,
+    a conversion lands next to its file, and the file-type icons are packaged (Windows)."""
+    import shutil
+    import sys
+
+    from umc.core import fileicons
+    from umc.core import quickconvert as qc
+    from umc.tools.shell_integration import convert_extensions
+
+    if len(qc.menus(convert_extensions())) < 100:
+        raise RuntimeError("Quick Convert menus are missing")
+    folder = d / "quick"
+    folder.mkdir(parents=True, exist_ok=True)
+    src = folder / "photo.png"
+    shutil.copy(d / "img0.png", src)
+    job = qc.job_for(src, "jpg")
+    outputs = job.target.converter.run(job)
+    if [Path(p).parent for p in outputs] != [folder]:
+        raise RuntimeError(f"Quick Convert wrote {outputs}, not next to the file")
+    if sys.platform == "win32":
+        missing = [i.kind for i in fileicons.ICONS if not fileicons.ico_path(i.kind).is_file()]
+        if missing:
+            raise RuntimeError(f"file-type icons missing in the build: {missing}")
+    return [Path(p) for p in outputs]
+
+
 def _addons_check(d: Path) -> list[Path]:
     """Every editor add-on is installed (CI installs them from the built zips first) and its
     code loads inside the built app — proves the app kept what the add-ons import."""
@@ -631,6 +658,7 @@ def run(report: Path) -> int:
             ("mp4 -> frames", lambda: _convert([out / "img0 slideshow.mp4"], "frames:png", out)),
             ("pdf -> png pages", lambda: _convert([out / "img0 + 2 more.pdf"], "pages:png", out)),
             ("pdf -> split", lambda: _convert([out / "img0 + 2 more.pdf"], "split:pdf", out)),
+            ("quick convert: menus + png -> jpg next to it", lambda: _quick_convert_check(d)),
             # last: it leaves a QCoreApplication behind
             (
                 "viewer (Qt Multimedia + FFmpeg backend)",

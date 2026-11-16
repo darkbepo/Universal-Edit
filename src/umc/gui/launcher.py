@@ -25,6 +25,7 @@ class AppController(QObject):
         self.viewer = None
         self._convert_window = None  # where right-clicked files went last, and when
         self._convert_time = 0.0
+        self.quick = None  # the Quick Convert window (one, reused)
         self.server = InstanceServer(self)
         self.server.message_received.connect(self._on_message)
         if listen:
@@ -35,6 +36,41 @@ class AppController(QObject):
             self.view(msg["view"])
         elif isinstance(msg.get("convert"), list):
             self.convert([p for p in msg["convert"] if isinstance(p, str)])
+        elif isinstance(msg.get("quick"), dict):
+            q = msg["quick"]
+            paths = q.get("paths")
+            if isinstance(q.get("target"), str) and isinstance(paths, list):
+                self.quick_convert(q["target"], [p for p in paths if isinstance(p, str)])
+        elif isinstance(msg.get("choose"), list):
+            self.quick_choose([p for p in msg["choose"] if isinstance(p, str)])
+
+    # ------------------------------------------------------------ Quick Convert
+    def _quick_window(self):
+        if self.quick is None:
+            from umc.gui.quick_convert import QuickConvertWindow
+
+            self.quick = QuickConvertWindow()
+            self.quick.open_in_app.connect(self.convert)
+        return self.quick
+
+    def quick_choose(self, paths: list[str]) -> None:
+        """Thunar / Nemo "Quick Convert…": pick the format in a small window."""
+        w = self._quick_window()
+        if w.done:
+            w.items.clear()  # a new round: last time's results aren't listed again
+            w.index = 0
+        w.choose(paths)  # (while files are converting, the picker comes once they're done)
+        self._bring_forward(w)
+
+    def quick_convert(self, target_id: str, paths: list[str]) -> None:
+        """Right-click "Quick Convert → <format>": converted at once, next to the originals.
+        Every file goes to the one Quick Convert window (Explorer starts us once per file)."""
+        w = self._quick_window()
+        if w.done:
+            w.items.clear()  # a new round: last time's results aren't listed again
+            w.index = 0
+        w.add(target_id, paths)
+        self._bring_forward(w)
 
     # ------------------------------------------------------------ viewer
     def view(self, path: str | Path) -> None:
@@ -73,7 +109,8 @@ class AppController(QObject):
         return w
 
     def convert(self, paths: list[str]) -> None:
-        """Right-click "Convert with Universal Edit". Explorer starts us once per selected file,
+        """Right-click "Quick Convert → Open in Universal Edit…" (Linux: "Convert with Universal
+        Edit" in Open with). Explorer starts us once per selected file,
         so files arriving close together join the same converter window."""
         now = time.monotonic()
         w = self._convert_window

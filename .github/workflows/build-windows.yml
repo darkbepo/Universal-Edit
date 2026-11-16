@@ -120,21 +120,33 @@ jobs:
           if ($p.ExitCode -ne 0) { Get-Content install.log; exit 1 }
           $dir = "$env:LOCALAPPDATA\Programs\Universal Edit"
           if (-not (Test-Path "$dir\UniversalEdit.exe")) { throw "not installed in $dir" }
-          $menu = 'HKCU:\Software\Classes\SystemFileAssociations\.png\shell\UniversalEdit.Convert\command'
-          $cmd = (Get-ItemProperty $menu).'(default)'
-          "right-click command: $cmd"
-          if ($cmd -notlike '*UniversalEdit.exe*--convert*') { throw "right-click Convert missing" }
+          $menu = 'HKCU:\Software\Classes\SystemFileAssociations\.png\shell\UniversalEdit.Convert'
+          $sub = (Get-ItemProperty $menu).ExtendedSubCommandsKey
+          "Quick Convert submenu: $sub"
+          if ($sub -notlike 'UniversalEdit.QuickConvert.*') { throw "right-click Quick Convert missing" }
+          $cmds = Get-ChildItem -Recurse "HKCU:\Software\Classes\$sub\shell" | Where-Object { $_.PSChildName -eq 'command' } | ForEach-Object { $_.GetValue('') }
+          if (-not ($cmds -like '*UniversalEdit.exe*--convert*')) { throw "Quick Convert: Open in Universal Edit missing" }
+          if (-not ($cmds -like '*UniversalEdit.exe*--quick-convert*')) { throw "Quick Convert: formats missing" }
           $caps = (Get-ItemProperty 'HKCU:\Software\RegisteredApplications').'Universal Edit'
           if ($caps -ne 'Software\UniversalEdit.Integration\Capabilities') { throw "Open with missing" }
-          $view = (Get-ItemProperty 'HKCU:\Software\Classes\UniversalEdit.View\shell\open\command').'(default)'
+          $view = (Get-ItemProperty 'HKCU:\Software\Classes\UniversalEdit.View.image\shell\open\command').'(default)'
           if ($view -notlike '*UniversalEdit.exe*--view*') { throw "viewer command missing" }
+          $ico = (Get-ItemProperty 'HKCU:\Software\Classes\UniversalEdit.View.video\DefaultIcon').'(default)'
+          if (-not (Test-Path $ico)) { throw "file-type icon missing: $ico" }
+          # a default-app choice pointing to us must be gone after uninstalling
+          $choice = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.uetest\UserChoice'
+          New-Item -Force $choice | Out-Null
+          Set-ItemProperty $choice ProgId 'UniversalEdit.View.image'
           foreach ($a in "image", "model", "audio", "video", "code") {
             if (-not (Test-Path "$env:LOCALAPPDATA\UniversalEdit\addons\$a\addon.json")) { throw "editor add-on $a not installed" }
           }
           Start-Process "$dir\unins000.exe" -Wait -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'
           for ($i = 0; $i -lt 60 -and (Test-Path "$dir\UniversalEdit.exe"); $i++) { Start-Sleep 1 }
           if (Test-Path "$dir\UniversalEdit.exe") { throw "files left after uninstalling" }
-          if (Test-Path ($menu -replace '\\command$', '')) { throw "right-click Convert left after uninstalling" }
+          if (Test-Path $menu) { throw "right-click Quick Convert left after uninstalling" }
+          if (Test-Path "HKCU:\Software\Classes\$sub") { throw "Quick Convert submenu left after uninstalling" }
+          if (Test-Path 'HKCU:\Software\Classes\UniversalEdit.View.image') { throw "file-type ProgID left" }
+          if (Test-Path $choice) { throw "default-app choice left after uninstalling" }
           if ((Get-ItemProperty 'HKCU:\Software\RegisteredApplications').'Universal Edit') { throw "Open with left" }
           if (Test-Path "$env:LOCALAPPDATA\UniversalEdit\addons\image") { throw "editor add-ons left after uninstalling" }
 

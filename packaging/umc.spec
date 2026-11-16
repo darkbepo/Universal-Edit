@@ -87,6 +87,8 @@ datas += collect_data_files("docx")  # python-docx templates (pdf2docx)
 TESSDATA = ROOT / "packaging" / "tessdata"
 datas += [(str(p), "tessdata") for p in TESSDATA.glob("*.traineddata")]
 datas += [(str(p), "fonts") for p in (ROOT / "packaging" / "fonts").glob("*") if p.is_file()]
+# File-type icons for "Open with" (scripts/make_file_icons.py; checked in)
+datas += [(str(p), "fileicons") for p in (ROOT / "packaging" / "fileicons").glob("*.ico")]
 
 a = Analysis(
     [str(ROOT / "src" / "umc" / "__main__.py")],

@@ -63,7 +63,7 @@ Name: "video"; Description: "Video editor"; Types: full
 Name: "code"; Description: "Code editor"; Types: full
 
 [Tasks]
-Name: "contextmenu"; Description: "Add ""Convert with Universal Edit"" to the right-click menu"; GroupDescription: "Windows:"
+Name: "contextmenu"; Description: "Add ""Quick Convert"" to the right-click menu (convert a file in one click)"; GroupDescription: "Windows:"
 Name: "openwith"; Description: "Show Universal Edit in ""Open with"" for pictures, video, music, documents and 3D models"; GroupDescription: "Windows:"
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Shortcuts:"; Flags: unchecked
 
@@ -98,10 +98,36 @@ Filename: "{app}\UniversalEdit.exe"; Description: "Start Universal Edit"; Flags:
 ; the editors installed as add-ons (the app's settings and tools there are kept)
 Type: filesandordirs; Name: "{localappdata}\UniversalEdit\addons"
 
-[UninstallRun]
-Filename: "{app}\UniversalEdit.exe"; Parameters: "--unregister all"; Flags: runhidden waituntilterminated; RunOnceId: "UnregisterShell"
-
 [Code]
+{ Uninstalling: the app takes out everything it registered — Quick Convert, Open with, the
+  file-type icons and any "always open with Universal Edit" Windows remembers — so those files
+  go back to Windows' own choice (exit code 3 = Windows protects some of them, e.g. .pdf on
+  Windows 11: only its Settings can change those). Then, if asked (not by default), the app's
+  settings and downloaded tools go too. }
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  ResultCode: Integer;
+begin
+  if CurUninstallStep = usUninstall then
+  begin
+    if Exec(ExpandConstant('{app}\UniversalEdit.exe'), '--unregister all', '', SW_HIDE,
+            ewWaitUntilTerminated, ResultCode) and (ResultCode = 3) and not UninstallSilent then
+      MsgBox('Windows keeps a few file types (such as PDF) protected, so Universal Edit couldn''t ' +
+             'give them back to their earlier app. Choose another app for them in Windows Settings ' +
+             '> Apps > Default apps.', mbInformation, MB_OK);
+  end;
+  if (CurUninstallStep = usPostUninstall) and not UninstallSilent then
+  begin
+    if MsgBox('Also remove Universal Edit''s settings and the tools it downloaded ' +
+              '(LibreOffice, Pandoc, …)?', mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES then
+    begin
+      DelTree(ExpandConstant('{localappdata}\UniversalEdit'), True, True, True);
+      RegDeleteKeyIncludingSubkeys(HKCU, 'Software\UniversalEdit');
+    end;
+  end;
+end;
+
+
 { On an upgrade the two Windows switches start as they are now — the app's Settings window may
   have changed them since the last install — instead of as ticked last time. Done once, so
   going Back to the page keeps what the user changed. }

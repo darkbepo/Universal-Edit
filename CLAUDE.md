@@ -313,6 +313,7 @@ src/umc/
     codeeditor/          # code editor (add-on "code"): CodeEditorPage (tabs, open/save on a
                          #   QThread, status bar), CodeView, ChunkedHighlighter, FindBar, shortcuts
     launcher.py          # AppController: converter windows + the viewer; single_instance.py
+    quick_convert.py     # the right-click Quick Convert window (queue, format picker)
   editor3d/              # 3D viewer model — mesh.py (load + measurements), camera.py (orbit); no Qt
   viewer/                # viewer model — files.py (view kinds), browse.py (folders, groups,
                          #   history, address line), waveform.py, preview.py; no Qt
@@ -346,6 +347,8 @@ src/umc/
     registry.py          # Target dataclass + targets_for(files) across all converters
     options.py           # opt() field helper → OptionSpec metadata that drives the settings UI
     job.py               # ConversionJob (progress/cancel), unique_path()
+    quickconvert.py      # Quick Convert menus per file type, jobs with default settings
+    fileicons.py         # file-type icons per kind (SVG → packaging/fileicons/*.ico)
     errors.py            # ConversionError (user-facing msg), ToolMissingError, ConversionCancelled
     paths.py             # app data folder, private tools folder (UMC_TOOLS_DIR overrides)
   converters/
@@ -1187,6 +1190,50 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
        QAudioOutput** (`QMediaDevices.audioOutputs()` empty): with one, Qt's FFmpeg backend
        deadlocked in `stop()` / `setVideoOutput()` (headless CI); without, playback still runs
        at real speed. `TaskRunner` treats `ConversionCancelled` as a quiet cancel.
+    2. ✅ Quick Convert (right-click). `core/quickconvert.py` (no Qt): `menu_for(ext)` = the
+       converter's targets for a sample file of that type minus `SKIP_PREFIXES` (pack, slideshow,
+       split) / `SKIP_IDS` (PDF rotate / organize / protect / unlock: they need a choice) and the
+       same format (`KEEP_SAME_FORMAT`: compress, OCR); `Menu.key` = hash of the ids (types with
+       the same menu share one registry key / service menu); `entries()` = flat, or one submenu
+       per group when > `NEST_ABOVE` items, groups of ≤ 2 inline; `flat_labels()` ("Audio only:
+       MP3") for one-level menus; `job_for` = default options, output next to the file
+       (converters never overwrite). CLI `--quick-convert <target> FILE…` and `--quick-choose
+       FILE…` (format picker) → `single_instance` messages `quick` / `choose` →
+       `AppController.quick_convert` → one `gui/quick_convert.QuickConvertWindow` (queue, one
+       file at a time on `start_worker`, problems listed, "Open in Universal Edit" for the rest,
+       closes 5 s after success unless hovered). Windows (`shell_integration`): the verb keeps
+       its key name `UniversalEdit.Convert` (MUIVerb "Quick Convert") with
+       `ExtendedSubCommandsKey` → `Software\Classes\UniversalEdit.QuickConvert.<key>\shell\NN_…`
+       (first "Open in Universal Edit…" + `CommandFlags` 0x40 separator; MultiSelectModel Player
+       on each item; nested groups = `<key>.NN`). Registry protocol gained `set_dword` /
+       `values`. Linux `tools/linux_filemanagers.py`: Nautilus extension
+       `packaging/linux/universal-edit-quick-convert.py` (python3-nautilus, Recommends; Nautilus
+       3 + 4 APIs; reads `/usr/share/universal-edit/quick-convert.json` = `quick_table`), Dolphin
+       service menus (KF5 + KF6 folders, one per menu key; a MIME type keeps the first
+       extension's menu so nobody gets two), Nemo = one action → `--quick-choose`, Thunar = per-user
+       `~/.config/Thunar/uca.xml` actions in its "Quick Convert" `<submenu>` (other actions kept,
+       an unreadable file is never overwritten), added by `app._sync_thunar` (installed build,
+       rewritten after an update, QSettings `linux/thunar_quick_convert`) and Settings. Test the
+       extension with a stand-in `gi` (tests/test_linux_filemanagers.py).
+    3. ✅ File-type icons. `core/fileicons.py`: one icon per kind (`ICONS`: page + white Tabler
+       symbol, no text; bolder lines ≤ 32 px) → `scripts/make_file_icons.py` →
+       `packaging/fileicons/<kind>.ico` (checked in like icon.ico; bundled by the spec as
+       `fileicons/`). Windows: ProgID per kind `UniversalEdit.View.<kind>` (DefaultIcon = its
+       .ico) in OpenWithProgids / Capabilities; the old `UniversalEdit.View` stays registered so
+       a default chosen before still opens (the user re-picks once to get the icons). Linux:
+       the .deb puts the SVGs in hicolor `mimetypes/<type>.svg` (`mime_icons`), used where the
+       theme has no icon of that exact name.
+    4. ✅ Uninstall clean-up. Windows `shell_integration.reset_defaults` (run by
+       `unregister_open_with`, not when re-registering): FileExts `UserChoice` /
+       `UserChoiceLatest` pointing to us deleted, our OpenWithProgids / OpenWithList entries
+       (MRUList fixed) removed; keys Windows keeps (UCPD-protected .pdf …) → `--unregister`
+       exit code `STUCK_EXIT` 3 → the uninstaller's [Code] says so. It also asks (default No)
+       to delete `%LOCALAPPDATA%\UniversalEdit` + QSettings. Linux `tools/linux_integration.py`:
+       `set_default_viewer` (Settings switch; `~/.config/mimeapps.list` [Default Applications],
+       earlier choices saved to `universal-edit-defaults.json`), `restore_defaults` (ours out of
+       [Default Applications] / [Added Associations], earlier ones back), and `run_cli` for
+       `--register` / `--unregister` without a registry; the .deb's prerm runs
+       `--unregister all --all-users` on remove (every home, owners kept).
 
 ## Handoff — read this first (for the next Claude account)
 

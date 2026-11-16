@@ -61,6 +61,32 @@ def _start_cleanup() -> None:
     threading.Thread(target=sweep, name="umc-cleanup", daemon=True).start()
 
 
+def _sync_thunar() -> None:
+    """Installed on Linux: Thunar's right-click "Quick Convert" (per-user, so the .deb can't
+    add it) — added once, rewritten after an update, left alone if switched off in Settings."""
+    if not (sys.platform.startswith("linux") and getattr(sys, "frozen", False)):
+        return
+    import threading
+
+    from PySide6.QtCore import QSettings
+
+    from umc.tools import linux_filemanagers as lf
+
+    settings = QSettings()
+    wanted = settings.value(lf.THUNAR_SETTING, True, bool)
+    written_by = settings.value(lf.THUNAR_VERSION, "", str)
+
+    def sync() -> None:
+        try:
+            done = lf.sync_thunar(bool(wanted), written_by, __version__)
+            if done:
+                QSettings().setValue(lf.THUNAR_VERSION, done)
+        except Exception:
+            logging.getLogger(__name__).exception("Thunar Quick Convert setup failed")
+
+    threading.Thread(target=sync, name="umc-thunar", daemon=True).start()
+
+
 def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv[1:]
     if args[:1] == ["--self-test"]:
@@ -86,8 +112,14 @@ def main(argv: list[str] | None = None) -> int:
     view_path = None
     if args[:1] == ["--view"]:  # "Open with → Universal Edit" runs this
         view_path = str(Path(args[1]).resolve()) if len(args) > 1 else None
-    # Right-click "Convert with Universal Edit" (one start per selected file)
+    # Right-click "Quick Convert → Open in Universal Edit…" (one start per selected file)
     convert_paths = [str(Path(a).resolve()) for a in args[1:]] if args[:1] == ["--convert"] else []
+    # Right-click "Quick Convert → <format>": --quick-convert <target id> FILE…
+    quick = None
+    if args[:1] == ["--quick-convert"] and len(args) >= 3:
+        quick = {"target": args[1], "paths": [str(Path(a).resolve()) for a in args[2:]]}
+    # Thunar / Nemo "Quick Convert…" (no submenus there): pick the format in a small window
+    choose = [str(Path(a).resolve()) for a in args[1:]] if args[:1] == ["--quick-choose"] else []
 
     # The viewer plays through Qt's FFmpeg backend everywhere (Windows' own one reads far fewer
     # formats); --self-test checks that it loads.
@@ -121,15 +153,23 @@ def main(argv: list[str] | None = None) -> int:
     app.aboutToQuit.connect(release_clipboard)  # else a copied picture crashes the exit
 
     lock = None
-    if view_path is not None or convert_paths:
+    if view_path is not None or convert_paths or quick is not None or choose:
         from umc.gui.single_instance import claim
 
-        message = {"view": view_path} if view_path is not None else {"convert": convert_paths}
+        if quick is not None:
+            message = {"quick": quick}
+        elif choose:
+            message = {"choose": choose}
+        elif view_path is not None:
+            message = {"view": view_path}
+        else:
+            message = {"convert": convert_paths}
         handed_over, lock = claim(message)
         if handed_over:
             return 0  # the running copy shows it
     _start_cleanup()
     branding.migrate_settings()
+    _sync_thunar()
     app.setStyle("Fusion")
     theme.load_choice()  # the remembered System / Light / Dark, before the first window
     app.setStyleSheet(theme.stylesheet())
@@ -138,7 +178,11 @@ def main(argv: list[str] | None = None) -> int:
     from umc.gui.launcher import AppController
 
     controller = AppController(lock=lock)
-    if view_path is not None:
+    if quick is not None:
+        controller.quick_convert(quick["target"], quick["paths"])
+    elif choose:
+        controller.quick_choose(choose)
+    elif view_path is not None:
         controller.view(view_path)
     elif convert_paths:
         controller.convert(convert_paths)

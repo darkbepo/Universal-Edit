@@ -282,10 +282,11 @@ viewer that knows almost every format.
 | Files never leave your computer | ✅ | ✅ |
 | No install needed | ❌ | ✅ |
 | Save straight into a folder | ✅ | ✅ Chrome/Edge · ❌ Firefox/Safari (zip instead) |
-| **Windows installer** (per user, no admin) · right-click **"Convert with Universal Edit"** (several files → one window) · **"Open with"** → viewer · switches in the app's Settings (cog) | ✅ | — |
+| **Windows installer** (per user, no admin) · right-click **"Quick Convert"**: a submenu with only the formats that file can become — pick one and it's converted with the default settings and saved next to the original (several selected files are done one after another in one small window; "Open in Universal Edit…" at the top opens the full converter) · **"Open with"** → viewer, with its **own icon for each kind of file** (pictures, video, music, documents, 3D, …) once Universal Edit is their default app · switches in the app's Settings (cog) | ✅ | — |
+| **Uninstalling cleans up everything**: the right-click menu, "Open with", the file-type icons and every "always open with Universal Edit" choice go away, so those files open with what they used before (Windows protects a few types such as PDF — the uninstaller says so) · optionally also the app's settings and downloaded tools | ✅ Windows and Linux | — |
 | **Editors as add-ons**: the app is the converter + viewer; the editors are installed when first used, picked in the installer, or managed in Settings · downloads are checked against fingerprints built into the app | ✅ | — |
 | One-click install of LibreOffice, Pandoc, Ghostscript, Calibre or LibreDWG when a conversion needs them | ✅ Windows · Linux shows the `sudo apt install …` command to copy | — |
-| **Linux package** (Debian 12+, Ubuntu 22.04+): every editor included · menu entry · **"Open with"** → viewer and **"Convert with Universal Edit"** in the file manager · updates with `sudo apt upgrade` | ✅ | — |
+| **Linux package** (Debian 12+, Ubuntu 22.04+): every editor included · menu entry · **"Open with"** → viewer and **"Convert with Universal Edit"** in the file manager · right-click **"Quick Convert"** in GNOME Files (Nautilus), Dolphin and Thunar (submenus, like on Windows) and Nemo (a small format picker) · Settings can make the viewer the default app for everything it shows (and give the old choices back) · its own file-type icons where the desktop theme has none · updates with `sudo apt upgrade` | ✅ | — |
 | **Light / dark mode**: the sun / moon button in the top bar switches Same as the computer → Light → Dark and remembers it (also in the desktop Settings) · every editor and the viewer follow | ✅ | ✅ |
 | **Drop zone**: file-type badges orbit the text while it's empty and burst outward when you drop files · still when "reduce motion" is on | ✅ | ✅ |
 
@@ -312,7 +313,7 @@ Once it's out:
    the setup file from the newest release.
 2. Run it — it installs for your user only, no administrator rights needed.
 3. Pick which editors to install (you can add the rest later from the app), and whether to add
-   **"Convert with Universal Edit"** to the right-click menu and Universal Edit to
+   **"Quick Convert"** to the right-click menu and Universal Edit to
    **"Open with"**. Both can be switched later in the app (cog, top left).
 
 To make the viewer your default for pictures or videos, pick it once in Windows' *Default apps*
