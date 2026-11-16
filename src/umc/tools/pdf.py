@@ -501,3 +501,62 @@ def document_info(src: Path) -> dict:
         }
     finally:
         doc.close()
+
+
+class PasswordError(RuntimeError):
+    """The PDF is locked and no (or a wrong) password was given."""
+
+
+def _open_with(src: Path, password: str) -> pymupdf.Document:
+    doc = open_document(src)
+    if doc.needs_pass and not (password and doc.authenticate(password)):
+        doc.close()
+        raise PasswordError(src.name)
+    return doc
+
+
+def read_info(src: Path, password: str = "") -> dict:
+    """{"info": {Title, Subject, Author, Keywords}, "signed"} — the Properties details card."""
+    with _open_with(src, password) as doc:
+        meta = doc.metadata or {}
+        keys = {"Title": "title", "Subject": "subject", "Author": "author", "Keywords": "keywords"}
+        return {
+            "info": {k: meta.get(v) or "" for k, v in keys.items()},
+            "signed": doc.get_sigflags() > 0,
+        }
+
+
+def write_info(
+    src: Path, dest: Path, info: dict[str, str], xmp_remove: list[str], password: str
+) -> None:
+    """A copy of ``src`` at ``dest`` with the Info entries ``info`` ("" deletes one) set, and the
+    XMP properties ``xmp_remove`` removed — saved incrementally (appended to the original bytes,
+    so signatures stay valid for what they signed; a locked PDF stays locked)."""
+    import shutil
+
+    from umc.properties import xmp
+
+    shutil.copyfile(src, dest)
+    with _open_with(dest, password) as doc:
+        kind, value = doc.xref_get_key(-1, "Info")
+        if kind == "xref":
+            xref = int(value.split()[0])
+            for key, text in info.items():
+                doc.xref_set_key(xref, key, pymupdf.get_pdf_str(text) if text else "null")
+        else:
+            meta = {k: v for k, v in (doc.metadata or {}).items() if v and k != "format"}
+            names = {
+                "Title": "title",
+                "Subject": "subject",
+                "Author": "author",
+                "Keywords": "keywords",
+            }
+            for key, text in info.items():
+                meta[names[key]] = text
+            doc.set_metadata({k: v for k, v in meta.items() if v})
+        packet = doc.get_xml_metadata()
+        if packet and xmp_remove:
+            changed = xmp.remove(packet, xmp_remove)
+            if changed != packet:
+                doc.set_xml_metadata(changed)
+        doc.saveIncr()

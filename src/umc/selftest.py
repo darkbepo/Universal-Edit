@@ -531,6 +531,27 @@ def _video_details_check(d: Path) -> list[Path]:
     return [saved]
 
 
+def _document_details_check(d: Path) -> list[Path]:
+    """Document details: a PDF (PyMuPDF, incremental save) and a DOCX (zip rewrite) read back."""
+    import docx
+
+    from umc.properties import document
+    from umc.tools import pdf
+
+    d.mkdir(parents=True, exist_ok=True)
+    pdf_src = d / "doc.pdf"
+    pdf.layout_html("<p>Self test</p>", "", [], pdf_src, (595, 842), 36, "doc")
+    word = d / "doc.docx"
+    docx.Document().save(word)
+    edit = document.DocumentEdit({"title": "Self test", "keywords": "a, b"})
+    out = [document.save_file(p, edit, as_copy=True) for p in (pdf_src, word)]
+    for p in out:
+        got = document.read_details(p)
+        if (got.title, got.keywords) != ("Self test", "a, b"):
+            raise RuntimeError(f"details not written to {p.name}: {got}")
+    return out
+
+
 def run(report: Path) -> int:
     from PIL import Image
 
@@ -598,6 +619,7 @@ def run(report: Path) -> int:
             ),
             ("music tags: mp3 title / track / cover", lambda: _music_tags_check(d / "music", out)),
             ("video details: mp4 title / date / turn", lambda: _video_details_check(d / "video")),
+            ("document details: pdf + docx", lambda: _document_details_check(d / "docs")),
             ("mp4 -> webm", lambda: _convert([out / "img0 slideshow.mp4"], "webm", out)),
             ("mp4 -> gif", lambda: _convert([out / "img0 slideshow.mp4"], "video:gif", out)),
             ("mp4 -> frames", lambda: _convert([out / "img0 slideshow.mp4"], "frames:png", out)),

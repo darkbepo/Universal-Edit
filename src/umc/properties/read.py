@@ -324,6 +324,12 @@ def _find(root: ET.Element | None, path: str) -> str | None:
     return el.text.strip() if el is not None and el.text and el.text.strip() else None
 
 
+def _all(root: ET.Element | None, path: str) -> list[str]:
+    if root is None:
+        return []
+    return [el.text.strip() for el in root.findall(path, NS) if el.text and el.text.strip()]
+
+
 def _xml(zf: zipfile.ZipFile, name: str) -> ET.Element | None:
     try:
         return ET.fromstring(zf.read(name))
@@ -363,7 +369,7 @@ def odf_facts(zf: zipfile.ZipFile) -> dict:
         "subject": _find(meta, "dc:subject"),
         "author": _find(meta, "meta:initial-creator"),
         "last_saved_by": _find(meta, "dc:creator"),
-        "keywords": _find(meta, "meta:keyword"),
+        "keywords": ", ".join(_all(meta, "meta:keyword")) or None,  # one element per keyword
         "created": iso_local(created) if created else None,
         "modified": iso_local(modified) if modified else None,
         "application": app.split("/")[0] if app else None,

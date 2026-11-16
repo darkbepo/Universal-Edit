@@ -3,9 +3,10 @@
 A file picker on top when there are several; the sections (``properties.read.describe``) are read
 off the UI thread — PDFs on the PyMuPDF thread — and the newest request wins. JPG / PNG / WebP
 pictures get the "Change details" card ``photo_form.PhotoForm``, MP3 / M4A / FLAC / OGG / Opus
-songs ``music_form.MusicForm``, MP4 / MOV / M4V / MKV / WebM videos ``video_form.VideoForm``;
-saving runs on a thread too, after asking once before it changes an original (videos report
-progress and can be cancelled)."""
+songs ``music_form.MusicForm``, MP4 / MOV / M4V / MKV / WebM videos ``video_form.VideoForm``,
+PDF / Office / OpenDocument files ``document_form.DocumentForm`` (a locked PDF asks for its
+password first; it's kept in memory for this window only); saving runs on a thread too, after
+asking once before it changes an original (videos report progress and can be cancelled)."""
 
 from __future__ import annotations
 
@@ -30,11 +31,12 @@ from PySide6.QtWidgets import (
 from umc.core.detect import DetectedFile
 from umc.core.errors import ConversionCancelled
 from umc.gui import icons, theme
+from umc.gui.properties.document_form import DocumentForm
 from umc.gui.properties.music_form import MusicForm
 from umc.gui.properties.photo_form import PhotoForm
 from umc.gui.properties.video_form import VideoForm
 from umc.gui.viewer.tasks import TaskRunner
-from umc.properties import music, photo, video
+from umc.properties import document, music, photo, video
 from umc.properties.info import Section, build
 from umc.properties.read import NOTE, describe, file_facts, uses_pdf_engine
 
@@ -48,8 +50,11 @@ KINDS = {
               "song", "songs"),
     "video": (video.can_change, video.read_details, video.save_file, video.VideoError,
               "video", "videos"),
+    "document": (lambda ext: document.kind_of(ext) is not None, document.read_details,
+                 document.save_file, document.DocumentError, "document", "documents"),
 }  # fmt: skip
-INSIDE = {"photo": "picture", "music": "sound", "video": "video and its sound"}
+INSIDE = {"photo": "picture", "music": "sound", "video": "video and its sound",
+          "document": "text and its pages"}  # fmt: skip
 
 
 def kind_of(f: DetectedFile | None) -> str | None:
@@ -59,18 +64,24 @@ def kind_of(f: DetectedFile | None) -> str | None:
     return next((k for k, spec in KINDS.items() if spec[0](f.ext)), None)
 
 
-def _read(f: DetectedFile, others: list[DetectedFile]):
-    """Runs on a thread: the sections, plus the details form's values for changeable files."""
+def _read(f: DetectedFile, others: list[DetectedFile], passwords: dict[Path, str] | None = None):
+    """Runs on a thread: the sections, plus the details form's values for changeable files.
+    A locked PDF that is the shown file gives its ``document.PasswordNeeded`` as the values."""
     sections = describe(f)
     kind = kind_of(f)
     if kind is None:
         return sections, None, None, []
     read = KINDS[kind][1]
+    passwords = passwords or {}
     everyone = []  # (file, details) of every file of this kind whose details could be read
     current = None
     for g in others:
         try:
-            d = read(g.path)
+            d = read(g.path, passwords[g.path]) if g.path in passwords else read(g.path)
+        except document.PasswordNeeded as exc:
+            if g == f:
+                current = exc
+            continue
         except (OSError, ValueError, struct.error):
             continue
         everyone.append((g, d))
@@ -127,7 +138,11 @@ class PropertiesPanel(QWidget):
         self.form = PhotoForm()
         self.music_form = MusicForm()
         self.video_form = VideoForm()
-        self.forms = {"photo": self.form, "music": self.music_form, "video": self.video_form}
+        self.document_form = DocumentForm()
+        self.forms = {"photo": self.form, "music": self.music_form, "video": self.video_form,
+                      "document": self.document_form}  # fmt: skip
+        self.passwords: dict[Path, str] = {}  # PDFs opened with a password (this window only)
+        self.document_form.unlock_requested.connect(self._unlock)
         self._cancel = threading.Event()
         self.video_form.cancel_requested.connect(self._cancel.set)
         self._save_progress.connect(self._show_progress)
@@ -180,20 +195,28 @@ class PropertiesPanel(QWidget):
         for form in self.forms.values():  # the shown card still belongs to the last file
             form.setEnabled(False)
         others = self.changeable()
+        passwords = dict(self.passwords)
+        pdf_lane = uses_pdf_engine(f) or kind_of(f) == "document"  # PyMuPDF reads the PDFs
         self.tasks.submit(
             "describe",
-            lambda: _read(f, others),
+            lambda: _read(f, others, passwords),
             self._loaded,
             self._failed,
-            lane="pdf" if uses_pdf_engine(f) else "pool",
+            lane="pdf" if pdf_lane else "pool",
         )
+
+    def _unlock(self, password: str) -> None:
+        """Read the shown PDF again with ``password`` (a wrong one shows the box again)."""
+        if self.current is not None:
+            self.passwords[self.current.path] = password
+            self.show_file(self.files.index(self.current))
 
     def changeable(self) -> list[DetectedFile]:
         """The added files whose details can be changed with the shown file's card."""
         kind = kind_of(self.current)
         return [g for g in self.files if kind is not None and kind_of(g) == kind]
 
-    def active_form(self) -> PhotoForm | MusicForm | VideoForm:
+    def active_form(self) -> PhotoForm | MusicForm | VideoForm | DocumentForm:
         return self.forms.get(self.kind or "", self.form)
 
     def _loaded(self, result) -> None:
@@ -207,7 +230,11 @@ class PropertiesPanel(QWidget):
         for k, form in self.forms.items():
             form.setVisible(k == self.kind)
             form.setEnabled(True)
-        if current is not None:
+        if isinstance(current, document.PasswordNeeded):
+            if self.current is not None:
+                self.passwords.pop(self.current.path, None)  # it didn't open the file
+            self.document_form.set_locked(str(current))
+        elif current is not None:
             self.active_form().set_details(current, everyone)
         if self._keep_message is not None:  # after a save: say how it went, on that card
             message, error, saved_kind = self._keep_message
@@ -316,13 +343,15 @@ class PropertiesPanel(QWidget):
         def progress(fraction: float) -> None:
             self._save_progress.emit(kind, fraction)
 
+        passwords = dict(self.passwords)
         # the results go to this card, even if another file (or kind) is shown by then
         self.tasks.submit(
             "save",
-            lambda: _save_all(kind, paths, edit, as_copy, progress, cancel),
+            lambda: _save_all(kind, paths, edit, as_copy, progress, cancel, passwords),
             lambda result: self._saved(result, kind),
             lambda m: self._save_failed(m, kind),
             exclusive=False,
+            lane="pdf" if kind == "document" else "pool",
         )
 
     def _show_progress(self, kind: str, fraction: float) -> None:
@@ -381,9 +410,11 @@ def _save_all(
     as_copy: bool,
     progress=None,
     cancel: threading.Event | None = None,
+    passwords: dict[Path, str] | None = None,
 ) -> tuple[list[Path], list[str]]:
     """Runs on a thread: save each file; plain-language problems are collected, not raised.
-    Videos report ``progress`` (0..1 over all of them) and stop when ``cancel`` is set."""
+    Videos report ``progress`` (0..1 over all of them) and stop when ``cancel`` is set; locked
+    PDFs are opened with their ``passwords``."""
     save, error = KINDS[kind][2], KINDS[kind][3]
     cancel = cancel or threading.Event()
     written, problems = [], []
@@ -399,6 +430,9 @@ def _save_all(
                         progress((i + p) / len(paths))
 
                 written.append(save(path, edit, as_copy, part, cancel))
+            elif kind == "document":
+                password = (passwords or {}).get(path, "")
+                written.append(save(path, document.DocumentEdit(edit.values, password), as_copy))
             else:
                 written.append(save(path, edit, as_copy))
         except ConversionCancelled:
