@@ -3,7 +3,8 @@
 On Windows the main button is **Install it for me**: it downloads, verifies and installs the
 tool in the background (see :mod:`umc.tools.installer`) and then closes, so the caller can retry
 the conversion automatically. “Download it myself” and “I've installed it — check again”
-remain as fallbacks.
+remain as fallbacks. On Debian / Ubuntu the dialog shows the ``sudo apt install`` command to copy
+instead (:mod:`umc.tools.linux_packages`).
 """
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ import logging
 import threading
 
 from PySide6.QtCore import QObject, Qt, QThread, QUrl, Signal, Slot
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import (
     QDialog,
     QHBoxLayout,
@@ -23,7 +24,16 @@ from PySide6.QtWidgets import (
 )
 
 from umc.core.errors import ConversionCancelled, ConversionError
-from umc.tools import calibre, ffmpeg, ghostscript, installer, libredwg, libreoffice, pandoc
+from umc.tools import (
+    calibre,
+    ffmpeg,
+    ghostscript,
+    installer,
+    libredwg,
+    libreoffice,
+    linux_packages,
+    pandoc,
+)
 
 log = logging.getLogger(__name__)
 
@@ -102,6 +112,7 @@ class ToolMissingDialog(QDialog):
         self._worker: _InstallWorker | None = None
         short = tool.split(" ")[0]
         can_install = installer.supported(tool)
+        self.command = None if can_install else linux_packages.install_command(tool)
 
         self.setWindowTitle(f"{short} needed")
         lay = QVBoxLayout(self)
@@ -113,6 +124,11 @@ class ToolMissingDialog(QDialog):
             hint = (
                 "“Install it for me” downloads it from the official website, checks it and sets "
                 f"it up — {_SIZE.get(tool, '')}. Your conversion continues automatically."
+            )
+        elif self.command:
+            hint = (
+                "Install it with this command in a terminal (it asks for your password), then "
+                "press “I've installed it” — no restart needed."
             )
         else:
             hint = "Install it, then press “I've installed it” — no restart needed."
@@ -127,6 +143,12 @@ class ToolMissingDialog(QDialog):
         self.status.setWordWrap(True)
         lay.addWidget(title)
         lay.addWidget(body)
+        self.command_label = QLabel(self.command or "")
+        self.command_label.setObjectName("Command")
+        self.command_label.setStyleSheet("font-family: monospace;")
+        self.command_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.command_label.setVisible(bool(self.command))
+        lay.addWidget(self.command_label)
         lay.addWidget(self.bar)
         lay.addWidget(self.status)
 
@@ -136,6 +158,8 @@ class ToolMissingDialog(QDialog):
         self.install_button.setObjectName("Primary")
         self.manual_button = QPushButton(f"Download {short} myself")
         self.check_button = QPushButton("I've installed it — check again")
+        self.copy_button = QPushButton("Copy command")
+        self.copy_button.hide()
         buttons.addWidget(self.cancel_button)
         buttons.addStretch(1)
         buttons.addWidget(self.install_button)
@@ -156,7 +180,14 @@ class ToolMissingDialog(QDialog):
         links.addWidget(self.check_button)
         lay.addLayout(links)
 
-        if not can_install:
+        if self.command:
+            # Linux: copying the apt command is the main action; the website stays a link.
+            self.install_button.hide()
+            self.copy_button.setObjectName("Primary")
+            self.copy_button.show()
+            buttons.addWidget(self.copy_button)
+            self.manual_button.setText(f"{short} website")
+        elif not can_install:
             # Without the automatic option, downloading manually becomes the main action.
             self.install_button.hide()
             self.manual_button.setObjectName("Primary")
@@ -172,6 +203,12 @@ class ToolMissingDialog(QDialog):
         self.manual_button.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(url)))
         self.check_button.clicked.connect(self._check)
         self.install_button.clicked.connect(self._install)
+        self.copy_button.clicked.connect(self._copy_command)
+
+    def _copy_command(self) -> None:
+        # Plain text: Qt owns it, so nothing to hand over when the app quits.
+        QGuiApplication.clipboard().setText(self.command or "")
+        self._set_status("Copied. Paste it into a terminal, then press “I've installed it”.")
 
     # ----------------------------------------------------------------- manual path
     def _check(self) -> None:
