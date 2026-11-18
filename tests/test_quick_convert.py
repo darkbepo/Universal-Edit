@@ -169,3 +169,20 @@ def test_format_picker_for_file_managers_without_submenus(qtbot, media, tmp_path
     webp.click()
     qtbot.waitUntil(lambda: w.done, timeout=20000)
     assert (tmp_path / "a.webp").is_file() and (tmp_path / "b.webp").is_file()
+
+
+def test_cancelled_files_are_not_converted_later(qtbot, media, tmp_path):
+    from umc.gui import quick_convert
+
+    w = quick_convert.QuickConvertWindow()
+    qtbot.addWidget(w)
+    w._hovered = True
+    a, b, c = (tmp_path / f"{n}.png" for n in "abc")
+    for p in (a, b, c):
+        shutil.copy(media / "img0.png", p)
+    w.add("jpg", [str(a), str(b)])
+    w.cancel()  # while "a" converts: "b" stays undone
+    qtbot.waitUntil(lambda: not w.busy, timeout=20000)
+    w.add("jpg", [str(c)])  # the next right-click
+    qtbot.waitUntil(lambda: w.done, timeout=20000)
+    assert (tmp_path / "c.jpg").is_file() and not (tmp_path / "b.jpg").exists()

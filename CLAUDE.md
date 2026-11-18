@@ -1211,7 +1211,8 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
        `values`. Linux `tools/linux_filemanagers.py`: Nautilus extension
        `packaging/linux/universal-edit-quick-convert.py` (python3-nautilus, Recommends; Nautilus
        3 + 4 APIs; reads `/usr/share/universal-edit/quick-convert.json` = `quick_table`), Dolphin
-       service menus (KF5 + KF6 folders, one per menu key; a MIME type keeps the first
+       service menus (`kio/servicemenus` only — KF5 ≥ 5.85 reads it too, a second copy in
+       `kservices5` showed the menu twice; one per menu key; a MIME type keeps the first
        extension's menu so nobody gets two), Nemo = one action → `--quick-choose`, Thunar = per-user
        `~/.config/Thunar/uca.xml` actions in its "Quick Convert" `<submenu>` (other actions kept,
        an unreadable file is never overwritten), added by `app._sync_thunar` (installed build,

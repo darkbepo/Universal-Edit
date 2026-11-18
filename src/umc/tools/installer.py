@@ -334,9 +334,17 @@ GS_PUBLISHER = "Artifex Software"
 GS_SPACE_BYTES = 300_000_000
 
 
+def gs_dotted(version: str) -> str:
+    """Ghostscript's tags squash the version ("10051" = 10.05.1, "9561" = 9.56.1); the program
+    itself says "10.05.1". One form, so an update check compares like with like."""
+    if version.isdigit() and len(version) >= 4:
+        return f"{int(version[:-3])}.{version[-3:-1]}.{version[-1]}"
+    return version
+
+
 def pick_ghostscript_asset(release: dict) -> tuple[str, str, str | None]:
     """``(version, url, sha256_or_None)`` of the 64-bit Windows installer (gsNNNNNw64.exe)."""
-    version = str(release.get("tag_name", "")).removeprefix("gs")
+    version = gs_dotted(str(release.get("tag_name", "")).removeprefix("gs"))
     for asset in release.get("assets", []):
         name = asset.get("name", "")
         if re.fullmatch(r"gs\d+w64\.exe", name):
@@ -579,7 +587,7 @@ def installed_version(tool: str) -> str | None:
     """The version recorded when it was installed, else what the program itself says."""
     recorded = recorded_versions().get(tool)
     if recorded:
-        return recorded
+        return gs_dotted(recorded) if tool == "Ghostscript" else recorded
     from umc.core.paths import find_in_tools
 
     exe = find_in_tools(TOOL_FOLDERS[tool], TOOL_EXES[tool])

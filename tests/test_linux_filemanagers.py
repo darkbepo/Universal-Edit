@@ -105,7 +105,7 @@ def test_system_files_for_the_package(tmp_path):
     assert "usr/share/nautilus-python/extensions/universal-edit-quick-convert.py" in rel
     assert "usr/share/nemo/actions/universal-edit-quick-convert.nemo_action" in rel
     assert any(r.startswith("usr/share/kio/servicemenus/") for r in rel)
-    assert any(r.startswith("usr/share/kservices5/ServiceMenus/") for r in rel)
+    assert not any(r.startswith("usr/share/kservices5/") for r in rel)  # would show twice
 
 
 # --------------------------------------------------------------------------- the Nautilus extension

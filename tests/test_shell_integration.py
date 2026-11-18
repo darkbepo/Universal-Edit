@@ -94,6 +94,7 @@ def test_context_menu(reg):
     shell.register_context_menu(reg)
     key = r"Software\Classes\SystemFileAssociations\.png\shell\UniversalEdit.Convert"
     assert reg.get_value(key, "MUIVerb") == "Quick Convert"
+    assert reg.get_value(key, "MultiSelectModel") == "Player"
     sub = reg.get_value(key, "ExtendedSubCommandsKey")
     assert sub.startswith("UniversalEdit.QuickConvert.")
     jpg = r"Software\Classes\SystemFileAssociations\.jpg\shell\UniversalEdit.Convert"

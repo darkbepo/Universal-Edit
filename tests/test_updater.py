@@ -199,3 +199,31 @@ def test_daily_check_shows_the_button(qtbot, monkeypatch):
     if later is not w:
         qtbot.addWidget(later)
         assert not later.update_available.isHidden()
+
+
+def test_closing_the_window_while_updating_never_hands_over(qtbot, monkeypatch, tmp_path):
+    from umc.gui import update_dialog
+
+    monkeypatch.setattr(update_dialog.sys, "platform", "win32")
+    report = updater.Report(app=updater.AppUpdate("99.0.0", "u", "s", "x.exe"))
+    release = threading.Event()
+    calls = []
+
+    def slow_download(u, p, c):
+        release.wait(5)
+        return tmp_path / "x.exe"
+
+    monkeypatch.setattr(updater, "download_app", slow_download)
+    monkeypatch.setattr(updater, "start_windows_update", lambda s: calls.append("run"))
+    monkeypatch.setattr(update_dialog.QApplication, "quit", lambda: calls.append("quit"))
+    d = update_dialog.UpdateDialog(report=report)
+    qtbot.addWidget(d)
+    d.show()
+    d.update_button.click()
+    d.reject()  # Esc while it downloads
+    assert d.job.cancel.is_set()
+    job = d.job
+    release.set()
+    qtbot.waitUntil(lambda: d.job is None or job is not d.job, timeout=5000)
+    qtbot.wait(100)
+    assert calls == []

@@ -120,6 +120,7 @@ class UpdateDialog(QDialog):
         self.setMinimumWidth(480)
         self.report: updater.Report | None = None
         self.job: _Job | None = None
+        self._abandoned = False  # closed (Esc / ×) while a job ran: its result is ignored
         self.title = QLabel(objectName="CardTitle")
         self.lines = QLabel(objectName="Muted")
         self.lines.setWordWrap(True)
@@ -171,6 +172,8 @@ class UpdateDialog(QDialog):
 
     def _checked(self, report: updater.Report | None, error: str | None) -> None:
         self.job = None
+        if self._abandoned:
+            return
         self.report = report
         if report is None:
             self.title.setText("Couldn't check for updates")
@@ -204,6 +207,8 @@ class UpdateDialog(QDialog):
 
     def _updated(self, result, error: str | None) -> None:
         self.job = None
+        if self._abandoned:  # closed while it ran: never hand over to the installer afterwards
+            return
         self.bar.hide()
         if result is None:
             self.title.setText("The update didn't finish")
@@ -238,9 +243,17 @@ class UpdateDialog(QDialog):
         self.check_button.setVisible(not busy and not ready and not restart)
         self.close_button.setEnabled(not busy)
 
-    def closeEvent(self, event) -> None:  # noqa: N802
+    def _abandon(self) -> None:
         if self.job is not None:
+            self._abandoned = True
             self.job.cancel.set()
+
+    def reject(self) -> None:  # Esc
+        self._abandon()
+        super().reject()
+
+    def closeEvent(self, event) -> None:  # noqa: N802
+        self._abandon()
         super().closeEvent(event)
 
 

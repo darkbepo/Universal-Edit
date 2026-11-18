@@ -116,6 +116,8 @@ class QuickConvertWindow(QWidget):
         return not self.busy and self.index >= len(self.items)
 
     def add(self, target_id: str, paths: list[str]) -> None:
+        if self.cancelled and not self.busy:  # what was left when Cancel was pressed stays undone
+            self.items = self.items[: self.index]
         known = {(i.path, i.target_id) for i in self.items[self.index :]}
         for p in paths:
             item = _Item(Path(p), target_id)

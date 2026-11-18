@@ -112,12 +112,13 @@ def _new_lines(changes: dict[str, list[str] | None], done: set[str]) -> list[str
 
 def _write(path: Path, text: str) -> None:
     """Written next to it and swapped in; a file of another user keeps its owner."""
+    linux_filemanagers.refuse_links_as_root(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(prefix=".ue-", dir=path.parent)
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(text)
     if path.exists():
-        st = path.stat()
+        st = os.lstat(path)
         shutil.copymode(path, tmp)
         if os.geteuid() == 0:
             os.chown(tmp, st.st_uid, st.st_gid)

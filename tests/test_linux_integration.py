@@ -93,3 +93,15 @@ def test_cli_goes_to_linux_without_a_registry(monkeypatch):
     monkeypatch.setattr(li, "run_cli", lambda *a: calls.append(a) or 0)
     assert shell.run_cli(["--unregister", "all", "--all-users"]) == 0
     assert calls == [(False, ["context-menu", "open-with"], True)]
+
+
+def test_root_never_follows_a_users_link(tmp_path, monkeypatch):
+    target = tmp_path / "root-only"
+    target.write_text("[Default Applications]\nimage/png=universal-edit.desktop;\n")
+    home = tmp_path / "bob"
+    (home / ".config").mkdir(parents=True)
+    li.mimeapps_path(home).symlink_to(target)
+    monkeypatch.setattr(li.os, "geteuid", lambda: 0)
+    with pytest.raises(OSError, match="is a link"):
+        li.restore_defaults(home)
+    assert "universal-edit" in target.read_text()  # untouched

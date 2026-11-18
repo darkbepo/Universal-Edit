@@ -228,6 +228,7 @@ def register_context_menu(reg: Registry) -> None:
         key = rf"{CLASSES}\SystemFileAssociations\.{ext}\shell\{VERB}"
         reg.set_value(key, "MUIVerb", QUICK_TEXT)
         reg.set_value(key, "ExtendedSubCommandsKey", name)
+        reg.set_value(key, "MultiSelectModel", "Player")  # else hidden above 15 selected files
         if icon_ref():
             reg.set_value(key, "Icon", icon_ref())
         if name not in written:

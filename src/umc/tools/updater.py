@@ -328,13 +328,8 @@ def run_linux_update(deb: Path | None, packages: list[str], cancel: threading.Ev
         stderr=subprocess.STDOUT,
         text=True,
     )
-    while True:
-        try:
-            out, _ = proc.communicate(timeout=0.5)
-            break
-        except subprocess.TimeoutExpired:
-            if cancel.is_set():
-                proc.terminate()
+    # Never stopped half-way, even if the window is closed: apt must finish what it started.
+    out, _ = proc.communicate()
     if proc.returncode in (126, 127):  # the password prompt was closed / refused
         raise UpdateError("The update needs your password; nothing was changed.")
     if proc.returncode != 0:

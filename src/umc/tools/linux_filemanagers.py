@@ -35,7 +35,9 @@ DATA_DIR = f"/usr/share/{APP}"  # quick-convert.json for the Nautilus extension
 TABLE_NAME = "quick-convert.json"
 NAUTILUS_EXT_DIR = "/usr/share/nautilus-python/extensions"
 NAUTILUS_EXT_NAME = f"{APP}-quick-convert.py"
-DOLPHIN_DIRS = ("/usr/share/kio/servicemenus", "/usr/share/kservices5/ServiceMenus")  # KF6, KF5
+# KF6 and KF5 ≥ 5.85 (Debian 12, Ubuntu 22.04) both read this; also writing the old
+# kservices5 folder would show the menu twice on KF5.
+DOLPHIN_DIRS = ("/usr/share/kio/servicemenus",)
 NEMO_DIR = "/usr/share/nemo/actions"
 NEMO_NAME = f"{APP}-quick-convert.nemo_action"
 THUNAR_ID = f"{APP}-quick-convert"  # every action's unique-id starts with this
@@ -196,8 +198,18 @@ def _ours(action: ET.Element) -> bool:
     return (action.findtext("unique-id") or "").startswith(THUNAR_ID)
 
 
+def refuse_links_as_root(path: Path) -> None:
+    """Run as root for someone else's home (the package's removal): never follow a link the
+    user made — it could point at a file only root may change."""
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        for p in (path, path.parent):
+            if p.is_symlink():
+                raise OSError(f"{p} is a link; not changed")
+
+
 def _write_uca(path: Path, root: ET.Element) -> None:
     """Written next to it and swapped in (keeps the owner when run as root for a user)."""
+    refuse_links_as_root(path)
     ET.indent(root, space="\t")
     data = b'<?xml version="1.0" encoding="UTF-8"?>\n' + ET.tostring(root, encoding="utf-8")
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -205,7 +217,7 @@ def _write_uca(path: Path, root: ET.Element) -> None:
     with os.fdopen(fd, "wb") as f:
         f.write(data + b"\n")
     if path.exists():
-        st = path.stat()
+        st = os.lstat(path)
         shutil.copymode(path, tmp)
         if hasattr(os, "chown") and os.geteuid() == 0:
             os.chown(tmp, st.st_uid, st.st_gid)

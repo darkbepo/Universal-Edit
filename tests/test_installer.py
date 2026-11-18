@@ -224,7 +224,8 @@ def test_pick_libredwg_and_ghostscript_assets():
             {"name": "gs10051w64.exe", "browser_download_url": "u", "digest": "sha256:" + "b" * 64}
         ],
     }
-    assert installer.pick_ghostscript_asset(gs) == ("10051", "u", "b" * 64)
+    assert installer.pick_ghostscript_asset(gs) == ("10.05.1", "u", "b" * 64)
+    assert installer.gs_dotted("9561") == "9.56.1" and installer.gs_dotted("10.0") == "10.0"
     dwg = {
         "tag_name": "0.13.3",
         "assets": [{"name": "libredwg-0.13.3-win64.zip", "browser_download_url": "z"}],
