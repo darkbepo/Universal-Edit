@@ -645,9 +645,9 @@ class ViewerWindow(QMainWindow):
             playback = self.mini.detach()  # back from the mini player, still going
         else:
             playback = Playback(f.path, sound_only, self._volume, self)
-            if not self.mini.playing():
-                playback.player.play()  # (with the mini player going, this one waits)
-        self.media.attach(playback)
+        self.media.attach(playback)  # picture output first, then the file opens
+        if (mini is None or mini.path != f.path) and not self.mini.playing():
+            playback.player.play()  # (with the mini player going, this one waits)
         self.stack.setCurrentWidget(self.media)
         if sound_only and playback.levels is None:
             self._load_waveform(playback)

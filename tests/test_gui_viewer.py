@@ -393,3 +393,19 @@ def test_mini_player_keeps_playing_and_comes_back(qtbot, viewer, folder):
     song.player.pause()
     viewer.step(1)  # a paused file isn't kept
     assert viewer.mini.playback is None
+
+
+def test_video_output_is_connected_before_the_file_opens(qtbot, viewer, folder):
+    """Opening (or playing) first and connecting the picture after showed a green frame."""
+    from umc.gui.viewer.media import Playback
+
+    pb = Playback(folder / "clip.mp4", False, 50, viewer)
+    assert pb.player.source().isEmpty()  # nothing opened before a view takes it
+    order = []
+    pb.player.sourceChanged.connect(lambda _s: order.append("source"))
+    pb.player.videoOutputChanged.connect(lambda: order.append("output"))
+    viewer.media.attach(pb)
+    assert order[:2] == ["output", "source"]
+    assert pb.player.videoOutput() is viewer.media.video
+    viewer.media.detach()
+    pb.close()

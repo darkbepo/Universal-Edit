@@ -107,7 +107,12 @@ class Playback(QObject):
             self.player.setAudioOutput(self.audio)
         self.set_volume(volume)
         self.player.errorOccurred.connect(self._on_error)
-        self.player.setSource(QUrl.fromLocalFile(str(self.path)))
+
+    def load(self) -> None:
+        """Open the file — only once a view has given it its picture output: a video output
+        connected after the file is open (or while it plays) can show a green frame."""
+        if self.player.source().isEmpty():
+            self.player.setSource(QUrl.fromLocalFile(str(self.path)))
 
     def set_volume(self, percent: int) -> None:
         self.volume = max(0, min(100, percent))
@@ -137,6 +142,19 @@ class Playback(QObject):
 
 
 # --------------------------------------------------------------------------- waveform
+def switch_video_output(player, output) -> None:
+    """Point ``player``'s picture at ``output`` (None = nowhere), pausing around the switch
+    if it plays: a switch in mid-play can leave the new output green / frozen."""
+    from PySide6.QtMultimedia import QMediaPlayer
+
+    playing = player.playbackState() == QMediaPlayer.PlaybackState.PlayingState
+    if playing:
+        player.pause()
+    player.setVideoOutput(output)
+    if playing:
+        player.play()
+
+
 class WaveformView(QWidget):
     """A song's waveform: bars mirrored around the middle, the played part in the accent
     colour, a line where it is now. A click plays / pauses (``clicked``); it never jumps."""
@@ -342,7 +360,9 @@ class MediaView(QWidget):
         self.wave.set_levels(playback.levels)
         self.wave.fraction = 0.0
         player = playback.player
-        player.setVideoOutput(None if playback.sound_only else self.video)
+        if not playback.sound_only:
+            switch_video_output(player, self.video)
+        playback.load()
         player.durationChanged.connect(self._on_duration)
         player.positionChanged.connect(self._on_position)
         player.playbackStateChanged.connect(self._on_state)
@@ -361,7 +381,7 @@ class MediaView(QWidget):
                 with contextlib.suppress(RuntimeError, TypeError):
                     signal.disconnect(slot)
             if not pb.sound_only:
-                player.setVideoOutput(None)
+                switch_video_output(player, None)
         self.position.setRange(0, 0)
         self.time.setText("0:00 / 0:00")
         self.wave.set_levels(None)
@@ -490,7 +510,7 @@ class MiniPlayer(QFrame):
         player = playback.player
         self.video.setVisible(not playback.sound_only)
         if not playback.sound_only:
-            player.setVideoOutput(self.video)
+            switch_video_output(player, self.video)
         name = playback.path.name
         self.name.setText(name if len(name) <= 34 else name[:32] + "…")
         self.name.setToolTip(f"{name}\nClick to show it again")
@@ -513,7 +533,7 @@ class MiniPlayer(QFrame):
                 with contextlib.suppress(RuntimeError, TypeError):
                     signal.disconnect(slot)
             if not pb.sound_only:
-                player.setVideoOutput(None)
+                switch_video_output(player, None)
         self.hide()
         return pb
 
