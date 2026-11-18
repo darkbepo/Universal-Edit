@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import sys
+
 import pytest
 from PySide6.QtCore import QSettings
 
 from umc.gui import default_viewer_prompt as prompt
 from umc.tools import linux_integration as li
+
+# Writes Linux settings files (mimeapps.list) the way the installed Linux app does.
+linux_files = pytest.mark.skipif(sys.platform == "win32", reason="Linux settings files")
 
 
 @pytest.fixture
@@ -24,6 +29,7 @@ def test_only_the_installed_linux_app_asks(settings):
     assert not prompt.wanted(settings, frozen=True, platform="linux")
 
 
+@linux_files
 def test_yes_makes_the_viewer_the_default(qapp, settings, tmp_path):
     assert prompt.offer(settings, ask=lambda parent: True, home=tmp_path)
     assert li.is_default_viewer(tmp_path)
@@ -37,12 +43,14 @@ def test_yes_makes_the_viewer_the_default(qapp, settings, tmp_path):
     assert not li.is_default_viewer(tmp_path)
 
 
+@linux_files
 def test_not_now_changes_nothing_and_never_asks_again(qapp, settings, tmp_path):
     assert not prompt.offer(settings, ask=lambda parent: False, home=tmp_path)
     assert not li.mimeapps_path(tmp_path).exists()
     assert not prompt.wanted(settings, frozen=True, platform="linux")
 
 
+@linux_files
 def test_already_the_default_is_not_asked(qapp, settings, tmp_path):
     li.set_default_viewer(home=tmp_path)
 
