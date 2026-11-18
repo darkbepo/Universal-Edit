@@ -117,10 +117,83 @@ def read_aliases(path: Path = ALIASES) -> dict[str, list[str]]:
     return {mime: sorted(old) for mime, old in names.items()}
 
 
-def known_mime() -> dict[str, list[str]]:
-    """The checked-in table: {extension: MIME types} for the app's extensions."""
+# Extensions the app opens that shared-mime-info has no type for (so no app can be linked to
+# them): the .deb installs these as /usr/share/mime/packages/universal-edit.xml (dpkg's
+# trigger runs update-mime-database). ext → (type, description, parent type or ""). A type
+# that already exists only gains the extension (no description); new text types are
+# sub-classes of text/plain so text editors keep offering them. Their glob weight is below
+# the default, so a system that knows the extension by now keeps its own type.
+OWN_TYPES: dict[str, tuple[str, str, str]] = {
+    "3fr": ("image/x-hasselblad-3fr", "Hasselblad raw image", "image/x-dcraw"),
+    "erf": ("image/x-epson-erf", "Epson raw image", "image/x-dcraw"),
+    "iiq": ("image/x-phaseone-iiq", "Phase One raw image", "image/x-dcraw"),
+    "mef": ("image/x-mamiya-mef", "Mamiya raw image", "image/x-dcraw"),
+    "mos": ("image/x-leaf-mos", "Leaf raw image", "image/x-dcraw"),
+    "srw": ("image/x-samsung-srw", "Samsung raw image", "image/x-dcraw"),
+    "caf": ("audio/x-caf", "Core Audio audio", ""),
+    "step": ("model/step", "STEP 3D model", ""),
+    "stp": ("model/step", "STEP 3D model", ""),
+    "ply": ("model/x-ply", "PLY 3D model", ""),
+    "off": ("model/x-off", "OFF 3D model", ""),
+    "lrc": ("text/x-lrc", "LRC lyrics", "text/plain"),
+    "webvtt": ("text/vtt", "", ""),
+    "cjs": ("text/javascript", "", ""),
+    "jsx": ("text/jsx", "JSX source code", "text/plain"),
+    "kts": ("text/x-kotlin", "", ""),
+    "less": ("text/x-less", "Less style sheet", "text/plain"),
+    "r": ("text/x-r", "R source code", "text/plain"),
+    "svelte": ("text/x-svelte", "Svelte component", "text/plain"),
+    "swift": ("text/x-swift", "Swift source code", "text/plain"),
+    "vue": ("text/x-vue", "Vue component", "text/plain"),
+    "text": ("text/plain", "", ""),
+    "cfg": ("text/x-config", "Configuration file", "text/plain"),
+    "conf": ("text/x-config", "Configuration file", "text/plain"),
+    "ini": ("text/x-ini", "INI configuration file", "text/plain"),
+    "env": ("text/x-dotenv", "Environment settings", "text/plain"),
+    "properties": ("text/x-java-properties", "Java properties file", "text/plain"),
+}
+OWN_GLOB_WEIGHT = 40  # shared-mime-info's own globs are 50
+OWN_MIME_NAME = "universal-edit.xml"  # in /usr/share/mime/packages
+
+
+def system_mime() -> dict[str, list[str]]:
+    """The checked-in table made from shared-mime-info: {extension: MIME types}."""
     data = json.loads(MIME_FILE.read_text(encoding="utf-8"))
     return {ext: types for ext, types in data.items() if not ext.startswith("_")}
+
+
+def known_mime() -> dict[str, list[str]]:
+    """{extension: MIME types} for the app's extensions: the system's, then our own types for
+    the extensions it doesn't know."""
+    table = system_mime()
+    for ext, (mime, _, _) in OWN_TYPES.items():
+        table.setdefault(ext, [mime])
+    return table
+
+
+def own_mime_xml() -> str:
+    """The shared-mime-info package file for ``OWN_TYPES``."""
+    from xml.sax.saxutils import escape, quoteattr
+
+    by_type: dict[str, list[str]] = {}
+    for ext, (mime, _, _) in OWN_TYPES.items():
+        by_type.setdefault(mime, []).append(ext)
+    lines = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">',
+    ]
+    for mime in sorted(by_type):
+        _, comment, parent = next(v for v in OWN_TYPES.values() if v[0] == mime)
+        lines.append(f"  <mime-type type={quoteattr(mime)}>")
+        if comment:
+            lines.append(f"    <comment>{escape(comment)}</comment>")
+        if parent:
+            lines.append(f"    <sub-class-of type={quoteattr(parent)}/>")
+        for ext in sorted(by_type[mime]):
+            lines.append(f'    <glob pattern="*.{ext}" weight="{OWN_GLOB_WEIGHT}"/>')
+        lines.append("  </mime-type>")
+    lines.append("</mime-info>")
+    return "\n".join(lines) + "\n"
 
 
 def version_tuple(text: str) -> tuple[int, ...]:

@@ -63,6 +63,8 @@ def test_stage_lays_out_the_package(tmp_path, build_deb):
     mime_icon = icons / "scalable" / "mimetypes" / "image-png.svg"  # its own file-type icon
     assert mime_icon.read_text().startswith("<svg")
     assert "python3-nautilus" in control
+    own = share / "mime" / "packages" / "universal-edit.xml"  # types Linux doesn't know yet
+    assert '<glob pattern="*.vue"' in own.read_text()
 
 
 def test_description_is_valid_for_dpkg(build_deb):

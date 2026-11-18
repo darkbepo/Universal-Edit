@@ -88,7 +88,7 @@ jobs:
         run: |
           apt-get update
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            ./universal-edit_*.deb libarchive-tools desktop-file-utils
+            ./universal-edit_*.deb libarchive-tools desktop-file-utils shared-mime-info
 
       - name: Check the desktop integration
         run: |
@@ -100,6 +100,9 @@ jobs:
           grep -q "^application/pdf=universal-edit.desktop;universal-edit_convert.desktop;" \
             /usr/share/applications/mimeinfo.cache
           grep -q "^model/obj=universal-edit.desktop;" /usr/share/applications/mimeinfo.cache
+          # types Linux didn't know get the package's own (shared-mime-info's dpkg trigger)
+          grep -q ":text/x-vue:\*\.vue$" /usr/share/mime/globs2
+          grep -q "^model/step=universal-edit.desktop;" /usr/share/applications/mimeinfo.cache
           test -f /usr/share/icons/hicolor/256x256/apps/universal-edit.png
 
       - name: Self-test the installed app
@@ -113,6 +116,7 @@ jobs:
           apt-get remove -y universal-edit
           test ! -e /opt/universal-edit && test ! -e /usr/bin/universal-edit
           test ! -e /usr/share/applications/universal-edit.desktop
+          if grep -q ":text/x-vue:" /usr/share/mime/globs2; then echo "types left behind"; exit 1; fi
 
   publish:
     if: startsWith(github.ref, 'refs/tags/v')

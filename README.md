@@ -339,7 +339,9 @@ Or download `universal-edit_<version>_amd64.deb` from the release and install it
 `sudo apt install ./universal-edit_<version>_amd64.deb` (no automatic updates then).
 
 Universal Edit then appears in your app menu, and in each file's **Open with** list (the
-viewer) next to **Convert with Universal Edit**. FFmpeg comes from your distribution, and
+viewer) next to **Convert with Universal Edit**. The first time it starts it asks whether your
+pictures, videos, music, documents and other files it can show should open in it on a
+double-click; you can change that later in its Settings (cog, top left). FFmpeg comes from your distribution, and
 Pandoc and Ghostscript come along with it (unless your system skips recommended packages).
 LibreOffice (about 1 GB, for old Office formats) isn't installed automatically: when a
 conversion needs it, the app shows the command that adds it — `sudo apt install libreoffice`.

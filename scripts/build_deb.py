@@ -157,6 +157,9 @@ def stage(app: Path, root: Path, arch: str) -> None:
     _write(apps / f"{PACKAGE}.desktop", linux_desktop.desktop_entry())
     _write(apps / f"{linux_desktop.CONVERT_ID}.desktop", linux_desktop.convert_entry())
     linux_filemanagers.write_system_files(root)
+    # types Linux doesn't know yet (dpkg's trigger runs update-mime-database)
+    mime = root / "usr" / "share" / "mime" / "packages" / linux_desktop.OWN_MIME_NAME
+    _write(mime, linux_desktop.own_mime_xml())
     icons = root / "usr" / "share" / "icons" / "hicolor"
     svg = icons / "scalable" / "apps" / f"{PACKAGE}.svg"
     svg.parent.mkdir(parents=True)

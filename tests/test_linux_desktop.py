@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import configparser
+from pathlib import Path
 
 import pytest
 
@@ -117,7 +118,7 @@ def test_table_agrees_with_this_systems_mime_database():
     # (Debian 12) hasn't heard of some newer names yet — those are skipped, a desktop file
     # listing an unknown type does nothing. A name it does know must still fit the extension.
     strict = here_version >= linux_desktop.table_source()
-    for ext, types in linux_desktop.known_mime().items():
+    for ext, types in linux_desktop.system_mime().items():
         if ext not in system:
             continue
         here = set(system[ext])
@@ -147,3 +148,43 @@ def test_old_names_come_along(tmp_path):
         "video/vnd.avi": ["video/avi", "video/x-msvideo"]
     }
     assert "video/x-msvideo" in linux_desktop.known_mime()["avi"]
+
+
+def test_own_types_fill_the_gaps():
+    # every type the viewer shows can be linked to it: Linux knows it, or the package adds it
+    from umc.viewer import files as vf
+
+    table = linux_desktop.known_mime()
+    view = shell_integration.view_extensions()
+    missing = [e for e in view if e not in table and e != "tsx"]  # .tsx: Tiled tilesets
+    assert not missing, missing
+    assert not set(linux_desktop.OWN_TYPES) & set(linux_desktop.system_mime())  # gaps only
+    assert set(linux_desktop.OWN_TYPES) <= set(view)
+    for ext in linux_desktop.OWN_TYPES:
+        assert vf.kind_of_path(Path("x." + ext)) != vf.OTHER
+    entry = _types(_parse(linux_desktop.desktop_entry()))
+    assert "text/x-vue" in entry and "model/step" in entry and "image/x-hasselblad-3fr" in entry
+
+
+def test_own_types_file_is_valid_and_never_outranks_the_system(tmp_path):
+    import shutil
+    import subprocess
+    import xml.etree.ElementTree as ET
+
+    text = linux_desktop.own_mime_xml()
+    root = ET.fromstring(text)
+    ns = "{http://www.freedesktop.org/standards/shared-mime-info}"
+    globs = [g for t in root.iter(f"{ns}mime-type") for g in t.iter(f"{ns}glob")]
+    assert len(globs) == len(linux_desktop.OWN_TYPES)
+    assert {g.get("weight") for g in globs} == {"40"}
+    tool = shutil.which("update-mime-database")
+    base = linux_desktop.GLOBS2.parent / "packages" / "freedesktop.org.xml"
+    if not tool or not base.is_file():
+        pytest.skip("no shared-mime-info here")
+    (tmp_path / "packages").mkdir()
+    shutil.copy(base, tmp_path / "packages")
+    (tmp_path / "packages" / "universal-edit.xml").write_text(text, encoding="utf-8")
+    subprocess.run([tool, str(tmp_path)], check=True, capture_output=True)
+    built = linux_desktop.read_globs2(tmp_path / "globs2")
+    for ext, (mime, _, _) in linux_desktop.OWN_TYPES.items():
+        assert mime in built[ext], ext

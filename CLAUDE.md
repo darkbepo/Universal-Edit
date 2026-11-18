@@ -260,6 +260,14 @@ import). Things that differ there:
   `LEGACY_TYPES`) so Debian 12 still matches (it calls AVI video/x-msvideo), and records its
   source version (`_shared-mime-info`): the agreement test is strict only on a database at least
   that new. Desktop files are `Version=1.4` (Debian 12's validator knows nothing newer).
+- Types shared-mime-info doesn't know (some camera RAW, STEP / PLY / OFF, LRC, .vue, .ini …)
+  are `linux_desktop.OWN_TYPES`: the .deb installs them as `/usr/share/mime/packages/
+  universal-edit.xml` (glob weight 40, so a newer system's own type wins; text ones subclass
+  text/plain). `known_mime()` = the system table (`system_mime()`, linux_mime.json) + these.
+  A viewer extension with no type can't be linked to the app (`test_own_types_fill_the_gaps`).
+- First start of the installed Linux app asks once "Open your files with Universal Edit?"
+  (`gui/default_viewer_prompt.py`, QSettings `linux/asked_default_viewer`; Yes =
+  `linux_integration.set_default_viewer`). Archives, fonts and scripts are never made default.
 - Inno Setup `[Code]` comments are `{ … }`: a brace inside one (`{tmp}`) ends it early.
 - ubuntu-latest is Ubuntu 26.04 (FFmpeg 8): its mjpeg encoder refuses limited-range frames, so
   video-editor thumbnails are PNG. Check new FFmpeg JPEG output against it.

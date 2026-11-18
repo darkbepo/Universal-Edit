@@ -225,6 +225,10 @@ def main(argv: list[str] | None = None) -> int:
     else:
         files = [a for a in app.arguments()[1:] if Path(a).exists()]
         controller.show_main(files)  # "Open with…" / drag onto the .exe
+    if quick is None and not choose:
+        from umc.gui import default_viewer_prompt
+
+        default_viewer_prompt.schedule()  # installed Linux app, once: open files here?
     return app.exec()
 
 
