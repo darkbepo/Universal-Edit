@@ -245,6 +245,11 @@ def _viewer_check(d: Path, video: Path) -> list[Path]:
     from PySide6.QtMultimedia import QMediaPlayer, QVideoSink
 
     app = QCoreApplication.instance() or QCoreApplication([])
+    # like the app: the bundled Qt folders leave the environment once Qt has them, so this
+    # (Qt Multimedia's plugin loads after it) proves plugins still load (Linux build)
+    from umc.app import forget_bundled_qt_paths
+
+    forget_bundled_qt_paths(app)
     player, sink, frames, errors = QMediaPlayer(), QVideoSink(), [], []
     player.setVideoOutput(sink)
     sink.videoFrameChanged.connect(lambda f: frames.append(f.isValid()))

@@ -106,10 +106,21 @@ def test_read_globs2(tmp_path):
 def test_table_agrees_with_this_systems_mime_database():
     system = linux_desktop.read_globs2()
     # older systems use older names (Debian 12: video/x-msvideo for AVI): the table lists
-    # those too, so whatever this system calls the type is among them
+    # those too. Whatever this system calls the type is among them, and every name listed is
+    # this system's own for the extension, an alias of it (either way) or a known old name.
+    aliases = linux_desktop.read_aliases() if linux_desktop.ALIASES.is_file() else {}
+    alias_of = {old: new for new, olds in aliases.items() for old in olds}
     for ext, types in linux_desktop.known_mime().items():
-        if ext in system:
-            assert set(system[ext]) & set(types), ext
+        if ext not in system:
+            continue
+        here = set(system[ext])
+        assert here & set(types), ext
+        allowed = here | set(linux_desktop.LEGACY_TYPES.get(ext, []))
+        for mime in here:
+            allowed |= set(aliases.get(mime, []))
+            allowed.add(alias_of.get(mime, mime))
+        allowed |= {old for new in set(allowed) for old in aliases.get(new, [])}
+        assert set(types) <= allowed, (ext, sorted(set(types) - allowed))
 
 
 def test_old_names_come_along(tmp_path):

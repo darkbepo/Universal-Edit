@@ -112,11 +112,14 @@ begin
           WizardIsComponentSelected('code')) then
     Exit;
   WizardForm.StatusLabel.Caption := 'Installing the editors…';
-  if Exec(ExpandConstant('{app}\UniversalEdit.exe'),
-          '--install-addon all "' + ExpandConstant('{tmp}\addons') + '"', '', SW_HIDE,
-          ewWaitUntilTerminated, ResultCode) and (ResultCode = 0) then
+  if not Exec(ExpandConstant('{app}\UniversalEdit.exe'),
+              '--install-addon all "' + ExpandConstant('{tmp}\addons') + '"', '', SW_HIDE,
+              ewWaitUntilTerminated, ResultCode) then
+    Log(Format('Installing the editors: the app didn''t start (Windows error %d).', [ResultCode]))
+  else if ResultCode <> 0 then
+    Log(Format('Installing the editors failed (exit code %d).', [ResultCode]))
+  else
     Exit;
-  Log(Format('Installing the editors failed (exit code %d).', [ResultCode]));
   SuppressibleMsgBox('Some editors couldn''t be installed. Universal Edit itself is ready: ' +
                      'add the editors later in the app (cog, top left > Editors).',
                      mbError, MB_OK, IDOK);

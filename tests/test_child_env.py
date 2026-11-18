@@ -6,7 +6,7 @@ import sys
 
 import pytest
 
-from umc.app import restore_child_library_path
+from umc.app import forget_bundled_qt_paths, restore_child_library_path
 
 
 @pytest.fixture
@@ -35,3 +35,16 @@ def test_left_alone_from_source_and_on_windows(monkeypatch):
     monkeypatch.setattr(sys, "platform", "win32")
     restore_child_library_path(env)
     assert env == {"LD_LIBRARY_PATH": "/somewhere"}
+
+
+def test_bundled_qt_paths_are_dropped_after_qt_read_them(frozen_linux):
+    asked = []
+
+    class FakeApp:
+        def libraryPaths(self):  # noqa: N802 - Qt's name
+            asked.append(True)
+            return ["/opt/universal-edit/_internal/PySide6/Qt/plugins"]
+
+    env = {"QT_PLUGIN_PATH": "/opt/x/plugins", "QML2_IMPORT_PATH": "/opt/x/qml", "HOME": "/h"}
+    forget_bundled_qt_paths(FakeApp(), env)
+    assert asked and env == {"HOME": "/h"}

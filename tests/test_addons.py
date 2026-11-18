@@ -311,7 +311,7 @@ def test_installer_and_ci_offer_every_addon():
     code = iss[iss.index("procedure InstallEditors") : iss.index("procedure CurStepChanged")]
     for addon_id in ids:
         assert f"WizardIsComponentSelected('{addon_id}')" in code
-    assert "--install-addon all" in code and "ResultCode = 0" in code
+    assert "--install-addon all" in code and "ResultCode <> 0" in code
     assert "foreach ($a in " + ", ".join(f'"{i}"' for i in ids) + ")" in workflow
     # the silent install picks its components explicitly: every add-on must be in that list
     assert '/COMPONENTS="main,' + ",".join(ids) + '"' in workflow

@@ -103,6 +103,23 @@ def restore_child_library_path(env: dict[str, str] | None = None) -> None:
         env.pop("LD_LIBRARY_PATH", None)
 
 
+# Set by PyInstaller's PySide6 hook to the app's own Qt folders: Qt needs them while the
+# QApplication starts, programs the app starts (xdg-open → kde-open …) must not get them.
+BUNDLED_QT_VARS = ("QT_PLUGIN_PATH", "QML2_IMPORT_PATH")
+
+
+def forget_bundled_qt_paths(app, env: dict[str, str] | None = None) -> None:
+    """After the QApplication exists (built Linux app only): Qt has its plugin folders (asking
+    for them caches them), so the variables pointing at the bundled Qt are removed for child
+    programs — a system Qt program could otherwise load the app's plugins and crash."""
+    env = os.environ if env is None else env
+    if not (getattr(sys, "frozen", False) and sys.platform.startswith("linux")):
+        return
+    app.libraryPaths()
+    for name in BUNDLED_QT_VARS:
+        env.pop(name, None)
+
+
 def main(argv: list[str] | None = None) -> int:
     restore_child_library_path()
     args = sys.argv[1:] if argv is None else argv[1:]
@@ -154,6 +171,7 @@ def main(argv: list[str] | None = None) -> int:
 
     branding.set_windows_app_id()
     app = QApplication(sys.argv if argv is None else argv)
+    forget_bundled_qt_paths(app)
     from umc.gui.gc_guard import install_gui_gc
 
     install_gui_gc(app)  # cyclic GC only on the GUI thread (worker-thread GC crashes PySide)
