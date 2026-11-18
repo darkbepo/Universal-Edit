@@ -17,6 +17,7 @@
  "7z": [
   "application/x-7z-compressed"
  ],
+ "_shared-mime-info": "2.4",
  "aac": [
   "audio/aac",
   "audio/x-aac"

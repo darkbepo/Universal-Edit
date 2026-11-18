@@ -32,6 +32,8 @@ CONVERT_ID = f"{APP_ID}_convert"  # sorts after APP_ID ("." < "_")
 MIME_FILE = Path(__file__).with_name("linux_mime.json")
 GLOBS2 = Path("/usr/share/mime/globs2")
 ALIASES = Path("/usr/share/mime/aliases")
+MIME_VERSION = Path("/usr/share/mime/version")  # written by shared-mime-info ("2.4")
+SOURCE_KEY = "_shared-mime-info"  # in linux_mime.json: the version it was made from
 _MEDIA_TOPS = {"application", "audio", "font", "image", "model", "text", "video"}
 # Old names the aliases file can't give: shared-mime-info before 2.3 (Debian 12) typed .tbz as
 # x-bzip-compressed-tar, which newer ones made an alias of the .tbz2 type instead.
@@ -117,7 +119,18 @@ def read_aliases(path: Path = ALIASES) -> dict[str, list[str]]:
 
 def known_mime() -> dict[str, list[str]]:
     """The checked-in table: {extension: MIME types} for the app's extensions."""
-    return json.loads(MIME_FILE.read_text(encoding="utf-8"))
+    data = json.loads(MIME_FILE.read_text(encoding="utf-8"))
+    return {ext: types for ext, types in data.items() if not ext.startswith("_")}
+
+
+def version_tuple(text: str) -> tuple[int, ...]:
+    return tuple(int(n) for n in text.strip().split(".") if n.isdigit())
+
+
+def table_source() -> tuple[int, ...]:
+    """The shared-mime-info version linux_mime.json was made from."""
+    data = json.loads(MIME_FILE.read_text(encoding="utf-8"))
+    return version_tuple(data.get(SOURCE_KEY, "0"))
 
 
 def mime_types(extensions: list[str], table: dict[str, list[str]] | None = None) -> list[str]:
@@ -185,7 +198,10 @@ def refresh_mime(globs2: Path = GLOBS2, aliases: Path = ALIASES) -> dict[str, li
             types += [m for m in LEGACY_TYPES.get(ext, []) if m not in types]
         if types:
             table[ext] = types
-    MIME_FILE.write_text(json.dumps(table, indent=1, sort_keys=True) + "\n", encoding="utf-8")
+    data = dict(table)
+    if MIME_VERSION.is_file():
+        data[SOURCE_KEY] = MIME_VERSION.read_text(encoding="utf-8").strip()
+    MIME_FILE.write_text(json.dumps(data, indent=1, sort_keys=True) + "\n", encoding="utf-8")
     return table
 
 

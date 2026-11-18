@@ -105,27 +105,35 @@ def test_read_globs2(tmp_path):
 @pytest.mark.skipif(not linux_desktop.GLOBS2.is_file(), reason="no shared-mime-info here")
 def test_table_agrees_with_this_systems_mime_database():
     system = linux_desktop.read_globs2()
-    # older systems use older names (Debian 12: video/x-msvideo for AVI): the table lists
-    # those too. Whatever this system calls the type is among them, and every name listed is
-    # this system's own for the extension, an alias of it (either way) or a known old name.
     aliases = linux_desktop.read_aliases() if linux_desktop.ALIASES.is_file() else {}
     alias_of = {old: new for new, olds in aliases.items() for old in olds}
     known_here = {t for ts in system.values() for t in ts} | set(aliases) | set(alias_of)
+    here_version = (
+        linux_desktop.version_tuple(linux_desktop.MIME_VERSION.read_text(encoding="utf-8"))
+        if linux_desktop.MIME_VERSION.is_file()
+        else ()
+    )
+    # On a database at least as new as the table's, every name must be known; an older one
+    # (Debian 12) hasn't heard of some newer names yet — those are skipped, a desktop file
+    # listing an unknown type does nothing. A name it does know must still fit the extension.
+    strict = here_version >= linux_desktop.table_source()
     for ext, types in linux_desktop.known_mime().items():
         if ext not in system:
             continue
         here = set(system[ext])
-        assert here & set(types), ext
+        assert here & set(types), ext  # whatever this system calls it is among them
         allowed = here | set(linux_desktop.LEGACY_TYPES.get(ext, []))
         for mime in here:
             allowed |= set(aliases.get(mime, []))
             allowed.add(alias_of.get(mime, mime))
         allowed |= {old for new in set(allowed) for old in aliases.get(new, [])}
-        # a name this system has never heard of is a newer one (Debian 12 doesn't know
-        # video/vnd.avi yet) — allowed only as the table's main name, never as an extra
-        if types[0] not in known_here:
-            allowed.add(types[0])
-        assert set(types) <= allowed, (ext, sorted(set(types) - allowed))
+        checked = set(types) if strict else set(types) & known_here
+        assert checked <= allowed, (ext, sorted(checked - allowed))
+
+
+def test_table_records_its_source():
+    assert linux_desktop.table_source() >= (2, 4)
+    assert not any(ext.startswith("_") for ext in linux_desktop.known_mime())
 
 
 def test_old_names_come_along(tmp_path):
