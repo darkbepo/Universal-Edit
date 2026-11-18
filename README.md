@@ -6,9 +6,9 @@
 
 **Convert and edit pictures, video, music, documents, 3D models and more — on your own device.**
 
-Free and open source · nothing is uploaded · works in your browser (a Windows app is on the way)
+Free and open source · nothing is uploaded · works in your browser · desktop app for Windows and Linux
 
-### [▶ Open it in your browser](https://darkbepo.github.io/Universal-Edit/) &nbsp;·&nbsp; [⬇ Windows app](https://github.com/darkbepo/Universal-Edit/releases)
+### [▶ Open it in your browser](https://darkbepo.github.io/Universal-Edit/) &nbsp;·&nbsp; [⬇ Windows & Linux app](https://github.com/darkbepo/Universal-Edit/releases)
 
 <img src="docs/images/start.jpg" alt="The Universal Edit start screen: a drop zone with file-type badges orbiting it, and tiles for the editors" width="900">
 
@@ -303,13 +303,6 @@ The website needs nothing installed and works on Windows, Mac, Linux and phones.
 desktop app** is for the heavy stuff: old Office formats (DOC, XLS, PPT, ODS, ODP), very large
 files, much faster video, the video editor and the "Open with" viewer.
 
-> **Not released yet.** The desktop app will be published on the
-> [Releases page](https://github.com/darkbepo/Universal-Edit/releases) once it's ready. Until
-> then, [use the website](https://darkbepo.github.io/Universal-Edit/) — or, if you're comfortable
-> with Python, [run it from source](#running-from-source).
-
-Once it's out:
-
 1. Open the [Releases page](https://github.com/darkbepo/Universal-Edit/releases) and download
    the setup file from the newest release.
 2. Run it — it installs for your user only, no administrator rights needed.
@@ -324,10 +317,10 @@ extract it and run `UniversalEdit.exe`.
 ## 🐧 The Linux app (Debian / Ubuntu)
 
 The same desktop app as a `.deb` package for Debian 12 or newer and Ubuntu 24.04 or newer, with
-every editor included. Like the Windows app it appears on the
-[Releases page](https://github.com/darkbepo/Universal-Edit/releases) with the first release.
+every editor included, published on the
+[Releases page](https://github.com/darkbepo/Universal-Edit/releases) together with the Windows app.
 
-Once it's out, the easiest way is to add the app's package source once — then it updates with
+The easiest way is to add the app's package source once — then it updates with
 the rest of your system (`sudo apt upgrade`):
 
 ```bash

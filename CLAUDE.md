@@ -1171,10 +1171,11 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
          default browser. Web: `@codemirror/lint` (MIT) in `compartments.lint`, `.code-note`
          (`.link` when it names a line), `.code-preview` iframe `sandbox="allow-scripts"` with
          `srcdoc` (no `allow-same-origin`), phones swap code and preview (`.previewing`).
-11. **First public release** (owner, Nov 2026: wait until more editors are ready). Push a
+11. ✅ **First public release: v1.0.0** (Windows + Linux, Nov 2026). For the next one push a
     `v<__version__>` tag (bump `umc/__init__.py` first; the workflow checks they match): the
     Windows build then publishes the .exe zip, the installer and the editor add-on zips as a
-    GitHub release. Until that release exists the in-app "Install" buttons can't download
+    GitHub release, and the Linux build adds the .deb (+ the apt repository, if the
+    `APT_SIGNING_KEY` secret is set). Until that release exists the in-app "Install" buttons can't download
     anything (only the installer adds editors). Done before it: `softprops/action-gh-release`
     is pinned to a commit (v2.6.2) in both workflows; the installer installs the editors from
     [Code] `InstallEditors` and reports a failure (setup still finishes).
@@ -1355,6 +1356,5 @@ line here, exactly like the converter features.
   Word with layout (all desktop-only, listed in the README table).
 - Code signing for the .exe (owner's decision; SignPath.io is free for open source) — the real fix
   for antivirus false positives.
-- No release published yet (roadmap 11): in-app editor downloads need one.
 - Item 12 ideas: presets, batch queue, PWA/offline.
 
