@@ -249,6 +249,18 @@ import). Things that differ there:
   (`PureWindowsPath(...).anchor`) explicitly. `process._kill` uses `kill()` (SIGTERM made FFmpeg
   hang writing into a pipe no one reads).
 - Qt keeps the name of a font that isn't installed (Windows shows a substitute).
+- **The built Linux app must not leak its own libraries to programs it starts:** PyInstaller sets
+  `LD_LIBRARY_PATH` (bundled libstdc++ → the system FFmpeg failed "GLIBCXX_3.4.32 not found" on
+  Debian 13 / Ubuntu 24.04) and `QT_PLUGIN_PATH` / `QML2_IMPORT_PATH`; `app.restore_child_library_path`
+  (first thing in `main`) and `app.forget_bundled_qt_paths` (right after the QApplication) undo it.
+- Old distro tools: Pandoc < 2.19 (Debian 12) has `--self-contained`, not `--embed-resources`
+  (`pandoc.embed_option`); FFmpeg 4 has `-vsync`, not `-fps_mode` (`ffmpeg._compat`); test
+  videos are rotated with `tests/conftest.rotated_copy_args` (`-display_rotation` is FFmpeg 6+).
+- `linux_mime.json` also lists each type's older names (shared-mime-info `aliases`, plus
+  `LEGACY_TYPES`) so Debian 12 still matches (it calls AVI video/x-msvideo), and records its
+  source version (`_shared-mime-info`): the agreement test is strict only on a database at least
+  that new. Desktop files are `Version=1.4` (Debian 12's validator knows nothing newer).
+- Inno Setup `[Code]` comments are `{ … }`: a brace inside one (`{tmp}`) ends it early.
 - ubuntu-latest is Ubuntu 26.04 (FFmpeg 8): its mjpeg encoder refuses limited-range frames, so
   video-editor thumbnails are PNG. Check new FFmpeg JPEG output against it.
 - Missing tools: `tools/linux_packages.py` (tool → apt package; LibreDWG isn't packaged) — the tool
