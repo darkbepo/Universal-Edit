@@ -442,7 +442,9 @@ def test_undo_changes_and_the_leave_question(qtbot, viewer, folder):
     viewer.text.insertPlainText("typed ")
     assert viewer.text_modified()
     viewer.revert_text()
-    assert not viewer.text_modified() and viewer.text.toPlainText() == before.decode()
+    # the file is written with \r\n on Windows; the viewer shows plain lines (and keeps \r\n)
+    assert not viewer.text_modified()
+    assert viewer.text.toPlainText() == before.decode().replace("\r\n", "\n")
     viewer.text.insertPlainText("typed ")
     answers = ["Cancel"]
     viewer.ask = lambda text, buttons: answers.pop(0)
