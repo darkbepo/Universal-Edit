@@ -33,7 +33,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from umc.codeedit.languages import DOCUMENT_FIRST, EDITABLE_EXTS
+from umc.codeedit.languages import CODE_FIRST_TOO, DOCUMENT_FIRST, EDITABLE_EXTS
 from umc.core import addons, editors
 from umc.core import options as opts
 from umc.core.detect import DetectedFile, MediaFamily, detect
@@ -535,7 +535,7 @@ class MainWindow(QMainWindow):
             ext = files[0].ext
             if ext in DOCUMENT_FIRST:
                 return ["document", "code"]
-            if ext == "html":
+            if ext in CODE_FIRST_TOO:
                 return ["code", "document"]
             if files[0].family == MediaFamily.DOCUMENT and ext in EDITABLE_DOCUMENT_EXTS:
                 return ["document"]

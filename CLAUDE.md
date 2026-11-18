@@ -1136,8 +1136,9 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
          setFont) and gives each new document the code font. Every question goes through
          `page.ask` (tests answer it). Save: `textfile.encode`, temp file + `os.replace`; asks
          before overwriting a file changed on disk, offers UTF-8 when the encoding can't hold the
-         text. Edit: `MainWindow.edit_choices()` — TXT / MD document editor first, HTML code
-         editor first; the ▾ next to Edit (`edit_more`) offers the other. Code colours are
+         text. Edit: `MainWindow.edit_choices()` — MD document editor first, TXT / HTML code
+         editor first (`CODE_FIRST_TOO`; the viewer's Edit sends every plain-text file,
+         unknown extensions too, to the code editor); the ▾ next to Edit (`edit_more`) offers the other. Code colours are
          `code_*` in `theme.py` and `--code-*` in `styles.css` (test keeps them equal).
          Self-test step "code editor".
          Review fixes: lines over `lexing.MAX_LINE_CHARS` (5000, minified code) aren't coloured;
@@ -1281,6 +1282,19 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
        `install_calibre` unpacked `latest_calibre()` into two names (it returns three), and a
        missing `}` in `style.qss` made Qt drop every rule after `PanelButton:hover`
        (`test_stylesheet_parses` now guards it).
+    6. ✅ Owner's follow-ups (Nov 2026). Quick text edits in the viewer: `viewer/textedit.py`
+       (`open_text` → `Opened` = `codeedit.textfile.TextFile` + a (size, mtime) stamp; files over
+       `EDIT_LIMIT` 5 MB or not text → read-only preview; `save` = `textfile.encode` (same
+       encoding / BOM / line endings, untouched bytes kept) + temp file + `os.replace`;
+       `SaveProblem` in plain words). `ViewerWindow`: `TextView` editable, Save / Undo changes
+       in the bottom bar while modified (Ctrl+S), "•" before the name; `_leave_ok` (Save / Don't
+       save / Cancel through `ask`, which tests replace) runs before `show_file`, `navigate`,
+       Back / Forward, Convert / Edit / Properties and closing. The viewer's Edit and the
+       converter's Edit open every plain-text file (TXT too, unknown extensions too) in the code
+       editor first; only Markdown goes to the document editor first (`CODE_FIRST_TOO`). Video:
+       a `Playback` opens its file only after a view connected its picture output (`load`),
+       and `switch_video_output` pauses around a switch — playing before the output was set
+       showed a green frame on Windows.
 
 ## Handoff — read this first (for the next Claude account)
 

@@ -5,9 +5,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from umc.codeedit.languages import EDITABLE_EXTS
+from umc.codeedit.languages import CODE_FIRST_TOO
 from umc.core.detect import (
-    CODE_FILENAMES,
     COMPOUND_EXTS,
     DetectedFile,
     MediaFamily,
@@ -111,13 +110,12 @@ def folder_items(path: Path) -> list[Path]:
 
 
 def editor_id_for(kind: str, path: Path) -> str | None:
-    """The editor Edit opens for ``path`` (of view ``kind``): text files the document editor
-    doesn't take (code, JSON, …) go to the code editor."""
+    """The editor Edit opens for ``path`` (of view ``kind``): every plain text file — TXT,
+    INI, logs, code, JSON, and ones with an unknown or no extension — goes to the code editor;
+    only Markdown (it has formatting) goes to the document editor."""
     if kind == TEXT:
         ext = _ext_of_name(path.name)
-        if ext not in EDITABLE_DOCUMENT_EXTS and (
-            ext in EDITABLE_EXTS or path.name.lower() in CODE_FILENAMES
-        ):
+        if ext not in EDITABLE_DOCUMENT_EXTS or ext in CODE_FIRST_TOO:
             return "code"
     return _EDITOR_OF_KIND.get(kind)
 

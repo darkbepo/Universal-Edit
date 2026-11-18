@@ -89,12 +89,16 @@ def test_code_files_are_shown_as_text(tmp_path):
     p = tmp_path / "Dockerfile"
     p.write_text("FROM python\n")
     assert vf.view_kind(detect(p)) == vf.TEXT
-    # Edit opens code in the code editor; plain text stays with the document editor
+    # Edit opens every plain-text file in the code editor (the plain one); Markdown, which has
+    # formatting, in the document editor
     assert vf.can_edit(vf.TEXT, Path("a.css"))
     assert vf.editor_id_for(vf.TEXT, Path("a.css")) == "code"
     assert vf.editor_id_for(vf.TEXT, Path("Dockerfile")) == "code"
     assert vf.editor_id_for(vf.TEXT, Path("a.json")) == "code"
-    assert vf.editor_id_for(vf.TEXT, Path("a.txt")) == "document"
+    for name in ("a.txt", "b.ini", "c.nfo", "d.reg", "e.inf", "f.diff", "g.unknownext", "README"):
+        assert vf.editor_id_for(vf.TEXT, Path(name)) == "code", name
+        assert vf.can_edit(vf.TEXT, Path(name)), name
+    assert vf.editor_id_for(vf.TEXT, Path("notes.md")) == "document"
     assert vf.editor_id_for(vf.IMAGE, Path("a.png")) == "image"
 
 

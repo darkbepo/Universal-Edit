@@ -269,6 +269,7 @@ viewer that knows almost every format.
 | **Rename a file, change its “modified” date** (Properties, any file): the extension stays (Convert changes the type), never over another file; the queue follows the new name | ✅ | — (a browser can't rename files) |
 | **Viewer** (for "Open with"): pictures (zoom / pan, animated GIFs), video and music with sound, PDF / EPUB / SVG pages, Word / Excel / PowerPoint / EPS / DXF as pages, text, 3D models · the folder's other files beside it (← / →), grouped into foldable Folders / Pictures / Videos / Music / Documents / 3D models / Text & code (empty groups hidden, folds remembered) and kept up to date when files appear or go away · **Back / Forward / Up** buttons (Alt+← / → / ↑, the mouse's side buttons) and an address line to type any folder · **Convert** / **Edit** buttons · one window reused | ✅ | — |
 | **Viewer player**: music shows a waveform (the played part coloured) · a click on the picture or waveform plays / pauses · the position and volume sliders jump to where you click · the mouse wheel over the picture changes the volume · leave a playing song or video and it goes on in a **mini player** under the list (click its name to go back) | ✅ | — |
+| **Quick text edits in the viewer**: TXT, INI, CFG, logs, code, JSON and every other plain-text file open editable right there · **Save** (Ctrl+S) keeps the file's character set and line endings exactly as they were · **Undo changes** · leaving a changed file asks first · **Edit** opens the full code editor for more | ✅ | — |
 
 </details>
 

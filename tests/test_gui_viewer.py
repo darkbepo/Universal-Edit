@@ -28,6 +28,8 @@ def viewer(qtbot):
 
     w = ViewerWindow()
     qtbot.addWidget(w)
+    # a question never waits for a click in tests: unsaved edits are dropped on closing
+    w.ask = lambda text, buttons: "Don't save" if "Don't save" in buttons else buttons[-1]
     w.resize(1100, 700)
     w.show()
     yield w
@@ -409,3 +411,73 @@ def test_video_output_is_connected_before_the_file_opens(qtbot, viewer, folder):
     assert pb.player.videoOutput() is viewer.media.video
     viewer.media.detach()
     pb.close()
+
+
+# --------------------------------------------------------------------------- quick text edits
+def _text_ready(qtbot, w):
+    qtbot.waitUntil(
+        lambda: w.stack.currentWidget() is w.text and w.text_file is not None, timeout=8000
+    )
+
+
+def test_text_is_edited_and_saved_byte_exact(qtbot, viewer, tmp_path):
+    ini = tmp_path / "settings.ini"
+    ini.write_bytes("[main]\r\nname=caf\xe9\r\n".encode("cp1252"))  # Windows-1252, CRLF
+    viewer.open_path(ini)
+    _text_ready(qtbot, viewer)
+    assert not viewer.text.isReadOnly() and viewer.save_button.isHidden()
+    viewer.text.setPlainText(viewer.text.toPlainText().replace("name", "title"))
+    viewer.text.document().setModified(True)
+    assert not viewer.save_button.isHidden() and viewer.name_label.text().startswith("• ")
+    assert viewer.save_text()
+    assert ini.read_bytes() == "[main]\r\ntitle=caf\xe9\r\n".encode("cp1252")
+    assert viewer.save_button.isHidden() and viewer.name_label.text() == "settings.ini"
+
+
+def test_undo_changes_and_the_leave_question(qtbot, viewer, folder):
+    notes = folder / "notes.txt"
+    before = notes.read_bytes()
+    viewer.open_path(notes)
+    _text_ready(qtbot, viewer)
+    viewer.text.insertPlainText("typed ")
+    assert viewer.text_modified()
+    viewer.revert_text()
+    assert not viewer.text_modified() and viewer.text.toPlainText() == before.decode()
+    viewer.text.insertPlainText("typed ")
+    answers = ["Cancel"]
+    viewer.ask = lambda text, buttons: answers.pop(0)
+    viewer.step(-1)  # Cancel: stays on the edited file
+    assert viewer.shown == notes and viewer.text_modified()
+    answers.append("Don't save")
+    viewer.step(-1)
+    assert viewer.shown != notes and notes.read_bytes() == before
+    viewer.open_path(notes)
+    _text_ready(qtbot, viewer)
+    viewer.text.insertPlainText("kept ")
+    answers.append("Save")
+    viewer.step(-1)
+    assert notes.read_text().startswith("kept ")
+
+
+def test_typing_isnt_taken_by_the_viewers_keys(qtbot, viewer, folder):
+    from PySide6.QtCore import Qt
+
+    viewer.open_path(folder / "notes.txt")
+    _text_ready(qtbot, viewer)
+    viewer.text.setFocus()
+    viewer.text.moveCursor(viewer.text.textCursor().MoveOperation.Start)
+    for key in (Qt.Key.Key_Space, Qt.Key.Key_Right, Qt.Key.Key_End, Qt.Key.Key_Backspace):
+        qtbot.keyClick(viewer.text, key)
+    assert viewer.shown == folder / "notes.txt" and viewer.location == folder
+
+
+def test_big_or_odd_text_stays_read_only(qtbot, viewer, tmp_path, monkeypatch):
+    from umc.viewer import textedit
+
+    monkeypatch.setattr(textedit, "EDIT_LIMIT", 10)
+    big = tmp_path / "big.log"
+    big.write_text("x" * 100 + "\n")
+    viewer.open_path(big)
+    qtbot.waitUntil(lambda: viewer.stack.currentWidget() is viewer.text, timeout=8000)
+    assert viewer.text.isReadOnly() and viewer.text_file is None
+    assert "Edit opens it in the code editor" in viewer.detail_label.text()

@@ -97,10 +97,12 @@ LANGUAGES: tuple[Language, ...] = (
     _l("rst", "reStructuredText", ("rst",), line=".. ", pygments="rst", cm="plain"),
 )
 
-# Files the code editor opens (by extension; "" = a text file without one). TXT and Markdown
-# open in the document editor first, with "Edit as code" as the second choice.
+# Files the code editor opens (by extension; "" = a text file without one). Markdown opens in
+# the document editor first ("Edit as code" second); TXT and HTML in the code editor first —
+# plain text keeps no formatting, so the plain editor suits it (owner, Nov 2026).
 EDITABLE_EXTS: frozenset[str] = frozenset({e for lang in LANGUAGES for e in lang.exts} | {""})
-DOCUMENT_FIRST: frozenset[str] = frozenset({"txt", "md"})
+DOCUMENT_FIRST: frozenset[str] = frozenset({"md"})
+CODE_FIRST_TOO: frozenset[str] = frozenset({"txt", "html"})  # code editor, then the document one
 
 _BY_NAME = {n: lang for lang in LANGUAGES for n in lang.filenames}
 _BY_EXT = {e: lang for lang in LANGUAGES for e in lang.exts}

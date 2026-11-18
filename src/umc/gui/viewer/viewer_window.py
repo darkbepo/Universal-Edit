@@ -47,7 +47,7 @@ from umc.gui.viewer.views import (
     is_animated,
     load_image,
 )
-from umc.viewer import browse, preview, waveform
+from umc.viewer import browse, preview, textedit, waveform
 from umc.viewer import files as vf
 
 log = logging.getLogger(__name__)
@@ -156,6 +156,8 @@ class ViewerWindow(QMainWindow):
         self.pages = PagesView()
         self.pages.request_page.connect(self._render_page)
         self.text = TextView()
+        self.text_file: textedit.Opened | None = None  # the text file being edited here
+        self.text.document().modificationChanged.connect(self._on_text_modified)
         self.info = InfoView()
         for w in (self.canvas, self.media, self.pages, self.text, self.info):
             self.stack.addWidget(w)
@@ -197,6 +199,16 @@ class ViewerWindow(QMainWindow):
         self.convert_button = QPushButton("Convert", objectName="Secondary")
         self.convert_button.setToolTip("Open this file in the converter")
         self.edit_button = QPushButton("Edit", objectName="Primary")
+        # quick text edits right here (plain text files); Edit = the full code editor
+        self.save_button = QPushButton("Save", objectName="Primary")
+        self.save_button.setToolTip("Save the changes to this file (Ctrl+S)")
+        self.save_button.clicked.connect(self.save_text)
+        self.revert_button = QPushButton("Undo changes", objectName="Secondary")
+        self.revert_button.setToolTip("Go back to the file as it's saved")
+        self.revert_button.clicked.connect(self.revert_text)
+        for b in (self.save_button, self.revert_button):
+            b.setCursor(Qt.CursorShape.PointingHandCursor)
+            b.hide()
         for b in (self.properties_button, self.convert_button, self.edit_button):
             b.setCursor(Qt.CursorShape.PointingHandCursor)
             b.setMinimumWidth(110)
@@ -205,6 +217,8 @@ class ViewerWindow(QMainWindow):
         self.edit_button.clicked.connect(self._edit)
         bl.addWidget(self.name_label)
         bl.addWidget(self.detail_label, 1)
+        bl.addWidget(self.revert_button)
+        bl.addWidget(self.save_button)
         bl.addWidget(self.properties_button)
         bl.addWidget(self.convert_button)
         bl.addWidget(self.edit_button)
@@ -233,6 +247,7 @@ class ViewerWindow(QMainWindow):
             (("F11",), self.toggle_full_screen),
             (("Esc",), self._leave_full_screen),
             (("Space",), self._space),
+            (("Ctrl+S",), self.save_text),
         )
         for seqs, fn in keys:
             for seq in seqs:
@@ -296,6 +311,8 @@ class ViewerWindow(QMainWindow):
         self, location: browse.Location, select: Path | None = None, record: bool = True
     ) -> None:
         """List ``location`` in the side list and show ``select`` (else its first file)."""
+        if not self._leave_ok():
+            return
         if record:
             self.history.visit(location)
         self.location = location
@@ -514,11 +531,15 @@ class ViewerWindow(QMainWindow):
 
     # ------------------------------------------------------------ folders
     def go_back(self) -> None:
+        if not self._leave_ok():
+            return
         location = self.history.back()
         if location is not None:
             self._go(location)
 
     def go_forward(self) -> None:
+        if not self._leave_ok():
+            return
         location = self.history.forward()
         if location is not None:
             self._go(location)
@@ -597,6 +618,10 @@ class ViewerWindow(QMainWindow):
 
     # ------------------------------------------------------------ showing one file
     def show_file(self, path: Path) -> None:
+        if path != self.shown and not self._leave_ok():
+            if self.shown is not None:  # stay: the side list goes back to the edited file
+                self._select(self.shown, show=False)
+            return
         self._stop_current()
         f = detect(path)
         self.current = f
@@ -613,6 +638,9 @@ class ViewerWindow(QMainWindow):
         getattr(self, f"_show_{self.kind}")(f)
 
     def _stop_current(self) -> None:
+        self.text_file = None
+        self.text.document().setModified(False)
+        self.text.setReadOnly(True)
         for group in ("main", "page", "wave"):
             self.tasks.cancel_group(group)
         for event in (self._preview_cancel, self._wave_cancel):
@@ -793,15 +821,116 @@ class ViewerWindow(QMainWindow):
         self._open_pages(pdf_path)
 
     def _show_text(self, f: DetectedFile) -> None:
-        def done(result: tuple[str, bool]) -> None:
-            text, cut = result
-            self.text.setPlainText(text)
-            self.stack.setCurrentWidget(self.text)
-            lines = text.count("\n") + 1
-            self.details = f"{lines:,} lines" + (" (first part shown)" if cut else "")
+        """Plain text opens editable (quick edits; Save writes it back byte-exact). Files too
+        big for that show their beginning, read-only."""
+        self._show_info("document", "Opening…")
+        path = f.path
+
+        def opened(result: textedit.Opened | None) -> None:
+            if result is None:
+                self._show_text_read_only(f)
+                return
+            self.text_file = result
+            self._set_text(result.file.text, editable=True)
+            lines = result.file.text.count("\n") + 1
+            self.details = f"{lines:,} lines"
             self._update_details()
 
-        self._show_info("document", "Opening…")
+        self.tasks.submit(
+            "main",
+            lambda: textedit.open_text(path),
+            opened,
+            self._failed("Couldn't read the text."),
+        )
+
+    def _set_text(self, text: str, editable: bool) -> None:
+        self.text.blockSignals(True)
+        self.text.setPlainText(text)
+        self.text.document().setModified(False)
+        self.text.setReadOnly(not editable)
+        self.text.blockSignals(False)
+        self.stack.setCurrentWidget(self.text)
+        self._update_text_buttons()
+
+    # ------------------------------------------------------------ quick text edits
+    def text_modified(self) -> bool:
+        return self.text_file is not None and self.text.document().isModified()
+
+    def _on_text_modified(self, _modified: bool) -> None:
+        self._update_text_buttons()
+
+    def _update_text_buttons(self) -> None:
+        changed = self.text_modified()
+        self.save_button.setVisible(changed)
+        self.revert_button.setVisible(changed)
+        if self.shown is not None:
+            mark = "• " if changed else ""
+            self.name_label.setText(mark + self.shown.name)
+            self.setWindowTitle(f"{mark}{self.shown.name} — {branding.APP_NAME}")
+
+    def save_text(self) -> bool:
+        """Write the edited text back (same encoding and line endings). False = not saved."""
+        opened = self.text_file
+        if opened is None or not self.text.document().isModified():
+            return True
+        if textedit.changed_on_disk(opened) and (
+            self.ask(
+                f"{opened.path.name} was changed by another program since it was opened here. "
+                "Save over it anyway?",
+                ("Save over it", "Cancel"),
+            )
+            != "Save over it"
+        ):
+            return False
+        try:
+            self.text_file = textedit.save(opened, self.text.toPlainText())
+        except textedit.SaveProblem as exc:
+            self.ask(str(exc), ("OK",))
+            return False
+        self.text.document().setModified(False)
+        self._update_details()
+        return True
+
+    def revert_text(self) -> None:
+        if self.text_file is not None:
+            self._set_text(self.text_file.file.text, editable=True)
+
+    def _leave_ok(self) -> bool:
+        """Before showing something else: unsaved text edits are saved, dropped, or kept (the
+        move is called off). True = go ahead."""
+        if not self.text_modified():
+            return True
+        assert self.text_file is not None
+        answer = self.ask(
+            f"Save the changes to {self.text_file.path.name}?", ("Save", "Don't save", "Cancel")
+        )
+        if answer == "Save":
+            return self.save_text()
+        if answer == "Don't save":
+            self.text.document().setModified(False)
+            return True
+        return False
+
+    def ask(self, text: str, buttons: tuple[str, ...]) -> str:
+        """A question with these buttons; returns the one pressed (tests replace this)."""
+        from PySide6.QtWidgets import QMessageBox
+
+        box = QMessageBox(self)
+        box.setWindowTitle(branding.APP_NAME)
+        box.setText(text)
+        made = {box.addButton(b, QMessageBox.ButtonRole.ActionRole): b for b in buttons}
+        box.exec()
+        return made.get(box.clickedButton(), buttons[-1])
+
+    def _show_text_read_only(self, f: DetectedFile) -> None:
+        def done(result: tuple[str, bool]) -> None:
+            text, cut = result
+            self._set_text(text, editable=False)
+            lines = text.count("\n") + 1
+            self.details = f"{lines:,} lines" + (" (first part shown)" if cut else "")
+            self.details += " · read only here: Edit opens it in the code editor"
+            self._update_details()
+
         self.tasks.submit(
             "main", lambda: preview.read_text(f.path), done, self._failed("Couldn't read the text.")
         )
@@ -873,15 +1002,15 @@ class ViewerWindow(QMainWindow):
             self.edit_button.setToolTip("There's no editor for this kind of file yet")
 
     def _convert(self) -> None:
-        if self.current is not None:
+        if self.current is not None and self._leave_ok():
             self.convert_requested.emit(self.current.path)
 
     def _properties(self) -> None:
-        if self.current is not None:
+        if self.current is not None and self._leave_ok():
             self.properties_requested.emit(self.current.path)
 
     def _edit(self) -> None:
-        if self.current is not None and self.edit_button.isEnabled():
+        if self.current is not None and self.edit_button.isEnabled() and self._leave_ok():
             self.edit_requested.emit(self.current.path)
 
     def _space(self) -> None:
@@ -933,6 +1062,9 @@ class ViewerWindow(QMainWindow):
 
     # ------------------------------------------------------------ closing
     def closeEvent(self, event) -> None:  # noqa: N802
+        if not self._leave_ok():
+            event.ignore()
+            return
         self._stop_current()
         self.mini.stop()
         old = self.watcher.directories()

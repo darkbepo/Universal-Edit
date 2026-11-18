@@ -63,7 +63,7 @@ def test_two_code_files_open_as_two_tabs(qtbot, window, tmp_path):
 @pytest.mark.parametrize(
     ("names", "choices"),
     [
-        (("a.txt",), ["document", "code"]),
+        (("a.txt",), ["code", "document"]),  # plain text: the plain editor first
         (("a.md",), ["document", "code"]),
         (("a.html",), ["code", "document"]),
         (("a.json",), ["code"]),
