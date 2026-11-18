@@ -87,7 +87,24 @@ def _sync_thunar() -> None:
     threading.Thread(target=sync, name="umc-thunar", daemon=True).start()
 
 
+def restore_child_library_path(env: dict[str, str] | None = None) -> None:
+    """The built Linux app starts with LD_LIBRARY_PATH pointing at its own libraries (the
+    PyInstaller launcher sets it, and keeps the original in LD_LIBRARY_PATH_ORIG). Programs the
+    app starts — the system's FFmpeg, Pandoc, LibreOffice … — would inherit it and load the
+    app's older libstdc++ ("GLIBCXX_3.4.32 not found"), so it is put back for them. The app's
+    own process isn't affected: the loader read the variable when it started."""
+    env = os.environ if env is None else env
+    if not (getattr(sys, "frozen", False) and sys.platform.startswith("linux")):
+        return
+    original = env.pop("LD_LIBRARY_PATH_ORIG", None)
+    if original:
+        env["LD_LIBRARY_PATH"] = original
+    else:
+        env.pop("LD_LIBRARY_PATH", None)
+
+
 def main(argv: list[str] | None = None) -> int:
+    restore_child_library_path()
     args = sys.argv[1:] if argv is None else argv[1:]
     if args[:1] == ["--self-test"]:
         from umc.core.addons import activate_all

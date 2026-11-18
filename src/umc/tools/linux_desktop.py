@@ -31,6 +31,8 @@ APP_ID = "universal-edit"  # command, icon and desktop-file name
 CONVERT_ID = f"{APP_ID}_convert"  # sorts after APP_ID ("." < "_")
 MIME_FILE = Path(__file__).with_name("linux_mime.json")
 GLOBS2 = Path("/usr/share/mime/globs2")
+ALIASES = Path("/usr/share/mime/aliases")
+_MEDIA_TOPS = {"application", "audio", "font", "image", "model", "text", "video"}
 
 # The kinds of type a family's files may have (detect.py's *_EXTS sets); other families
 # (documents, data, archives, CAD, vector …) take every type of the top weight.
@@ -97,6 +99,19 @@ def read_globs2(path: Path = GLOBS2) -> dict[str, list[str]]:
     return {ext: types for ext, (_, types) in best.items()}
 
 
+def read_aliases(path: Path = ALIASES) -> dict[str, list[str]]:
+    """{type: its older names} from a shared-mime-info ``aliases`` file ("alias type" lines).
+    Older systems still call some types by those (Debian 12: AVI is video/x-msvideo, newer
+    ones video/vnd.avi), so the desktop files list them too."""
+    names: dict[str, list[str]] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        parts = line.split()
+        # only real media types ("zz-application/…", "flv-application/…" are old hacks)
+        if len(parts) == 2 and parts[0].split("/")[0] in _MEDIA_TOPS:
+            names.setdefault(parts[1], []).append(parts[0])
+    return {mime: sorted(old) for mime, old in names.items()}
+
+
 def known_mime() -> dict[str, list[str]]:
     """The checked-in table: {extension: MIME types} for the app's extensions."""
     return json.loads(MIME_FILE.read_text(encoding="utf-8"))
@@ -119,7 +134,7 @@ def desktop_entry(table: dict[str, list[str]] | None = None) -> str:
         [
             "[Desktop Entry]",
             "Type=Application",
-            "Version=1.5",
+            "Version=1.4",  # the newest Debian 12's desktop-file-validate knows
             "Name=Universal Edit",
             "GenericName=File converter and editor",
             "Comment=Convert, view and edit documents, pictures, video, audio and more",
@@ -141,7 +156,7 @@ def convert_entry(table: dict[str, list[str]] | None = None) -> str:
         [
             "[Desktop Entry]",
             "Type=Application",
-            "Version=1.5",
+            "Version=1.4",  # the newest Debian 12's desktop-file-validate knows
             f"Name={shell_integration.MENU_TEXT}",
             "Comment=Open the files in Universal Edit's converter",
             f"Exec={APP_ID} --convert %F",
@@ -153,12 +168,16 @@ def convert_entry(table: dict[str, list[str]] | None = None) -> str:
     )
 
 
-def refresh_mime(globs2: Path = GLOBS2) -> dict[str, list[str]]:
-    """Rebuild ``linux_mime.json`` from the system's shared-mime-info (run on purpose)."""
+def refresh_mime(globs2: Path = GLOBS2, aliases: Path = ALIASES) -> dict[str, list[str]]:
+    """Rebuild ``linux_mime.json`` from the system's shared-mime-info (run on purpose): each
+    extension's fitting types first, then their older names."""
     system = read_globs2(globs2)
+    old_names = read_aliases(aliases) if aliases.is_file() else {}
     table = {}
     for ext in shell_integration.known_extensions():
         types = fitting(ext, system.get(ext, []))
+        for mime in list(types):
+            types += [a for a in old_names.get(mime, []) if a not in types]
         if types:
             table[ext] = types
     MIME_FILE.write_text(json.dumps(table, indent=1, sort_keys=True) + "\n", encoding="utf-8")

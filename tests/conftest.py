@@ -26,6 +26,19 @@ needs_soffice = pytest.mark.skipif(
 needs_pandoc = pytest.mark.skipif(shutil.which("pandoc") is None, reason="pandoc not installed")
 
 
+def rotated_copy_args(src, dst, anticlockwise: int) -> list[str]:
+    """FFmpeg arguments that copy ``src`` to ``dst`` turned ``anticlockwise`` degrees (display
+    matrix). ``-display_rotation`` is FFmpeg 6+; older ones (Debian 12: 5.1) write the old
+    "rotate" tag, which FFmpeg 5 reads anticlockwise and 4 clockwise (properties/video.py)."""
+    from umc.tools import ffmpeg
+
+    major = ffmpeg.major_version()
+    if major is None or major >= 6:
+        return ["-display_rotation", str(anticlockwise), "-i", str(src), "-c", "copy", str(dst)]
+    tag = anticlockwise if major == 5 else (360 - anticlockwise) % 360
+    return ["-i", str(src), "-c", "copy", "-metadata:s:v:0", f"rotate={tag}", str(dst)]
+
+
 @pytest.fixture(scope="session")
 def media(tmp_path_factory) -> Path:
     d = tmp_path_factory.mktemp("media")
@@ -97,7 +110,7 @@ def vmedia(tmp_path_factory) -> Path:
     ff(*lavfi("color=green:size=240x320:rate=30:duration=1"),
        *lavfi("sine=frequency=330:duration=1"), "-shortest", "-pix_fmt", "yuv420p",
        str(d / "green_tall.mp4"))  # fmt: skip
-    ff("-display_rotation", "90", "-i", str(d / "red.mp4"), "-c", "copy", str(d / "rot.mp4"))
+    ff(*rotated_copy_args(d / "red.mp4", d / "rot.mp4", 90))
     Image.new("RGB", (200, 100), "orange").save(d / "pic.png")
     ff(*lavfi("sine=frequency=880:duration=4"), "-ac", "2", str(d / "music.wav"))
     return d

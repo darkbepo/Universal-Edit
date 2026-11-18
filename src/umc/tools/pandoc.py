@@ -5,8 +5,11 @@ Like LibreOffice, Pandoc is detected rather than bundled; missing → "Install i
 
 from __future__ import annotations
 
+import re
+import subprocess
 import threading
 from collections.abc import Sequence
+from functools import cache
 from pathlib import Path
 
 from umc.core.errors import ToolMissingError
@@ -59,6 +62,30 @@ def is_available() -> bool:
     return pandoc_path() is not None
 
 
+@cache
+def version(exe: str) -> tuple[int, ...] | None:
+    """``exe``'s version (``pandoc 2.17.1.1`` → (2, 17, 1, 1)); None when it can't be read."""
+    try:
+        out = subprocess.run(
+            [exe, "--version"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            creationflags=process._creationflags(),
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    m = re.match(r"pandoc(?:\.exe)? (\d+(?:\.\d+)*)", out)
+    return tuple(int(n) for n in m.group(1).split(".")) if m else None
+
+
+def embed_option(exe: str) -> str:
+    """Pictures / styles inside the HTML: ``--embed-resources`` is Pandoc 2.19+; older ones
+    (Debian 12 ships 2.17) call it ``--self-contained``."""
+    v = version(exe)
+    return "--self-contained" if v is not None and v < (2, 19) else "--embed-resources"
+
+
 def convert(
     src: Path,
     src_ext: str,
@@ -77,7 +104,7 @@ def convert(
     if dst_ext in _STANDALONE:
         cmd.append("--standalone")
     if dst_ext == "html":
-        cmd.append("--embed-resources")
+        cmd.append(embed_option(exe))
         cmd += ["--metadata", f"pagetitle={src.stem}"]
     if dst_ext == "epub":
         cmd += ["--metadata", f"title={src.stem}"]

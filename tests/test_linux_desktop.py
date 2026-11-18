@@ -61,10 +61,11 @@ def test_table_covers_the_common_formats():
 def test_ties_keep_the_type_the_app_reads():
     # shared-mime-info gives these extensions two types of the same weight
     table = linux_desktop.known_mime()
-    assert table["otf"] == ["font/otf"]  # not the ODF formula template
-    assert table["obj"] == ["model/obj"]  # not TGIF
-    assert table["smi"] == ["application/x-sami"]  # not SMIL
-    assert table["ts"] == ["video/mp2t"]  # not Qt Linguist
+    assert table["otf"][0] == "font/otf"  # not the ODF formula template
+    assert "application/vnd.oasis.opendocument.formula-template" not in table["otf"]
+    assert table["obj"][0] == "model/obj" and "application/x-tgif" not in table["obj"]
+    assert table["smi"][0] == "application/x-sami" and "application/smil+xml" not in table["smi"]
+    assert table["ts"][0] == "video/mp2t" and "text/vnd.trolltech.linguist" not in table["ts"]
     assert "tsx" not in table  # only Tiled's tileset type: not TypeScript
 
 
@@ -104,6 +105,21 @@ def test_read_globs2(tmp_path):
 @pytest.mark.skipif(not linux_desktop.GLOBS2.is_file(), reason="no shared-mime-info here")
 def test_table_agrees_with_this_systems_mime_database():
     system = linux_desktop.read_globs2()
+    # older systems use older names (Debian 12: video/x-msvideo for AVI): the table lists
+    # those too, so whatever this system calls the type is among them
     for ext, types in linux_desktop.known_mime().items():
         if ext in system:
-            assert set(types) <= set(system[ext]), ext
+            assert set(system[ext]) & set(types), ext
+
+
+def test_old_names_come_along(tmp_path):
+    aliases = tmp_path / "aliases"
+    aliases.write_text(
+        "video/x-msvideo video/vnd.avi\nvideo/avi video/vnd.avi\n"
+        "zz-application/zz-winassoc-doc application/msword\n",
+        encoding="utf-8",
+    )
+    assert linux_desktop.read_aliases(aliases) == {
+        "video/vnd.avi": ["video/avi", "video/x-msvideo"]
+    }
+    assert "video/x-msvideo" in linux_desktop.known_mime()["avi"]

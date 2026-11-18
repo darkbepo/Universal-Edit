@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.conftest import rotated_copy_args
 from umc.core.detect import detect
 from umc.properties import format as fmt
 from umc.properties.info import build
@@ -224,7 +225,7 @@ def test_video_and_music(tmp_path):
     assert r["Location"]["Coordinates"] == "55.67610, 12.56830"
 
     turned = tmp_path / "turned.mp4"
-    ff("-display_rotation", "90", "-i", str(video), "-c", "copy", str(turned))  # 90° anticlockwise
+    ff(*rotated_copy_args(video, turned, 90))  # 90° anticlockwise
     assert rows(describe(detect(turned)))["Video"]["Rotation"] == "270°"  # = the web's clockwise
 
     song = tmp_path / "song.mp3"

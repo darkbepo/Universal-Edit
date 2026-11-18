@@ -1,4 +1,4 @@
-"""FFmpeg version differences (Linux distributions ship older FFmpeg than the bundled one)."""
+"""Older external programs: Linux distributions ship older FFmpeg / Pandoc than bundled."""
 
 from __future__ import annotations
 
@@ -64,3 +64,27 @@ def test_args_without_a_graph_file_never_ask_for_the_version(monkeypatch):
 def test_fps_mode_is_vsync_on_ffmpeg_4(monkeypatch, major, spelling):
     monkeypatch.setattr(ffmpeg, "major_version", lambda: major)
     assert ffmpeg._compat(["-i", "a.mp4", "-fps_mode", "vfr", "out_%03d.png"])[2] == spelling
+
+
+@pytest.mark.parametrize(
+    ("banner", "option"),
+    [
+        ("pandoc 2.17.1.1\nCompiled with pandoc-types 1.22.2", "--self-contained"),
+        ("pandoc 2.19\n", "--embed-resources"),
+        ("pandoc.exe 3.6.1\n", "--embed-resources"),
+        ("something else\n", "--embed-resources"),
+    ],
+)
+def test_pandoc_embed_option_follows_its_version(monkeypatch, banner, option):
+    from umc.tools import pandoc
+
+    pandoc.version.cache_clear()
+    monkeypatch.setattr(
+        pandoc.subprocess,
+        "run",
+        lambda cmd, **kw: subprocess.CompletedProcess(cmd, 0, stdout=banner),
+    )
+    try:
+        assert pandoc.embed_option("pandoc") == option
+    finally:
+        pandoc.version.cache_clear()

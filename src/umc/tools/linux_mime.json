@@ -1,21 +1,32 @@
 {
  "3gp": [
-  "video/3gpp"
+  "video/3gpp",
+  "audio/3gpp",
+  "audio/3gpp-encrypted",
+  "audio/x-rn-3gpp-amr",
+  "audio/x-rn-3gpp-amr-encrypted",
+  "audio/x-rn-3gpp-amr-wb",
+  "audio/x-rn-3gpp-amr-wb-encrypted",
+  "video/3gp",
+  "video/3gpp-encrypted"
  ],
  "3mf": [
-  "model/3mf"
+  "model/3mf",
+  "application/vnd.ms-3mfdocument"
  ],
  "7z": [
   "application/x-7z-compressed"
  ],
  "aac": [
-  "audio/aac"
+  "audio/aac",
+  "audio/x-aac"
  ],
  "ac3": [
   "audio/ac3"
  ],
  "ai": [
-  "application/illustrator"
+  "application/illustrator",
+  "application/vnd.adobe.illustrator"
  ],
  "aif": [
   "audio/x-aiff"
@@ -24,7 +35,8 @@
   "audio/x-aiff"
  ],
  "amr": [
-  "audio/AMR"
+  "audio/AMR",
+  "audio/amr-encrypted"
  ],
  "ape": [
   "audio/x-ape"
@@ -33,7 +45,10 @@
   "image/x-sony-arw"
  ],
  "asf": [
-  "application/vnd.ms-asf"
+  "application/vnd.ms-asf",
+  "video/x-ms-asf",
+  "video/x-ms-asf-plugin",
+  "video/x-ms-wm"
  ],
  "ass": [
   "text/x-ssa"
@@ -42,22 +57,34 @@
   "audio/basic"
  ],
  "avi": [
-  "video/vnd.avi"
+  "video/vnd.avi",
+  "video/avi",
+  "video/divx",
+  "video/msvideo",
+  "video/vnd.divx",
+  "video/x-avi",
+  "video/x-msvideo"
  ],
  "avif": [
-  "image/avif"
+  "image/avif",
+  "image/avif-sequence"
  ],
  "azw3": [
-  "application/vnd.amazon.mobi8-ebook"
+  "application/vnd.amazon.mobi8-ebook",
+  "application/x-mobi8-ebook"
  ],
  "bmp": [
-  "image/bmp"
+  "image/bmp",
+  "image/x-MS-bmp",
+  "image/x-bmp"
  ],
  "c": [
-  "text/x-csrc"
+  "text/x-csrc",
+  "text/x-c"
  ],
  "cbz": [
-  "application/vnd.comicbook+zip"
+  "application/vnd.comicbook+zip",
+  "application/x-cbz"
  ],
  "cc": [
   "text/x-c++src"
@@ -81,7 +108,9 @@
   "text/css"
  ],
  "csv": [
-  "text/csv"
+  "text/csv",
+  "text/x-comma-separated-values",
+  "text/x-csv"
  ],
  "cxx": [
   "text/x-c++src"
@@ -97,7 +126,8 @@
  ],
  "doc": [
   "application/msword",
-  "application/vnd.ms-word"
+  "application/vnd.ms-word",
+  "application/x-msword"
  ],
  "docx": [
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -121,13 +151,17 @@
   "application/epub+zip"
  ],
  "fb2": [
-  "application/x-fictionbook+xml"
+  "application/x-fictionbook+xml",
+  "application/x-fictionbook"
  ],
  "flac": [
-  "audio/flac"
+  "audio/flac",
+  "audio/x-flac"
  ],
  "flv": [
-  "video/x-flv"
+  "video/x-flv",
+  "application/x-flash-video",
+  "video/flv"
  ],
  "gif": [
   "image/gif"
@@ -142,10 +176,16 @@
   "text/x-chdr"
  ],
  "heic": [
-  "image/heif"
+  "image/heif",
+  "image/heic",
+  "image/heic-sequence",
+  "image/heif-sequence"
  ],
  "heif": [
-  "image/heif"
+  "image/heif",
+  "image/heic",
+  "image/heic-sequence",
+  "image/heif-sequence"
  ],
  "hh": [
   "text/x-c++hdr"
@@ -160,7 +200,13 @@
   "text/html"
  ],
  "ico": [
-  "image/vnd.microsoft.icon"
+  "image/vnd.microsoft.icon",
+  "application/ico",
+  "image/ico",
+  "image/icon",
+  "image/x-ico",
+  "image/x-icon",
+  "text/ico"
  ],
  "iges": [
   "model/iges"
@@ -175,22 +221,32 @@
   "text/x-java"
  ],
  "jfif": [
-  "image/jpeg"
+  "image/jpeg",
+  "image/pjpeg"
  ],
  "jp2": [
-  "image/jp2"
+  "image/jp2",
+  "image/jpeg2000",
+  "image/jpeg2000-image",
+  "image/x-jpeg2000-image"
  ],
  "jpe": [
-  "image/jpeg"
+  "image/jpeg",
+  "image/pjpeg"
  ],
  "jpeg": [
-  "image/jpeg"
+  "image/jpeg",
+  "image/pjpeg"
  ],
  "jpg": [
-  "image/jpeg"
+  "image/jpeg",
+  "image/pjpeg"
  ],
  "js": [
-  "text/javascript"
+  "text/javascript",
+  "application/javascript",
+  "application/x-javascript",
+  "text/jscript"
  ],
  "json": [
   "application/json",
@@ -212,19 +268,28 @@
   "video/mp2t"
  ],
  "m4a": [
-  "audio/mp4"
+  "audio/mp4",
+  "audio/m4a",
+  "audio/x-m4a"
  ],
  "m4v": [
-  "video/mp4"
+  "video/mp4",
+  "video/mp4v-es",
+  "video/x-m4v"
  ],
  "markdown": [
-  "text/markdown"
+  "text/markdown",
+  "text/x-markdown"
  ],
  "md": [
-  "text/markdown"
+  "text/markdown",
+  "text/x-markdown"
  ],
  "mjs": [
-  "text/javascript"
+  "text/javascript",
+  "application/javascript",
+  "application/x-javascript",
+  "text/jscript"
  ],
  "mk": [
   "text/x-makefile"
@@ -242,19 +307,34 @@
   "video/quicktime"
  ],
  "mp2": [
-  "audio/mp2"
+  "audio/mp2",
+  "audio/x-mp2"
  ],
  "mp3": [
-  "audio/mpeg"
+  "audio/mpeg",
+  "audio/mp3",
+  "audio/x-mp3",
+  "audio/x-mpeg",
+  "audio/x-mpg"
  ],
  "mp4": [
-  "video/mp4"
+  "video/mp4",
+  "video/mp4v-es",
+  "video/x-m4v"
  ],
  "mpeg": [
-  "video/mpeg"
+  "video/mpeg",
+  "video/mpeg-system",
+  "video/x-mpeg",
+  "video/x-mpeg-system",
+  "video/x-mpeg2"
  ],
  "mpg": [
-  "video/mpeg"
+  "video/mpeg",
+  "video/mpeg-system",
+  "video/x-mpeg",
+  "video/x-mpeg-system",
+  "video/x-mpeg2"
  ],
  "mrw": [
   "image/x-minolta-mrw"
@@ -287,20 +367,30 @@
   "audio/ogg",
   "audio/x-vorbis+ogg",
   "audio/x-flac+ogg",
-  "audio/x-speex+ogg"
+  "audio/x-speex+ogg",
+  "audio/x-ogg",
+  "audio/vorbis",
+  "audio/x-vorbis",
+  "audio/x-oggflac"
  ],
  "ogg": [
   "audio/ogg",
   "audio/x-vorbis+ogg",
   "audio/x-flac+ogg",
-  "audio/x-speex+ogg"
+  "audio/x-speex+ogg",
+  "audio/x-ogg",
+  "audio/vorbis",
+  "audio/x-vorbis",
+  "audio/x-oggflac"
  ],
  "ogv": [
-  "video/ogg"
+  "video/ogg",
+  "video/x-ogg"
  ],
  "opus": [
   "audio/ogg",
-  "audio/x-opus+ogg"
+  "audio/x-opus+ogg",
+  "audio/x-ogg"
  ],
  "ora": [
   "image/openraster"
@@ -312,16 +402,22 @@
   "text/org"
  ],
  "otf": [
-  "font/otf"
+  "font/otf",
+  "application/x-font-otf"
  ],
  "pbm": [
   "image/x-portable-bitmap"
  ],
  "pcx": [
-  "image/vnd.zbrush.pcx"
+  "image/vnd.zbrush.pcx",
+  "image/x-pcx"
  ],
  "pdf": [
-  "application/pdf"
+  "application/pdf",
+  "application/acrobat",
+  "application/nappdf",
+  "application/x-pdf",
+  "image/pdf"
  ],
  "pef": [
   "image/x-pentax-pef"
@@ -333,10 +429,12 @@
   "application/x-php"
  ],
  "pl": [
-  "application/x-perl"
+  "application/x-perl",
+  "text/x-perl"
  ],
  "pm": [
-  "application/x-perl"
+  "application/x-perl",
+  "text/x-perl"
  ],
  "png": [
   "image/png"
@@ -345,7 +443,10 @@
   "image/x-portable-pixmap"
  ],
  "ppt": [
-  "application/vnd.ms-powerpoint"
+  "application/vnd.ms-powerpoint",
+  "application/mspowerpoint",
+  "application/powerpoint",
+  "application/x-mspowerpoint"
  ],
  "pptx": [
   "application/vnd.openxmlformats-officedocument.presentationml.presentation"
@@ -354,7 +455,13 @@
   "application/postscript"
  ],
  "psd": [
-  "image/vnd.adobe.photoshop"
+  "image/vnd.adobe.photoshop",
+  "application/photoshop",
+  "application/x-photoshop",
+  "image/photoshop",
+  "image/psd",
+  "image/x-photoshop",
+  "image/x-psd"
  ],
  "py": [
   "text/x-python"
@@ -366,7 +473,9 @@
   "image/x-fuji-raf"
  ],
  "rar": [
-  "application/vnd.rar"
+  "application/vnd.rar",
+  "application/x-rar",
+  "application/x-rar-compressed"
  ],
  "rb": [
   "application/x-ruby"
@@ -378,10 +487,12 @@
   "text/x-rst"
  ],
  "rtf": [
-  "application/rtf"
+  "application/rtf",
+  "text/rtf"
  ],
  "rw2": [
-  "image/x-panasonic-rw2"
+  "image/x-panasonic-rw2",
+  "image/x-panasonic-raw2"
  ],
  "sami": [
   "application/x-sami"
@@ -390,13 +501,15 @@
   "text/x-scss"
  ],
  "sh": [
-  "application/x-shellscript"
+  "application/x-shellscript",
+  "text/x-sh"
  ],
  "smi": [
   "application/x-sami"
  ],
  "sql": [
-  "application/sql"
+  "application/sql",
+  "text/x-sql"
  ],
  "sr2": [
   "image/x-sony-sr2"
@@ -405,31 +518,44 @@
   "image/x-sony-srf"
  ],
  "srt": [
-  "application/x-subrip"
+  "application/x-subrip",
+  "application/x-srt"
  ],
  "ssa": [
   "text/x-ssa"
  ],
  "stl": [
-  "model/stl"
+  "model/stl",
+  "model/x.stl-ascii",
+  "model/x.stl-binary"
  ],
  "svg": [
   "image/svg+xml"
  ],
  "tar": [
-  "application/x-tar"
+  "application/x-tar",
+  "application/x-gtar"
  ],
  "tbz": [
   "application/x-bzip1-compressed-tar"
  ],
  "tbz2": [
-  "application/x-bzip2-compressed-tar"
+  "application/x-bzip2-compressed-tar",
+  "application/x-bzip-compressed-tar"
  ],
  "tex": [
-  "text/x-tex"
+  "text/x-tex",
+  "application/x-tex"
  ],
  "tga": [
-  "image/x-tga"
+  "image/x-tga",
+  "application/tga",
+  "application/x-targa",
+  "application/x-tga",
+  "image/targa",
+  "image/tga",
+  "image/x-icb",
+  "image/x-targa"
  ],
  "tgz": [
   "application/x-compressed-tar"
@@ -450,7 +576,8 @@
   "text/tab-separated-values"
  ],
  "ttf": [
-  "font/ttf"
+  "font/ttf",
+  "application/x-font-ttf"
  ],
  "txt": [
   "text/plain"
@@ -459,13 +586,19 @@
   "application/x-xz-compressed-tar"
  ],
  "vob": [
-  "video/mpeg"
+  "video/mpeg",
+  "video/mpeg-system",
+  "video/x-mpeg",
+  "video/x-mpeg-system",
+  "video/x-mpeg2"
  ],
  "vtt": [
   "text/vtt"
  ],
  "wav": [
-  "audio/vnd.wave"
+  "audio/vnd.wave",
+  "audio/wav",
+  "audio/x-wav"
  ],
  "webm": [
   "video/webm"
@@ -474,19 +607,23 @@
   "image/webp"
  ],
  "wma": [
-  "audio/x-ms-wma"
+  "audio/x-ms-wma",
+  "audio/wma"
  ],
  "wmv": [
   "video/x-ms-wmv"
  ],
  "woff": [
-  "font/woff"
+  "font/woff",
+  "application/font-woff"
  ],
  "woff2": [
   "font/woff2"
  ],
  "wpd": [
-  "application/vnd.wordperfect"
+  "application/vnd.wordperfect",
+  "application/wordperfect",
+  "application/x-wordperfect"
  ],
  "wv": [
   "audio/x-wavpack"
@@ -498,24 +635,36 @@
   "application/xhtml+xml"
  ],
  "xls": [
-  "application/vnd.ms-excel"
+  "application/vnd.ms-excel",
+  "application/msexcel",
+  "application/x-msexcel"
  ],
  "xlsx": [
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
  ],
  "xml": [
-  "application/xml"
+  "application/xml",
+  "text/xml"
  ],
  "xps": [
-  "application/vnd.ms-xpsdocument"
+  "application/vnd.ms-xpsdocument",
+  "application/xps"
  ],
  "yaml": [
-  "application/yaml"
+  "application/yaml",
+  "application/x-yaml",
+  "text/x-yaml",
+  "text/yaml"
  ],
  "yml": [
-  "application/yaml"
+  "application/yaml",
+  "application/x-yaml",
+  "text/x-yaml",
+  "text/yaml"
  ],
  "zip": [
-  "application/zip"
+  "application/zip",
+  "application/x-zip",
+  "application/x-zip-compressed"
  ]
 }
