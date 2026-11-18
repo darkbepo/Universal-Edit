@@ -253,9 +253,12 @@ import). Things that differ there:
   video-editor thumbnails are PNG. Check new FFmpeg JPEG output against it.
 - Missing tools: `tools/linux_packages.py` (tool → apt package; LibreDWG isn't packaged) — the tool
   dialog shows `sudo apt install …` + "Copy command" where `has_apt()`.
-- **Packaging (`build-linux.yml`, Actions → "Build Linux package"):** built on ubuntu-22.04 (glibc
-  2.35 → Debian 12+ / Ubuntu 22.04+), then installed + `--self-test`ed + removed on clean
-  debian:12 / 13 and ubuntu:22.04 / 24.04 containers. On Linux `packaging/umc.spec` bundles every
+- **Packaging (`build-linux.yml`, Actions → "Build Linux package"):** built in a
+  `python:3.12-bookworm` container (Debian 12: glibc 2.36, FFmpeg 5.1 — the oldest supported;
+  Ubuntu 22.04 was dropped, its FFmpeg 4.4 has no `-fps_mode` and writes rotations backwards),
+  so the .deb needs `ffmpeg (>= 7:5.1)` and `libc6 (>= 2.36)`; then installed + `--self-test`ed +
+  removed on clean debian:12 / 13 and ubuntu:24.04 containers. `test-linux.yml`'s
+  `test-oldest` job runs pytest on Debian 12 too (ubuntu-latest has the newest FFmpeg). On Linux `packaging/umc.spec` bundles every
   editor (no add-ons) and writes the `editors_bundled` marker: `addons.bundled()` /
   `from_source()` then treat them as present. `scripts/build_deb.py` → `/opt/universal-edit`,
   `/usr/bin/universal-edit`; its `DEPENDS` list came from ldd + `dpkg -S` on the build (re-check
@@ -1160,8 +1163,9 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
     `v<__version__>` tag (bump `umc/__init__.py` first; the workflow checks they match): the
     Windows build then publishes the .exe zip, the installer and the editor add-on zips as a
     GitHub release. Until that release exists the in-app "Install" buttons can't download
-    anything (only the installer adds editors). Before it: pin `softprops/action-gh-release`
-    to a commit SHA and make the installer report a failed `--install-addon`.
+    anything (only the installer adds editors). Done before it: `softprops/action-gh-release`
+    is pinned to a commit (v2.6.2) in both workflows; the installer installs the editors from
+    [Code] `InstallEditors` and reports a failure (setup still finishes).
 12. Ideas: presets, batch queue.
 13. ✅ Light / dark mode switch (both apps; owner, Nov 2026): sun / moon button in the top bar,
     System → Light → Dark, remembered (see "UI / UX requirements"). Tests `tests/test_theme.py`,

@@ -287,7 +287,7 @@ viewer that knows almost every format.
 | **Update button**: once a day the app looks for a new version and shows **"Update available"** in the top bar (also Settings → "Check for updates…") · **"Update everything"** updates the app (Windows: the new installer, checked against GitHub's fingerprint, runs quietly and the app opens again; Linux: one password prompt for apt), the editors and the tools it installed (LibreOffice, Pandoc, Ghostscript, Calibre, LibreDWG — Linux: the system's packages) | ✅ | — |
 | **Editors as add-ons**: the app is the converter + viewer; the editors are installed when first used, picked in the installer, or managed in Settings · downloads are checked against fingerprints built into the app | ✅ | — |
 | One-click install of LibreOffice, Pandoc, Ghostscript, Calibre or LibreDWG when a conversion needs them | ✅ Windows · Linux shows the `sudo apt install …` command to copy | — |
-| **Linux package** (Debian 12+, Ubuntu 22.04+): every editor included · menu entry · **"Open with"** → viewer and **"Convert with Universal Edit"** in the file manager · right-click **"Quick Convert"** in GNOME Files (Nautilus), Dolphin and Thunar (submenus, like on Windows) and Nemo (a small format picker) · Settings can make the viewer the default app for everything it shows (and give the old choices back) · its own file-type icons where the desktop theme has none · updates with `sudo apt upgrade` | ✅ | — |
+| **Linux package** (Debian 12+, Ubuntu 24.04+): every editor included · menu entry · **"Open with"** → viewer and **"Convert with Universal Edit"** in the file manager · right-click **"Quick Convert"** in GNOME Files (Nautilus), Dolphin and Thunar (submenus, like on Windows) and Nemo (a small format picker) · Settings can make the viewer the default app for everything it shows (and give the old choices back) · its own file-type icons where the desktop theme has none · updates with `sudo apt upgrade` | ✅ | — |
 | **Light / dark mode**: the sun / moon button in the top bar switches Same as the computer → Light → Dark and remembers it (also in the desktop Settings) · every editor and the viewer follow | ✅ | ✅ |
 | **Drop zone**: file-type badges orbit the text while it's empty and burst outward when you drop files · still when "reduce motion" is on | ✅ | ✅ |
 
@@ -323,7 +323,7 @@ extract it and run `UniversalEdit.exe`.
 
 ## 🐧 The Linux app (Debian / Ubuntu)
 
-The same desktop app as a `.deb` package for Debian 12 or newer and Ubuntu 22.04 or newer, with
+The same desktop app as a `.deb` package for Debian 12 or newer and Ubuntu 24.04 or newer, with
 every editor included. Like the Windows app it appears on the
 [Releases page](https://github.com/darkbepo/Universal-Edit/releases) with the first release.
 

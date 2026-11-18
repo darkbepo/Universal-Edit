@@ -238,12 +238,14 @@ def major_version() -> int | None:
 def _compat(args: Sequence[str]) -> list[str]:
     """``args`` for the FFmpeg that is installed. ``-/filter_complex FILE`` (read the graph from
     a file) is FFmpeg 7+; older ones (Debian 12: 5.1, Ubuntu 24.04: 6.1) spell it
-    ``-filter_complex_script FILE``."""
+    ``-filter_complex_script FILE``. ``-fps_mode`` is 5.1+; FFmpeg 4 calls it ``-vsync``."""
     args = list(args)
-    if "-/filter_complex" in args:
+    if "-/filter_complex" in args or "-fps_mode" in args:
         major = major_version()
         if major is not None and major < 7:
             args = ["-filter_complex_script" if a == "-/filter_complex" else a for a in args]
+        if major is not None and major < 5:
+            args = ["-vsync" if a == "-fps_mode" else a for a in args]
     return args
 
 

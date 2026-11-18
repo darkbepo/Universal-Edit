@@ -49,7 +49,8 @@ def test_stage_lays_out_the_package(tmp_path, build_deb):
     from umc import __version__
 
     assert f"Version: {__version__}\n" in control and "Architecture: amd64\n" in control
-    assert "Depends: ffmpeg, " in control and "libxcb-cursor0" in control
+    assert "Depends: ffmpeg (>= 7:5.1), libc6 (>= 2.36), " in control
+    assert "libxcb-cursor0" in control
     assert (root / "DEBIAN" / "postinst").stat().st_mode & 0o111
     prerm = root / "DEBIAN" / "prerm"  # removing cleans users' own settings, never fails
     assert prerm.stat().st_mode & 0o111

@@ -34,10 +34,12 @@ INSTALL_DIR = f"/opt/{PACKAGE}"
 EXE = "UniversalEdit"
 
 # What the bundle loads from the system (checked with ldd + dpkg -S on Ubuntu), plus FFmpeg.
-# "t64" names are Debian 13 / Ubuntu 24.04; the alternatives cover Debian 12 / Ubuntu 22.04.
+# Built on Debian 12: glibc 2.36 and FFmpeg 5.1 are the oldest supported (Ubuntu 22.04's FFmpeg
+# 4.4 lacks -fps_mode and writes rotations differently). "t64" names are Debian 13 / Ubuntu
+# 24.04; the alternatives cover Debian 12.
 DEPENDS = [
-    "ffmpeg",
-    "libc6 (>= 2.35)",
+    "ffmpeg (>= 7:5.1)",
+    "libc6 (>= 2.36)",
     "libstdc++6",
     "libegl1",
     "libgl1",

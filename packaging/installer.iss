@@ -85,7 +85,7 @@ Name: "{autoprograms}\Universal Edit"; Filename: "{app}\UniversalEdit.exe"
 Name: "{autodesktop}\Universal Edit"; Filename: "{app}\UniversalEdit.exe"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\UniversalEdit.exe"; Parameters: "--install-addon all ""{tmp}\addons"""; Components: image or model or audio or video or code; StatusMsg: "Installing the editors…"; Flags: runhidden waituntilterminated
+; the editors are installed by [Code] InstallEditors (it checks the result)
 ; each switch is written as chosen (--register also clears what an older version registered)
 Filename: "{app}\UniversalEdit.exe"; Parameters: "--register context-menu"; Tasks: contextmenu; Flags: runhidden waituntilterminated
 Filename: "{app}\UniversalEdit.exe"; Parameters: "--unregister context-menu"; Tasks: not contextmenu; Flags: runhidden waituntilterminated
@@ -99,6 +99,34 @@ Filename: "{app}\UniversalEdit.exe"; Description: "Start Universal Edit"; Flags:
 Type: filesandordirs; Name: "{localappdata}\UniversalEdit\addons"
 
 [Code]
+{ The chosen editors are installed from the add-on zips copied to {tmp}. Unlike a [Run] entry
+  this sees the result: a failure is logged and (unless silent) explained — setup still
+  finishes, and the editors can be installed later from the app's Settings → Editors. }
+procedure InstallEditors;
+var
+  ResultCode: Integer;
+begin
+  if not (WizardIsComponentSelected('image') or WizardIsComponentSelected('model') or
+          WizardIsComponentSelected('audio') or WizardIsComponentSelected('video') or
+          WizardIsComponentSelected('code')) then
+    Exit;
+  WizardForm.StatusLabel.Caption := 'Installing the editors…';
+  if Exec(ExpandConstant('{app}\UniversalEdit.exe'),
+          '--install-addon all "' + ExpandConstant('{tmp}\addons') + '"', '', SW_HIDE,
+          ewWaitUntilTerminated, ResultCode) and (ResultCode = 0) then
+    Exit;
+  Log(Format('Installing the editors failed (exit code %d).', [ResultCode]));
+  SuppressibleMsgBox('Some editors couldn''t be installed. Universal Edit itself is ready: ' +
+                     'add the editors later in the app (cog, top left > Editors).',
+                     mbError, MB_OK, IDOK);
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssPostInstall then
+    InstallEditors;
+end;
+
 { Uninstalling: the app takes out everything it registered — Quick Convert, Open with, the
   file-type icons and any "always open with Universal Edit" Windows remembers — so those files
   go back to Windows' own choice (exit code 3 = Windows protects some of them, e.g. .pdf on

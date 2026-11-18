@@ -56,3 +56,11 @@ def test_args_without_a_graph_file_never_ask_for_the_version(monkeypatch):
 
     monkeypatch.setattr(ffmpeg, "major_version", boom)
     assert ffmpeg._compat(["-i", "a.mp4", "out.mkv"]) == ["-i", "a.mp4", "out.mkv"]
+
+
+@pytest.mark.parametrize(
+    ("major", "spelling"), [(4, "-vsync"), (5, "-fps_mode"), (None, "-fps_mode")]
+)
+def test_fps_mode_is_vsync_on_ffmpeg_4(monkeypatch, major, spelling):
+    monkeypatch.setattr(ffmpeg, "major_version", lambda: major)
+    assert ffmpeg._compat(["-i", "a.mp4", "-fps_mode", "vfr", "out_%03d.png"])[2] == spelling

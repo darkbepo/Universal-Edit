@@ -70,16 +70,29 @@ def test_big_file_stays_responsive(qtbot, view):
     qtbot.waitUntil(h.done, timeout=60000)
 
 
-def test_typing_on_a_huge_line_stays_quick(qtbot, view):
-    view.setPlainText("var a=1;" * 200_000)
-    h = ChunkedHighlighter(view.document(), "javascript")
-    qtbot.waitUntil(h.done, timeout=5000)
-    start = time.perf_counter()
+def _type_on_huge_line(view) -> float:
     cursor = view.textCursor()
     cursor.setPosition(100)
     view.setTextCursor(cursor)
+    start = time.perf_counter()
     cursor.insertText("x")
-    assert time.perf_counter() - start < 0.5
+    return time.perf_counter() - start
+
+
+def test_typing_on_a_huge_line_stays_quick(qtbot, view):
+    # Qt itself needs ~0.4 s (more on slow CI machines) to lay out a 1.6-million-character
+    # line, so the colouring is measured against the same keystroke without it: re-colouring
+    # the whole line (no MAX_LINE_CHARS cut-off) took 10 s, the cut-off adds nothing.
+    plain = CodeView()
+    qtbot.addWidget(plain)
+    plain.resize(600, 400)
+    plain.show()
+    plain.setPlainText("var a=1;" * 200_000)
+    baseline = _type_on_huge_line(plain)
+    view.setPlainText("var a=1;" * 200_000)
+    h = ChunkedHighlighter(view.document(), "javascript")
+    qtbot.waitUntil(h.done, timeout=5000)
+    assert _type_on_huge_line(view) < baseline * 2 + 0.25
 
 
 def test_a_big_recolour_after_an_edit_is_chunked(qtbot, view):
