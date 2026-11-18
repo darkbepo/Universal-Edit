@@ -110,6 +110,7 @@ def test_table_agrees_with_this_systems_mime_database():
     # this system's own for the extension, an alias of it (either way) or a known old name.
     aliases = linux_desktop.read_aliases() if linux_desktop.ALIASES.is_file() else {}
     alias_of = {old: new for new, olds in aliases.items() for old in olds}
+    known_here = {t for ts in system.values() for t in ts} | set(aliases) | set(alias_of)
     for ext, types in linux_desktop.known_mime().items():
         if ext not in system:
             continue
@@ -120,6 +121,10 @@ def test_table_agrees_with_this_systems_mime_database():
             allowed |= set(aliases.get(mime, []))
             allowed.add(alias_of.get(mime, mime))
         allowed |= {old for new in set(allowed) for old in aliases.get(new, [])}
+        # a name this system has never heard of is a newer one (Debian 12 doesn't know
+        # video/vnd.avi yet) — allowed only as the table's main name, never as an extra
+        if types[0] not in known_here:
+            allowed.add(types[0])
         assert set(types) <= allowed, (ext, sorted(set(types) - allowed))
 
 
