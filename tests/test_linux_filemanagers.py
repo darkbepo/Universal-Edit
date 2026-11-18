@@ -100,7 +100,7 @@ def test_thunar_new_file_and_broken_file(tmp_path):
 
 def test_system_files_for_the_package(tmp_path):
     written = lf.write_system_files(tmp_path)
-    rel = {str(p.relative_to(tmp_path)) for p in written}
+    rel = {p.relative_to(tmp_path).as_posix() for p in written}  # "/" on Windows too
     assert "usr/share/universal-edit/quick-convert.json" in rel
     assert "usr/share/nautilus-python/extensions/universal-edit-quick-convert.py" in rel
     assert "usr/share/nemo/actions/universal-edit-quick-convert.nemo_action" in rel
