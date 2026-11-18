@@ -99,9 +99,10 @@ Filename: "{app}\UniversalEdit.exe"; Description: "Start Universal Edit"; Flags:
 Type: filesandordirs; Name: "{localappdata}\UniversalEdit\addons"
 
 [Code]
-{ The chosen editors are installed from the add-on zips copied to {tmp}. Unlike a [Run] entry
-  this sees the result: a failure is logged and (unless silent) explained — setup still
-  finishes, and the editors can be installed later from the app's Settings → Editors. }
+{ The chosen editors are installed from the add-on zips copied to the temporary setup
+  folder. Unlike a [Run] entry this sees the result: a failure is logged and (unless silent)
+  explained — setup still finishes, and the editors can be installed later from the app's
+  Settings → Editors. (No braces inside these comments: one would end the comment.) }
 procedure InstallEditors;
 var
   ResultCode: Integer;
