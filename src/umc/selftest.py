@@ -290,7 +290,8 @@ def _quick_convert_check(d: Path) -> list[Path]:
     shutil.copy(d / "img0.png", src)
     job = qc.job_for(src, "jpg")
     outputs = job.target.converter.run(job)
-    if [Path(p).parent for p in outputs] != [folder]:
+    # samefile: Windows' temp folder can be spelt short (RUNNER~1) or long (runneradmin)
+    if len(outputs) != 1 or not Path(outputs[0]).parent.samefile(folder):
         raise RuntimeError(f"Quick Convert wrote {outputs}, not next to the file")
     if sys.platform == "win32":
         missing = [i.kind for i in fileicons.ICONS if not fileicons.ico_path(i.kind).is_file()]

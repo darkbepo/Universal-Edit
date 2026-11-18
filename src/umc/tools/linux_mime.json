@@ -537,7 +537,8 @@
   "application/x-gtar"
  ],
  "tbz": [
-  "application/x-bzip1-compressed-tar"
+  "application/x-bzip1-compressed-tar",
+  "application/x-bzip-compressed-tar"
  ],
  "tbz2": [
   "application/x-bzip2-compressed-tar",

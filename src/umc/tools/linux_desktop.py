@@ -33,6 +33,9 @@ MIME_FILE = Path(__file__).with_name("linux_mime.json")
 GLOBS2 = Path("/usr/share/mime/globs2")
 ALIASES = Path("/usr/share/mime/aliases")
 _MEDIA_TOPS = {"application", "audio", "font", "image", "model", "text", "video"}
+# Old names the aliases file can't give: shared-mime-info before 2.3 (Debian 12) typed .tbz as
+# x-bzip-compressed-tar, which newer ones made an alias of the .tbz2 type instead.
+LEGACY_TYPES = {"tbz": ["application/x-bzip-compressed-tar"]}
 
 # The kinds of type a family's files may have (detect.py's *_EXTS sets); other families
 # (documents, data, archives, CAD, vector …) take every type of the top weight.
@@ -178,6 +181,8 @@ def refresh_mime(globs2: Path = GLOBS2, aliases: Path = ALIASES) -> dict[str, li
         types = fitting(ext, system.get(ext, []))
         for mime in list(types):
             types += [a for a in old_names.get(mime, []) if a not in types]
+        if types:
+            types += [m for m in LEGACY_TYPES.get(ext, []) if m not in types]
         if types:
             table[ext] = types
     MIME_FILE.write_text(json.dumps(table, indent=1, sort_keys=True) + "\n", encoding="utf-8")
