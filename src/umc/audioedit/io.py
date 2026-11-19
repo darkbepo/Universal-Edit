@@ -7,6 +7,7 @@ choice keep working."""
 
 from __future__ import annotations
 
+import logging
 import os
 import tempfile
 import threading
@@ -17,6 +18,7 @@ import numpy as np
 
 from umc.audioedit import ops
 from umc.audioedit.document import AudioDoc
+from umc.audioedit.tags import read_tags
 from umc.audioedit.wav import read_wav, write_wav
 from umc.converters.audio import AUDIO_TARGETS, LOSSY_EXTS, AudioConverter, AudioOptions
 from umc.core import options as opts
@@ -32,6 +34,7 @@ BITRATES = (64, 96, 128, 160, 192, 256, 320)
 DEFAULT_BITRATE = 192
 
 Progress = Callable[[float, str], None]
+log = logging.getLogger(__name__)
 
 
 def _noop(_f: float, _m: str) -> None:
@@ -105,7 +108,9 @@ def open_audio(
             raise too_long()
         parts.append(ops.fit_channels(x, channels))
     assert rate is not None
-    return AudioDoc(rate, ops.join(parts) if len(parts) > 1 else parts[0])
+    doc = AudioDoc(rate, ops.join(parts) if len(parts) > 1 else parts[0])
+    doc.tags = read_tags(paths)
+    return doc
 
 
 def save_audio(
@@ -146,9 +151,24 @@ def save_audio(
             job.cancel_event = cancel_event
         try:
             [out] = converter.run(job)
+            _write_tags(out, doc, fmt)
             os.replace(out, dest)
         except OSError as exc:
             raise ConversionError(
                 f"Couldn't write “{dest.name}”. Is it open in another program?", details=repr(exc)
             ) from exc
     return dest
+
+
+def _write_tags(path: Path, doc: AudioDoc, fmt: str) -> None:
+    """Put the opened files' song details into the saved file (MP3 / M4A / FLAC / OGG / Opus).
+    A tag problem never costs the sound: the file is then saved without them."""
+    edit = doc.tags.edit_for(fmt) if doc.tags is not None else None
+    if edit is None:
+        return
+    from umc.properties import music
+
+    try:
+        path.write_bytes(music.apply(path.read_bytes(), edit))
+    except music.MusicError:
+        log.warning("couldn't copy the song details into %s", path.name, exc_info=True)

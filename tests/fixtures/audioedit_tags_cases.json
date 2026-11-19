@@ -1,0 +1,214 @@
+{
+  "_about": "Which song details the audio editor keeps (src/umc/audioedit/tags.py carried, web/src/audioedit/tags.ts carriedTags). details: null = a file without readable tags. covers: text stands in for the picture bytes, null = none.",
+  "cases": [
+    {
+      "name": "one song keeps everything it has",
+      "details": [
+        {
+          "title": "Song",
+          "artist": "Band",
+          "album": "",
+          "album_artist": "",
+          "track": "3/12",
+          "disc": "",
+          "year": "2024",
+          "genre": "Pop",
+          "has_cover": true
+        }
+      ],
+      "covers": [
+        "pic"
+      ],
+      "values": {
+        "title": "Song",
+        "artist": "Band",
+        "track": "3/12",
+        "year": "2024",
+        "genre": "Pop"
+      },
+      "cover": "pic"
+    },
+    {
+      "name": "joined songs keep only what they share",
+      "details": [
+        {
+          "title": "One",
+          "artist": "Band",
+          "album": "Live",
+          "album_artist": "Band",
+          "track": "1",
+          "disc": "",
+          "year": "2020",
+          "genre": "Rock",
+          "has_cover": true
+        },
+        {
+          "title": "Two",
+          "artist": "Band",
+          "album": "Live",
+          "album_artist": "Band",
+          "track": "2",
+          "disc": "",
+          "year": "2020",
+          "genre": "Rock",
+          "has_cover": true
+        }
+      ],
+      "covers": [
+        "pic",
+        "pic"
+      ],
+      "values": {
+        "artist": "Band",
+        "album": "Live",
+        "album_artist": "Band",
+        "year": "2020",
+        "genre": "Rock"
+      },
+      "cover": "pic"
+    },
+    {
+      "name": "different covers are dropped",
+      "details": [
+        {
+          "title": "",
+          "artist": "A",
+          "album": "",
+          "album_artist": "",
+          "track": "",
+          "disc": "",
+          "year": "",
+          "genre": "",
+          "has_cover": true
+        },
+        {
+          "title": "",
+          "artist": "A",
+          "album": "",
+          "album_artist": "",
+          "track": "",
+          "disc": "",
+          "year": "",
+          "genre": "",
+          "has_cover": true
+        }
+      ],
+      "covers": [
+        "pic",
+        "other"
+      ],
+      "values": {
+        "artist": "A"
+      },
+      "cover": null
+    },
+    {
+      "name": "an untagged file in the join keeps nothing",
+      "details": [
+        {
+          "title": "One",
+          "artist": "Band",
+          "album": "",
+          "album_artist": "",
+          "track": "",
+          "disc": "",
+          "year": "",
+          "genre": "",
+          "has_cover": true
+        },
+        null
+      ],
+      "covers": [
+        "pic",
+        null
+      ],
+      "values": {},
+      "cover": null
+    },
+    {
+      "name": "nothing opened",
+      "details": [],
+      "covers": [],
+      "values": {},
+      "cover": null
+    }
+  ],
+  "_about_edit": "edit_cases: what editFor / edit_for writes for a save format. cover: \"jpeg\" = JPEG magic bytes, \"text\" = not a picture, null = none. want: null = nothing written; want.cover: whether the cover is written.",
+  "edit_cases": [
+    {
+      "name": "an odd track number is left out, the rest kept",
+      "fmt": "mp3",
+      "values": {
+        "title": "Song",
+        "track": "A1",
+        "year": "2024"
+      },
+      "cover": null,
+      "want": {
+        "values": {
+          "title": "Song",
+          "year": "2024"
+        },
+        "cover": false
+      }
+    },
+    {
+      "name": "numbers are written in their tidy form",
+      "fmt": "flac",
+      "values": {
+        "track": " 3 / 12 ",
+        "disc": "1"
+      },
+      "cover": null,
+      "want": {
+        "values": {
+          "track": "3/12",
+          "disc": "1"
+        },
+        "cover": false
+      }
+    },
+    {
+      "name": "a bad year alone writes nothing",
+      "fmt": "m4a",
+      "values": {
+        "year": "May 2024"
+      },
+      "cover": null,
+      "want": null
+    },
+    {
+      "name": "a cover that isn't a JPG / PNG is skipped",
+      "fmt": "mp3",
+      "values": {
+        "title": "Song"
+      },
+      "cover": "text",
+      "want": {
+        "values": {
+          "title": "Song"
+        },
+        "cover": false
+      }
+    },
+    {
+      "name": "WAV holds no tags",
+      "fmt": "wav",
+      "values": {
+        "title": "Song"
+      },
+      "cover": "jpeg",
+      "want": null
+    },
+    {
+      "name": "a JPG cover alone is written",
+      "fmt": "m4a",
+      "values": {},
+      "cover": "jpeg",
+      "want": {
+        "values": {},
+        "cover": true
+      }
+    }
+  ]
+}

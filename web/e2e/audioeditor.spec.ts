@@ -1,6 +1,7 @@
 // The audio editor: Convert | Edit for audio files, selecting with the mouse, editing, saving —
 // real decoding (FFmpeg in the worker) and encoding in headless Chromium.
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, readFileSync } from "node:fs";
 import { expect, type Page, test } from "@playwright/test";
 import { FIXTURES } from "./global-setup";
 
@@ -130,4 +131,37 @@ test("the volume slider sets the playback volume and is remembered", async ({ pa
   await page.getByRole("button", { name: "Edit", exact: true }).click();
   await expect(page.getByRole("slider", { name: "Volume" })).toHaveValue("35");
   expect(await page.evaluate(() => window.__audio!.volume)).toBeCloseTo(0.35);
+});
+
+test("saving keeps the song's title and artist", async ({ page }) => {
+  await openEditor(page, [fx("song.mp3")]);
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByLabel("Format").selectOption("flac");
+  const download = page.waitForEvent("download", { timeout: 120_000 });
+  await page.locator("dialog.save").getByRole("button", { name: "Save", exact: true }).click();
+  const file = await download;
+  expect(file.suggestedFilename()).toBe("song edited.flac");
+  const probe = JSON.parse(execFileSync("ffprobe", ["-v", "error", "-show_entries", "format_tags", "-of", "json", await file.path()], { encoding: "utf8" }));
+  const tags = Object.fromEntries(Object.entries(probe.format.tags ?? {}).map(([k, v]) => [k.toLowerCase(), v]));
+  expect(tags.title).toBe("Song");
+  expect(tags.artist).toBe("Band");
+});
+
+test("saving keeps the cover picture", async ({ page }, info) => {
+  const dir = info.outputPath();
+  mkdirSync(dir, { recursive: true });
+  const cover = `${dir}/cover.jpg`;
+  const song = `${dir}/covered.mp3`;
+  execFileSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "color=red:s=32x32", "-frames:v", "1", cover]);
+  execFileSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "sine=d=1", "-i", cover, "-map", "0:a", "-map", "1",
+    "-c:a", "libmp3lame", "-c:v", "copy", "-disposition:v:0", "attached_pic", "-metadata", "title=Covered", "-id3v2_version", "3", song]);
+  await openEditor(page, [song]);
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByLabel("Format").selectOption("m4a");
+  const download = page.waitForEvent("download", { timeout: 120_000 });
+  await page.locator("dialog.save").getByRole("button", { name: "Save", exact: true }).click();
+  const file = await download;
+  const probe = JSON.parse(execFileSync("ffprobe", ["-v", "error", "-show_entries", "format_tags=title:stream=codec_type:stream_disposition=attached_pic", "-of", "json", await file.path()], { encoding: "utf8" }));
+  expect(probe.format.tags.title).toBe("Covered");
+  expect(probe.streams.some((s: { codec_type: string; disposition?: { attached_pic?: number } }) => s.codec_type === "video" && s.disposition?.attached_pic === 1)).toBe(true);
 });

@@ -10,10 +10,14 @@ a selection (amplify, normalize, reverse) work on the whole sound; cutting needs
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from umc.audioedit import ops
+
+if TYPE_CHECKING:
+    from umc.audioedit.tags import CarriedTags
 
 HISTORY_BYTES = 500 * 1024 * 1024  # like the image editor: oldest steps are dropped beyond this
 
@@ -47,6 +51,7 @@ class AudioDoc:
     _redo: list[Step] = field(default_factory=list)
     _saved: Step | None = None
     _pending: list[Splice] | None = None
+    tags: CarriedTags | None = None  # song details of the opened files, written when saving
 
     def __post_init__(self) -> None:
         self.samples = np.array(self.samples, dtype=np.float32, copy=True, order="C")

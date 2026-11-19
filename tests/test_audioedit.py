@@ -162,3 +162,105 @@ def test_open_join_and_save(media, tmp_path):
         assert abs(back.duration - doc.duration) < 0.1, fmt
     with pytest.raises(ConversionError):
         open_audio([media / "img0.png"])
+
+
+# ------------------------------------------------------------------ song details
+def test_carried_tags_cases():
+    import json
+    from pathlib import Path
+
+    from umc.audioedit.tags import carried
+    from umc.properties.music import MusicDetails
+
+    cases = json.loads(
+        (Path(__file__).parent / "fixtures" / "audioedit_tags_cases.json").read_text("utf-8")
+    )["cases"]
+    for case in cases:
+        details = [MusicDetails(**d) if d else None for d in case["details"]]
+        covers = [c.encode() if c is not None else None for c in case["covers"]]
+        got = carried(details, covers)
+        assert got.values == case["values"], case["name"]
+        assert got.cover == (case["cover"].encode() if case["cover"] else None), case["name"]
+
+
+@needs_ffmpeg
+def test_saving_keeps_the_song_details(tmp_path):
+    import io
+    import subprocess
+
+    from PIL import Image
+
+    from umc.properties import music
+
+    src = tmp_path / "song.mp3"
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=d=1",
+            "-c:a",
+            "libmp3lame",
+            str(src),
+        ],
+        check=True,
+    )
+    buf = io.BytesIO()
+    Image.new("RGB", (8, 8), "red").save(buf, "JPEG")
+    cover = buf.getvalue()
+    edit = music.MusicEdit(
+        values={"title": "Song", "artist": "Band", "track": "3/12", "year": "2024"}, cover=cover
+    )
+    music.save_file(src, edit)
+
+    doc = open_audio([src])
+    assert doc.tags is not None and doc.tags.cover == cover
+    doc.set_selection(0, doc.rate // 2)
+    doc.delete()
+    for fmt in ("mp3", "m4a", "flac", "ogg", "opus"):
+        out = save_audio(doc, tmp_path / f"out.{fmt}", fmt, bitrate=128)
+        d = music.read_details(out)
+        assert (d.title, d.artist, d.track, d.year) == ("Song", "Band", "3/12", "2024"), fmt
+        assert music.read_cover(out) == cover, fmt
+    plain = save_audio(doc, tmp_path / "out.wav", "wav")  # WAV can't hold them: saved as before
+    assert open_audio([plain]).duration > 0
+
+
+def test_edit_for_cases():
+    import json
+    from pathlib import Path
+
+    from umc.audioedit.tags import CarriedTags
+
+    cases = json.loads(
+        (Path(__file__).parent / "fixtures" / "audioedit_tags_cases.json").read_text("utf-8")
+    )["edit_cases"]
+    covers = {"jpeg": b"\xff\xd8\xff\xe0\x01\x02", "text": b"pic", None: None}
+    for case in cases:
+        edit = CarriedTags(case["values"], covers[case["cover"]]).edit_for(case["fmt"])
+        want = case["want"]
+        if want is None:
+            assert edit is None, case["name"]
+            continue
+        assert edit is not None, case["name"]
+        assert edit.values == want["values"], case["name"]
+        assert (edit.cover is not None) == want["cover"], case["name"]
+
+
+@needs_ffmpeg
+def test_a_tag_problem_still_saves_the_sound(media, tmp_path, monkeypatch):
+    from umc.audioedit.tags import CarriedTags
+    from umc.properties import music
+
+    def broken(_data, _edit):
+        raise music.MusicError("broken")
+
+    monkeypatch.setattr(music, "apply", broken)
+    doc = open_audio([media / "tone.wav"])
+    doc.tags = CarriedTags({"title": "Song"})
+    out = save_audio(doc, tmp_path / "out.mp3", "mp3", bitrate=128)
+    assert abs(open_audio([out]).duration - doc.duration) < 0.1

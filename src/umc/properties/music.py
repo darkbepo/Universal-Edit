@@ -264,6 +264,34 @@ def read_details(source: Path | bytes) -> MusicDetails:
     return d
 
 
+def read_cover(source: Path | bytes) -> bytes | None:
+    """The cover picture's bytes (the front cover when there are several), or None."""
+    f = _open(io.BytesIO(source) if isinstance(source, bytes) else source)
+    kind = _kind(f)
+    tags = f.tags
+    if kind == "flac":
+        pictures = list(f.pictures)
+    elif tags is None:
+        return None
+    elif kind == "id3":
+        pictures = tags.getall("APIC")
+    elif kind == "mp4":
+        return bytes(tags["covr"][0]) if tags.get("covr") else None
+    else:
+        from mutagen.flac import Picture
+
+        pictures = []
+        for text in tags.get("METADATA_BLOCK_PICTURE", []):
+            try:
+                pictures.append(Picture(base64.b64decode(text)))
+            except Exception:  # a damaged picture block: skip it
+                continue
+    if not pictures:
+        return None
+    front = next((p for p in pictures if p.type == 3), pictures[0])
+    return bytes(front.data)
+
+
 # ---------------------------------------------------------------------------- changing
 def apply(data: bytes, edit: MusicEdit) -> bytes:
     """The file with ``edit`` applied (raises MusicError in plain language)."""

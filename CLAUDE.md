@@ -1013,8 +1013,15 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       + / − (desktop also Ctrl+1 / 3; Chrome keeps those for tabs), Ctrl+E, Ctrl+F, Ctrl+Z / Y,
       Ctrl+S. Desktop add-on "audio" (`umc.gui.audioeditor`; the model stays in the app); self-test
       step "audio editor". e2e `e2e/audioeditor.spec.ts` (`window.__audio` with `?e2e`).
+      Song details (owner's follow-up, Nov 2026): `audioedit/tags.py` ↔ `web/src/audioedit/tags.ts`
+      (`carried` / `carriedTags`: what every opened file shares, a cover only when all are the
+      same; shared cases `tests/fixtures/audioedit_tags_cases.json`). Desktop reads them in
+      `open_audio` (`AudioDoc.tags`, mutagen via `properties.music`, + `music.read_cover`) and
+      writes them after encoding (`io._write_tags`); web reads with Mediabunny on the page and
+      runs the hidden `music-tags` converter after the save (no OGG / Opus cover there). A tag
+      problem saves the sound without tags. WAV / AIFF / WMA / AC-3 get none.
       Not yet: several tracks / mixing, recording, spectrogram, noise reduction, speed / pitch,
-      editable selection times, tags (title / artist) are not carried over when saving.
+      editable selection times.
    14. Properties mode (both apps), step 1 = read-only "About this file" — spec
       `docs/superpowers/specs/2026-11-12-properties-design.md`. Model `properties/` (desktop, no
       Qt) ↔ `web/src/properties/`: each app reads a file with its own engines into the same plain

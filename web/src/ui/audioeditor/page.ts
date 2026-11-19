@@ -10,10 +10,13 @@ import type { Samples } from "../../audioedit/ops";
 import * as peaks from "../../audioedit/peaks";
 import { DEFAULT_VOLUME, gainFor, VOLUME_KEY } from "../../audioedit/volume";
 import { readWav, writeWav } from "../../audioedit/wav";
+import { carriedTags, editFor, EMPTY_TAGS, type CarriedTags } from "../../audioedit/tags";
+import type { MusicDetails } from "../../properties/music";
 import { MAX_SAMPLES, OPEN_TARGET, TOO_LONG } from "../../converters/audioedit";
+import { MUSIC_TAGS_TARGET } from "../../converters/musictags";
 import { defaults } from "../../core/options";
 import { converterById } from "../../core/registry";
-import type { InputFile } from "../../core/types";
+import type { InputFile, OutputFile } from "../../core/types";
 import { JobCancelled, type ConversionClient } from "../../worker/client";
 import { backLabel } from "../back";
 
@@ -105,6 +108,7 @@ export class AudioEditorPage {
   private player: { src: AudioBufferSourceNode; origin: number; end: number; t0: number; paused: boolean } | null = null;
   private saveTarget: { name: string; format: string; bitrate: number; handle?: FileHandle } | null = null;
   private bitrate = 192;
+  private tags: CarriedTags = EMPTY_TAGS; // song details of the opened files, written when saving
 
   constructor(private opts: AudioEditorOptions) {
     const btn = (key: string, label: string, title: string, fn: () => void, cls = "btn small") => {
@@ -223,6 +227,7 @@ export class AudioEditorPage {
   // ---------------------------------------------------------------- opening
   openEmpty(): void {
     this.stop();
+    this.tags = EMPTY_TAGS;
     this.setDocument(null, []);
     this.showMessage("");
   }
@@ -255,6 +260,7 @@ export class AudioEditorPage {
       const total = parts.reduce((n, p) => n + p.samples.length * ops.frames(p.samples), 0);
       if (total > MAX_SAMPLES) throw new Error(TOO_LONG);
       const joined = parts.length > 1 ? ops.join(parts.map((p) => ops.fitChannels(p.samples, parts[0].samples.length))) : parts[0].samples;
+      this.tags = await readSongTags(files);
       this.setDocument(new AudioDoc(parts[0].rate, joined), files.map((f) => f.name));
       this.showMessage("");
       return true;
@@ -669,7 +675,8 @@ export class AudioEditorPage {
       const target = conv.targets([input]).find((t) => t.id === save.format);
       if (!target) throw new Error(`Can't save as ${save.format.toUpperCase()}.`);
       const values = { ...defaults(conv.options), ...(LOSSY.has(save.format) ? { bitrate: save.bitrate } : {}) };
-      const [out] = await this.opts.client.run(target, [input], values, (p) => this.showMessage(`Saving “${fileName}”… ${Math.round(p * 100)} %`));
+      let [out] = await this.opts.client.run(target, [input], values, (p) => this.showMessage(`Saving “${fileName}”… ${Math.round(p * 100)} %`));
+      out = await this.withTags(out, save.format, fileName);
       const blob = new Blob([out.data as BlobPart], { type: out.type });
       if (save.handle) {
         const w = await save.handle.createWritable();
@@ -688,6 +695,36 @@ export class AudioEditorPage {
     } finally {
       this.busy = false;
       this.update();
+    }
+  }
+
+  /** `out` with the opened files' song details written in (MP3 / M4A / FLAC / OGG / Opus).
+   *  A tag problem never costs the sound: it is then saved without them. */
+  private async withTags(out: OutputFile, format: string, fileName: string): Promise<OutputFile> {
+    const edit = editFor(this.tags, format);
+    if (!edit) return out;
+    const song: InputFile = { file: new File([out.data as BlobPart], fileName, { type: out.type }), name: fileName, ext: format, family: "audio" };
+    const run = async (cover: File | null) => {
+      const [tagged] = await this.opts.client.run(MUSIC_TAGS_TARGET, [song], { edit: JSON.stringify({ values: edit.values }), cover }, () => {});
+      return { ...tagged, type: out.type };
+    };
+    if (edit.cover) {
+      const png = edit.cover[0] === 0x89;
+      const cover = new File([edit.cover as BlobPart], png ? "cover.png" : "cover.jpg", { type: png ? "image/png" : "image/jpeg" });
+      try {
+        return await run(cover);
+      } catch (e) {
+        if (e instanceof JobCancelled) throw e;
+        console.warn("Couldn't copy the cover picture; keeping the other details", e);
+      }
+    }
+    if (!Object.keys(edit.values).length) return out;
+    try {
+      return await run(null);
+    } catch (e) {
+      if (e instanceof JobCancelled) throw e;
+      console.warn("Couldn't copy the song details", e);
+      return out;
     }
   }
 
@@ -904,4 +941,32 @@ export function mountAudioEditor(host: HTMLElement, opts: AudioEditorOptions): A
   const page = new AudioEditorPage(opts);
   host.append(page.el);
   return page;
+}
+
+/** The song details all `files` share, read on the page with Mediabunny (files it can't read
+ *  count as untagged). */
+async function readSongTags(files: InputFile[]): Promise<CarriedTags> {
+  const [{ Input, BlobSource, ALL_FORMATS }, music] = await Promise.all([import("mediabunny"), import("../../properties/music")]);
+  const details: (MusicDetails | null)[] = [];
+  const covers: (Uint8Array | null)[] = [];
+  for (const f of files) {
+    let d: MusicDetails | null = null;
+    let cover: Uint8Array | null = null;
+    if (music.canChange(f.ext)) {
+      const input = new Input({ source: new BlobSource(f.file), formats: ALL_FORMATS });
+      try {
+        const tags = await input.getMetadataTags();
+        d = music.detailsFromTags(tags);
+        const images = tags.images ?? [];
+        cover = (images.find((i) => i.kind === "coverFront") ?? images[0])?.data ?? null;
+      } catch (e) {
+        console.info(`No readable tags in “${f.name}”`, e);
+      } finally {
+        input.dispose();
+      }
+    }
+    details.push(d);
+    covers.push(cover);
+  }
+  return carriedTags(details, covers);
 }
