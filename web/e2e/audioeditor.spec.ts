@@ -111,6 +111,7 @@ test("typing Start / End / Length sets the selection", async ({ page }) => {
   await end.press("Enter");
   let d = await info(page);
   expect(d.selection).toEqual([0, 2.5 * d.rate]);
+  await expect(end).toHaveValue("0:02.500");
   await expect(length).toHaveValue("0:02.500");
   await start.fill("0:01");
   await start.press("Tab"); // leaving the box applies it too
@@ -118,6 +119,11 @@ test("typing Start / End / Length sets the selection", async ({ page }) => {
   await length.press("Enter");
   d = await info(page);
   expect(d.selection).toEqual([d.rate, 1.5 * d.rate]);
+  await end.fill("9:00");
+  await end.press("Enter");
+  await expect(end).toHaveValue("0:03.000"); // the real end, not what was typed
+  await length.fill("0,5");
+  await length.press("Enter");
   // nonsense: a hint, the box marked, nothing changed
   await start.fill("abc");
   await start.press("Enter");
@@ -129,6 +135,7 @@ test("typing Start / End / Length sets the selection", async ({ page }) => {
   await start.click();
   await start.press("Delete");
   await start.press("Space");
+  await start.press("Control+t");
   d = await info(page);
   expect(d.dirty).toBe(false);
   expect(d.selection).toEqual([d.rate, 1.5 * d.rate]);

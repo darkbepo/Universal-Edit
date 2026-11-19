@@ -74,12 +74,16 @@ def join(parts: list[np.ndarray]) -> np.ndarray:
 _SECONDS = re.compile(r"\d+(?:[.,]\d*)?|[.,]\d+", re.ASCII)
 _WHOLE = re.compile(r"\d+", re.ASCII)
 TIME_HINT = "Type a time like 1:05.250 or 65.25."
+MAX_TIME_CHARS = 32  # longer text is refused (no huge numbers)
 
 
 def parse_time(text: str) -> float | None:
     """Seconds from typed text: 65.25, 1:05.25, 1:02:03 (a comma works as the decimal mark).
     None for anything else (also 1:75 — minutes and seconds after the first part stay < 60)."""
-    parts = text.strip().split(":")
+    text = text.strip()
+    if len(text) > MAX_TIME_CHARS:
+        return None
+    parts = text.split(":")
     if not 1 <= len(parts) <= 3 or not _SECONDS.fullmatch(parts[-1]):
         return None
     if not all(_WHOLE.fullmatch(p) for p in parts[:-1]):

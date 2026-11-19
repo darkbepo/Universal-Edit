@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QEvent, Qt, Signal
+from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import QLineEdit
 
 
 class TimeBox(QLineEdit):
     """Enter (or leaving the box) sends ``committed`` with the typed text when it changed;
-    Esc puts the shown time back. Esc and the editing keys stay with the box while it has
-    focus (the page's Esc = Deselect, Delete, Home … shortcuts don't fire)."""
+    the page calls ``setModified(False)`` once it took the time (a refused one stays as typed).
+    Esc puts the shown time back. Every key but Ctrl+S stays with the box while it has focus,
+    so the page's shortcuts (Esc = Deselect, Delete, Ctrl+T …) don't fire while typing."""
 
     committed = Signal(str)
 
@@ -40,11 +42,13 @@ class TimeBox(QLineEdit):
         text = self.text()
         if text.strip() != self._shown:
             self.committed.emit(text)
-        self.setModified(False)
+        else:
+            self.setModified(False)
 
     def event(self, e) -> bool:
-        if e.type() == QEvent.Type.ShortcutOverride and e.key() == Qt.Key.Key_Escape:
-            e.accept()  # Esc reverts the box instead of deselecting
+        override = e.type() == QEvent.Type.ShortcutOverride
+        if override and not e.matches(QKeySequence.StandardKey.Save):
+            e.accept()  # the key goes to the box, not to a page shortcut
             return True
         return super().event(e)
 

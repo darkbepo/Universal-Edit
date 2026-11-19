@@ -1022,10 +1022,11 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       problem saves the sound without tags. WAV / AIFF / WMA / AC-3 get none.
       Typed selection times: Start / End / Length boxes in the status line (desktop
       `gui/audioeditor/time_box.TimeBox`, web `input.audio-time`; Enter or leaving applies, Esc
-      reverts, page shortcuts don't fire while typing). `ops.parse_time` / `parseTime` (m:ss.fff,
-      h:mm:ss, plain seconds, comma decimals) + `edited_selection` / `editedSelection` (a start
-      past the end moves the end, an end before the start moves the start, clamped to the sound);
-      shared cases `tests/fixtures/audioedit_time_cases.json`.
+      reverts; while typing only Ctrl+S of the page's shortcuts works). `ops.parse_time` /
+      `parseTime` (m:ss.fff, h:mm:ss, plain seconds, comma decimals, ≤ 32 characters) +
+      `edited_selection` / `editedSelection` (a start past the end moves the end, an end before
+      the start moves the start, clamped to the sound); shared cases
+      `tests/fixtures/audioedit_time_cases.json`.
       Not yet: several tracks / mixing, recording, spectrogram, noise reduction, speed / pitch.
    14. Properties mode (both apps), step 1 = read-only "About this file" — spec
       `docs/superpowers/specs/2026-11-12-properties-design.md`. Model `properties/` (desktop, no

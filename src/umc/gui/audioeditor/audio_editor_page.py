@@ -513,6 +513,7 @@ class AudioEditorPage(QWidget):
         doc = self.doc
         sel = ops.edited_selection(which, seconds, doc.selection, doc.rate, doc.frames)
         doc.set_selection(*sel)
+        box.setModified(False)  # so the box shows the real (maybe clamped) time again
         self.view.ensure_visible(doc.selection[0])
         self.view.update()
         self.view.selection_changed.emit()

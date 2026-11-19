@@ -434,6 +434,11 @@ export class AudioEditorPage {
       });
       box.addEventListener("keydown", (e) => {
         if (e.key === "Enter") { e.preventDefault(); this.commitTime(key); }
+        else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+          // the page ignores keys typed into boxes; saving still works from here
+          e.preventDefault();
+          void (e.shiftKey ? this.saveAs() : this.save());
+        }
         else if (e.key === "Escape") {
           e.preventDefault();
           box.value = this.shownTimes.get(key) ?? "";
@@ -473,6 +478,7 @@ export class AudioEditorPage {
     doc.setSelection(...ops.editedSelection(key, seconds, doc.selection, doc.rate, doc.frames));
     this.ensureVisible(doc.selection[0]);
     this.update();
+    box.value = this.shownTimes.get(key)!; // the real (maybe clamped) time, not what was typed
     return true;
   }
 

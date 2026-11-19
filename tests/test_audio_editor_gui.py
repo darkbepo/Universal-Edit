@@ -98,7 +98,7 @@ def test_typing_selection_times(window, qtbot, media):
     qtbot.keyClicks(boxes["end"], "2.5")
     qtbot.keyClick(boxes["end"], Qt.Key.Key_Return)
     assert doc.selection == (0, int(2.5 * doc.rate))
-    assert boxes["length"].text() == "0:02.500"
+    assert boxes["end"].text() == "0:02.500" and boxes["length"].text() == "0:02.500"
     assert page.type_time("start", "0:01")
     assert doc.selection == (doc.rate, int(2.5 * doc.rate))
     assert page.type_time("length", "0,5")
@@ -106,15 +106,24 @@ def test_typing_selection_times(window, qtbot, media):
     # a start past the end moves the end along; a time past the sound stops at its end
     assert page.type_time("start", "2")
     assert doc.selection == (2 * doc.rate, 2 * doc.rate)
-    assert page.type_time("end", "9:00")
+    boxes["end"].setFocus()
+    boxes["end"].selectAll()
+    qtbot.keyClicks(boxes["end"], "9:00")
+    qtbot.keyClick(boxes["end"], Qt.Key.Key_Return)
     assert doc.selection == (2 * doc.rate, doc.frames)
+    assert boxes["end"].text() == "0:03.000"  # the real end, not what was typed
     # nonsense: a plain hint, the box marked, the selection kept
     before = doc.selection
-    assert not page.type_time("start", "abc")
-    assert doc.selection == before and boxes["start"].property("invalid")
-    assert "1:05.250" in page.message.text()
-    # Esc in a box puts the time back and doesn't deselect
     box = boxes["start"]
+    box.setFocus()
+    box.selectAll()
+    qtbot.keyClicks(box, "abc")
+    qtbot.keyClick(box, Qt.Key.Key_Return)
+    assert doc.selection == before and box.property("invalid")
+    assert "1:05.250" in page.message.text()
+    page._update_state()  # a refresh while typing keeps the refused text
+    assert box.text() == "abc"
+    # Esc in a box puts the time back and doesn't deselect
     box.setFocus()
     box.selectAll()
     qtbot.keyClicks(box, "1")
@@ -126,6 +135,8 @@ def test_typing_selection_times(window, qtbot, media):
     box.setFocus()
     qtbot.keyClick(box, Qt.Key.Key_Delete)
     qtbot.keyClick(box, Qt.Key.Key_Space)
+    qtbot.keyClick(box, Qt.Key.Key_T, Qt.KeyboardModifier.ControlModifier)  # Trim
+    qtbot.keyClick(box, Qt.Key.Key_L, Qt.KeyboardModifier.ControlModifier)  # Silence
     assert doc.frames == frames and not doc.dirty
 
 
