@@ -1325,15 +1325,14 @@ LibreOffice-wasm). The owner hands the project over at this point; the next phas
    re-run them.
 4. One-click installers are only proven by the manual "Test one-click installers" workflow
    (`tests/test_installer_live.py`, real downloads on windows-latest) — run it after touching
-   `tools/installer.py`. Status of the last run (Nov 2026): LibreOffice + Pandoc ✅; Calibre ❌
-   because `code.calibre-ebook.com` serves an incomplete TLS chain → now resolved via the GitHub
-   releases API (re-run to confirm); **Ghostscript ❌ — the silent NSIS install
-   (`gsNNNNNw64.exe /S /D=…`) didn't exit within 900 s on windows-latest.** Next steps: check
-   whether `gswin64c.exe` exists after the timeout (install done, process hung?), try
-   `Start-Process -Wait` instead of a piped subprocess, or avoid running the installer at all
-   (7-Zip can unpack NSIS installers — 7-Zip is LGPL; needs its full `7z.exe` + `7z.dll`).
-   LibreDWG's installer is new too and also needs a green live run. Until then EPS/PS and DWG
-   work with a manually installed Ghostscript / LibreDWG (on PATH or the standard folders).
+   `tools/installer.py` (input "only" = a pytest -k filter, e.g. `ghostscript`). Status of the
+   last runs (19 Nov 2026): LibreOffice, Pandoc, Calibre, LibreDWG ✅ (dwg2dxf writes handle 0,
+   which ezdxf refuses: `cad.fix_zero_handles` renumbers them). **Ghostscript ❌ — the silent NSIS
+   install (`gsNNNNNw64.exe /S /D=…`) writes nothing at all, in `/D` or Program Files, and never
+   exits** (so `InstallSettled` can't help; error details now list the folder). Likely a dialog
+   that silent mode doesn't answer. Next: try it the way Chocolatey does (`Start-Process -Wait`),
+   or unpack it with 7-Zip instead of running it (a new tool download — ask the owner). Until
+   then EPS/PS work with a manually installed Ghostscript (on PATH or the standard folders).
 5. **Keep the Actions list short (owner's rule):** after your pushes have finished their runs (and
    you've read any failure logs you need), run `python scripts/prune_ci_runs.py` (dry run), then
    `python scripts/prune_ci_runs.py --yes`. It keeps the newest 3 runs of every workflow plus the
