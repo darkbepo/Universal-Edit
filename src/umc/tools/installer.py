@@ -16,6 +16,7 @@ No Qt here: progress goes through a ``progress(fraction, message)`` callback.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import logging
@@ -421,6 +422,11 @@ def install_ghostscript(progress: Progress, cancel_event: threading.Event) -> st
         verify_authenticode(exe, GS_PUBLISHER)
         progress(0.75, "Installing Ghostscript — please allow it if Windows asks…")
         shutil.rmtree(target, ignore_errors=True)
+        if target.exists():  # leftovers would look like a finished install to InstallSettled
+            raise InstallError(
+                "The old Ghostscript copy couldn't be removed. Close programs that use it "
+                "(or restart the computer) and try again."
+            )
         # NSIS: /S = silent, /D= must be last and unquoted.
         args = f"/S /D={target}"
         try:
@@ -434,6 +440,8 @@ def install_ghostscript(progress: Progress, cancel_event: threading.Event) -> st
         except OSError as exc:  # 740 = the installer needs admin rights: ask Windows to elevate
             if getattr(exc, "winerror", None) != 740:
                 raise
+            # If this one settles early, only PowerShell is stopped: the elevated installer can't
+            # be killed from here and may linger (holding the downloaded file).
             ps = f"Start-Process -FilePath '{exe}' -ArgumentList '{args}' -Verb RunAs -Wait"
             process.run(
                 ["powershell", "-NoProfile", "-Command", ps],
@@ -450,7 +458,8 @@ def install_ghostscript(progress: Progress, cancel_event: threading.Event) -> st
         progress(1.0, f"Ghostscript {version} installed.")
         return found
     finally:
-        exe.unlink(missing_ok=True)
+        with contextlib.suppress(OSError):  # a lingering installer may still hold it;
+            exe.unlink(missing_ok=True)  # core/cleanup.py removes it later
 
 
 # --------------------------------------------------------------------------- Calibre

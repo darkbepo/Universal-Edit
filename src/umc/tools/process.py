@@ -123,8 +123,7 @@ def run(
                 next_check = time.monotonic() + 1.0
                 if finished_early():
                     log.warning("work is done but the program didn't exit: stopping it")
-                    _kill(proc)
-                    proc.wait()
+                    _kill(proc)  # waits up to 3 s; never block here if it can't be stopped
                     return "\n".join(stderr_tail)
             time.sleep(0.1)
     finally:

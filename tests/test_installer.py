@@ -263,10 +263,88 @@ def test_run_stops_a_program_whose_work_is_done(tmp_path):
 
     from umc.tools import process
 
+    pid_file = tmp_path / "pid"
     started = time.monotonic()
     process.run(
-        [sys.executable, "-c", "import time; time.sleep(60)"],
+        [
+            sys.executable,
+            "-c",
+            "import os, sys, time; open(sys.argv[1], 'w').write(str(os.getpid())); time.sleep(60)",
+            str(pid_file),
+        ],
         timeout=30,
         finished_early=lambda: time.monotonic() - started > 1.5,
     )
     assert time.monotonic() - started < 10
+    assert not _alive(int(pid_file.read_text()))  # really stopped, not left running
+
+
+def _alive(pid: int) -> bool:
+    import os
+
+    if os.name == "nt":
+        import subprocess
+
+        out = subprocess.run(
+            ["tasklist", "/FI", f"PID eq {pid}", "/NH"], capture_output=True, text=True
+        ).stdout
+        return str(pid) in out
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    return True
+
+
+def _fake_ghostscript(tools, monkeypatch, run):
+    import contextlib
+    import io
+
+    from umc.tools import ghostscript, process
+
+    monkeypatch.setattr(installer, "_get", lambda url: contextlib.nullcontext(io.BytesIO(b"{}")))
+    monkeypatch.setattr(
+        installer, "pick_ghostscript_asset", lambda rel: ("10.9", "http://x/gs1090w64.exe", "ab")
+    )
+    monkeypatch.setattr(installer, "download", lambda url, dest, **kw: dest.write_bytes(b"MZ"))
+    monkeypatch.setattr(installer, "verify_authenticode", lambda exe, pub: None)
+    monkeypatch.setattr(process, "run", run)
+    target = tools / "ghostscript"
+    monkeypatch.setattr(
+        ghostscript,
+        "gs_path",
+        lambda: (
+            str(target / "bin" / "gswin64c.exe")
+            if (target / "bin" / "gswin64c.exe").is_file()
+            else None
+        ),
+    )
+    return target
+
+
+def test_install_ghostscript_watches_for_a_settled_folder(tools, monkeypatch):
+    seen = {}
+
+    def run(cmd, **kw):  # the installer copies its files; the run ends "early"
+        target = tools / "ghostscript"
+        (target / "bin").mkdir(parents=True)
+        (target / "bin" / "gswin64c.exe").write_bytes(b"gs")
+        (target / "uninstgs.exe").write_bytes(b"u")
+        seen["settled"] = kw["finished_early"]
+        return ""
+
+    target = _fake_ghostscript(tools, monkeypatch, run)
+    exe = installer.install_ghostscript(lambda f, m: None, threading.Event())
+    assert exe == str(target / "bin" / "gswin64c.exe")
+    assert isinstance(seen["settled"], installer.InstallSettled)
+    assert seen["settled"].folder == target
+    assert installer.installed_version("Ghostscript") == "10.9"
+    assert not list((tools / "downloads").glob("*.exe"))
+
+
+def test_install_ghostscript_refuses_when_the_old_copy_stays(tools, monkeypatch):
+    target = _fake_ghostscript(tools, monkeypatch, lambda cmd, **kw: "")
+    (target / "bin").mkdir(parents=True)
+    monkeypatch.setattr(installer.shutil, "rmtree", lambda *a, **k: None)
+    with pytest.raises(installer.InstallError, match="old Ghostscript"):
+        installer.install_ghostscript(lambda f, m: None, threading.Event())
