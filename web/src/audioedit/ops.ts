@@ -75,6 +75,38 @@ export function join(parts: Samples[]): Samples {
 }
 
 /** Like 1:05.250 (m:ss.mmm), with hours when needed: 1:02:03.000. */
+const SECONDS = /^(?:\d+(?:[.,]\d*)?|[.,]\d+)$/;
+const WHOLE = /^\d+$/;
+export const TIME_HINT = "Type a time like 1:05.250 or 65.25.";
+
+/** Seconds from typed text: 65.25, 1:05.25, 1:02:03 (a comma works as the decimal mark).
+ *  null for anything else (also 1:75 — minutes and seconds after the first part stay < 60). */
+export function parseTime(text: string): number | null {
+  const parts = text.trim().split(":");
+  if (parts.length < 1 || parts.length > 3 || !SECONDS.test(parts[parts.length - 1])) return null;
+  if (!parts.slice(0, -1).every((p) => WHOLE.test(p))) return null;
+  const seconds = Number(parts[parts.length - 1].replace(",", "."));
+  const whole = parts.slice(0, -1).map((p) => parseInt(p, 10));
+  if (parts.length > 1 && (seconds >= 60 || whole.slice(1).some((n) => n >= 60))) return null;
+  let total = 0;
+  for (const n of whole) total = (total + n) * 60;
+  return total + seconds;
+}
+
+/** The selection after typing `seconds` into the Start, End or Length box. Start keeps the end
+ *  (pushing it along when passed), End keeps the start (likewise), Length keeps the start;
+ *  everything stays inside the sound. */
+/** The three boxes in the status line. */
+export type TimeField = "start" | "end" | "length";
+
+export function editedSelection(which: TimeField, seconds: number, selection: [number, number], rate: number, frames: number): [number, number] {
+  const n = Math.max(0, Math.min(frames, Math.floor(seconds * rate + 0.5)));
+  const [a, b] = selection;
+  if (which === "start") return [n, Math.max(b, n)];
+  if (which === "end") return [Math.min(a, n), n];
+  return [a, Math.max(a, Math.min(frames, a + n))];
+}
+
 export function formatTime(seconds: number): string {
   let ms = Math.max(0, Math.round(seconds * 1000));
   const h = Math.floor(ms / 3_600_000); ms -= h * 3_600_000;

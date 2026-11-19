@@ -93,6 +93,9 @@ export class AudioEditorPage {
   private scroll = h("input", { type: "range", class: "audio-scroll", min: "0", max: "0", value: "0", ariaLabel: "Scroll" });
   private message = h("div", { class: "msg" });
   private selectionLabel = h("div", { class: "audio-selection" });
+  /** Start / End / Length: typed times change the selection (Enter or leaving the box). */
+  private timeBoxes = new Map<ops.TimeField, HTMLInputElement>();
+  private shownTimes = new Map<ops.TimeField, string>();
   private infoLabel = h("div", { class: "audio-info" });
   private title = h("span", { class: "muted" });
   private buttons = new Map<string, HTMLButtonElement>();
@@ -148,6 +151,7 @@ export class AudioEditorPage {
       top,
       h("div", { class: "audio-body" }, tools, h("div", { class: "audio-view" }, this.host, this.placeholder), this.scroll),
       h("div", { class: "editor-status" }, this.selectionLabel, this.message, this.infoLabel));
+    this.buildTimes();
 
     let saved = NaN;
     try {
@@ -420,6 +424,56 @@ export class AudioEditorPage {
       if (e.ctrlKey || e.metaKey) this.zoom(2 ** (-delta / 240), x(e));
       else this.setStart(this.start + (delta / 100) * (this.visibleFrames() / 10));
     }, { passive: false });
+  }
+
+  private buildTimes(): void {
+    for (const [key, name] of [["start", "Start"], ["end", "End"], ["length", "Length"]] as const) {
+      const box = h("input", {
+        type: "text", class: "audio-time", ariaLabel: name, inputMode: "decimal", spellcheck: false,
+        title: `${name} — type a time like 1:05.250 and press Enter`,
+      });
+      box.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") { e.preventDefault(); this.commitTime(key); }
+        else if (e.key === "Escape") {
+          e.preventDefault();
+          box.value = this.shownTimes.get(key) ?? "";
+          box.classList.remove("invalid");
+          box.removeAttribute("aria-invalid");
+          box.blur();
+        }
+      });
+      box.addEventListener("change", () => this.commitTime(key));
+      this.timeBoxes.set(key, box);
+      this.selectionLabel.append(h("label", {}, h("span", { class: "muted" }, name), box));
+    }
+  }
+
+  private commitTime(key: ops.TimeField): void {
+    const box = this.timeBoxes.get(key)!;
+    if (box.value.trim() === this.shownTimes.get(key)) return;
+    this.typeTime(key, box.value);
+  }
+
+  /** A time typed into the Start / End / Length box. False (and a hint) if it isn't one. */
+  typeTime(key: ops.TimeField, text: string): boolean {
+    const box = this.timeBoxes.get(key)!;
+    const seconds = ops.parseTime(text);
+    if (seconds === null) {
+      box.classList.add("invalid");
+      box.setAttribute("aria-invalid", "true");
+      this.showMessage(ops.TIME_HINT, true);
+      return false;
+    }
+    box.classList.remove("invalid");
+    box.removeAttribute("aria-invalid");
+    this.showMessage("");
+    const doc = this.doc;
+    if (!doc || this.busy) return false;
+    this.stop();
+    doc.setSelection(...ops.editedSelection(key, seconds, doc.selection, doc.rate, doc.frames));
+    this.ensureVisible(doc.selection[0]);
+    this.update();
+    return true;
   }
 
   private onKey(e: KeyboardEvent): void {
@@ -746,8 +800,9 @@ export class AudioEditorPage {
     this.buttons.get("play")!.textContent = this.player && !this.player.paused ? "❚❚ Pause" : "▶ Play";
     this.buttons.get("undo")!.title = ready && doc!.canUndo() ? `Undo ${doc!.undoLabel()} (Ctrl+Z)` : "Undo (Ctrl+Z)";
     this.buttons.get("redo")!.title = ready && doc!.canRedo() ? `Redo ${doc!.redoLabel()} (Ctrl+Y)` : "Redo (Ctrl+Y)";
+    this.selectionLabel.hidden = !doc;
+    for (const box of this.timeBoxes.values()) box.disabled = !ready;
     if (!doc) {
-      this.selectionLabel.textContent = "";
       this.infoLabel.textContent = "";
       this.title.textContent = "";
       this.requestDraw();
@@ -755,7 +810,13 @@ export class AudioEditorPage {
     }
     const t = (f: number) => ops.formatTime(f / doc.rate);
     const [a, b] = doc.selection;
-    this.selectionLabel.textContent = b > a ? `Selection ${t(a)} – ${t(b)} · Length ${t(b - a)}` : `Cursor ${t(a)}`;
+    for (const [key, frames] of [["start", a], ["end", b], ["length", b - a]] as const) {
+      const text = t(frames);
+      const box = this.timeBoxes.get(key)!;
+      // never overwrite what someone is typing
+      if (document.activeElement !== box || box.value === this.shownTimes.get(key)) box.value = text;
+      this.shownTimes.set(key, text);
+    }
     const layout = doc.channels === 1 ? "Mono" : doc.channels === 2 ? "Stereo" : `${doc.channels} channels`;
     this.infoLabel.textContent = `${doc.rate / 1000} kHz · ${layout} · ${ops.formatTime(doc.duration)}${doc.dirty ? " · Unsaved changes" : ""}`;
     this.title.textContent = this.sources.length ? this.sources[0] + (this.sources.length > 1 ? ` + ${this.sources.length - 1} more` : "") : "";

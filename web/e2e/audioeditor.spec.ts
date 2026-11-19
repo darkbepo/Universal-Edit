@@ -68,7 +68,7 @@ test("drag to select, cut, undo, effects and save as MP3", async ({ page }) => {
   await page.mouse.up();
   let d = await info(page);
   expect((d.selection[1] - d.selection[0]) / d.rate).toBeGreaterThan(0.9);
-  await expect(page.locator(".audio-selection")).toContainText("Length 0:01");
+  await expect(page.getByRole("textbox", { name: "Length" })).toHaveValue(/^0:01\./);
   await page.getByRole("button", { name: "Cut", exact: true }).click();
   d = await info(page);
   expect(d.duration).toBeLessThan(2.1);
@@ -99,6 +99,39 @@ test("drag to select, cut, undo, effects and save as MP3", async ({ page }) => {
   expect([bytes[0], bytes[1], bytes[2]]).toEqual([0x49, 0x44, 0x33]); // "ID3"
   await expect(page.locator(".audio-editor .msg")).toHaveText("Saved “tone edited.mp3”.");
   expect((await info(page)).dirty).toBe(false);
+});
+
+test("typing Start / End / Length sets the selection", async ({ page }) => {
+  await openEditor(page, [fx("tone.wav")]);
+  const start = page.getByRole("textbox", { name: "Start" });
+  const end = page.getByRole("textbox", { name: "End" });
+  const length = page.getByRole("textbox", { name: "Length" });
+  await expect(start).toHaveValue("0:00.000");
+  await end.fill("2.5");
+  await end.press("Enter");
+  let d = await info(page);
+  expect(d.selection).toEqual([0, 2.5 * d.rate]);
+  await expect(length).toHaveValue("0:02.500");
+  await start.fill("0:01");
+  await start.press("Tab"); // leaving the box applies it too
+  await length.fill("0,5");
+  await length.press("Enter");
+  d = await info(page);
+  expect(d.selection).toEqual([d.rate, 1.5 * d.rate]);
+  // nonsense: a hint, the box marked, nothing changed
+  await start.fill("abc");
+  await start.press("Enter");
+  await expect(page.locator(".audio-editor .msg")).toContainText("1:05.250");
+  await expect(start).toHaveAttribute("aria-invalid", "true");
+  // Esc puts the time back; Delete / Space while typing don't edit the sound
+  await start.press("Escape");
+  await expect(start).toHaveValue("0:01.000");
+  await start.click();
+  await start.press("Delete");
+  await start.press("Space");
+  d = await info(page);
+  expect(d.dirty).toBe(false);
+  expect(d.selection).toEqual([d.rate, 1.5 * d.rate]);
 });
 
 test("the audio tile opens an empty editor; Edit is off for audio mixed with images", async ({ page }) => {

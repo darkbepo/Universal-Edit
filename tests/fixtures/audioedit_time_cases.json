@@ -1,0 +1,39 @@
+{
+  "_about": "Typed selection times in the audio editor: ops.parse_time / parseTime (null = refused) and ops.edited_selection / editedSelection (rate 1000, 10 000 frames).",
+  "parse": [
+    ["65.25", 65.25],
+    ["1:05.250", 65.25],
+    ["1:05,5", 65.5],
+    [" 0:07 ", 7],
+    ["1:02:03", 3723],
+    ["1:02:03.5", 3723.5],
+    ["90", 90],
+    ["125:00", 7500],
+    [".5", 0.5],
+    ["3.", 3],
+    ["0", 0],
+    ["", null],
+    ["abc", null],
+    ["1:75", null],
+    ["1:60:00", null],
+    ["1:2:3:4", null],
+    ["-5", null],
+    ["1e3", null],
+    ["1:", null],
+    [":30", null],
+    ["1.2.3", null],
+    ["٣", null]
+  ],
+  "edit": [
+    {"name": "start moves, end stays", "which": "start", "seconds": 2, "selection": [1000, 5000], "want": [2000, 5000]},
+    {"name": "start past the end pushes the end", "which": "start", "seconds": 7, "selection": [1000, 5000], "want": [7000, 7000]},
+    {"name": "end moves, start stays", "which": "end", "seconds": 8.5, "selection": [1000, 5000], "want": [1000, 8500]},
+    {"name": "end before the start pulls the start", "which": "end", "seconds": 0.5, "selection": [1000, 5000], "want": [500, 500]},
+    {"name": "length keeps the start", "which": "length", "seconds": 3, "selection": [1000, 5000], "want": [1000, 4000]},
+    {"name": "length from a cursor makes a selection", "which": "length", "seconds": 2, "selection": [4000, 4000], "want": [4000, 6000]},
+    {"name": "past the end of the sound is limited", "which": "length", "seconds": 60, "selection": [1000, 5000], "want": [1000, 10000]},
+    {"name": "end past the sound is limited", "which": "end", "seconds": 99, "selection": [1000, 5000], "want": [1000, 10000]},
+    {"name": "start past the sound is limited", "which": "start", "seconds": 99, "selection": [1000, 5000], "want": [10000, 10000]},
+    {"name": "half a frame rounds up", "which": "start", "seconds": 1.0005, "selection": [0, 5000], "want": [1001, 5000]}
+  ]
+}

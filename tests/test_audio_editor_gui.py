@@ -66,7 +66,8 @@ def test_edit_joins_files_and_edits_with_the_mouse(window, qtbot, media, mono):
     drag(qtbot, view, w // 4, w // 2)
     a, b = doc.selection
     assert 0.9 < (b - a) / doc.rate < 1.1
-    assert page.edit_buttons["cut"].isEnabled() and "Length" in page.selection_label.text()
+    assert page.edit_buttons["cut"].isEnabled()
+    assert page.time_boxes["length"].text().startswith("0:01")
     page.edit_buttons["cut"].click()
     assert 2.9 < doc.duration < 3.1 and doc.dirty and page.undo_button.isEnabled()
     assert "Unsaved changes" in page.info_label.text()
@@ -84,6 +85,48 @@ def test_edit_joins_files_and_edits_with_the_mouse(window, qtbot, media, mono):
     page.run("fit")
     view.grab()
     assert view.fpp == pytest.approx(doc.frames / view.width())
+
+
+def test_typing_selection_times(window, qtbot, media):
+    from PySide6.QtCore import Qt
+
+    page = open_in_editor(window, qtbot, [media / "tone.wav"])
+    doc, boxes = page.doc, page.time_boxes
+    assert page.times.isVisible() and boxes["start"].text() == "0:00.000"
+    boxes["end"].setFocus()
+    boxes["end"].selectAll()
+    qtbot.keyClicks(boxes["end"], "2.5")
+    qtbot.keyClick(boxes["end"], Qt.Key.Key_Return)
+    assert doc.selection == (0, int(2.5 * doc.rate))
+    assert boxes["length"].text() == "0:02.500"
+    assert page.type_time("start", "0:01")
+    assert doc.selection == (doc.rate, int(2.5 * doc.rate))
+    assert page.type_time("length", "0,5")
+    assert doc.selection == (doc.rate, int(1.5 * doc.rate))
+    # a start past the end moves the end along; a time past the sound stops at its end
+    assert page.type_time("start", "2")
+    assert doc.selection == (2 * doc.rate, 2 * doc.rate)
+    assert page.type_time("end", "9:00")
+    assert doc.selection == (2 * doc.rate, doc.frames)
+    # nonsense: a plain hint, the box marked, the selection kept
+    before = doc.selection
+    assert not page.type_time("start", "abc")
+    assert doc.selection == before and boxes["start"].property("invalid")
+    assert "1:05.250" in page.message.text()
+    # Esc in a box puts the time back and doesn't deselect
+    box = boxes["start"]
+    box.setFocus()
+    box.selectAll()
+    qtbot.keyClicks(box, "1")
+    qtbot.keyClick(box, Qt.Key.Key_Escape)
+    assert doc.selection == before and box.text() == "0:02.000"
+    assert not box.property("invalid")
+    # Delete while typing edits the box, not the sound
+    frames = doc.frames
+    box.setFocus()
+    qtbot.keyClick(box, Qt.Key.Key_Delete)
+    qtbot.keyClick(box, Qt.Key.Key_Space)
+    assert doc.frames == frames and not doc.dirty
 
 
 def test_effects_and_save_as(window, qtbot, media, tmp_path, monkeypatch):

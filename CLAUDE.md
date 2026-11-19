@@ -1020,8 +1020,13 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       writes them after encoding (`io._write_tags`); web reads with Mediabunny on the page and
       runs the hidden `music-tags` converter after the save (no OGG / Opus cover there). A tag
       problem saves the sound without tags. WAV / AIFF / WMA / AC-3 get none.
-      Not yet: several tracks / mixing, recording, spectrogram, noise reduction, speed / pitch,
-      editable selection times.
+      Typed selection times: Start / End / Length boxes in the status line (desktop
+      `gui/audioeditor/time_box.TimeBox`, web `input.audio-time`; Enter or leaving applies, Esc
+      reverts, page shortcuts don't fire while typing). `ops.parse_time` / `parseTime` (m:ss.fff,
+      h:mm:ss, plain seconds, comma decimals) + `edited_selection` / `editedSelection` (a start
+      past the end moves the end, an end before the start moves the start, clamped to the sound);
+      shared cases `tests/fixtures/audioedit_time_cases.json`.
+      Not yet: several tracks / mixing, recording, spectrogram, noise reduction, speed / pitch.
    14. Properties mode (both apps), step 1 = read-only "About this file" — spec
       `docs/superpowers/specs/2026-11-12-properties-design.md`. Model `properties/` (desktop, no
       Qt) ↔ `web/src/properties/`: each app reads a file with its own engines into the same plain
@@ -1385,4 +1390,7 @@ line here, exactly like the converter features.
 - Code signing for the .exe (owner's decision; SignPath.io is free for open source) — the real fix
   for antivirus false positives.
 - Item 12 ideas: presets, batch queue, PWA/offline.
+- Ghostscript one-click install (backlog, owner Nov 2026): the silent NSIS setup writes nothing and
+  never exits on windows-latest (see "How every change is verified" item 4). EPS / PS work with a
+  manually installed Ghostscript until then.
 

@@ -264,3 +264,26 @@ def test_a_tag_problem_still_saves_the_sound(media, tmp_path, monkeypatch):
     doc.tags = CarriedTags({"title": "Song"})
     out = save_audio(doc, tmp_path / "out.mp3", "mp3", bitrate=128)
     assert abs(open_audio([out]).duration - doc.duration) < 0.1
+
+
+# ------------------------------------------------------------------ typed times
+def _time_cases() -> dict:
+    import json
+    from pathlib import Path
+
+    path = Path(__file__).parent / "fixtures" / "audioedit_time_cases.json"
+    return json.loads(path.read_text("utf-8"))
+
+
+def test_parse_time_cases():
+    for text, want in _time_cases()["parse"]:
+        got = ops.parse_time(text)
+        assert (got is None) == (want is None), text
+        if want is not None:
+            assert got == pytest.approx(want), text
+
+
+def test_edited_selection_cases():
+    for c in _time_cases()["edit"]:
+        got = ops.edited_selection(c["which"], c["seconds"], tuple(c["selection"]), 1000, 10_000)
+        assert list(got) == c["want"], c["name"]

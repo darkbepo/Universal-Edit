@@ -38,6 +38,7 @@ from umc.converters.audio import LOSSY_EXTS
 from umc.core.detect import AUDIO_EXTS, MediaFamily, detect
 from umc.core.errors import ConversionCancelled, ConversionError
 from umc.gui.audioeditor.player import DEFAULT_VOLUME, Player
+from umc.gui.audioeditor.time_box import TimeBox
 from umc.gui.audioeditor.wave_view import WaveView
 from umc.gui.widgets.flow_layout import FlowLayout
 
@@ -200,11 +201,21 @@ class AudioEditorPage(QWidget):
         status = QFrame(objectName="EditorStatus")
         sl = QHBoxLayout(status)
         sl.setContentsMargins(14, 6, 14, 6)
-        self.selection_label = QLabel(objectName="Muted")
+        self.times = QWidget()
+        tl = QHBoxLayout(self.times)
+        tl.setContentsMargins(0, 0, 0, 0)
+        tl.setSpacing(6)
+        self.time_boxes: dict[str, TimeBox] = {}
+        for key, name in (("start", "Start"), ("end", "End"), ("length", "Length")):
+            tl.addWidget(QLabel(name, objectName="Muted"))
+            box = TimeBox(name)
+            box.committed.connect(lambda text, k=key: self.type_time(k, text))
+            tl.addWidget(box)
+            self.time_boxes[key] = box
         self.message = QLabel(objectName="Muted")
         self.message.setWordWrap(True)
         self.info_label = QLabel(objectName="Muted")
-        sl.addWidget(self.selection_label)
+        sl.addWidget(self.times)
         sl.addSpacing(16)
         sl.addWidget(self.message, 1)
         sl.addWidget(self.info_label)
@@ -375,19 +386,17 @@ class AudioEditorPage(QWidget):
         self.save_button.setEnabled(ready and doc.frames > 0)
         self.save_as_button.setEnabled(ready and doc.frames > 0)
         self.open_button.setEnabled(not self.busy)
+        self.times.setVisible(doc is not None)
+        for box in self.time_boxes.values():
+            box.setEnabled(ready)
         if doc is None:
-            self.selection_label.setText("")
             self.info_label.setText("")
             self.title.setText("")
             return
         a, b = doc.selection
         t = ops.format_time
-        if b > a:
-            self.selection_label.setText(
-                f"Selection {t(a / doc.rate)} – {t(b / doc.rate)} · Length {t((b - a) / doc.rate)}"
-            )
-        else:
-            self.selection_label.setText(f"Cursor {t(a / doc.rate)}")
+        for key, frames in (("start", a), ("end", b), ("length", b - a)):
+            self.time_boxes[key].show_time(t(frames / doc.rate))
         layout = {1: "Mono", 2: "Stereo"}.get(doc.channels, f"{doc.channels} channels")
         info = f"{doc.rate / 1000:g} kHz · {layout} · {t(doc.duration)}"
         if doc.dirty:
@@ -487,6 +496,27 @@ class AudioEditorPage(QWidget):
             self.stop()
             if self.doc.redo():
                 self._after_edit()
+
+    def type_time(self, which: str, text: str) -> bool:
+        """A time typed into the Start / End / Length box. False (and a hint) if it isn't one."""
+        box = self.time_boxes[which]
+        seconds = ops.parse_time(text)
+        if seconds is None:
+            box.set_error(True)
+            self.show_message(ops.TIME_HINT, error=True)
+            return False
+        box.set_error(False)
+        self.show_message("")
+        if self.doc is None or self.busy:
+            return False
+        self.stop()
+        doc = self.doc
+        sel = ops.edited_selection(which, seconds, doc.selection, doc.rate, doc.frames)
+        doc.set_selection(*sel)
+        self.view.ensure_visible(doc.selection[0])
+        self.view.update()
+        self.view.selection_changed.emit()
+        return True
 
     def go_to(self, frame: int) -> None:
         if self.doc is None:

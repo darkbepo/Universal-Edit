@@ -637,6 +637,14 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 .audio-scroll:disabled { opacity: .4; }
 .audio-editor .editor-status .msg { flex: 1; }
 .audio-selection, .audio-info { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.audio-selection { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+.audio-selection[hidden] { display: none; }
+.audio-selection label { display: inline-flex; gap: 6px; align-items: center; }
+.audio-time { width: 10ch; padding: 2px 6px; text-align: right; font: inherit; font-variant-numeric: tabular-nums;
+  color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; }
+.audio-time:focus { border-color: var(--accent); outline: none; }
+.audio-time.invalid { border-color: var(--danger); }
+@media (max-width: 560px) { .audio-selection { gap: 6px; } .audio-time { width: 8.5ch; padding: 2px 4px; } }
 @media (max-width: 700px) { .audio-editor .editor-status { flex-wrap: wrap; } }
 @media (max-width: 900px) {
   /* the image editor's one-column rows don't fit here: the sound view takes what is left */

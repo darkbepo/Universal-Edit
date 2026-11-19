@@ -5,6 +5,7 @@ Port: web/src/audioedit/ops.ts (tests use the same cases)."""
 from __future__ import annotations
 
 import math
+import re
 
 import numpy as np
 
@@ -68,6 +69,46 @@ def fit_channels(x: np.ndarray, channels: int) -> np.ndarray:
 
 def join(parts: list[np.ndarray]) -> np.ndarray:
     return np.ascontiguousarray(np.concatenate(parts, axis=1), dtype=np.float32)
+
+
+_SECONDS = re.compile(r"\d+(?:[.,]\d*)?|[.,]\d+", re.ASCII)
+_WHOLE = re.compile(r"\d+", re.ASCII)
+TIME_HINT = "Type a time like 1:05.250 or 65.25."
+
+
+def parse_time(text: str) -> float | None:
+    """Seconds from typed text: 65.25, 1:05.25, 1:02:03 (a comma works as the decimal mark).
+    None for anything else (also 1:75 — minutes and seconds after the first part stay < 60)."""
+    parts = text.strip().split(":")
+    if not 1 <= len(parts) <= 3 or not _SECONDS.fullmatch(parts[-1]):
+        return None
+    if not all(_WHOLE.fullmatch(p) for p in parts[:-1]):
+        return None
+    seconds = float(parts[-1].replace(",", "."))
+    whole = [int(p) for p in parts[:-1]]
+    if len(parts) > 1 and (seconds >= 60 or any(n >= 60 for n in whole[1:])):
+        return None
+    total = 0.0
+    for n in whole:
+        total = (total + n) * 60
+    return total + seconds
+
+
+def edited_selection(
+    which: str, seconds: float, selection: tuple[int, int], rate: int, frames: int
+) -> tuple[int, int]:
+    """The selection after typing ``seconds`` into the Start, End or Length box.
+    Start keeps the end (pushing it along when passed), End keeps the start (likewise),
+    Length keeps the start; everything stays inside the sound."""
+    n = max(0, min(frames, math.floor(seconds * rate + 0.5)))
+    a, b = selection
+    if which == "start":
+        return n, max(b, n)
+    if which == "end":
+        return min(a, n), n
+    if which == "length":
+        return a, max(a, min(frames, a + n))
+    raise ValueError(which)
 
 
 def format_time(seconds: float) -> str:
