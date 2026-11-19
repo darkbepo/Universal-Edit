@@ -6,6 +6,7 @@ by LibreDWG's ``dwg2dxf`` (tools/libredwg.py, one-click install).
 
 from __future__ import annotations
 
+import contextlib
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -96,6 +97,43 @@ class CadOptions:
     dxf_version: str = opt("R2018", "DXF version", choices=DXF_VERSIONS, targets=("dxf",))
 
 
+def fix_zero_handles(src: Path, dest: Path) -> bool:
+    """Copy an ASCII DXF to ``dest`` giving every entity with handle 0 a fresh one.
+
+    Handles are group codes 5 / 105 (hex); new ones start above the highest in the file, and
+    ``$HANDSEED`` is raised past them. False (nothing written) when there was nothing to fix.
+    """
+    data = src.read_bytes()
+    if data.startswith(b"AutoCAD Binary DXF"):
+        return False
+    lines = data.splitlines(keepends=True)
+    top, zeros, seed_at = 0, [], None
+    for i in range(0, len(lines) - 1, 2):
+        code, value = lines[i].strip(), lines[i + 1].strip()
+        if code in (b"5", b"105"):
+            if value == b"0":
+                zeros.append(i + 1)
+            else:
+                with contextlib.suppress(ValueError):
+                    top = max(top, int(value, 16))
+        elif code == b"9" and value == b"$HANDSEED" and i + 3 < len(lines):
+            seed_at = i + 3
+    if not zeros:
+        return False
+
+    def put(index: int, number: int) -> None:
+        old = lines[index]
+        ending = old[len(old.rstrip(b"\r\n")) :]
+        lines[index] = f"{number:X}".encode() + ending
+
+    for n, index in enumerate(zeros, start=top + 1):
+        put(index, n)
+    if seed_at is not None:
+        put(seed_at, top + len(zeros) + 1)
+    dest.write_bytes(b"".join(lines))
+    return True
+
+
 def _load(f: DetectedFile, tmp: Path, job: ConversionJob):
     import ezdxf
     from ezdxf import recover
@@ -104,8 +142,15 @@ def _load(f: DetectedFile, tmp: Path, job: ConversionJob):
     if f.ext == "dwg":
         src = libredwg.dwg_to_dxf(f.path, tmp / f"{f.path.stem}.dxf", cancel_event=job.cancel_event)
     try:
-        doc, auditor = recover.readfile(src)  # repairs the common faults of real-world files
-    except (OSError, ezdxf.DXFStructureError) as exc:
+        try:
+            doc, auditor = recover.readfile(src)  # repairs the common faults of real-world files
+        except ValueError as exc:
+            # LibreDWG's dwg2dxf (and some other programs) write handle "0", which ezdxf refuses
+            fixed = tmp / f"{f.path.stem} (fixed handles).dxf"
+            if "handle" not in str(exc).lower() or not fix_zero_handles(Path(src), fixed):
+                raise
+            doc, auditor = recover.readfile(fixed)
+    except (OSError, ValueError, ezdxf.DXFError) as exc:
         raise ConversionError(
             f"Couldn't read “{f.name}”. Is it a valid {f.ext.upper()} drawing?", details=repr(exc)
         ) from exc

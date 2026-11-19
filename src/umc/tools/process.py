@@ -60,8 +60,12 @@ def run(
     timeout: float | None = None,
     error_message: str = "The conversion failed.",
     cwd: str | Path | None = None,
+    finished_early: Callable[[], bool] | None = None,
 ) -> str:
     """Run ``cmd``; stream stdout lines to ``on_stdout_line``; honour cancellation.
+
+    ``finished_early`` (checked about once a second) can end a program whose work is done but
+    which doesn't exit (an installer that hangs at the end): it is stopped and the run succeeds.
 
     ``cmd`` may be a string on Windows for programs that parse their own command line
     (msiexec). Returns captured stderr. Raises :class:`ConversionError` on a non-zero exit code.
@@ -106,6 +110,7 @@ def run(
         t.start()
 
     started = time.monotonic()
+    next_check = started + 1.0
     try:
         while proc.poll() is None:
             if cancel_event is not None and cancel_event.is_set():
@@ -114,6 +119,13 @@ def run(
             if timeout is not None and time.monotonic() - started > timeout:
                 _kill(proc)
                 raise ConversionError(f"{error_message} (it took too long and was stopped)")
+            if finished_early is not None and time.monotonic() >= next_check:
+                next_check = time.monotonic() + 1.0
+                if finished_early():
+                    log.warning("work is done but the program didn't exit: stopping it")
+                    _kill(proc)
+                    proc.wait()
+                    return "\n".join(stderr_tail)
             time.sleep(0.1)
     finally:
         for t in threads:

@@ -24,6 +24,7 @@ import shutil
 import sys
 import tempfile
 import threading
+import time
 import urllib.request
 import zipfile
 from collections.abc import Callable
@@ -356,6 +357,44 @@ def pick_ghostscript_asset(release: dict) -> tuple[str, str, str | None]:
     )
 
 
+class InstallSettled:
+    """True once an NSIS install into ``folder`` looks complete: ``bin/gswin64c.exe`` and an
+    uninstaller exist and no file has changed for ``quiet`` seconds.
+
+    Ghostscript's silent installer sometimes copies everything and then never exits (seen on
+    windows-latest); with this the app stops waiting for it.
+    """
+
+    def __init__(self, folder: Path, quiet: float = 15.0, clock=time.monotonic) -> None:
+        self.folder, self.quiet, self.clock = folder, quiet, clock
+        self._last: tuple[int, int, float] | None = None
+        self._since = 0.0
+
+    def _snapshot(self) -> tuple[int, int, float] | None:
+        if not (self.folder / "bin" / "gswin64c.exe").is_file():
+            return None
+        if not any(self.folder.glob("unins*.exe")):
+            return None
+        count = size = 0
+        newest = 0.0
+        for p in self.folder.rglob("*"):
+            try:
+                st = p.stat()
+            except OSError:
+                return None
+            count += 1
+            size += st.st_size
+            newest = max(newest, st.st_mtime)
+        return count, size, newest
+
+    def __call__(self) -> bool:
+        now, snap = self.clock(), self._snapshot()
+        if snap is None or snap != self._last:
+            self._last, self._since = snap, now
+            return False
+        return now - self._since >= self.quiet
+
+
 def install_ghostscript(progress: Progress, cancel_event: threading.Event) -> str:
     """Silent NSIS install into the private tools folder. Windows may ask for permission once."""
     from umc.tools import ghostscript
@@ -390,6 +429,7 @@ def install_ghostscript(progress: Progress, cancel_event: threading.Event) -> st
                 cancel_event=cancel_event,
                 timeout=900,
                 error_message="Ghostscript couldn't be installed.",
+                finished_early=InstallSettled(target),
             )
         except OSError as exc:  # 740 = the installer needs admin rights: ask Windows to elevate
             if getattr(exc, "winerror", None) != 740:
@@ -401,6 +441,7 @@ def install_ghostscript(progress: Progress, cancel_event: threading.Event) -> st
                 timeout=900,
                 error_message="Ghostscript couldn't be installed. "
                 "If Windows asked for permission, please allow it.",
+                finished_early=InstallSettled(target),
             )
         found = ghostscript.gs_path()
         if found is None:

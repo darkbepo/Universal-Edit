@@ -231,3 +231,42 @@ def test_pick_libredwg_and_ghostscript_assets():
         "assets": [{"name": "libredwg-0.13.3-win64.zip", "browser_download_url": "z"}],
     }
     assert installer.pick_libredwg_asset(dwg) == ("0.13.3", "z", None)
+
+
+def test_install_settled_waits_for_a_quiet_complete_folder(tmp_path):
+    from umc.tools.installer import InstallSettled
+
+    now = [0.0]
+    settled = InstallSettled(tmp_path, quiet=15, clock=lambda: now[0])
+    assert not settled()  # nothing there yet
+    (tmp_path / "bin").mkdir()
+    (tmp_path / "bin" / "gswin64c.exe").write_bytes(b"x")
+    now[0] = 100
+    assert not settled()  # no uninstaller yet: still copying
+    (tmp_path / "uninstgs.exe").write_bytes(b"u")
+    now[0] = 101
+    assert not settled()  # first complete look starts the quiet period
+    now[0] = 110
+    assert not settled()
+    (tmp_path / "lib.ps").write_bytes(b"more")  # a file arrives: start over
+    now[0] = 112
+    assert not settled()
+    now[0] = 126
+    assert not settled()
+    now[0] = 127.5
+    assert settled()
+
+
+def test_run_stops_a_program_whose_work_is_done(tmp_path):
+    import sys
+    import time
+
+    from umc.tools import process
+
+    started = time.monotonic()
+    process.run(
+        [sys.executable, "-c", "import time; time.sleep(60)"],
+        timeout=30,
+        finished_early=lambda: time.monotonic() - started > 1.5,
+    )
+    assert time.monotonic() - started < 10

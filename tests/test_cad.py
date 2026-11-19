@@ -83,3 +83,40 @@ def test_dwg_without_libredwg_asks_to_install(tmp_path, monkeypatch):
     with pytest.raises(ToolMissingError) as info:
         convert([dwg], "cad:pdf", tmp_path / "o")
     assert info.value.tool == "LibreDWG"
+
+
+def _zero_handles(path: Path) -> None:
+    """Give every ENDBLK handle 0, like LibreDWG's dwg2dxf does."""
+    import re
+
+    text = path.read_text()
+    text, n = re.subn(r"(ENDBLK\n  5\n)[0-9A-F]+\n", r"\g<1>0\n", text)
+    assert n > 1
+    path.write_text(text)
+
+
+def test_reads_dxf_with_zero_handles(plan_dxf, tmp_path):
+    src = tmp_path / "zero.dxf"
+    src.write_bytes(plan_dxf.read_bytes())
+    _zero_handles(src)
+    [png] = convert([src], "cad:png", tmp_path / "o", dpi=50)
+    assert Image.open(png).size[0] > 0
+    [out] = convert([src], "dxf", tmp_path / "d")
+    doc = ezdxf.readfile(out)  # the saved copy has proper handles
+    assert len(doc.modelspace()) == len(ezdxf.readfile(plan_dxf).modelspace())
+
+
+def test_fix_zero_handles_numbers_above_the_highest(tmp_path):
+    from umc.converters.cad import fix_zero_handles
+
+    src, dest = tmp_path / "a.dxf", tmp_path / "b.dxf"
+    src.write_bytes(
+        b"  0\r\nSECTION\r\n  2\r\nHEADER\r\n  9\r\n$HANDSEED\r\n  5\r\n20\r\n  0\r\nENDSEC\r\n"
+        b"  0\r\nENDBLK\r\n  5\r\n0\r\n  0\r\nLINE\r\n  5\r\n1F\r\n  0\r\nENDBLK\r\n  5\r\n0\r\n"
+    )
+    assert fix_zero_handles(src, dest)
+    out = dest.read_bytes().split(b"\r\n")
+    assert out[out.index(b"$HANDSEED") + 2] == b"23"
+    handles = [out[i + 1] for i, v in enumerate(out) if v == b"  5"]
+    assert handles == [b"23", b"21", b"1F", b"22"]
+    assert not fix_zero_handles(dest, tmp_path / "c.dxf")
