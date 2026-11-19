@@ -4,6 +4,11 @@ name: Test one-click installers
 # then converts documents with them. Slow (~350 MB download), so it runs on demand.
 on:
   workflow_dispatch:
+    inputs:
+      only:
+        description: "Run only the tests whose names match (pytest -k), e.g. ghostscript"
+        required: false
+        default: ""
 
 env:
   PYTHONUTF8: "1"
@@ -29,7 +34,11 @@ jobs:
         env:
           UMC_LIVE_INSTALL: "1"
           UMC_TOOLS_DIR: ${{ runner.temp }}\umc-tools
-        run: pytest -s -v tests/test_installer_live.py
+          ONLY: ${{ inputs.only }}
+        shell: pwsh
+        run: |
+          if ($env:ONLY) { pytest -s -v tests/test_installer_live.py -k $env:ONLY }
+          else { pytest -s -v tests/test_installer_live.py }
 
       - name: Upload installer logs
         if: always()

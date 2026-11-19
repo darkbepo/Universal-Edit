@@ -348,3 +348,11 @@ def test_install_ghostscript_refuses_when_the_old_copy_stays(tools, monkeypatch)
     monkeypatch.setattr(installer.shutil, "rmtree", lambda *a, **k: None)
     with pytest.raises(installer.InstallError, match="old Ghostscript"):
         installer.install_ghostscript(lambda f, m: None, threading.Event())
+
+
+def test_folder_report_lists_newest_files(tmp_path):
+    assert installer.folder_report(tmp_path / "nope").endswith("missing")
+    (tmp_path / "bin").mkdir()
+    (tmp_path / "bin" / "gswin64c.exe").write_bytes(b"abc")
+    report = installer.folder_report(tmp_path)
+    assert "1 files, 3 bytes" in report and "bin/gswin64c.exe (3 bytes)" in report

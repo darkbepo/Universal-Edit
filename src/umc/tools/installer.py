@@ -396,6 +396,59 @@ class InstallSettled:
         return now - self._since >= self.quiet
 
 
+def _run_ghostscript_setup(
+    exe: Path, args: str, target: Path, cancel_event: threading.Event
+) -> None:
+    """Run the NSIS installer (elevated through PowerShell if it asks for admin rights).
+    A failure's details say what the installer left in ``target`` (for the log)."""
+    try:
+        try:
+            process.run(
+                f'"{exe}" {args}',
+                cancel_event=cancel_event,
+                timeout=900,
+                error_message="Ghostscript couldn't be installed.",
+                finished_early=InstallSettled(target),
+            )
+        except OSError as exc:  # 740 = the installer needs admin rights: ask Windows to elevate
+            if getattr(exc, "winerror", None) != 740:
+                raise
+            # If this one settles early, only PowerShell is stopped: the elevated installer can't
+            # be killed from here and may linger (holding the downloaded file).
+            ps = f"Start-Process -FilePath '{exe}' -ArgumentList '{args}' -Verb RunAs -Wait"
+            process.run(
+                ["powershell", "-NoProfile", "-Command", ps],
+                cancel_event=cancel_event,
+                timeout=900,
+                error_message="Ghostscript couldn't be installed. "
+                "If Windows asked for permission, please allow it.",
+                finished_early=InstallSettled(target),
+            )
+    except ConversionCancelled:
+        raise
+    except ConversionError as exc:
+        report = folder_report(target)
+        log.error("Ghostscript setup failed; %s", report)
+        raise InstallError(str(exc), details=f"{exc.details or ''}\n{report}".strip()) from exc
+
+
+def folder_report(folder: Path, limit: int = 15) -> str:
+    """A short description of what's in ``folder`` (newest files first), for error details."""
+    if not folder.exists():
+        return f"{folder}: missing"
+    files = []
+    for p in folder.rglob("*"):
+        with contextlib.suppress(OSError):
+            if p.is_file():
+                files.append(
+                    (p.stat().st_mtime, p.relative_to(folder).as_posix(), p.stat().st_size)
+                )
+    files.sort(reverse=True)
+    lines = [f"{folder}: {len(files)} files, {sum(f[2] for f in files)} bytes"]
+    lines += [f"  {name} ({size} bytes)" for _t, name, size in files[:limit]]
+    return "\n".join(lines)
+
+
 def install_ghostscript(progress: Progress, cancel_event: threading.Event) -> str:
     """Silent NSIS install into the private tools folder. Windows may ask for permission once."""
     from umc.tools import ghostscript
@@ -429,28 +482,7 @@ def install_ghostscript(progress: Progress, cancel_event: threading.Event) -> st
             )
         # NSIS: /S = silent, /D= must be last and unquoted.
         args = f"/S /D={target}"
-        try:
-            process.run(
-                f'"{exe}" {args}',
-                cancel_event=cancel_event,
-                timeout=900,
-                error_message="Ghostscript couldn't be installed.",
-                finished_early=InstallSettled(target),
-            )
-        except OSError as exc:  # 740 = the installer needs admin rights: ask Windows to elevate
-            if getattr(exc, "winerror", None) != 740:
-                raise
-            # If this one settles early, only PowerShell is stopped: the elevated installer can't
-            # be killed from here and may linger (holding the downloaded file).
-            ps = f"Start-Process -FilePath '{exe}' -ArgumentList '{args}' -Verb RunAs -Wait"
-            process.run(
-                ["powershell", "-NoProfile", "-Command", ps],
-                cancel_event=cancel_event,
-                timeout=900,
-                error_message="Ghostscript couldn't be installed. "
-                "If Windows asked for permission, please allow it.",
-                finished_early=InstallSettled(target),
-            )
+        _run_ghostscript_setup(exe, args, target, cancel_event)
         found = ghostscript.gs_path()
         if found is None:
             raise InstallError("Ghostscript was installed but gswin64c.exe wasn't found.")
