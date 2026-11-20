@@ -87,6 +87,17 @@ describe("tokens", () => {
     }
   });
 
+  it("every clip colour of theme.py is a web token", () => {
+    const py = read("../../src/umc/gui/theme.py");
+    for (const [name, blocks] of [["LIGHT", [":root"]], ["DARK", [':root[data-theme="dark"]', ':root:not([data-theme="light"])']]] as const) {
+      const body = py.slice(py.indexOf(`${name} = {`), py.indexOf("}", py.indexOf(`${name} = {`)));
+      for (const b of blocks) {
+        const web = block(b);
+        for (const m of body.matchAll(/"((?:clip_[a-z]+)|playhead)": "(#[0-9a-f]+)"/g)) expect(web[m[1].replace(/_/g, "-")], m[1]).toBe(m[2]);
+      }
+    }
+  });
+
   it("index.html applies the same key before the first paint", () => {
     const html = read("../index.html");
     expect(html).toContain(`localStorage.getItem("${STORAGE_KEY}")`);

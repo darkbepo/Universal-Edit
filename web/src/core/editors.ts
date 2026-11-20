@@ -23,6 +23,11 @@ export const EDITORS: EditorInfo[] = [
   { id: "data", title: "Data editor", blurb: "Edit CSV, JSON, XML and spreadsheets", icon: "table", available: false },
 ];
 
+/** The website's video editor is reachable only with ?e2e or ?video-editor until it is finished. */
+export const videoEditorGate = (search: string) => /[?&](e2e|video-editor)(=|&|$)/.test(search);
+/** The start-screen tile opens it only with ?video-editor (?e2e alone keeps "Coming soon"). */
+export const videoTileGate = (search: string) => /[?&]video-editor(=|&|$)/.test(search);
+
 export const COMING_SOON = "Coming soon";
 
 // Start-screen tile rows (owner, Nov 2026): as many tiles per row as fit, spread evenly over the

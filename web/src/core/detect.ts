@@ -65,6 +65,9 @@ export function canonicalExt(nameOrExt: string): string {
   return ALIASES[ext] ?? ext;
 }
 
+/** Project files of the editors (the video editor's .umcvideo). */
+export const PROJECT_EXTS = new Set(["umcvideo"]);
+
 export function familyOfExt(ext: string): Family | null {
   if (IMAGE_EXTS.has(ext)) return "image";
   if (VIDEO_EXTS.has(ext)) return "video";
@@ -76,6 +79,7 @@ export function familyOfExt(ext: string): Family | null {
   if (VECTOR_EXTS.has(ext)) return "vector";
   if (CAD_EXTS.has(ext)) return "cad";
   if (WEB_DOCUMENT_EXTS.has(ext) || DESKTOP_ONLY_DOCUMENT_EXTS.has(ext)) return "document";
+  if (PROJECT_EXTS.has(ext)) return "project";
   if (CODE_EXTS.has(ext)) return "code";
   return null;
 }

@@ -32,6 +32,11 @@
   --code-line: #f4f5fa;
   --code-match: #fff2a8;
   --code-bracket: #dfe1fb;
+  --clip-video: #5b5ef0;
+  --clip-picture: #1f9d9d;
+  --clip-audio: #1f9d61;
+  --clip-text: #d98a1f;
+  --playhead: #d43c45;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
@@ -67,6 +72,11 @@
     --code-line: #1f2128;
     --code-match: #5a4b16;
     --code-bracket: #2c2e52;
+    --clip-video: #8385ff;
+    --clip-picture: #2bb0b0;
+    --clip-audio: #3ccf8e;
+    --clip-text: #e8a040;
+    --playhead: #ff6b70;
     color-scheme: dark;
   }
 }
@@ -103,6 +113,11 @@
   --code-line: #1f2128;
   --code-match: #5a4b16;
   --code-bracket: #2c2e52;
+  --clip-video: #8385ff;
+  --clip-picture: #2bb0b0;
+  --clip-audio: #3ccf8e;
+  --clip-text: #e8a040;
+  --playhead: #ff6b70;
   color-scheme: dark;
 }
 
@@ -891,3 +906,18 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 .mf-cover { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
 .mf-cover-status { flex: 1 1 10em; min-width: 0; }
 .mf-limit { margin-top: 8px; }
+
+
+/* ---------------------------------------------------------------- video editor */
+.video-editor { grid-template-rows: auto minmax(0, 1fr) auto; }
+.video-body { display: grid; grid-template-columns: 240px minmax(0, 1fr) 300px; grid-template-rows: minmax(0, 1fr) minmax(120px, 40%); min-height: 0; }
+.video-media, .video-inspector { overflow: auto; background: var(--surface); padding: 8px; }
+.video-media { border-right: 1px solid var(--border); }
+.video-inspector { border-left: 1px solid var(--border); }
+.video-preview { background: #0b0c0f; min-width: 0; }
+.video-timeline { grid-column: 1 / -1; overflow: auto; border-top: 1px solid var(--border); background: var(--surface-alt); }
+.video-editor .editor-status .msg { flex: 1; }
+@media (max-width: 900px) {
+  .video-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(160px, 1fr) minmax(120px, 1fr) auto auto; }
+  .video-preview { order: 1; } .video-timeline { order: 2; } .video-media { order: 3; border-right: 0; } .video-inspector { order: 4; border-left: 0; }
+}

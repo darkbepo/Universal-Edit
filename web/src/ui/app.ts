@@ -11,6 +11,7 @@ import { MAX_FILE_BYTES, WEB_EDITABLE_DOCUMENT_EXTS } from "../doceditor/types";
 import codeLanguages from "../codeedit/languages.json";
 import { ConversionClient, JobCancelled } from "../worker/client";
 import { editorHub, newPictureDialog } from "./hub";
+import { videoEditorGate, videoTileGate } from "../core/editors";
 import { groupIcon, icon } from "./icons";
 import { Orbit } from "./orbit";
 import { PropertiesPane } from "./properties";
@@ -18,7 +19,7 @@ import { fmtSize, Queue } from "./queue";
 import { SettingsForm } from "./settings";
 import { themeButton } from "./theme";
 
-const NOUN: Record<string, [string, string]> = { image: ["image", "images"], video: ["video", "videos"], audio: ["audio file", "audio files"], document: ["document", "documents"], model: ["3D model", "3D models"], archive: ["archive", "archives"], subtitle: ["subtitle file", "subtitle files"], font: ["font", "fonts"], vector: ["vector graphic", "vector graphics"], cad: ["CAD drawing", "CAD drawings"], code: ["code file", "code files"] };
+const NOUN: Record<string, [string, string]> = { image: ["image", "images"], video: ["video", "videos"], audio: ["audio file", "audio files"], document: ["document", "documents"], model: ["3D model", "3D models"], archive: ["archive", "archives"], subtitle: ["subtitle file", "subtitle files"], font: ["font", "fonts"], vector: ["vector graphic", "vector graphics"], cad: ["CAD drawing", "CAD drawings"], code: ["code file", "code files"], project: ["project file", "project files"] };
 
 const h = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> & { class?: string } = {}, ...children: (Node | string)[]) => {
   const el = document.createElement(tag);
@@ -63,6 +64,7 @@ export function mountApp(root: HTMLElement): void {
   let editor: import("./editor/page").EditorPage | null = null;
   let viewer: import("./editor3d/page").ViewerPage | null = null;
   let audio: import("./audioeditor/page").AudioEditorPage | null = null;
+  let video: import("./videoeditor/page").VideoEditorPage | null = null;
   let docEditor: import("./doceditor/page").DocEditorPage | null = null;
   let codeEditor: import("./codeeditor/page").CodeEditorPage | null = null;
   let subEditor: import("./subtitleeditor/page").SubtitleEditorPage | null = null;
@@ -99,7 +101,7 @@ export function mountApp(root: HTMLElement): void {
   const filesHint = h("div", { class: "hint" }, "Drag to reorder · × removes");
   const filesCard = h("section", { class: "card queue-card", hidden: true, ariaLabel: "Queue" },
     h("div", { class: "files-head" }, filesLabel, clearBtn), queue.el, filesHint);
-  const hub = editorHub((id) => void openEditor(id)); // editor tiles, only while no files are added
+  const hub = editorHub((id) => void openEditor(id), (id) => (id === "video" && videoTileGate(location.search) ? true : undefined)); // editor tiles, only while no files are added
   const left = h("div", { class: "left" }, drop, hub, note, resultsCard, filesCard);
 
   // ---------------------------------------------------------------- right: Convert to | Settings
@@ -229,7 +231,7 @@ export function mountApp(root: HTMLElement): void {
   const appMain = root.querySelector("main.app") as HTMLElement;
   // A lone .zip is a document when it is a Markdown ZIP the website saved (checked once per file).
   const markdownZips = new WeakMap<InputFile, boolean>();
-  type EditKind = "image" | "model" | "audio" | "document" | "code" | "subtitle";
+  type EditKind = "image" | "model" | "audio" | "document" | "code" | "subtitle" | "video";
   // files the code editor opens (the language table's extensions; "" = text with none)
   const CODE_EDITABLE_EXTS = new Set(["", ...codeLanguages.languages.flatMap((l) => l.exts)]);
   /** Every editor that can open the files, the one Edit opens first (the desktop's
@@ -244,6 +246,10 @@ export function mountApp(root: HTMLElement): void {
     const videos = files.filter((f) => f.family === "video");
     if (subs.length === 1 && videos.length <= 1 && subs.length + videos.length === files.length) {
       return files.length === 1 && CODE_EDITABLE_EXTS.has(subs[0].ext) ? ["subtitle", "code"] : ["subtitle"];
+    }
+    if (videoEditorGate(location.search)) {
+      if (files.length === 1 && files[0].family === "project") return ["video"];
+      if (files.some((f) => f.family === "video") && files.every((f) => f.family === "video" || f.family === "image" || f.family === "audio")) return ["video"];
     }
     if (files.length === 1) {
       const f = files[0];
@@ -276,7 +282,7 @@ export function mountApp(root: HTMLElement): void {
     editMore.hidden = editChoices().length < 2;
     editMenu.hidden = true;
     const kind = editKind();
-    editMode.title = kind === "subtitle" ? "Open the subtitles in the subtitle editor (with the video, if added)" : kind === "code" ? "Open the files in the code editor" : kind === "document" ? "Open the document in the document editor" : kind === "model" ? "Open the 3D models in the 3D viewer" : kind === "image" ? "Open the images in the image editor (each image becomes a layer)" : kind === "audio" ? "Open the sound in the audio editor (several files are joined)" : "Add images, audio, code, subtitles, one text document, or 3D models to edit them";
+    editMode.title = kind === "video" ? "Open the files in the video editor" : kind === "subtitle" ? "Open the subtitles in the subtitle editor (with the video, if added)" : kind === "code" ? "Open the files in the code editor" : kind === "document" ? "Open the document in the document editor" : kind === "model" ? "Open the 3D models in the 3D viewer" : kind === "image" ? "Open the images in the image editor (each image becomes a layer)" : kind === "audio" ? "Open the sound in the audio editor (several files are joined)" : "Add images, audio, code, subtitles, one text document, or 3D models to edit them";
   }
   const canEdit = () => editKind() !== null;
   function showConverter() {
@@ -289,6 +295,7 @@ export function mountApp(root: HTMLElement): void {
     editor?.hide();
     viewer?.hide();
     audio?.hide();
+    video?.hide();
     docEditor?.hide();
     codeEditor?.hide();
     subEditor?.hide();
@@ -324,6 +331,7 @@ export function mountApp(root: HTMLElement): void {
       if (editor && !editor.el.hidden && !editor.maybeLeave()) return;
       if (docEditor && !docEditor.el.hidden && !docEditor.maybeLeave()) return;
       if (audio && !audio.el.hidden && !audio.maybeLeave()) return;
+      if (video && !video.el.hidden && !video.maybeLeave()) return;
       if (codeEditor && !codeEditor.el.hidden && !codeEditor.maybeLeave()) return;
       if (subEditor && !subEditor.el.hidden && !subEditor.maybeLeave()) return;
       showConverter();
@@ -338,6 +346,9 @@ export function mountApp(root: HTMLElement): void {
   let audioP: Promise<import("./audioeditor/page").AudioEditorPage> | null = null;
   const ensureAudio = () => (audioP ??= import("./audioeditor/page").then(({ mountAudioEditor }) =>
     (audio = mountAudioEditor(root, { client, onBack: showConverter }))));
+  let videoP: Promise<import("./videoeditor/page").VideoEditorPage> | null = null;
+  const ensureVideo = () => (videoP ??= import("./videoeditor/page").then(({ mountVideoEditor }) =>
+    (video = mountVideoEditor(root, { client, onBack: showConverter }))));
   let docEditorP: Promise<import("./doceditor/page").DocEditorPage> | null = null;
   const ensureDocEditor = () => (docEditorP ??= import("./doceditor/page").then(({ mountDocEditor }) =>
     (docEditor = mountDocEditor(root, { client, onBack: showConverter }))));
@@ -463,6 +474,19 @@ export function mountApp(root: HTMLElement): void {
       }
       return;
     }
+    if (kind === "video") {
+      const v = await ensureVideo();
+      showPage(v);
+      editMode.disabled = true;
+      const ok = await v.open(files);
+      editMode.disabled = !canEdit();
+      if (!ok) {
+        showConverter();
+        note.textContent = v.lastError();
+        note.hidden = false;
+      }
+      return;
+    }
     if (kind === "audio") {
       const a = await ensureAudio();
       showPage(a); // shows "Opening…" while the worker decodes
@@ -494,6 +518,12 @@ export function mountApp(root: HTMLElement): void {
     try {
       if (id === "model") {
         const v = await ensureViewer();
+        v.openEmpty();
+        showPage(v);
+        return;
+      }
+      if (id === "video") {
+        const v = await ensureVideo();
         v.openEmpty();
         showPage(v);
         return;
@@ -587,6 +617,7 @@ export function mountApp(root: HTMLElement): void {
   convertMode.addEventListener("click", () => {
     if (editing && editor && !editor.el.hidden && !editor.maybeLeave()) return;
     if (editing && audio && !audio.el.hidden && !audio.maybeLeave()) return;
+    if (editing && video && !video.el.hidden && !video.maybeLeave()) return;
     if (editing && docEditor && !docEditor.el.hidden && !docEditor.maybeLeave()) return;
     if (editing && subEditor && !subEditor.el.hidden && !subEditor.maybeLeave()) return;
     showConverter();
