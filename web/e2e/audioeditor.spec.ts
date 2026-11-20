@@ -371,8 +371,50 @@ test("tracks: add a file as a track, switch, set volume / pan, save the mix", as
   expect((await trackInfo(page)).dirty).toBe(false);
   // remove a track (asks first: it has sound)
   page.once("dialog", (d) => void d.accept());
-  await page.getByRole("button", { name: "Remove beep" }).click();
+  await page.getByRole("button", { name: "More for beep" }).click();
+  await page.getByRole("menuitem", { name: "Remove track" }).click();
   expect(await trackInfo(page)).toMatchObject({ names: ["tone"], mixing: false });
+});
+
+test("tracks line up, are renamed by double-click or the ⋯ menu, and fit a phone", async ({ page }) => {
+  await openEditor(page, [fx("tone.wav")]);
+  await page.evaluate(() => {
+    const a = window.__audio as unknown as { renameTrack(i: number, n: string): boolean };
+    a.renameTrack(0, "A very long track name that would never fit in the name column");
+  });
+  await page.getByRole("button", { name: "+ Empty track" }).click();
+  const rows = page.locator(".audio-track");
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(1)).toHaveClass(/active/);
+  // the same columns in every row, however long the name
+  const lefts = (sel: string) => page.locator(`.audio-track ${sel}`).evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().left)));
+  for (const sel of [".audio-track-toggle", ".audio-track-gain", ".audio-track-pan", ".audio-track-more"]) {
+    const xs = await lefts(sel);
+    expect(new Set(sel === ".audio-track-toggle" ? [xs[0], xs[2]] : xs).size).toBe(1);
+  }
+  const first = rows.nth(0).locator(".audio-track-name");
+  expect(await first.evaluate((e) => e.scrollWidth > e.clientWidth)).toBe(true); // cut with "…"
+  // switching keeps the rows, so a double-click on a name renames it
+  await first.dblclick();
+  await expect(rows.nth(0)).toHaveClass(/active/);
+  const box = page.getByRole("textbox", { name: "Track name" });
+  await box.fill("  Voice   over ");
+  await box.press("Enter");
+  expect((await trackInfo(page)).names).toEqual(["Voice over", "Track 2"]);
+  await expect(page.getByLabel("Voice over volume")).toBeVisible();
+  // ⋯ → Rename…; Esc keeps the old name
+  await page.getByRole("button", { name: "More for Track 2" }).click();
+  await page.getByRole("menuitem", { name: "Rename…" }).click();
+  await page.getByRole("textbox", { name: "Track name" }).fill("Nope");
+  await page.getByRole("textbox", { name: "Track name" }).press("Escape");
+  expect((await trackInfo(page)).names).toEqual(["Voice over", "Track 2"]);
+  await expect(page.getByRole("textbox", { name: "Track name" })).toHaveCount(0);
+  // a phone: two lines per track, nothing wider than the screen
+  await page.setViewportSize({ width: 375, height: 740 });
+  const sizes = await page.locator(".audio-tracks").evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth, doc: document.documentElement.scrollWidth }));
+  expect(sizes.scroll).toBeLessThanOrEqual(sizes.client);
+  expect(sizes.doc).toBeLessThanOrEqual(375);
+  await page.locator(".audio-tracks").screenshot({ path: test.info().outputPath("tracks-375.png") });
 });
 
 test("tracks: an empty track to record into", async ({ page }) => {

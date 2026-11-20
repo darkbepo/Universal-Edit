@@ -778,3 +778,63 @@ def test_play_head_follows_only_while_on_screen(window, qtbot, media):
     assert view.start == 0  # … and it stays there
     view.follow(int(page_frames * 0.9), int(page_frames * 1.1))  # on screen, past the edge
     assert view.start > page_frames  # turns the page
+
+
+def test_tracks_line_up_rename_and_remove_from_the_menu(window, qtbot, media, mono, monkeypatch):
+    from PySide6.QtCore import Qt
+
+    page = open_in_editor(window, qtbot, [media / "tone.wav"])
+    panel = page.tracks_panel
+    page.tracks[0].name = "A very long track name that would never fit in the name column"
+    panel.set_tracks(page.tracks, 0)
+    with qtbot.waitSignal(page.opened, timeout=20000):
+        assert page.add_track_file(mono)
+    rows = panel.row_widgets
+    assert len(rows) == 2
+    page.show()
+    qtbot.waitUntil(lambda: rows[1]["gain"].isVisible())
+    # every column starts at the same place in each row, however long the name
+    for key in ("mute", "solo", "gain", "pan", "more"):
+        assert (
+            rows[0][key].mapTo(panel, rows[0][key].rect().topLeft()).x()
+            == rows[1][key].mapTo(panel, rows[1][key].rect().topLeft()).x()
+        )
+    assert rows[0]["name"].text().endswith("…") and "never fit" in rows[0]["name"].toolTip()
+    assert rows[1]["row"].property("active") and not rows[0]["row"].property("active")
+    # switching moves the highlight without rebuilding (so a double-click still lands)
+    name0 = rows[0]["name"]
+    page.select_track(0)
+    assert panel.row_widgets[0]["name"] is name0 and rows[0]["row"].property("active")
+    # double-click a name → type → Enter renames; Esc keeps the old name
+    qtbot.mouseDClick(name0, Qt.MouseButton.LeftButton)
+    edit = panel.row_widgets[0]["edit"]
+    assert panel.row_widgets[0]["name_stack"].currentWidget() is edit
+    edit.setText("  Voice   over ")
+    qtbot.keyClick(edit, Qt.Key.Key_Return)
+    assert page.tracks[0].name == "Voice over"
+    assert panel.row_widgets[0]["name"].text() == "Voice over"
+    assert panel.row_widgets[0]["gain"].accessibleName() == "Voice over volume"
+    panel.start_rename(1)
+    edit = panel.row_widgets[1]["edit"]
+    page.doc.set_selection(10, 500)
+    edit.setText("Nope")
+    edit.setFocus()
+    qtbot.keyClick(edit, Qt.Key.Key_Escape)
+    assert page.tracks[1].name != "Nope"
+    assert panel.row_widgets[1]["name_stack"].currentWidget() is panel.row_widgets[1]["name"]
+    assert page.doc.selection == (10, 500)  # Esc went to the box, not "deselect"
+    panel.start_rename(1)  # a space in a name doesn't start playback
+    edit = panel.row_widgets[1]["edit"]
+    edit.setFocus()
+    message = page.message.text()
+    qtbot.keyClicks(edit, " b")
+    assert edit.text().endswith(" b") and page.message.text() == message
+    qtbot.keyClick(edit, Qt.Key.Key_Escape)
+    assert not page.rename_track(1, "   ")  # an empty name is refused
+    # ⋯ menu: Rename… / Remove track
+    menu = panel.row_menu(1)
+    assert [a.text() for a in menu.actions()] == ["Rename…", "Remove track"]
+    monkeypatch.setattr(page, "confirm", lambda text: True)
+    menu.actions()[1].trigger()
+    assert len(page.tracks) == 1 and page.tracks[0].name == "Voice over"
+    page._tracks_saved_rev = page._tracks_rev

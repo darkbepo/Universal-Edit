@@ -34,6 +34,9 @@ const h = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLEle
   return el;
 };
 
+export const MAX_TRACK_NAME = 60;
+/** What a typed track name becomes ("" = keep the old one). */
+export const cleanTrackName = (text: string) => text.split(/\s+/).filter(Boolean).join(" ").slice(0, MAX_TRACK_NAME);
 export const HINT = "Click to place the cursor · drag to select · middle-click to play from there · Ctrl+wheel to zoom · Space plays";
 const EMPTY_TEXT = "Open a sound with “Open…”, or drop audio files here (MP3, WAV, FLAC, M4A, OGG, …).";
 const AUDIO_ACCEPT = "audio/*,.mp3,.wav,.flac,.m4a,.aac,.ogg,.oga,.opus,.wma,.aiff,.aif,.ac3,.amr,.ape,.mka";
@@ -106,6 +109,8 @@ export class AudioEditorPage {
   private tracksRev = 0; // bumped by every track change (add, remove, volume, mute …)
   private tracksSavedRev = 0;
   private tracksEl = h("div", { class: "audio-tracks", hidden: true });
+  private trackRows: { track: tracks.Track; label: string; row: HTMLElement; name: HTMLButtonElement; more: HTMLButtonElement }[] = [];
+  private trackMenu: { menu: HTMLElement; done: () => void } | null = null;
   private trackFile = h("input", { type: "file", accept: "audio/*", hidden: true });
   recordRoom: number | null = null; // tests: a smaller limit for the take, in frames
   private recordLevel = h("meter", { class: "audio-record-level", title: "Recording level", hidden: true });
@@ -286,6 +291,8 @@ export class AudioEditorPage {
     const el = this.tracksEl;
     el.hidden = !this.doc;
     el.replaceChildren();
+    this.closeTrackMenu();
+    this.trackRows = [];
     if (!this.doc) return;
     const off = this.busy;
     const add = (label: string, title: string, fn: () => void) => {
@@ -297,7 +304,7 @@ export class AudioEditorPage {
     el.append(h("div", { class: "audio-tracks-head" }, h("span", { class: "muted" }, "Tracks"),
       add("+ Empty track", "A silent track to Record or Paste into", () => this.addEmptyTrack()),
       add("+ Track from a file…", "Add a sound to mix with the others", () => this.trackFile.click())));
-    this.tracks.forEach((t, i) => {
+    this.trackRows = this.tracks.map((t, i) => {
       const toggle = (text: string, title: string, on: boolean, fn: (on: boolean) => void) => {
         const b = h("button", { class: "btn small audio-track-toggle", type: "button", title, textContent: text, ariaLabel: title });
         b.setAttribute("aria-pressed", String(on));
@@ -308,12 +315,11 @@ export class AudioEditorPage {
         });
         return b;
       };
-      const name = h("button", { class: "btn small audio-track-name", type: "button", title: "Edit this track", textContent: t.name, disabled: off && i !== this.activeTrack });
-      name.setAttribute("aria-pressed", String(i === this.activeTrack));
-      if (i !== this.activeTrack) name.dataset.busyOff = "";
+      const name = h("button", { class: "audio-track-name", type: "button", title: `${t.name}\nClick: edit this track · double-click: rename`, textContent: t.name });
       name.addEventListener("click", () => this.selectTrack(i));
+      name.addEventListener("dblclick", () => this.startRename(i));
       const gainLabel = h("span", { class: "muted audio-track-value", textContent: gainText(t.gainDb) });
-      const gain = h("input", { type: "range", min: String(tracks.MIN_GAIN_DB), max: String(tracks.MAX_GAIN_DB), step: "1", value: String(t.gainDb), ariaLabel: `${t.name} volume`, title: "Volume" });
+      const gain = h("input", { type: "range", min: String(tracks.MIN_GAIN_DB), max: String(tracks.MAX_GAIN_DB), step: "1", value: String(t.gainDb), ariaLabel: `${t.name} volume`, title: "Volume of this track in the mix" });
       gain.addEventListener("input", () => {
         gainLabel.textContent = gainText(Number(gain.value));
         this.setTrack(t, "gainDb", Number(gain.value));
@@ -329,15 +335,114 @@ export class AudioEditorPage {
         pan.value = "0";
         onPan();
       });
-      const remove = h("button", { class: "btn small audio-track-toggle", type: "button", title: `Remove ${t.name}`, ariaLabel: `Remove ${t.name}`, textContent: "×", disabled: off });
-      remove.dataset.busyOff = "";
-      remove.addEventListener("click", () => this.removeTrack(i));
-      el.append(h("div", { class: "audio-track" }, name,
+      const more = h("button", { class: "btn small audio-track-more", type: "button", title: `More for ${t.name}: rename, remove`, ariaLabel: `More for ${t.name}`, textContent: "⋯" });
+      more.setAttribute("aria-haspopup", "menu");
+      more.addEventListener("click", () => this.openTrackMenu(i, more));
+      const row = h("div", { class: "audio-track", role: "group", ariaLabel: t.name }, name,
         toggle("M", `Mute ${t.name}`, t.mute, (on) => this.setTrack(t, "mute", on)),
         toggle("S", `Solo ${t.name} (hear only the soloed tracks)`, t.solo, (on) => this.setTrack(t, "solo", on)),
-        h("label", { class: "audio-track-slider" }, gain, gainLabel),
-        h("label", { class: "audio-track-slider" }, pan, panLabel), remove));
+        h("label", { class: "audio-track-slider audio-track-gain" }, gain, gainLabel),
+        h("label", { class: "audio-track-slider audio-track-pan" }, pan, panLabel), more);
+      el.append(row);
+      return { track: t, label: t.name, row, name, more };
     });
+    this.syncTracks();
+  }
+
+  /** The highlight and what may be clicked; rows stay (so a double-click on a name still lands). */
+  private syncTracks(): void {
+    const off = this.busy;
+    this.trackRows.forEach((r, i) => {
+      const active = i === this.activeTrack;
+      r.row.classList.toggle("active", active);
+      r.name.setAttribute("aria-pressed", String(active));
+      r.name.disabled = off && !active;
+      r.more.disabled = off;
+    });
+  }
+
+  /** Rebuild the strip only when the tracks or their names changed. */
+  private showTracks(): void {
+    const same = this.doc && this.trackRows.length === this.tracks.length && this.trackRows.every((r, i) => r.track === this.tracks[i] && r.label === r.track.name);
+    if (same && !this.tracksEl.hidden) this.syncTracks();
+    else this.renderTracks();
+  }
+
+  private openTrackMenu(i: number, anchor: HTMLElement): void {
+    this.closeTrackMenu();
+    const menu = h("div", { class: "menu-items context-menu", role: "menu", ariaLabel: `${this.tracks[i]?.name ?? ""} actions` });
+    const item = (label: string, fn: () => void) => {
+      const b = h("button", { class: "menu-item", role: "menuitem", type: "button" }, label);
+      b.addEventListener("click", () => {
+        this.closeTrackMenu();
+        fn();
+      });
+      menu.append(b);
+    };
+    item("Rename…", () => this.startRename(i));
+    item("Remove track", () => this.removeTrack(i));
+    document.body.append(menu);
+    const a = anchor.getBoundingClientRect(), r = menu.getBoundingClientRect();
+    menu.style.left = `${Math.max(4, Math.min(a.right - r.width, window.innerWidth - r.width - 4))}px`;
+    menu.style.top = `${a.bottom + 4 + r.height > window.innerHeight ? Math.max(4, a.top - r.height - 4) : a.bottom + 4}px`;
+    const outside = (e: Event) => {
+      if (!menu.contains(e.target as Node) && e.target !== anchor) this.closeTrackMenu();
+    };
+    const keys = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        this.closeTrackMenu();
+        anchor.focus();
+      }
+    };
+    document.addEventListener("pointerdown", outside, true);
+    document.addEventListener("keydown", keys, true);
+    this.trackMenu = { menu, done: () => {
+      document.removeEventListener("pointerdown", outside, true);
+      document.removeEventListener("keydown", keys, true);
+    } };
+    menu.querySelector<HTMLButtonElement>("button")?.focus();
+  }
+
+  private closeTrackMenu(): void {
+    this.trackMenu?.done();
+    this.trackMenu?.menu.remove();
+    this.trackMenu = null;
+  }
+
+  /** Swap the name for a text box: Enter or leaving it keeps the new name, Esc the old one. */
+  startRename(i: number): void {
+    const r = this.trackRows[i];
+    if (!r || this.busy) return; // a save / recording rebuilds nothing meanwhile
+    const box = h("input", { class: "audio-track-rename", type: "text", value: r.track.name, maxLength: MAX_TRACK_NAME, ariaLabel: "Track name" });
+    let done = false;
+    const finish = (keep: boolean) => {
+      if (done) return;
+      done = true;
+      if (!keep || !this.renameTrack(i, box.value)) box.replaceWith(r.name);
+    };
+    box.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") finish(true);
+      else if (e.key === "Escape") {
+        e.stopPropagation();
+        finish(false);
+      } else return;
+      e.preventDefault();
+    });
+    box.addEventListener("blur", () => finish(true));
+    r.name.replaceWith(box);
+    box.focus();
+    box.select();
+  }
+
+  /** Give track `i` a new name (only a label: the saved mix doesn't carry it). */
+  renameTrack(i: number, typed: string): boolean {
+    const t = this.tracks[i];
+    const name = cleanTrackName(typed);
+    if (!t || !name || name === t.name) return false;
+    t.name = name;
+    this.renderTracks();
+    return true;
   }
 
   private setTrack<K extends "gainDb" | "pan" | "mute" | "solo">(t: tracks.Track, key: K, value: tracks.Track[K]): void {
@@ -372,7 +477,7 @@ export class AudioEditorPage {
       this.fit();
     }
     this.activeTrack = i;
-    this.renderTracks();
+    this.showTracks();
     this.update();
   }
 
@@ -421,7 +526,7 @@ export class AudioEditorPage {
       return false;
     } finally {
       this.busy = false;
-      this.renderTracks();
+      this.showTracks();
       this.update();
     }
   }
@@ -1341,6 +1446,7 @@ export class AudioEditorPage {
     for (const [key, b] of this.buttons) b.disabled = !enabled[key];
     // switching / adding / removing tracks waits while busy; mixing settings don't
     for (const b of this.tracksEl.querySelectorAll<HTMLButtonElement>("[data-busy-off]")) b.disabled = this.busy;
+    this.syncTracks();
     this.buttons.get("play")!.textContent = this.player && !this.player.paused ? "❚❚ Pause" : "▶ Play";
     this.buttons.get("record")!.textContent = this.rec ? "■ Stop recording" : "● Record";
     this.buttons.get("undo")!.title = ready && doc!.canUndo() ? `Undo ${doc!.undoLabel()} (Ctrl+Z)` : "Undo (Ctrl+Z)";

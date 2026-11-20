@@ -55,7 +55,7 @@ from umc.core.errors import ConversionCancelled, ConversionError
 from umc.gui.audioeditor.player import DEFAULT_VOLUME, Player
 from umc.gui.audioeditor.recorder import Recorder
 from umc.gui.audioeditor.time_box import TimeBox
-from umc.gui.audioeditor.tracks_panel import TracksPanel
+from umc.gui.audioeditor.tracks_panel import TracksPanel, clean_name
 from umc.gui.audioeditor.wave_view import WaveView
 from umc.gui.widgets.flow_layout import FlowLayout
 
@@ -365,6 +365,7 @@ class AudioEditorPage(QWidget):
         self.tracks_panel.selected.connect(self.select_track)
         self.tracks_panel.changed.connect(self._on_tracks_changed)
         self.tracks_panel.remove_requested.connect(self.remove_track)
+        self.tracks_panel.renamed.connect(self.rename_track)
         self.tracks_panel.add_empty.connect(self.add_empty_track)
         self.tracks_panel.add_file.connect(self.choose_track_file)
         self.tracks_panel.hide()
@@ -1212,6 +1213,16 @@ class AudioEditorPage(QWidget):
             self.view.set_document(self.doc)
         self.tracks_panel.set_tracks(self.tracks, i)
         self._update_state()  # also the strip's enabled state
+
+    def rename_track(self, i: int, name: str) -> bool:
+        """Give track ``i`` a new name (only a label here: the saved mix doesn't carry it)."""
+        name = clean_name(name)
+        if not name or not 0 <= i < len(self.tracks):
+            return False
+        self.tracks[i].name = name
+        self.tracks_panel.set_tracks(self.tracks, self.active_track)
+        self._update_state()
+        return True
 
     def _add_track(self, doc: AudioDoc, name: str) -> None:
         self._set_tracks([*self.tracks, tr.Track(doc, name)], self.active_track)

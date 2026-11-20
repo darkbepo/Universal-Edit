@@ -628,12 +628,17 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 .audio-tracks { display: flex; flex-direction: column; gap: 4px; padding: 6px 12px 0; }
 .audio-tracks-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .audio-tracks-head > .muted { margin-right: auto; }
-.audio-track { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.audio-track-name { min-width: 90px; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.audio-track-toggle { min-width: 30px; padding-inline: 6px; }
-.audio-track-slider { display: inline-flex; align-items: center; gap: 4px; }
-.audio-track-slider input[type="range"] { width: 100px; }
-.audio-track-value { min-width: 48px; font-size: 12px; }
+/* every track row has the same columns, so they line up; the track being edited is highlighted */
+.audio-track { display: grid; grid-template-columns: 180px 32px 32px 170px 150px 32px; align-items: center; gap: 6px; padding: 2px 4px; border: 1px solid transparent; border-radius: 8px; justify-content: start; }
+.audio-track.active { border-color: var(--accent); background: var(--accent-soft); }
+.audio-track-name { min-width: 0; width: 100%; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: none; border: 1px solid transparent; border-radius: 6px; padding: 4px 8px; color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
+.audio-track-name:hover { background: var(--surface-alt); }
+.audio-track.active .audio-track-name { color: var(--accent); font-weight: 600; }
+.audio-track-rename { min-width: 0; width: 100%; box-sizing: border-box; font: inherit; font-size: 13px; padding: 3px 7px; border: 1px solid var(--accent); border-radius: 6px; background: var(--surface); color: var(--text); }
+.audio-track-toggle, .audio-track-more { min-width: 0; width: 32px; padding-inline: 0; }
+.audio-track-slider { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.audio-track-slider input[type="range"] { flex: 1; min-width: 0; width: auto; margin: 0; accent-color: var(--accent); }
+.audio-track-value { flex: none; width: 52px; font-size: 12px; }
 .audio-record-level { width: 70px; height: 8px; align-self: center; }
 .audio-group { display: flex; flex-wrap: wrap; gap: 4px; }
 .audio-volume-box { display: flex; align-items: center; gap: 6px; margin-left: 8px; }
@@ -656,7 +661,12 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 .audio-time:focus { border-color: var(--accent); outline: none; }
 .audio-time.invalid { border-color: var(--danger); }
 @media (max-width: 560px) { .audio-selection { gap: 6px; } .audio-time { width: 8.5ch; padding: 2px 4px; } }
-@media (max-width: 700px) { .audio-editor .editor-status { flex-wrap: wrap; } .audio-info { white-space: normal; } .audio-track-slider { order: 1; } }
+@media (max-width: 700px) { .audio-editor .editor-status { flex-wrap: wrap; } .audio-info { white-space: normal; }
+  /* two lines per track: name + M / S / ⋯, then volume and left / right */
+  .audio-track { display: flex; flex-wrap: wrap; }
+  .audio-track > :first-child { flex: 1 1 calc(100% - 120px); }
+  .audio-track-more { order: 1; }
+  .audio-track-gain, .audio-track-pan { order: 2; flex: 1 1 calc(50% - 3px); } }
 @media (max-width: 900px) {
   /* the image editor's one-column rows don't fit here: the sound view takes what is left */
   .audio-editor { grid-template-rows: auto minmax(0, 1fr) auto; }

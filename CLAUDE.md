@@ -1067,11 +1067,15 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       `Math.fround` — so `tests/fixtures/audio_mix_cases.json` (`scripts/make_mix_cases.py`)
       matches bit for bit). The page keeps `doc` = the selected track, so every edit / undo /
       recording works on it unchanged; Play and Save use the mix when there are 2+ tracks
-      (desktop `Player.play(…, origin=)` plays a mix of just that part). All tracks share the
+      (desktop plays a `tracks.LazyMix`, mixed bit by bit as the player reads). All tracks share the
       first one's rate (files added later are decoded at it) and one `MAX_SAMPLES`. Track
       settings aren't undo steps. Desktop strip `gui/audioeditor/tracks_panel.py`; web
-      `.audio-tracks` (`.audio-track-name`, labels "<name> volume" / "<name> left / right",
-      "Mute <name>", "Remove <name>"). pytest-qt closes the window before fixtures clean up:
+      `.audio-tracks` (`.audio-track[.active]`, `.audio-track-name`, labels "<name> volume" /
+      "<name> left / right", "Mute <name>", "More for <name>" → menuitems "Rename…" / "Remove
+      track", rename box "Track name"). Rows have fixed columns; picking a track only moves the
+      highlight (`set_tracks` / `showTracks` rebuild only when tracks or names change), else a
+      double-click on a name (= rename) is lost. The desktop rename box must accept Esc's
+      `ShortcutOverride`, or the page's Esc shortcut (deselect) takes it. pytest-qt closes the window before fixtures clean up:
       a test must not leave unsaved tracks (`_tracks_saved_rev = _tracks_rev`).
       Not yet: moving a track in time, saving the tracks separately (project file).
    14. Properties mode (both apps), step 1 = read-only "About this file" — spec

@@ -763,3 +763,35 @@ QToolButton#Cog {
 QToolButton#Cog:hover {
     background: @surface_alt;
 }
+
+/* ---------- audio editor tracks: fixed columns, the track being edited highlighted */
+QFrame#TrackRow {
+    border: 1px solid transparent;
+    border-radius: 8px;
+}
+QFrame#TrackRow[active="true"] {
+    border-color: @accent;
+    background: @accent_soft;
+}
+QPushButton#Small[compact="true"] {
+    padding: 5px 0;
+}
+QPushButton#Small[compact="true"]::menu-indicator {
+    image: none;
+    width: 0;
+}
+QPushButton#TrackName {
+    color: @text;
+    text-align: left;
+    padding: 4px 8px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+}
+QPushButton#TrackName:hover {
+    background: @surface_alt;
+}
+QPushButton#TrackName:checked {
+    color: @accent;
+    font-weight: 600;
+}
