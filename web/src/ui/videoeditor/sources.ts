@@ -1,0 +1,200 @@
+// The video editor's sources in the browser: each dropped file is probed and decoded on the page
+// with Mediabunny (videos, sound) or createImageBitmap (pictures). Only a file the browser can't
+// read or decode is copied once by the hidden worker converter "video-edit-source" (FFmpeg /
+// ImageMagick), and only when `limits.sourceProblem` allows it. The copy is used for decoding;
+// the Source keeps the original file's name and size, so a saved project still matches the real
+// file later. Mediabunny is imported on demand (it stays out of the page bundle).
+import { canonicalExt, AUDIO_EXTS, IMAGE_EXTS, VIDEO_EXTS } from "../../core/detect";
+import { ConversionError, type InputFile } from "../../core/types";
+import { SOURCE_TARGET } from "../../converters/videoedit";
+import { DIRECT_AUDIO, DIRECT_PICTURE, DIRECT_VIDEO, needsCopy, sourceProblem } from "../../videoedit/limits";
+import type { Source } from "../../videoedit/project";
+import { JobCancelled, type ConversionClient } from "../../worker/client";
+import type { Picture } from "./draw";
+
+type MB = typeof import("mediabunny");
+type InputT = import("mediabunny").Input;
+type VideoTrack = import("mediabunny").InputVideoTrack;
+type Sink = import("mediabunny").CanvasSink;
+
+export const COPY_NOTE = "Converted for this browser — the desktop app reads it directly.";
+
+export interface Opened { source: Source; file: File; copy: boolean; note: string | null }
+
+export interface Probe { duration: number; width: number; height: number; fps: number; hasAudio: boolean }
+
+export function sourceFromProbe(id: string, name: string, size: number, kind: Source["kind"], probe: Probe): Source {
+  return {
+    id, path: name, kind, duration: probe.duration, width: probe.width, height: probe.height,
+    fps: Math.round(probe.fps * 1000) / 1000, has_audio: probe.hasAudio, size, relpath: null,
+  };
+}
+
+// Picture types ImageMagick reads but the editor has no use for (layered projects, icons are fine).
+const NOT_A_SOURCE = new Set(["ora"]);
+
+/** Which kind of source a file type gives: the direct types, then every type the copy can read. */
+export function kindOf(ext: string): Source["kind"] | null {
+  const e = ext ? canonicalExt(ext.replace(/^\./, "")) : "";
+  if (DIRECT_VIDEO.has(e) || VIDEO_EXTS.has(e)) return "video";
+  if (DIRECT_AUDIO.has(e) || AUDIO_EXTS.has(e)) return "audio";
+  if (DIRECT_PICTURE.has(e)) return "image";
+  if (IMAGE_EXTS.has(e) && !NOT_A_SOURCE.has(e)) return "image";
+  return null;
+}
+
+const cannotOpen = (name: string) => new ConversionError(`Couldn't open “${name}”.`);
+
+interface Media { kind: "video" | "audio"; probe: Probe; input: InputT; video: VideoTrack | null }
+interface Entry {
+  kind: Source["kind"];
+  input?: InputT;
+  video?: VideoTrack | null;
+  sinks?: Map<number, Sink>;
+  bitmap?: ImageBitmap;
+}
+
+export class SourceBank {
+  private entries = new Map<string, Entry>();
+  private mb: Promise<MB> | null = null;
+
+  constructor(private client: ConversionClient) {}
+
+  private mediabunny(): Promise<MB> {
+    return (this.mb ??= import("mediabunny"));
+  }
+
+  /** Probe (and if needed copy) one file. Throws ConversionError with a message for the page. */
+  async open(file: File, id: string, onProgress: (f: number, msg: string) => void): Promise<Opened> {
+    const ext = canonicalExt(file.name);
+    const kind = kindOf(ext);
+    if (!kind) throw cannotOpen(file.name);
+    let media: Media | null = null;
+    let bitmap: ImageBitmap | null = null;
+    const direct = !needsCopy(ext, true);
+    if (direct) {
+      if (kind === "image") bitmap = await this.bitmap(file);
+      else media = await this.media(file, kind);
+    }
+    const decodes = kind === "image" ? bitmap !== null : media !== null;
+    const copy = needsCopy(ext, decodes);
+    const size = bitmap ? { width: bitmap.width, height: bitmap.height } : {};
+    const problem = sourceProblem({ name: file.name, size: file.size, copy, ...size });
+    if (problem) {
+      bitmap?.close();
+      media?.input.dispose();
+      throw new ConversionError(problem);
+    }
+    let used = file;
+    if (copy) {
+      media?.input.dispose();
+      const input: InputFile = { file, name: file.name, ext, family: kind === "audio" ? "audio" : kind === "image" ? "image" : "video" };
+      let out: { name: string; data: Uint8Array; type?: string }[];
+      try {
+        out = await this.client.run(SOURCE_TARGET, [input], { kind }, onProgress);
+      } catch (e) {
+        if (e instanceof JobCancelled) throw e;
+        throw e instanceof Error && e.message ? new ConversionError(e.message) : cannotOpen(file.name);
+      }
+      if (!out.length) throw cannotOpen(file.name);
+      used = new File([out[0].data as BlobPart], out[0].name, { type: out[0].type ?? "" });
+      if (kind === "image") {
+        bitmap = await this.bitmap(used);
+        if (!bitmap) throw cannotOpen(file.name);
+        const again = sourceProblem({ name: file.name, size: file.size, copy: false, width: bitmap.width, height: bitmap.height });
+        if (again) {
+          bitmap.close();
+          throw new ConversionError(again);
+        }
+      } else {
+        media = await this.media(used, kind);
+        if (!media) throw cannotOpen(file.name);
+      }
+    }
+    let source: Source;
+    this.forget(id);
+    if (kind === "image") {
+      source = sourceFromProbe(id, file.name, file.size, "image", { duration: 0, width: bitmap!.width, height: bitmap!.height, fps: 0, hasAudio: false });
+      this.entries.set(id, { kind: "image", bitmap: bitmap! });
+    } else {
+      const m = media!;
+      source = sourceFromProbe(id, file.name, file.size, m.kind, m.probe);
+      this.entries.set(id, { kind: m.kind, input: m.input, video: m.video, sinks: new Map() });
+    }
+    return { source, file: used, copy, note: copy ? COPY_NOTE : null };
+  }
+
+  private async bitmap(file: Blob): Promise<ImageBitmap | null> {
+    try {
+      return await createImageBitmap(file, { imageOrientation: "from-image" });
+    } catch {
+      return null;
+    }
+  }
+
+  /** Mediabunny's view of a video / sound file; null when it can't read or decode every track. */
+  private async media(file: Blob, kind: "video" | "audio"): Promise<Media | null> {
+    const mb = await this.mediabunny();
+    const input = new mb.Input({ source: new mb.BlobSource(file), formats: mb.ALL_FORMATS });
+    try {
+      const video = kind === "video" ? await input.getPrimaryVideoTrack() : null;
+      const audio = await input.getPrimaryAudioTrack();
+      if (!video && !audio) throw new Error("no tracks");
+      if (video && !(await video.canDecode())) throw new Error("video can't be decoded");
+      if (audio && !(await audio.canDecode())) throw new Error("sound can't be decoded");
+      const duration = await input.computeDuration();
+      if (video) {
+        const stats = await video.computePacketStats();
+        return {
+          kind: "video", input, video,
+          probe: { duration, width: video.displayWidth, height: video.displayHeight, fps: stats.averagePacketRate, hasAudio: audio !== null },
+        };
+      }
+      return { kind: "audio", input, video: null, probe: { duration, width: 0, height: 0, fps: 0, hasAudio: true } };
+    } catch {
+      input.dispose();
+      return null;
+    }
+  }
+
+  has(id: string): boolean {
+    return this.entries.has(id);
+  }
+
+  /** A video's frame at or before `time`, `height` px high (upright); a picture's bitmap. */
+  async picture(id: string, time: number, height: number): Promise<Picture | null> {
+    const e = this.entries.get(id);
+    if (!e) return null;
+    if (e.bitmap) return { image: e.bitmap, width: e.bitmap.width, height: e.bitmap.height };
+    if (!e.video || !e.sinks) return null;
+    const h = Math.max(1, Math.round(Math.min(height, e.video.displayHeight)));
+    let sink = e.sinks.get(h);
+    if (!sink) {
+      const mb = await this.mediabunny();
+      sink = new mb.CanvasSink(e.video, { height: h, fit: "contain" });
+      e.sinks.set(h, sink);
+    }
+    try {
+      const first = await e.video.getFirstTimestamp();
+      const got = await sink.getCanvas(Math.max(first, time));
+      if (!got) return null;
+      return { image: got.canvas, width: got.canvas.width, height: got.canvas.height };
+    } catch {
+      return null; // disposed meanwhile (forgotten / left), or a broken frame
+    }
+  }
+
+  /** Drop a source's decoders (relink / remove). */
+  forget(id: string): void {
+    const e = this.entries.get(id);
+    if (!e) return;
+    this.entries.delete(id);
+    e.bitmap?.close();
+    e.input?.dispose();
+  }
+
+  /** Leaving the page. */
+  dispose(): void {
+    for (const id of [...this.entries.keys()]) this.forget(id);
+  }
+}

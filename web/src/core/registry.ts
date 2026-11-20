@@ -9,6 +9,7 @@ import { fontConverter } from "../converters/fonts";
 import { cadConverter } from "../converters/cad";
 import { bgremoveConverter } from "../converters/bgremove";
 import { audioEditDenoiseConverter, audioEditOpenConverter, audioEditSpeedConverter } from "../converters/audioedit";
+import { videoEditSourceConverter } from "../converters/videoedit";
 import { pdfToSvgConverter, traceConverter, vectorConverter } from "../converters/vector";
 import { subtitleConverter, subtitleExtractConverter, subtitleVideoConverter } from "../converters/subtitles";
 import { documentConverter, pagesConverter, splitConverter } from "../converters/pdf";
@@ -58,6 +59,7 @@ export const CONVERTERS: Converter[] = [
   audioEditOpenConverter, // audio editor only (no targets)
   audioEditSpeedConverter, // audio editor only (no targets)
   audioEditDenoiseConverter, // audio editor only (no targets)
+  videoEditSourceConverter, // video editor only (no targets)
 ];
 
 export const converterById = (id: string) => CONVERTERS.find((c) => c.id === id)!;

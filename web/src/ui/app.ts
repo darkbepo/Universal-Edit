@@ -147,6 +147,10 @@ export function mountApp(root: HTMLElement): void {
       await docEditor.dropFiles(found.every((f) => f !== null) ? (found as InputFile[]) : []);
       return;
     }
+    if (editing && video && !video.el.hidden) {
+      await video.addFiles(Array.from(list)); // into the open project (one "Add files" step)
+      return;
+    }
     if (editing && audio && !audio.el.hidden) {
       await audio.openFiles(Array.from(list)); // audio files replace the sound (asks first)
       return;

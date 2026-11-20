@@ -274,6 +274,29 @@ export default async function globalSetup() {
       console.warn("ffmpeg not found: video and audio e2e tests will be skipped");
     }
   }
+  // Video editor: one solid colour each, so the preview's pixels can be checked.
+  if (!existsSync(`${FIXTURES}blue.png`)) {
+    const pix = new mupdf.Pixmap(mupdf.ColorSpace.DeviceRGB, [0, 0, 64, 36], false);
+    const px = pix.getPixels();
+    for (let k = 0; k < px.length; k += 3) [px[k], px[k + 1], px[k + 2]] = [0x20, 0x40, 0xd0];
+    writeFileSync(`${FIXTURES}blue.png`, pix.asPNG());
+  }
+  if (!existsSync(`${FIXTURES}red.mp4`)) {
+    try {
+      execFileSync("ffmpeg", ["-loglevel", "error", "-y", "-f", "lavfi", "-i", "color=c=0xd02020:s=320x180:r=30:d=1",
+        "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-t", "1", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", `${FIXTURES}red.mp4`]);
+    } catch {
+      // skipped like the other video tests
+    }
+  }
+  if (!existsSync(`${FIXTURES}clip.avi`)) {
+    try { // the browser can't read AVI: the video editor copies it with FFmpeg first
+      execFileSync("ffmpeg", ["-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc=duration=1:size=320x240:rate=25",
+        "-f", "lavfi", "-i", "sine=duration=1", "-shortest", "-c:v", "mpeg4", "-c:a", "libmp3lame", `${FIXTURES}clip.avi`]);
+    } catch {
+      // skipped like the other video tests
+    }
+  }
   if (!existsSync(`${FIXTURES}turned.mp4`) && existsSync(`${FIXTURES}clip.mp4`)) {
     try { // shown turned 90° anticlockwise (= 270° clockwise), like a phone clip
       execFileSync("ffmpeg", ["-loglevel", "error", "-y", "-display_rotation", "90", "-i", `${FIXTURES}clip.mp4`, "-c", "copy", `${FIXTURES}turned.mp4`]);
