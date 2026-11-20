@@ -155,9 +155,8 @@ def load_project(path: Path) -> tuple[Project, list[MissingSource]]:
             found = _find_source(entry, path.parent)
             if found is None:
                 found = Path(entry["path"])
-                if (
-                    not found.is_absolute()
-                ):  # keep it beside the project, so a save writes a sane relpath
+                # keep it beside the project, so a save writes a sane relpath
+                if not found.is_absolute():
                     found = path.parent / found
                 missing.append(MissingSource(entry["id"], found))
             sources.append(_build(Source, {**entry, "path": found}))
