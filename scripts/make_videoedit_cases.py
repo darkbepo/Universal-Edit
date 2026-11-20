@@ -11,6 +11,7 @@ Ids of new items are "n1", "n2", … (the counter restarts for every case); the 
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 import tempfile
 from collections.abc import Callable
@@ -20,8 +21,11 @@ from typing import Any
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
+from umc.core.errors import ToolMissingError  # noqa: E402
+from umc.tools.ffmpeg import ffmpeg_path  # noqa: E402
 from umc.videoedit import edits  # noqa: E402
 from umc.videoedit.project import (  # noqa: E402
+    TRANSITIONS,
     AudioClip,
     PictureClip,
     Project,
@@ -35,7 +39,15 @@ from umc.videoedit.project import (  # noqa: E402
     output_fps,
     output_size,
 )
-from umc.videoedit.projectfile import _build, _item_from_dict, _to_dict, save_project  # noqa: E402
+from umc.videoedit.projectfile import (  # noqa: E402
+    _build,
+    _item_from_dict,
+    _item_to_dict,
+    _to_dict,
+    save_project,
+)
+from umc.videoedit.render import _colour, _f, _geometry  # noqa: E402
+from umc.videoedit.text_ass import _ANCHORS, _BASE, _fades  # noqa: E402
 
 OUT = ROOT / "tests" / "fixtures" / "videoedit_cases.json"
 HERE = Path(".")
@@ -564,13 +576,205 @@ def file_case() -> dict[str, Any]:
     return {"text": text_out, "project": data}
 
 
+# ---- reference colours from FFmpeg (the website's canvas drawing must match these) -------------
+
+RED, BLUE = (0xD0, 0x20, 0x20), (0x20, 0x40, 0xD0)
+FPS = 25
+
+
+def _hex(rgb: tuple[int, int, int]) -> str:
+    return "0x" + "".join(f"{v:02x}" for v in rgb)
+
+
+def _ffmpeg_frames(args: list[str], width: int, height: int) -> list[bytes]:
+    """Run FFmpeg with ``args`` (inputs + filters) and return every raw rgb24 frame."""
+    try:
+        exe = ffmpeg_path()
+    except ToolMissingError as exc:
+        raise SystemExit(
+            "FFmpeg not found (expected packaging/bin/ffmpeg.exe; run scripts/fetch_ffmpeg.py): "
+            f"{exc}"
+        ) from exc
+    cmd = [exe, "-v", "error", "-nostdin", *args, "-pix_fmt", "rgb24", "-f", "rawvideo", "pipe:1"]
+    done = subprocess.run(cmd, capture_output=True, check=False)
+    if done.returncode != 0:
+        raise SystemExit(f"FFmpeg failed: {done.stderr.decode(errors='replace')}\n{cmd}")
+    size = width * height * 3
+    data = done.stdout
+    if not data or len(data) % size:
+        raise SystemExit(f"FFmpeg gave {len(data)} bytes, not whole {width}x{height} frames")
+    return [data[i : i + size] for i in range(0, len(data), size)]
+
+
+def _pixel(frame: bytes, width: int, x: int, y: int) -> list[int]:
+    i = (y * width + x) * 3
+    return list(frame[i : i + 3])
+
+
+def grade_cases() -> list[dict[str, Any]]:
+    colours = [(128, 128, 128), (200, 30, 30), (224, 172, 140)]
+    settings: list[tuple[int, int, int]] = []
+    for value in (-100, -50, 50, 100):
+        settings += [(value, 0, 0), (0, value, 0), (0, 0, value)]
+    settings += [(20, -30, 40), (-40, 30, -50), (60, 50, 70)]
+    out = []
+    for rgb in colours:
+        for b, c, s in settings:
+            eq = ",".join(_geometry(PictureClip("g", "p1", brightness=b, contrast=c, saturation=s)))
+            assert eq.startswith("eq="), eq
+            frame = _ffmpeg_frames(
+                [
+                    *("-f", "lavfi", "-i", f"color=c={_hex(rgb)}:s=16x16:r={FPS}:d=1"),
+                    *("-vf", f"format=yuv420p,{eq},format=rgb24"),
+                    *("-frames:v", "1"),
+                ],
+                16,
+                16,
+            )[0]
+            out.append(
+                {
+                    "rgb": list(rgb),
+                    "brightness": b,
+                    "contrast": c,
+                    "saturation": s,
+                    "out": _pixel(frame, 16, 8, 8),
+                }
+            )
+    return out
+
+
+def transition_cases() -> list[dict[str, Any]]:
+    w, h = 64, 36
+    out = []
+    for kind, _label in TRANSITIONS:
+        if kind == "none":
+            continue
+        for d in (1.0, 0.5):
+            offset = 2 - d
+            graph = (
+                "[0:v]format=yuv420p[a];[1:v]format=yuv420p[b];"
+                f"[a][b]xfade=transition={kind}:duration={_f(d)}:offset={_f(offset)},format=rgb24"
+            )
+            frames = _ffmpeg_frames(
+                [
+                    *("-f", "lavfi", "-i", f"color=c={_hex(RED)}:s={w}x{h}:r={FPS}:d=2"),
+                    *("-f", "lavfi", "-i", f"color=c={_hex(BLUE)}:s={w}x{h}:r={FPS}:d=2"),
+                    *("-filter_complex", graph),
+                ],
+                w,
+                h,
+            )
+            for frac in (0.2, 0.5, 0.8):
+                n = round(offset * FPS) + round(frac * d * FPS)
+                out.append(
+                    {
+                        "kind": kind,
+                        "duration": d,
+                        "t": n / FPS,
+                        "a": list(RED),
+                        "b": list(BLUE),
+                        "width": w,
+                        "columns": {
+                            str(x): _pixel(frames[n], w, x, h // 2) for x in (0, 16, 32, 48, 63)
+                        },
+                    }
+                )
+    return out
+
+
+def fade_cases() -> list[dict[str, Any]]:
+    dur = 2.0
+    plans = [
+        (1.0, 0.0, (0.0, 0.2, 0.5, 0.8, 1.0, 1.5)),
+        (0.0, 1.0, (0.0, 1.0, 1.2, 1.5, 1.8, 1.96)),
+        (0.5, 0.5, (0.0, 0.2, 0.5, 1.0, 1.5, 1.8, 1.96)),
+        (0.8, 1.2, (0.4, 0.8, 1.0, 1.4, 1.8)),
+    ]
+    out = []
+    for rgb, bg in (((0xD0, 0x20, 0x20), "#000000"), ((0x20, 0xA0, 0x60), "#203040")):
+        for fin, fout, times in plans:
+            filters = ["format=yuv420p"]
+            if fin > 0:
+                filters.append(f"fade=t=in:d={_f(fin)}:color={_colour(bg)}")
+            if fout > 0:
+                filters.append(f"fade=t=out:st={_f(dur - fout)}:d={_f(fout)}:color={_colour(bg)}")
+            frames = _ffmpeg_frames(
+                [
+                    *("-f", "lavfi", "-i", f"color=c={_hex(rgb)}:s=16x16:r={FPS}:d={dur:g}"),
+                    *("-vf", ",".join([*filters, "format=rgb24"])),
+                ],
+                16,
+                16,
+            )
+            bg_rgb = [int(bg[i : i + 2], 16) for i in (1, 3, 5)]
+            for t in times:
+                out.append(
+                    {
+                        "fade_in": fin,
+                        "fade_out": fout,
+                        "duration": dur,
+                        "t": t,
+                        "rgb": list(rgb),
+                        "background": bg_rgb,
+                        "out": _pixel(frames[round(t * FPS)], 16, 8, 8),
+                    }
+                )
+    return out
+
+
+def text_cases() -> list[dict[str, Any]]:
+    items: list[tuple[TextItem, tuple[int, int]]] = []
+    for anchor in _ANCHORS:
+        items.append((T("t", 0, 3, anchor=anchor), (1280, 720)))
+    items += [
+        (T("t", 0, 3, anchor="top-left", x_offset=2.5, y_offset=3.0), (1280, 720)),
+        (T("t", 0, 3, anchor="center", x_offset=-10.0, y_offset=-7.5), (1920, 1080)),
+        (T("t", 0, 3, anchor="bottom-right", x_offset=-2.0, y_offset=-4.0), (720, 1280)),
+        (T("t", 0, 3, anchor="bottom", size=50.0), (1280, 720)),
+        (T("t", 0, 3, anchor="top", size=1.0), (640, 360)),
+        (T("t", 0, 3, anchor="center", size=12.5), (1000, 1000)),
+        (T("t", 0, 3, fade_in=0.5, fade_out=0.5), (1280, 720)),
+        (T("t", 1, 3, fade_in=2.0, fade_out=2.0), (1280, 720)),  # 4 s of fades in 2 s: halved
+        (T("t", 0, 2, fade_in=3.0, fade_out=1.0), (1280, 720)),
+        (T("t", 0, 4, fade_in=1.5, fade_out=0.0), (1280, 720)),
+    ]
+    out = []
+    for t, (w, h) in items:
+        _an, col, row = _ANCHORS[t.anchor]
+        fin, fout = _fades(t)
+        out.append(
+            {
+                "item": _item_to_dict(t),
+                "size": [w, h],
+                "x": round(w * (_BASE[col] + t.x_offset / 100)),
+                "y": round(h * (_BASE[row] + t.y_offset / 100)),
+                "column": col,
+                "row": row,
+                "font_px": round(t.size / 100 * h),
+                "fade_in": fin,
+                "fade_out": fout,
+            }
+        )
+    return out
+
+
 def main() -> None:
-    cases = {"layout": layout_cases(), "edits": edit_cases(), "file": file_case()}
+    cases = {
+        "layout": layout_cases(),
+        "edits": edit_cases(),
+        "file": file_case(),
+        "grade": grade_cases(),
+        "transition": transition_cases(),
+        "fade": fade_cases(),
+        "text": text_cases(),
+    }
     OUT.write_text(json.dumps(cases, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
     errors = sum(1 for e in cases["edits"] if e["error"])
     print(
         f"wrote {OUT}: {len(cases['layout'])} layout, "
-        f"{len(cases['edits'])} edit cases ({errors} errors)"
+        f"{len(cases['edits'])} edit cases ({errors} errors), "
+        f"{len(cases['grade'])} grade, {len(cases['transition'])} transition, "
+        f"{len(cases['fade'])} fade, {len(cases['text'])} text"
     )
 
 

@@ -51,6 +51,36 @@ def test_cases_still_match_the_desktop():
             assert_same(case[key], got[key], f"{case['name']}.{key}")
 
 
+def _colour_ok(c: Any) -> bool:
+    return (
+        isinstance(c, list) and len(c) == 3 and all(isinstance(v, int) and 0 <= v <= 255 for v in c)
+    )
+
+
+def test_render_sections_are_well_formed():
+    for key in ("grade", "transition", "fade", "text"):
+        assert CASES[key], key
+    assert len(CASES["grade"]) >= 12
+    for g in CASES["grade"]:
+        assert _colour_ok(g["rgb"]) and _colour_ok(g["out"])
+        assert all(isinstance(g[k], int) for k in ("brightness", "contrast", "saturation"))
+    kinds = set()
+    for tr in CASES["transition"]:
+        kinds.add(tr["kind"])
+        assert _colour_ok(tr["a"]) and _colour_ok(tr["b"]) and tr["width"] == 64
+        assert set(tr["columns"]) == {"0", "16", "32", "48", "63"}
+        assert all(_colour_ok(c) for c in tr["columns"].values())
+    assert kinds == {k for k, _ in maker.TRANSITIONS if k != "none"}
+    for f in CASES["fade"]:
+        assert _colour_ok(f["rgb"]) and _colour_ok(f["background"]) and _colour_ok(f["out"])
+    anchors = set()
+    for t in CASES["text"]:
+        anchors.add(t["item"]["anchor"])
+        assert t["item"]["type"] == "text" and len(t["size"]) == 2
+        assert t["column"] in (0, 1, 2) and t["row"] in (0, 1, 2)
+    assert len(anchors) == 9
+
+
 def test_file_case_matches_save_project():
     maker_file = maker.file_case()
     assert CASES["file"]["text"] == maker_file["text"]
