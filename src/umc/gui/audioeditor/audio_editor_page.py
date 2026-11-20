@@ -23,7 +23,9 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QFrame,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
+    QMenu,
     QMessageBox,
     QProgressBar,
     QPushButton,
@@ -64,8 +66,30 @@ log = logging.getLogger(__name__)
 EMPTY_TEXT = "Open a sound with “Open…”, or drop audio files here (MP3, WAV, FLAC, M4A, OGG, …)."
 HINT = (
     "Click to place the cursor · drag to select · middle-click to play from there · "
-    "Ctrl+wheel to zoom · Space plays"
+    "right-click for more · Ctrl+wheel to zoom · Space plays"
 )
+# the waveform's right-click menu on a selection: (key for run(), label); None = a line
+SELECTION_MENU = (
+    ("play_sel", "Play selection"),
+    None,
+    ("cut", "Cut"),
+    ("copy", "Copy"),
+    ("paste", "Paste"),
+    ("delete", "Delete"),
+    ("trim", "Trim"),
+    ("silence", "Silence"),
+    None,
+    ("fade_in", "Fade in"),
+    ("fade_out", "Fade out"),
+    ("amplify", "Amplify…"),
+    ("normalize", "Normalize"),
+    ("reverse", "Reverse"),
+    ("speed", "Speed / pitch…"),
+    ("reduce_noise", "Reduce noise…"),
+    None,
+    ("zoom_sel", "Zoom to selection"),
+)
+START_HINT = "Type when the track starts in the mix, like 1:05.5 or 12.3 (seconds)."
 SCROLL_STEPS = 1000  # the scroll bar works in 1/1000 of a screen
 VOLUME_KEY = "audioeditor/volume"  # QSettings: the volume slider, 0…100
 SPECTROGRAM_KEY = "audioeditor/spectrogram"  # QSettings: show the spectrogram (bool)
@@ -368,6 +392,10 @@ class AudioEditorPage(QWidget):
         self.tracks_panel.renamed.connect(self.rename_track)
         self.tracks_panel.add_empty.connect(self.add_empty_track)
         self.tracks_panel.add_file.connect(self.choose_track_file)
+        self.tracks_panel.moving.connect(self._on_track_moving)
+        self.tracks_panel.moved.connect(self._on_track_moved)
+        self.tracks_panel.start_time_requested.connect(self.ask_track_start)
+        self.tracks_panel.duplicate_requested.connect(self.duplicate_track)
         self.tracks_panel.hide()
         root.addWidget(self.tracks_panel)
 
@@ -376,6 +404,7 @@ class AudioEditorPage(QWidget):
         self.view.selection_changed.connect(self._update_state)
         self.view.view_changed.connect(self._sync_scrollbar)
         self.view.seek_requested.connect(self.seek)
+        self.view.menu_requested.connect(self.show_wave_menu)
         self.scroll = QScrollBar(Qt.Orientation.Horizontal)
         self.scroll.valueChanged.connect(self._on_scroll)
         wave = QWidget()
@@ -575,6 +604,16 @@ class AudioEditorPage(QWidget):
         """Play and save the mix: two or more tracks, or one with a volume / pan / mute / solo."""
         return len(self.tracks) > 1 or any(tr.changed(t) for t in self.tracks)
 
+    @property
+    def offset(self) -> int:
+        """Where the track being edited starts in the mix (playback runs in mix time)."""
+        if self.doc is None or not self.tracks:
+            return 0
+        return self.tracks[self.active_track].offset
+
+    def _sync_timing(self) -> None:
+        self.view.set_timing(self.offset, tr.extent(self.tracks) if self.tracks else 0)
+
     def _length(self) -> int:
         """Frames that play / save: the mix's, or the sound's."""
         if self.mixing:
@@ -596,6 +635,8 @@ class AudioEditorPage(QWidget):
         self.center.setCurrentWidget(self.placeholder)
 
     def _update_state(self) -> None:
+        self._sync_timing()
+        self.tracks_panel.update_lanes()
         doc = self.doc
         ready = doc is not None and not self.busy
         sel = ready and doc.has_selection
@@ -648,7 +689,8 @@ class AudioEditorPage(QWidget):
             return
         a, b = doc.selection
         t = ops.format_time
-        for key, frames in (("start", a), ("end", b), ("length", b - a)):
+        off = self.offset  # the boxes show mix time, like the ruler
+        for key, frames in (("start", a + off), ("end", b + off), ("length", b - a)):
             self.time_boxes[key].show_time(t(frames / doc.rate))
         layout = {1: "Mono", 2: "Stereo"}.get(doc.channels, f"{doc.channels} channels")
         info = f"{doc.rate / 1000:g} kHz · {layout} · {t(doc.duration)}"
@@ -697,7 +739,8 @@ class AudioEditorPage(QWidget):
         elif key == "fit":
             view.fit()
         elif key == "zoom_sel":
-            view.zoom_to(*doc.selection)
+            a, b = doc.selection
+            view.zoom_to(a + self.offset, b + self.offset)
         elif key == "select_all":
             doc.select_all()
         elif key == "deselect":
@@ -885,10 +928,12 @@ class AudioEditorPage(QWidget):
             return False
         self.stop()
         doc = self.doc
+        if which != "length":  # typed in mix time
+            seconds -= self.offset / doc.rate
         sel = ops.edited_selection(which, seconds, doc.selection, doc.rate, doc.frames)
         doc.set_selection(*sel)
         box.setModified(False)  # so the box shows the real (maybe clamped) time again
-        self.view.ensure_visible(doc.selection[0])
+        self.view.ensure_visible(doc.selection[0] + self.offset)
         self.view.update()
         self.view.selection_changed.emit()
         return True
@@ -898,7 +943,7 @@ class AudioEditorPage(QWidget):
             return
         self.stop()
         self.doc.set_selection(frame)
-        self.view.ensure_visible(self.doc.selection[0])
+        self.view.ensure_visible(self.doc.selection[0] + self.offset)
         self.view.update()
         self._update_state()
 
@@ -914,15 +959,17 @@ class AudioEditorPage(QWidget):
             self._update_state()
             return
         a, b = self.doc.selection
-        n = self._length()
+        off, n = self.offset, self._length()
         if b > a:
-            self._play(a, b)
+            self._play(a + off, b + off)
         else:
-            self._play(a if a < n else 0, n)
+            self._play(a + off if a + off < n else 0, n)
 
     def play_from(self, frame: int) -> None:
-        if self.doc is not None:
-            self._play(frame, self._length())
+        """Play from ``frame`` (mix time) to the end."""
+        if self.doc is not None and not self.busy:
+            self.stop()
+            self._play(min(frame, max(0, self._length() - 1)), self._length())
 
     def seek(self, frame: int) -> None:
         """Middle click: playback moves there (stays paused if it was); the cursor stays put."""
@@ -1181,6 +1228,7 @@ class AudioEditorPage(QWidget):
         self._set_tracks([tr.Track(doc, name)], 0)
         self._tracks_saved_rev = self._tracks_rev
         self.center.setCurrentIndex(0)
+        self._sync_timing()
         self.view.set_document(doc)
         self.show_message("")
         self.view.setFocus()
@@ -1210,6 +1258,7 @@ class AudioEditorPage(QWidget):
             self.stop()
             self.active_track = i
             self.doc = self.tracks[i].doc
+            self._sync_timing()
             self.view.set_document(self.doc)
         self.tracks_panel.set_tracks(self.tracks, i)
         self._update_state()  # also the strip's enabled state
@@ -1223,6 +1272,114 @@ class AudioEditorPage(QWidget):
         self.tracks_panel.set_tracks(self.tracks, self.active_track)
         self._update_state()
         return True
+
+    def _on_track_moving(self, _i: int) -> None:
+        """A lane is being dragged: the waveform follows at once (heard from the next Play)."""
+        self._sync_timing()
+        self.view.update()
+
+    def _on_track_moved(self, _i: int) -> None:
+        self._tracks_rev += 1
+        self._update_state()
+
+    def set_track_start(self, i: int, frames: int) -> bool:
+        """Start track ``i`` at ``frames`` into the mix (not an undo step, like its volume)."""
+        if self.busy or not 0 <= i < len(self.tracks):
+            return False
+        frames = max(0, int(frames))
+        if self.tracks[i].offset == frames:
+            return False
+        self.stop()
+        self.tracks[i].offset = frames
+        self._on_track_moved(i)
+        return True
+
+    def ask_text(self, title: str, label: str, text: str) -> str | None:
+        """One line of text, or None if cancelled (tests replace it)."""
+        value, ok = QInputDialog.getText(self, title, label, text=text)
+        return value if ok else None
+
+    def ask_track_start(self, i: int) -> bool:
+        """ "Start time…": ask when track ``i`` starts. False if cancelled or not a time."""
+        if self.busy or not 0 <= i < len(self.tracks):
+            return False
+        t = self.tracks[i]
+        rate = t.doc.rate
+        text = self.ask_text("Start time", f"When does “{t.name}” start?",
+                             ops.format_time(t.offset / rate))  # fmt: skip
+        if text is None:
+            return False
+        seconds = ops.parse_time(text)
+        if seconds is None:
+            self.show_message(START_HINT, error=True)
+            return False
+        self.show_message("")
+        return self.set_track_start(i, round(seconds * rate)) or True
+
+    def duplicate_track(self, i: int) -> bool:
+        """A copy of track ``i`` right below it (its sound, settings and start), then edit it."""
+        if self.busy or not 0 <= i < len(self.tracks):
+            return False
+        t = self.tracks[i]
+        if self._used_samples() + t.doc.samples.size > MAX_SAMPLES:
+            self.show_message(TRACK_NO_ROOM, error=True)
+            return False
+        self.stop()
+        copy = tr.duplicate(t, tr.copy_name(t.name, self.tracks))
+        tracks = [*self.tracks[: i + 1], copy, *self.tracks[i + 1 :]]
+        active = self.active_track + (1 if self.active_track > i else 0)
+        self._set_tracks(tracks, active)
+        self._show_track(i + 1)
+        return True
+
+    # ------------------------------------------------------------ waveform menu
+    def wave_menu(self, frame: int) -> QMenu | None:
+        """The right-click menu at ``frame`` (mix time): what to do with the selection when the
+        click is on it, else Play from here / Paste here / Select all."""
+        doc = self.doc
+        if doc is None:
+            return None
+        menu = QMenu(self.view)
+        a, b = doc.selection
+        off = self.offset
+        if doc.has_selection and a + off <= frame <= b + off:
+            for item in SELECTION_MENU:
+                if item is None:
+                    menu.addSeparator()
+                    continue
+                key, label = item
+                if key == "play_sel":
+                    act = menu.addAction(label, lambda: self._play(a + off, b + off))
+                    act.setEnabled(not self.busy)
+                else:
+                    act = menu.addAction(label, lambda k=key: self.run(k))
+                    act.setEnabled(self.edit_buttons[key].isEnabled())
+            return menu
+        here = max(0, min(doc.frames, frame - off))
+        act = menu.addAction("Play from here", lambda: self.play_from(frame))
+        act.setEnabled(not self.busy and frame < self._length())
+        act = menu.addAction("Paste here", lambda: self._paste_at(here))
+        # before the track starts there's nowhere to paste (after its end = add to the end)
+        act.setEnabled(not self.busy and self.clipboard is not None and frame >= off)
+        act = menu.addAction("Select all", lambda: self.run("select_all"))
+        act.setEnabled(not self.busy and doc.frames > 0)
+        return menu
+
+    def _paste_at(self, frame: int) -> bool:
+        if self.doc is None or self.busy or self.clipboard is None:
+            return False
+        self.doc.set_selection(frame)
+        return self.run("paste")
+
+    def show_wave_menu(self, frame: int, pos) -> None:
+        menu = self.wave_menu(frame)
+        if menu is not None:
+            self.exec_menu(menu, pos)
+            menu.deleteLater()
+
+    def exec_menu(self, menu: QMenu, pos) -> None:
+        """Show a menu until it is closed (tests replace it)."""
+        menu.exec(pos)
 
     def _add_track(self, doc: AudioDoc, name: str) -> None:
         self._set_tracks([*self.tracks, tr.Track(doc, name)], self.active_track)

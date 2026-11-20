@@ -25,7 +25,14 @@ def make(samples, **kw) -> tracks.Track:
 @pytest.mark.parametrize("case", CASES["cases"], ids=lambda c: c["name"])
 def test_shared_cases(case) -> None:
     ts = [
-        make(t["samples"], gain_db=t["gain_db"], pan=t["pan"], mute=t["mute"], solo=t["solo"])
+        make(
+            t["samples"],
+            gain_db=t["gain_db"],
+            pan=t["pan"],
+            mute=t["mute"],
+            solo=t["solo"],
+            offset=t["offset"],
+        )
         for t in case["tracks"]
     ]
     out = tracks.mix(ts, case["start"], case["end"])
@@ -40,6 +47,30 @@ def test_audible_solo_and_mute() -> None:
     assert tracks.audible([a, b, c]) == [c]
     c.mute = True  # a muted solo is silent, and the others stay silent
     assert tracks.audible([a, b, c]) == []
+
+
+def test_start_times_length_extent_changed() -> None:
+    a, b = make([[0.5] * 10]), make([[0.25] * 4], offset=20)
+    assert b.end == 24
+    assert tracks.length([a, b]) == 24
+    b.mute = True
+    assert tracks.length([a, b]) == 10 and tracks.extent([a, b]) == 24
+    assert tracks.changed(b) and not tracks.changed(a)
+    assert make(np.zeros((1, 0)), offset=50).end == 0
+    b.mute = False
+    mixed = tracks.mix([a, b], 8, 22)[0].tolist()
+    assert mixed == [0.5, 0.5] + [0.0] * 10 + [0.25, 0.25]
+
+
+def test_duplicate_copies_sound_and_settings_not_history() -> None:
+    a = make([[0.1, 0.2]], gain_db=-3, offset=7)
+    a.name = "Voice"
+    a.doc.amplify(6)
+    b = tracks.duplicate(a, tracks.copy_name(a.name, [a]))
+    assert b.name == "Voice copy" and (b.gain_db, b.offset) == (-3, 7)
+    assert np.array_equal(b.doc.samples, a.doc.samples)
+    assert b.doc.samples is not a.doc.samples and not b.doc.can_undo()
+    assert tracks.copy_name("Voice", [a, b]) == "Voice copy 2"
 
 
 def test_pan_gains_keep_the_centre_at_full() -> None:

@@ -1,0 +1,23 @@
+# Test pitfalls
+
+Mistakes earlier sessions made while writing tests. Read this before writing or changing
+tests (CLAUDE.md points here); add one line when a new kind of mistake costs you time.
+
+- **Hangs = a blocking `exec()` with nobody to click.** pytest-qt closes windows *before*
+  fixtures clean up, so an editor left with unsaved edits (a test that failed halfway) asks
+  "Save changes?" for ever. `conftest.pytest_runtest_teardown` answers such boxes "Don't save"
+  while windows close (`tests/test_teardown_guard.py`) — don't rely on fixture clean-up.
+  A menu / dialog a test opens itself must go through a page method the test replaces
+  (`exec_menu`, `ask_text`, `confirm`); patching `QMenu.exec` on the class does not reach Qt. Run new GUI tests with `timeout 120 pytest …` so a hang shows
+  up at once; `timeout -s ABRT` makes Python's faulthandler print where it hung.
+- pytest-qt keeps only a **weak** reference to `qtbot.addWidget` windows: hold your own.
+- Track settings aren't undo steps: a test that changes them ends with
+  `page._tracks_saved_rev = page._tracks_rev` (else the page counts as unsaved).
+- `Track` is a dataclass holding numpy arrays: compare tracks with `is`, never `in` / `==`.
+- e2e: never assert on timing ("played for ~1 s") — read state (`player.origin`, paused);
+  give locators `exact: true` when a label is part of another ("Volume" vs "… volume");
+  pick elements by their own class (`canvas.audio-canvas`), not the first tag on the page — a
+  later feature can add another canvas or button before it;
+  choose formats with `pick()`; never run two Playwright runs at once (they share port 4173).
+- Shared-case fixtures (`tests/fixtures/*_cases.json`) are regenerated only on purpose; check
+  the old cases' values didn't change when you add new ones.

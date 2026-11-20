@@ -3,7 +3,11 @@ With ``spectrogram`` on, each lane shows how loud every pitch is instead (audioe
 
 Click = put the cursor, drag = select, Shift+click = extend the selection (none of them moves
 playback), middle click = play from there, wheel = scroll, Ctrl+wheel = zoom around the pointer,
-double-click = select everything."""
+double-click = select everything. Right-click asks the page for a menu (``menu_requested``).
+
+The view runs in mix time: the shown track starts ``offset`` frames in (set_timing) and the ruler,
+scrolling and the play head count from the start of the mix. The selection is the track's own
+(frames of its sound); ``doc_frame_at`` turns a pointer position into one."""
 
 from __future__ import annotations
 
@@ -11,7 +15,7 @@ import math
 import time
 
 import numpy as np
-from PySide6.QtCore import QLineF, QPointF, QRectF, Qt, QTimer, Signal
+from PySide6.QtCore import QLineF, QPoint, QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPen
 from PySide6.QtWidgets import QSizePolicy, QWidget
 
@@ -32,7 +36,8 @@ TICK_STEPS = (0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10,
 class WaveView(QWidget):
     selection_changed = Signal()
     view_changed = Signal()  # scrolled or zoomed (the page updates its scroll bar)
-    seek_requested = Signal(int)  # a middle click: play from there
+    seek_requested = Signal(int)  # a middle click: play from there (mix frame)
+    menu_requested = Signal(int, QPoint)  # a right-click: mix frame, global position
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -42,7 +47,9 @@ class WaveView(QWidget):
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setMouseTracking(True)
         self.doc: AudioDoc | None = None
-        self.start = 0.0  # frame at the left edge
+        self.start = 0.0  # mix frame at the left edge
+        self.offset = 0  # where the shown track starts in the mix
+        self.extent = 0  # frames of the mix (all tracks)
         self.fpp = 1.0  # frames per pixel
         self.play_head: int | None = None
         self.playing = False
@@ -74,10 +81,22 @@ class WaveView(QWidget):
             self._peaks_rev = self.doc.revision
         return self._peaks
 
+    def set_timing(self, offset: int, extent: int) -> None:
+        """Where the shown track starts, and how long the mix is (keeps the view where it is)."""
+        if (offset, extent) != (self.offset, self.extent):
+            was_fit = self.doc is not None and self.fpp >= self.max_fpp() - 1e-9
+            self.offset, self.extent = offset, extent
+            if was_fit:  # showing everything: keep showing everything
+                self.fpp, self.start = self.max_fpp(), 0.0
+            self._changed()
+
     # ------------------------------------------------------------ view
     @property
     def frames(self) -> int:
-        return self.doc.frames if self.doc is not None else 0
+        """Frames the view spans: the mix, or at least the shown track."""
+        if self.doc is None:
+            return 0
+        return max(self.extent, self.offset + self.doc.frames)
 
     def max_fpp(self) -> float:
         return max(MIN_FPP, self.frames / max(1, self.width()))
@@ -98,7 +117,7 @@ class WaveView(QWidget):
         if self.doc is None:
             return
         if at_x is None:
-            cur = self.doc.selection[0]
+            cur = self.doc.selection[0] + self.offset
             at_x = self.x_of(cur) if 0 <= self.x_of(cur) <= self.width() else self.width() / 2
         frame = self.start + at_x * self.fpp
         self.fpp /= factor
@@ -145,18 +164,27 @@ class WaveView(QWidget):
         return (frame - self.start) / self.fpp
 
     def frame_at(self, x: float) -> int:
+        """The mix frame under ``x``."""
         return max(0, min(self.frames, int(round(self.start + x * self.fpp))))
+
+    def doc_frame_at(self, x: float) -> int:
+        """The shown track's frame under ``x`` (kept inside its sound)."""
+        return max(0, min(self.doc.frames, self.frame_at(x) - self.offset))
 
     # ------------------------------------------------------------ mouse
     def mousePressEvent(self, event) -> None:  # noqa: N802
         if self.doc is None:
             return
-        f = self.frame_at(event.position().x())
+        x = event.position().x()
         if event.button() == Qt.MouseButton.MiddleButton:
-            self.seek_requested.emit(f)
+            self.seek_requested.emit(self.frame_at(x))
+            return
+        if event.button() == Qt.MouseButton.RightButton:
+            self.menu_requested.emit(self.frame_at(x), event.globalPosition().toPoint())
             return
         if event.button() != Qt.MouseButton.LeftButton:
             return
+        f = self.doc_frame_at(x)
         if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
             a, b = self.doc.selection
             self._anchor = b if abs(f - a) < abs(f - b) else a
@@ -176,7 +204,7 @@ class WaveView(QWidget):
         x = event.position().x()
         if x < 0 or x > self.width():  # dragging past an edge scrolls
             self.set_start(self.start + (x if x < 0 else x - self.width()) * self.fpp)
-        self.doc.set_selection(self._anchor, self.frame_at(x))
+        self.doc.set_selection(self._anchor, self.doc_frame_at(x))
         self.update()
         self.selection_changed.emit()
 
@@ -184,7 +212,7 @@ class WaveView(QWidget):
         self._anchor = None
 
     def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802
-        if self.doc is not None:
+        if self.doc is not None and event.button() == Qt.MouseButton.LeftButton:
             self.doc.select_all()
             self.update()
             self.selection_changed.emit()
@@ -211,13 +239,15 @@ class WaveView(QWidget):
         lanes_top = RULER_H
         lane_h = (h - lanes_top - LANE_GAP * (doc.channels - 1)) / doc.channels
         a, b = doc.selection
-        sel_x0, sel_x1 = self.x_of(a), self.x_of(b)
-        end_x = min(w, self.x_of(self.frames))
+        off = self.offset
+        sel_x0, sel_x1 = self.x_of(a + off), self.x_of(b + off)
+        x0, x1 = max(0.0, self.x_of(off)), min(w, self.x_of(off + doc.frames))
 
         images = self._spectrogram_images(lane_h) if self.spectrogram else []
         for c in range(doc.channels):
             top = lanes_top + c * (lane_h + LANE_GAP)
-            painter.fillRect(QRectF(0, top, end_x, lane_h), QColor(p["surface_alt"]))
+            if x1 > x0:
+                painter.fillRect(QRectF(x0, top, x1 - x0, lane_h), QColor(p["surface_alt"]))
             if images:
                 img = images[c]
                 first, per_col = self._spectro_place
@@ -231,6 +261,7 @@ class WaveView(QWidget):
             self._paint_freq_labels(painter, lanes_top, lane_h)
         else:
             self._paint_waves(painter, lanes_top, lane_h, p)
+        self._paint_before(painter, lanes_top, h, p)
         self._paint_ruler(painter, w, p)
 
         # cursor / selection edges, then the play head
@@ -252,26 +283,33 @@ class WaveView(QWidget):
         """One image per channel (columns × rows, lowest pitch at the bottom), cached until the
         sound, the view or the size changes."""
         rows = max(1, min(spectrum.MAX_ROWS, int(lane_h)))
-        key = (self.doc.revision, self.start, self.fpp, self.width(), rows)
+        key = (self.doc.revision, self.start, self.fpp, self.width(), rows, self.offset)
         old = self._spectro_key
         # only the view moved (same sound, size): while that happens quickly, stretch the last
         # images and compute once it settles (an edit or a new size is drawn at once)
-        only_view = old is not None and (old[0], old[3], old[4]) == (key[0], key[3], key[4])
+        only_view = old is not None and (old[0], old[3], old[4], old[5]) == (
+            key[0],
+            key[3],
+            key[4],
+            key[5],
+        )
         quick = (time.monotonic() - self._spectro_at) * 1000 < SETTLE_MS
         if key != old and self._spectro and only_view and quick:
             self._spectro_timer.start()
             return self._spectro
         if key != old:
             step = spectrum.column_step(self.width())
+            skip = self._skip_columns(step)  # columns before the track starts
+            first = self.start + skip * step * self.fpp
             levels = spectrum.columns(
                 self.doc.samples,
                 self.doc.rate,
-                self.start,
+                first - self.offset,
                 self.fpp * step,
-                math.ceil(self.width() / step),
+                max(0, math.ceil(self.width() / step) - skip),
                 rows,
             )
-            self._spectro_place = (self.start, self.fpp * step)
+            self._spectro_place = (first, self.fpp * step)
             self._spectro_at = time.monotonic()
             self._spectro = []
             for lv in levels:
@@ -300,9 +338,40 @@ class WaveView(QWidget):
                 painter.drawLine(QLineF(0, y, 4, y))
                 painter.drawText(QPointF(6, y + 3), text)
 
+    def _skip_columns(self, step: int = 1) -> int:
+        """Whole columns (of ``step`` px) left of where the shown track starts."""
+        before = (self.offset - self.start) / (self.fpp * step)
+        return max(0, math.ceil(before - 1e-9))
+
+    def _paint_before(self, painter: QPainter, top: float, h: float, p) -> None:
+        """Hatch the part of the mix before the shown track starts, and say so."""
+        x = self.x_of(self.offset)
+        if self.offset <= 0 or x <= 0:
+            return
+        x = min(x, self.width())
+        area = QRectF(0, top, x, h - top)
+        hatch = QColor(p["border"])
+        hatch.setAlpha(110)
+        painter.save()
+        painter.setClipRect(area)
+        painter.setPen(QPen(hatch, 1))
+        for k in range(int(-(h - top)), int(x) + 1, 10):
+            painter.drawLine(QLineF(k, h, k + (h - top), top))
+        painter.restore()
+        painter.setPen(QPen(QColor(p["border_strong"]), 1, Qt.PenStyle.DashLine))
+        painter.drawLine(QLineF(x, top, x, h))
+        text = f"no sound before {format_time(self.offset / self.doc.rate)[:-2]}"
+        if painter.fontMetrics().horizontalAdvance(text) + 16 < x:
+            painter.setPen(QColor(p["muted"]))
+            painter.drawText(area, Qt.AlignmentFlag.AlignCenter, text)
+
     def _paint_waves(self, painter: QPainter, top0: float, lane_h: float, p) -> None:
         doc = self.doc
-        mins, maxs = peaks.columns(doc.samples, self._summary(), self.start, self.fpp, self.width())
+        skip = self._skip_columns()
+        first = self.start + skip * self.fpp - self.offset
+        mins, maxs = peaks.columns(
+            doc.samples, self._summary(), first, self.fpp, self.width() - skip
+        )
         k = mins.shape[1]
         if k == 0:
             return
@@ -311,26 +380,29 @@ class WaveView(QWidget):
             top = top0 + c * (lane_h + LANE_GAP)
             mid, half = top + lane_h / 2, lane_h / 2 * 0.95
             painter.setPen(QPen(QColor(p["border_strong"]), 1))
-            painter.drawLine(QLineF(0, mid, self.x_of(self.frames), mid))
+            painter.drawLine(QLineF(max(0.0, self.x_of(self.offset)), mid,
+                                    self.x_of(self.offset + doc.frames), mid))  # fmt: skip
             lo = np.clip(mins[c], -1, 1)
             hi = np.clip(maxs[c], -1, 1)
             pen = QPen(color)
             pen.setWidthF(1)
             painter.setPen(pen)
             if self.fpp < 1:  # zoomed in to single samples: join the dots
-                xs = np.arange(k, dtype=np.float64)
+                xs = np.arange(skip, skip + k, dtype=np.float64)
                 ys = mid - hi * half
                 painter.drawPolyline([_pt(x, y) for x, y in zip(xs, ys, strict=True)])
                 if self.fpp < 1 / 8:  # and show the samples themselves
                     for i in range(1, k):
-                        if math.floor(self.start + i * self.fpp) != math.floor(
-                            self.start + (i - 1) * self.fpp
+                        if math.floor(first + i * self.fpp) != math.floor(
+                            first + (i - 1) * self.fpp
                         ):
-                            painter.drawEllipse(_pt(i, ys[i]), 2, 2)
+                            painter.drawEllipse(_pt(skip + i, ys[i]), 2, 2)
                 continue
             y0 = mid - hi * half
             y1 = np.maximum(mid - lo * half, y0 + 1)
-            painter.drawLines([QLineF(i + 0.5, y0[i], i + 0.5, y1[i]) for i in range(k)])
+            painter.drawLines(
+                [QLineF(skip + i + 0.5, y0[i], skip + i + 0.5, y1[i]) for i in range(k)]
+            )
 
     def _paint_ruler(self, painter: QPainter, w: int, p) -> None:
         painter.fillRect(QRectF(0, 0, w, RULER_H), QColor(p["surface"]))

@@ -10,7 +10,7 @@ const make = (samples: number[][], over: Partial<tracks.Track> = {}): tracks.Tra
 describe("mix: shared cases", () => {
   for (const c of cases.cases) {
     it(c.name, () => {
-      const ts = c.tracks.map((t) => make(t.samples, { gainDb: t.gain_db, pan: t.pan, mute: t.mute, solo: t.solo }));
+      const ts = c.tracks.map((t) => make(t.samples, { gainDb: t.gain_db, pan: t.pan, mute: t.mute, solo: t.solo, offset: t.offset }));
       const out = tracks.mix(ts, c.start, c.end);
       expect(out.length).toBe(c.mix.length);
       out.forEach((ch, i) => expect(Array.from(ch)).toEqual(c.mix[i]));
@@ -25,6 +25,32 @@ describe("tracks", () => {
     expect(tracks.audible([a, b, c])).toEqual([c]);
     c.mute = true;
     expect(tracks.audible([a, b, c])).toEqual([]);
+  });
+
+  it("start times: length, extent, changed", () => {
+    const a = make([Array(10).fill(0.5)]), b = make([Array(4).fill(0.25)], { offset: 20 });
+    expect(tracks.trackEnd(b)).toBe(24);
+    expect(tracks.length([a, b])).toBe(24);
+    b.mute = true;
+    expect(tracks.length([a, b])).toBe(10);
+    expect(tracks.extent([a, b])).toBe(24);
+    expect(tracks.changed(b)).toBe(true);
+    expect(tracks.changed(a)).toBe(false);
+    expect(tracks.trackEnd(make([[]], { offset: 50 }))).toBe(0);
+    const mixed = tracks.mix([a, { ...b, mute: false }], 8, 22)[0];
+    expect(Array.from(mixed)).toEqual([0.5, 0.5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.25, 0.25]);
+  });
+
+  it("duplicate copies the sound and settings, not the history", () => {
+    const a = make([[0.1, 0.2]], { gainDb: -3, offset: 7, name: "Voice" });
+    a.doc.amplify(6);
+    const b = tracks.duplicate(a, tracks.copyName(a.name, [a]));
+    expect(b.name).toBe("Voice copy");
+    expect([b.gainDb, b.offset]).toEqual([-3, 7]);
+    expect(Array.from(b.doc.samples[0])).toEqual(Array.from(a.doc.samples[0]));
+    expect(b.doc.samples[0]).not.toBe(a.doc.samples[0]);
+    expect(b.doc.canUndo()).toBe(false);
+    expect(tracks.copyName("Voice", [a, b])).toBe("Voice copy 2");
   });
 
   it("pan keeps the centre at full", () => {

@@ -37,7 +37,23 @@ const h = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLEle
 export const MAX_TRACK_NAME = 60;
 /** What a typed track name becomes ("" = keep the old one). */
 export const cleanTrackName = (text: string) => text.split(/\s+/).filter(Boolean).join(" ").slice(0, MAX_TRACK_NAME);
-export const HINT = "Click to place the cursor · drag to select · middle-click to play from there · Ctrl+wheel to zoom · Space plays";
+export const HINT = "Click to place the cursor · drag to select · middle-click to play from there · right-click for more · Ctrl+wheel to zoom · Space plays";
+const START_HINT = "Type when the track starts in the mix, like 1:05.5 or 12.3 (seconds).";
+const LANE_ROOM = 1.25; // the lanes span the mix plus a quarter, so a track can be dragged later
+const LANE_EMPTY_SECONDS = 10; // what the lanes span while every track is empty
+const DRAG_PX = 3; // moving less than this is a click
+const SNAP_PX = 6; // a start this close to 0:00 snaps to it
+/** The waveform's right-click menu on a selection (null = a line). */
+const SELECTION_MENU: ([Action | "play_sel", string] | null)[] = [
+  ["play_sel", "Play selection"], null,
+  ["cut", "Cut"], ["copy", "Copy"], ["paste", "Paste"], ["delete", "Delete"], ["trim", "Trim"], ["silence", "Silence"], null,
+  ["fade_in", "Fade in"], ["fade_out", "Fade out"], ["amplify", "Amplify…"], ["normalize", "Normalize"], ["reverse", "Reverse"],
+  ["speed", "Speed / pitch…"], ["reduce_noise", "Reduce noise…"], null,
+  ["zoom_sel", "Zoom to selection"],
+];
+type MenuItem = { label: string; fn: () => void; disabled?: boolean; checked?: boolean } | null;
+/** Like 0:13.2 (tenths are enough for a start). */
+const startText = (frames: number, rate: number) => ops.formatTime(frames / rate).slice(0, -2);
 const EMPTY_TEXT = "Open a sound with “Open…”, or drop audio files here (MP3, WAV, FLAC, M4A, OGG, …).";
 const AUDIO_ACCEPT = "audio/*,.mp3,.wav,.flac,.m4a,.aac,.ogg,.oga,.opus,.wma,.aiff,.aif,.ac3,.amr,.ape,.mka";
 const RULER_H = 24;
@@ -98,7 +114,7 @@ export class AudioEditorPage {
   doc: AudioDoc | null = null;
   sources: string[] = [];
   clipboard: Samples | null = null;
-  start = 0; // frame at the left edge
+  start = 0; // mix frame at the left edge (the view runs in mix time; the selection is the track's)
   fpp = 1; // frames per pixel
   playHead: number | null = null;
   busy = false;
@@ -109,7 +125,10 @@ export class AudioEditorPage {
   private tracksRev = 0; // bumped by every track change (add, remove, volume, mute …)
   private tracksSavedRev = 0;
   private tracksEl = h("div", { class: "audio-tracks", hidden: true });
-  private trackRows: { track: tracks.Track; label: string; row: HTMLElement; name: HTMLButtonElement; more: HTMLButtonElement }[] = [];
+  private trackRows: { track: tracks.Track; label: string; row: HTMLElement; name: HTMLButtonElement; more: HTMLButtonElement; lane: HTMLCanvasElement }[] = [];
+  private laneSpan = 0; // frames across a lane (kept while a lane is dragged)
+  private laneFrozen = false;
+  private lanePeaks = new WeakMap<AudioDoc, { rev: number; peaks: peaks.Peaks }>();
   private trackMenu: { menu: HTMLElement; done: () => void } | null = null;
   private trackFile = h("input", { type: "file", accept: "audio/*", hidden: true });
   recordRoom: number | null = null; // tests: a smaller limit for the take, in frames
@@ -335,18 +354,223 @@ export class AudioEditorPage {
         pan.value = "0";
         onPan();
       });
-      const more = h("button", { class: "btn small audio-track-more", type: "button", title: `More for ${t.name}: rename, remove`, ariaLabel: `More for ${t.name}`, textContent: "⋯" });
+      const more = h("button", { class: "btn small audio-track-more", type: "button", title: `More for ${t.name}: rename, start time, duplicate, remove …`, ariaLabel: `More for ${t.name}`, textContent: "⋯" });
       more.setAttribute("aria-haspopup", "menu");
       more.addEventListener("click", () => this.openTrackMenu(i, more));
+      const lane = this.makeLane(i);
       const row = h("div", { class: "audio-track", role: "group", ariaLabel: t.name }, name,
         toggle("M", `Mute ${t.name}`, t.mute, (on) => this.setTrack(t, "mute", on)),
         toggle("S", `Solo ${t.name} (hear only the soloed tracks)`, t.solo, (on) => this.setTrack(t, "solo", on)),
         h("label", { class: "audio-track-slider audio-track-gain" }, gain, gainLabel),
-        h("label", { class: "audio-track-slider audio-track-pan" }, pan, panLabel), more);
+        h("label", { class: "audio-track-slider audio-track-pan" }, pan, panLabel), more, lane);
+      row.addEventListener("contextmenu", (e) => {
+        if ((e.target as HTMLElement).tagName === "INPUT" && (e.target as HTMLInputElement).type === "text") return; // the rename box keeps its own menu
+        e.preventDefault();
+        this.openTrackMenu(i, more, { x: e.clientX, y: e.clientY });
+      });
       el.append(row);
-      return { track: t, label: t.name, row, name, more };
+      return { track: t, label: t.name, row, name, more, lane };
     });
     this.syncTracks();
+    requestAnimationFrame(() => this.drawLanes()); // once the rows have their width
+  }
+
+  // ---------------------------------------------------------------- lanes
+  /** Track `i`'s block on the shared timeline: drag it to move the track in time (a click edits
+   *  it; ← / → move it by 0.1 s, with Shift by 1 s). */
+  private makeLane(i: number): HTMLCanvasElement {
+    const t = this.tracks[i];
+    const lane = h("canvas", { class: "audio-track-lane", tabIndex: 0, ariaLabel: `${t.name} in time`, title: "Drag to move this track in time · click: edit it · ← / → move it" });
+    let drag: { x: number; start: number; moved: boolean } | null = null;
+    const fpp = () => this.span() / Math.max(1, lane.clientWidth - 2);
+    const blockAt = (x: number) => {
+      const f = fpp(), x0 = 1 + t.offset / f, w = Math.max(3, t.doc.frames / f);
+      return x >= x0 - 3 && x <= x0 + w + 3;
+    };
+    const px = (e: PointerEvent) => e.clientX - lane.getBoundingClientRect().left;
+    lane.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0 || this.busy) return;
+      if (!blockAt(px(e))) {
+        this.selectTrack(i);
+        return;
+      }
+      lane.setPointerCapture(e.pointerId);
+      drag = { x: px(e), start: t.offset, moved: false };
+      this.laneFrozen = true;
+      lane.classList.add("dragging");
+    });
+    lane.addEventListener("pointermove", (e) => {
+      if (!drag) {
+        lane.style.cursor = !this.busy && blockAt(px(e)) ? "grab" : "";
+        return;
+      }
+      const dx = px(e) - drag.x;
+      if (!drag.moved && Math.abs(dx) < DRAG_PX) return;
+      drag.moved = true;
+      const f = fpp();
+      let offset = Math.max(0, Math.round(drag.start + dx * f));
+      if (offset / f < SNAP_PX) offset = 0;
+      this.moveTrack(i, offset);
+      this.showLaneTip(lane, e.clientX, `Starts ${startText(offset, t.doc.rate)}`);
+    });
+    const end = (e: PointerEvent) => {
+      if (!drag) return;
+      const { start, moved } = drag;
+      drag = null;
+      this.laneFrozen = false;
+      lane.classList.remove("dragging");
+      this.showLaneTip(lane, 0, null);
+      if (e.type === "pointerup" && !moved) this.selectTrack(i);
+      else if (t.offset !== start) this.tracksRev++;
+      this.update();
+    };
+    lane.addEventListener("pointerup", end);
+    lane.addEventListener("pointercancel", end);
+    lane.addEventListener("keydown", (e) => {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      e.preventDefault();
+      e.stopPropagation();
+      const step = Math.round(t.doc.rate * (e.shiftKey ? 1 : 0.1)) * (e.key === "ArrowLeft" ? -1 : 1);
+      this.setTrackStart(i, t.offset + step);
+    });
+    return lane;
+  }
+
+  private laneTip = h("div", { class: "audio-lane-tip", hidden: true });
+
+  private showLaneTip(lane: HTMLElement, x: number, text: string | null): void {
+    const tip = this.laneTip;
+    tip.hidden = text === null;
+    if (text === null) return;
+    if (!tip.isConnected) document.body.append(tip);
+    tip.textContent = text;
+    const r = lane.getBoundingClientRect();
+    tip.style.left = `${Math.max(4, Math.min(x - tip.offsetWidth / 2, window.innerWidth - tip.offsetWidth - 4))}px`;
+    tip.style.top = `${Math.max(4, r.top - tip.offsetHeight - 6)}px`;
+  }
+
+  /** Frames across a lane. */
+  span(): number {
+    if (!this.laneFrozen && this.tracks.length) {
+      this.laneSpan = Math.round(tracks.extent(this.tracks) * LANE_ROOM) || this.tracks[0].doc.rate * LANE_EMPTY_SECONDS;
+    }
+    return Math.max(1, this.laneSpan);
+  }
+
+  /** A lane is being dragged: the track moves at once (heard from the next Play). */
+  private moveTrack(i: number, offset: number): void {
+    const t = this.tracks[i];
+    if (t.offset === offset) return;
+    t.offset = offset;
+    this.changed(); // the view's length (and scroll bar) follow
+    this.drawLanes();
+  }
+
+  /** Start track `i` at `frames` into the mix (not an undo step, like its volume). */
+  setTrackStart(i: number, frames: number): boolean {
+    const t = this.tracks[i];
+    frames = Math.max(0, Math.round(frames));
+    if (!t || this.busy || t.offset === frames) return false;
+    this.stop();
+    t.offset = frames;
+    this.tracksRev++;
+    this.changed();
+    this.update();
+    return true;
+  }
+
+  /** "Start time…": ask when track `i` starts. False if cancelled or not a time. */
+  async askTrackStart(i: number): Promise<boolean> {
+    const t = this.tracks[i];
+    if (!t || this.busy) return false;
+    const box = h("input", { type: "text", class: "audio-start-time", value: ops.formatTime(t.offset / t.doc.rate), ariaLabel: "Start time", spellcheck: false, inputMode: "decimal" });
+    const got = await dialog("audio-start-dialog", "Start time", [h("label", {}, `When does “${t.name}” start?`, box)], "OK", () => box.value);
+    if (!got) return false;
+    const seconds = ops.parseTime(got.value);
+    if (seconds === null) {
+      this.showMessage(START_HINT, true);
+      return false;
+    }
+    this.showMessage("");
+    this.setTrackStart(i, seconds * t.doc.rate);
+    return true;
+  }
+
+  /** A copy of track `i` right below it (its sound, settings and start), then edit it. */
+  duplicateTrack(i: number): boolean {
+    const t = this.tracks[i];
+    if (!t || this.busy) return false;
+    if (this.usedSamples() + t.doc.channels * t.doc.frames > MAX_SAMPLES) {
+      this.showMessage(TRACK_NO_ROOM, true);
+      return false;
+    }
+    this.stop();
+    const copy = tracks.duplicate(t, tracks.copyName(t.name, this.tracks));
+    const list = [...this.tracks.slice(0, i + 1), copy, ...this.tracks.slice(i + 1)];
+    this.setTracks(list, this.activeTrack + (this.activeTrack > i ? 1 : 0));
+    this.showTrack(i + 1);
+    return true;
+  }
+
+  /** Repaint every lane (after an edit changed a length, or a mute / solo). */
+  private drawLanes(): void {
+    if (!this.trackRows.length) return;
+    const span = this.span();
+    const heard = new Set(tracks.audible(this.tracks));
+    const col = { surface: cssColor("--surface", "#fff"), border: cssColor("--border", "#e3e5ea"), accent: cssColor("--accent", "#5b5ef0") };
+    const dpr = devicePixelRatio || 1;
+    this.trackRows.forEach((r, i) => {
+      const lane = r.lane, t = r.track;
+      const w = lane.clientWidth, hgt = lane.clientHeight;
+      if (!w || !hgt) return;
+      if (lane.width !== Math.round(w * dpr) || lane.height !== Math.round(hgt * dpr)) {
+        lane.width = Math.round(w * dpr);
+        lane.height = Math.round(hgt * dpr);
+      }
+      const g = lane.getContext("2d");
+      if (!g) return;
+      g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      g.clearRect(0, 0, w, hgt);
+      const fpp = span / Math.max(1, w - 2);
+      const x0 = 1 + t.offset / fpp, bw = t.doc.frames ? Math.max(3, t.doc.frames / fpp) : 3;
+      const top = 3, bh = hgt - 6;
+      const on = heard.has(t);
+      g.fillStyle = col.accent;
+      g.globalAlpha = on ? 0.22 : 0.1;
+      g.beginPath();
+      g.roundRect(x0, top, bw, bh, 3);
+      g.fill();
+      g.globalAlpha = on ? 0.9 : 0.35;
+      if (t.doc.frames) {
+        let got = this.lanePeaks.get(t.doc);
+        if (!got || got.rev !== t.doc.revision) {
+          got = { rev: t.doc.revision, peaks: peaks.build(t.doc.samples) };
+          this.lanePeaks.set(t.doc, got);
+        }
+        const { mins, maxs } = peaks.columns(t.doc.samples, got.peaks, 0, fpp, Math.ceil(bw) + 1);
+        const n = maxs[0]?.length ?? 0;
+        let loudest = 0;
+        for (let c = 0; c < maxs.length; c++) for (let k = 0; k < n; k++) loudest = Math.max(loudest, Math.abs(mins[c][k]), Math.abs(maxs[c][k]));
+        const mid = top + bh / 2, half = (bh / 2 - 1) / Math.max(loudest, 0.05); // quiet tracks still show their shape
+        for (let k = 0; k < n; k++) {
+          let lo = 1, hi = -1;
+          for (let c = 0; c < maxs.length; c++) {
+            lo = Math.min(lo, mins[c][k]);
+            hi = Math.max(hi, maxs[c][k]);
+          }
+          const y0 = mid - Math.min(1, hi) * half, y1 = Math.max(mid - Math.max(-1, lo) * half, y0 + 1);
+          g.fillRect(Math.floor(x0 + k), y0, 1, y1 - y0);
+        }
+      }
+      g.globalAlpha = 1;
+      if (i === this.activeTrack || lane.classList.contains("dragging")) {
+        g.strokeStyle = col.accent;
+        g.lineWidth = 1.5;
+        g.beginPath();
+        g.roundRect(x0, top, bw, bh, 3);
+        g.stroke();
+      }
+    });
   }
 
   /** The highlight and what may be clicked; rows stay (so a double-click on a name still lands). */
@@ -368,31 +592,95 @@ export class AudioEditorPage {
     else this.renderTracks();
   }
 
-  private openTrackMenu(i: number, anchor: HTMLElement): void {
+  /** ⋯ (or a right-click on the row): what to do with track `i`. */
+  private openTrackMenu(i: number, anchor: HTMLElement, at?: { x: number; y: number }): void {
+    const t = this.tracks[i];
+    if (!t) return;
+    const off = this.busy; // Mute / Solo work while busy, like their buttons
+    const toggle = (key: "mute" | "solo") => () => {
+      const b = this.trackRows[i]?.row.querySelectorAll<HTMLButtonElement>(".audio-track-toggle")[key === "mute" ? 0 : 1];
+      b?.setAttribute("aria-pressed", String(!t[key]));
+      this.setTrack(t, key, !t[key]);
+    };
+    this.openMenu(`${t.name} actions`, [
+      { label: "Rename…", fn: () => this.startRename(i), disabled: off },
+      { label: "Mute", fn: toggle("mute"), checked: t.mute },
+      { label: "Solo", fn: toggle("solo"), checked: t.solo },
+      { label: "Start time…", fn: () => void this.askTrackStart(i), disabled: off },
+      { label: "Duplicate", fn: () => this.duplicateTrack(i), disabled: off },
+      null,
+      { label: "Remove track", fn: () => this.removeTrack(i), disabled: off },
+    ], anchor, at);
+  }
+
+  /** The waveform's right-click menu at `frame` (mix time): what to do with the selection when
+   *  the click is on it, else Play from here / Paste here / Select all. */
+  openWaveMenu(frame: number, at: { x: number; y: number }): void {
+    const doc = this.doc;
+    if (!doc) return;
+    this.update(); // the tool buttons' enabled state is what the menu offers
+    const [a, b] = doc.selection, off = this.offset;
+    if (doc.hasSelection && frame >= a + off && frame <= b + off) {
+      this.openMenu("Selection", SELECTION_MENU.map((item) => item && {
+        label: item[1],
+        fn: item[0] === "play_sel" ? () => this.play(a + off, b + off) : () => void this.run(item[0] as Action),
+        disabled: item[0] === "play_sel" ? this.busy : !!this.buttons.get(item[0])?.disabled,
+      }), this.canvas, at);
+      return;
+    }
+    const here = Math.max(0, Math.min(doc.frames, frame - off));
+    this.openMenu("Waveform", [
+      { label: "Play from here", fn: () => this.playFrom(frame), disabled: this.busy || frame >= this.length() },
+      { label: "Paste here", fn: () => { doc.setSelection(here); void this.run("paste"); }, disabled: this.busy || !this.clipboard || frame < off }, // after the end = add to it
+      { label: "Select all", fn: () => void this.run("select_all"), disabled: this.busy || !doc.frames },
+    ], this.canvas, at);
+  }
+
+  /** A small menu under `anchor` (or at the pointer); arrow keys / Esc work. */
+  private openMenu(name: string, items: MenuItem[], anchor: HTMLElement, at?: { x: number; y: number }): void {
     this.closeTrackMenu();
-    const menu = h("div", { class: "menu-items context-menu", role: "menu", ariaLabel: `${this.tracks[i]?.name ?? ""} actions` });
-    const item = (label: string, fn: () => void) => {
-      const b = h("button", { class: "menu-item", role: "menuitem", type: "button" }, label);
+    const menu = h("div", { class: "menu-items context-menu", role: "menu", ariaLabel: name });
+    for (const it of items) {
+      if (!it) {
+        menu.append(h("div", { class: "menu-sep", role: "separator" }));
+        continue;
+      }
+      const b = h("button", { class: "menu-item", role: it.checked === undefined ? "menuitem" : "menuitemcheckbox", type: "button", disabled: !!it.disabled }, it.label);
+      if (it.checked !== undefined) {
+        b.setAttribute("aria-checked", String(it.checked));
+        b.prepend(h("span", { class: "menu-check", ariaHidden: "true" }, it.checked ? "✓" : ""));
+      }
       b.addEventListener("click", () => {
         this.closeTrackMenu();
-        fn();
+        it.fn();
       });
       menu.append(b);
-    };
-    item("Rename…", () => this.startRename(i));
-    item("Remove track", () => this.removeTrack(i));
+    }
     document.body.append(menu);
-    const a = anchor.getBoundingClientRect(), r = menu.getBoundingClientRect();
-    menu.style.left = `${Math.max(4, Math.min(a.right - r.width, window.innerWidth - r.width - 4))}px`;
-    menu.style.top = `${a.bottom + 4 + r.height > window.innerHeight ? Math.max(4, a.top - r.height - 4) : a.bottom + 4}px`;
+    const r = menu.getBoundingClientRect();
+    if (at) {
+      menu.style.left = `${Math.max(4, Math.min(at.x, window.innerWidth - r.width - 4))}px`;
+      menu.style.top = `${Math.max(4, at.y + r.height > window.innerHeight ? at.y - r.height : at.y)}px`;
+    } else {
+      const a = anchor.getBoundingClientRect();
+      menu.style.left = `${Math.max(4, Math.min(a.right - r.width, window.innerWidth - r.width - 4))}px`;
+      menu.style.top = `${a.bottom + 4 + r.height > window.innerHeight ? Math.max(4, a.top - r.height - 4) : a.bottom + 4}px`;
+    }
     const outside = (e: Event) => {
-      if (!menu.contains(e.target as Node) && e.target !== anchor) this.closeTrackMenu();
+      // the ⋯ button toggles its own menu; a menu opened at a spot closes on any click outside it
+      if (!menu.contains(e.target as Node) && (at || e.target !== anchor)) this.closeTrackMenu();
     };
     const keys = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopPropagation();
         this.closeTrackMenu();
         anchor.focus();
+      } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        e.stopPropagation();
+        const list = [...menu.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")];
+        const at = list.indexOf(document.activeElement as HTMLButtonElement);
+        list[(at + (e.key === "ArrowDown" ? 1 : list.length - 1)) % list.length]?.focus();
       }
     };
     document.addEventListener("pointerdown", outside, true);
@@ -401,7 +689,7 @@ export class AudioEditorPage {
       document.removeEventListener("pointerdown", outside, true);
       document.removeEventListener("keydown", keys, true);
     } };
-    menu.querySelector<HTMLButtonElement>("button")?.focus();
+    menu.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
   }
 
   private closeTrackMenu(): void {
@@ -470,6 +758,7 @@ export class AudioEditorPage {
     if (doc !== this.doc) {
       this.stop();
       this.doc = doc;
+      this.activeTrack = i; // first: the view's length and fit count from its start
       this.summary = null;
       this.spectroKey = "";
       this.spectro = [];
@@ -652,8 +941,14 @@ export class AudioEditorPage {
     return Math.max(1, this.host.clientWidth);
   }
 
+  /** Where the track being edited starts in the mix. */
+  get offset(): number {
+    return this.doc ? this.tracks[this.activeTrack]?.offset ?? 0 : 0;
+  }
+
+  /** Frames the view spans: the mix, or at least the track being edited. */
   get frames(): number {
-    return this.doc?.frames ?? 0;
+    return this.doc ? Math.max(tracks.extent(this.tracks), this.offset + this.doc.frames) : 0;
   }
 
   private maxFpp(): number {
@@ -679,7 +974,7 @@ export class AudioEditorPage {
   zoom(factor: number, atX?: number): void {
     if (!this.doc) return;
     if (atX === undefined) {
-      const x = this.xOf(this.doc.selection[0]);
+      const x = this.xOf(this.doc.selection[0] + this.offset);
       atX = x >= 0 && x <= this.width() ? x : this.width() / 2;
     }
     const frame = this.start + atX * this.fpp;
@@ -715,6 +1010,7 @@ export class AudioEditorPage {
   }
 
   private changed(): void {
+    if (this.fitted) this.fpp = this.maxFpp(); // showing everything: keep showing everything (a track moved, an edit)
     this.clamp();
     const total = this.frames;
     const page = this.visibleFrames();
@@ -733,14 +1029,21 @@ export class AudioEditorPage {
   private onResize(): void {
     if (this.fitted) this.fpp = this.maxFpp(); // the whole sound stays in view
     this.changed();
+    this.drawLanes();
   }
 
   xOf(frame: number): number {
     return (frame - this.start) / this.fpp;
   }
 
+  /** The mix frame under `x`. */
   frameAt(x: number): number {
     return Math.max(0, Math.min(this.frames, Math.round(this.start + x * this.fpp)));
+  }
+
+  /** The edited track's frame under `x` (kept inside its sound). */
+  docFrameAt(x: number): number {
+    return Math.max(0, Math.min(this.doc?.frames ?? 0, this.frameAt(x) - this.offset));
   }
 
   // ---------------------------------------------------------------- mouse
@@ -756,7 +1059,7 @@ export class AudioEditorPage {
       if (!this.doc || e.button !== 0 || this.busy) return;
       c.setPointerCapture(e.pointerId);
       c.focus();
-      const f = this.frameAt(x(e));
+      const f = this.docFrameAt(x(e));
       if (e.shiftKey) {
         const [a, b] = this.doc.selection;
         this.anchor = Math.abs(f - a) < Math.abs(f - b) ? b : a;
@@ -771,13 +1074,17 @@ export class AudioEditorPage {
       if (!this.doc || this.anchor === null) return;
       const px = x(e);
       if (px < 0 || px > this.width()) this.setStart(this.start + (px < 0 ? px : px - this.width()) * this.fpp);
-      this.doc.setSelection(this.anchor, this.frameAt(px));
+      this.doc.setSelection(this.anchor, this.docFrameAt(px));
       this.update();
     });
     c.addEventListener("auxclick", (e) => e.button === 1 && e.preventDefault()); // no paste (Linux)
     const end = () => (this.anchor = null);
     c.addEventListener("pointerup", end);
     c.addEventListener("pointercancel", end);
+    c.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      if (this.doc) this.openWaveMenu(this.frameAt(x(e)), { x: e.clientX, y: e.clientY });
+    });
     c.addEventListener("dblclick", () => {
       this.doc?.selectAll();
       this.update();
@@ -840,8 +1147,9 @@ export class AudioEditorPage {
     const doc = this.doc;
     if (!doc || this.busy) return false;
     this.stop();
-    doc.setSelection(...ops.editedSelection(key, seconds, doc.selection, doc.rate, doc.frames));
-    this.ensureVisible(doc.selection[0]);
+    const typed = key === "length" ? seconds : seconds - this.offset / doc.rate; // boxes show mix time
+    doc.setSelection(...ops.editedSelection(key, typed, doc.selection, doc.rate, doc.frames));
+    this.ensureVisible(doc.selection[0] + this.offset);
     this.update();
     box.value = this.shownTimes.get(key)!; // the real (maybe clamped) time, not what was typed
     return true;
@@ -871,7 +1179,7 @@ export class AudioEditorPage {
     else if (e.key === " " && tag !== "BUTTON") this.togglePlay();
     else if (e.key === "Delete" || e.key === "Backspace") void this.run("delete");
     else if (e.key === "Home") this.goTo(0);
-    else if (e.key === "End") this.goTo(this.frames);
+    else if (e.key === "End") this.goTo(this.doc?.frames ?? 0);
     else if (e.key === "Escape") void this.run("deselect");
     else if (e.key === "+" || e.key === "=") void this.run("zoom_in");
     else if (e.key === "-") void this.run("zoom_out");
@@ -893,7 +1201,7 @@ export class AudioEditorPage {
     if (key === "zoom_in") this.zoom(2);
     else if (key === "zoom_out") this.zoom(0.5);
     else if (key === "fit") this.fit();
-    else if (key === "zoom_sel") this.zoomTo(...doc.selection);
+    else if (key === "zoom_sel") this.zoomTo(doc.selection[0] + this.offset, doc.selection[1] + this.offset);
     else if (key === "select_all") doc.selectAll();
     else if (key === "deselect") doc.setSelection(doc.selection[0]);
     else if (key === "learn_noise") ok = this.learnNoise();
@@ -1051,7 +1359,7 @@ export class AudioEditorPage {
     if (!this.doc) return;
     this.stop();
     this.doc.setSelection(frame);
-    this.ensureVisible(this.doc.selection[0]);
+    this.ensureVisible(this.doc.selection[0] + this.offset);
     this.update();
   }
 
@@ -1071,9 +1379,16 @@ export class AudioEditorPage {
       return;
     }
     const [a, b] = doc.selection;
+    const off = this.offset, n = this.length();
+    if (b > a) this.play(a + off, b + off);
+    else this.play(a + off < n ? a + off : 0, n);
+  }
+
+  /** Play from `frame` (mix time) to the end. */
+  playFrom(frame: number): void {
+    if (!this.doc || this.busy) return;
     const n = this.length();
-    if (b > a) this.play(a, b);
-    else this.play(a < n ? a : 0, n);
+    this.play(Math.min(frame, Math.max(0, n - 1)), n);
   }
 
   /** Middle click: playback moves there (stays paused if it was); the cursor stays put. */
@@ -1461,7 +1776,8 @@ export class AudioEditorPage {
     }
     const t = (f: number) => ops.formatTime(f / doc.rate);
     const [a, b] = doc.selection;
-    for (const [key, frames] of [["start", a], ["end", b], ["length", b - a]] as const) {
+    const off = this.offset; // the boxes show mix time, like the ruler
+    for (const [key, frames] of [["start", a + off], ["end", b + off], ["length", b - a]] as const) {
       const text = t(frames);
       const box = this.timeBoxes.get(key)!;
       // never overwrite what someone is typing
@@ -1471,6 +1787,7 @@ export class AudioEditorPage {
     const layout = doc.channels === 1 ? "Mono" : doc.channels === 2 ? "Stereo" : `${doc.channels} channels`;
     this.infoLabel.textContent = `${doc.rate / 1000} kHz · ${layout} · ${ops.formatTime(doc.duration)}${this.tracks.length > 1 ? ` · mix of ${this.tracks.length} tracks: ${t(this.length())}` : ""}${this.dirty ? " · Unsaved changes" : ""}`;
     this.title.textContent = this.sources.length ? this.sources[0] + (this.sources.length > 1 ? ` + ${this.sources.length - 1} more` : "") : "";
+    this.drawLanes();
     this.requestDraw();
   }
 
@@ -1515,8 +1832,8 @@ export class AudioEditorPage {
   private spectrogramImages(width: number, laneH: number): HTMLCanvasElement[] {
     const doc = this.doc!;
     const rows = Math.max(1, Math.min(spectrum.MAX_ROWS, Math.floor(laneH)));
-    const fixed = `${doc.revision}/${width}/${rows}`; // what must be drawn again at once
-    const key = `${fixed}/${this.start}/${this.fpp}`;
+    const fixed = `${doc.revision}/${width}/${rows}/${this.offset}`; // what must be drawn again at once
+    const key = `${fixed}/${this.start}/${this.fpp}/${this.offset}`;
     if (key === this.spectroKey) return this.spectro;
     // only the view moved: while that happens quickly, stretch the last images and compute once
     // it settles (an edit or a new size is drawn at once)
@@ -1526,8 +1843,10 @@ export class AudioEditorPage {
       return this.spectro;
     }
     const step = spectrum.columnStep(width);
-    const { k, levels } = spectrum.columns(doc.samples, doc.rate, this.start, this.fpp * step, Math.ceil(width / step), rows);
-    this.spectroPlace = { first: this.start, perColumn: this.fpp * step };
+    const skip = this.skipColumns(step); // columns before the track starts
+    const first = this.start + skip * step * this.fpp;
+    const { k, levels } = spectrum.columns(doc.samples, doc.rate, first - this.offset, this.fpp * step, Math.max(0, Math.ceil(width / step) - skip), rows);
+    this.spectroPlace = { first, perColumn: this.fpp * step };
     this.spectroAt = performance.now();
     this.spectro = k ? levels.map((lv) => {
       const c = document.createElement("canvas");
@@ -1546,6 +1865,44 @@ export class AudioEditorPage {
     }) : [];
     this.spectroKey = key;
     return this.spectro;
+  }
+
+  /** Whole columns (of `step` px) left of where the edited track starts. */
+  private skipColumns(step = 1): number {
+    return Math.max(0, Math.ceil((this.offset - this.start) / (this.fpp * step) - 1e-9));
+  }
+
+  /** Hatch the part of the mix before the edited track starts, and say so. */
+  private drawBefore(g: CanvasRenderingContext2D, top: number, hgt: number, col: Record<string, string>): void {
+    const off = this.offset;
+    let x = this.xOf(off);
+    if (off <= 0 || x <= 0) return;
+    x = Math.min(x, this.width());
+    g.save();
+    g.beginPath();
+    g.rect(0, top, x, hgt - top);
+    g.clip();
+    g.strokeStyle = col.border;
+    g.globalAlpha = 0.45;
+    g.lineWidth = 1;
+    g.beginPath();
+    for (let k = -(hgt - top); k <= x; k += 10) {
+      g.moveTo(k, hgt);
+      g.lineTo(k + (hgt - top), top);
+    }
+    g.stroke();
+    g.restore();
+    g.fillStyle = col.strong;
+    for (let y = top; y < hgt; y += 6) g.fillRect(Math.round(x), y, 1, 3);
+    const text = `no sound before ${startText(off, this.doc!.rate)}`;
+    g.font = "12px system-ui, sans-serif";
+    if (g.measureText(text).width + 16 < x) {
+      g.fillStyle = col.muted;
+      g.textAlign = "center";
+      g.textBaseline = "middle";
+      g.fillText(text, x / 2, (top + hgt) / 2);
+      g.textAlign = "start";
+    }
   }
 
   /** Draws now (tests call it; normally once per animation frame). */
@@ -1572,18 +1929,21 @@ export class AudioEditorPage {
     if (!doc || !doc.frames) return;
     const laneH = (hgt - RULER_H - LANE_GAP * (doc.channels - 1)) / doc.channels;
     const [a, b] = doc.selection;
-    const x0 = this.xOf(a), x1 = this.xOf(b);
-    const endX = Math.min(w, this.xOf(doc.frames));
+    const off = this.offset;
+    const x0 = this.xOf(a + off), x1 = this.xOf(b + off);
+    const startX = Math.max(0, this.xOf(off)), endX = Math.min(w, this.xOf(off + doc.frames));
     if (!this.summary || this.summaryRev !== doc.revision) {
       this.summary = peaks.build(doc.samples);
       this.summaryRev = doc.revision;
     }
-    const { mins, maxs } = peaks.columns(doc.samples, this.summary, this.start, this.fpp, Math.ceil(w));
+    const skip = this.skipColumns();
+    const first = this.start + skip * this.fpp - off;
+    const { mins, maxs } = peaks.columns(doc.samples, this.summary, first, this.fpp, Math.max(0, Math.ceil(w) - skip));
     const images = this.spectrogram ? this.spectrogramImages(Math.ceil(w), laneH) : [];
     for (let c = 0; c < doc.channels; c++) {
       const top = RULER_H + c * (laneH + LANE_GAP);
       g.fillStyle = col.alt;
-      g.fillRect(0, top, endX, laneH);
+      if (endX > startX) g.fillRect(startX, top, endX - startX, laneH);
       if (images.length) {
         const { first, perColumn } = this.spectroPlace;
         g.drawImage(images[c], (first - this.start) / this.fpp, top, (images[c].width * perColumn) / this.fpp, laneH);
@@ -1600,7 +1960,7 @@ export class AudioEditorPage {
       }
       const mid = top + laneH / 2, half = (laneH / 2) * 0.95;
       g.fillStyle = col.strong;
-      g.fillRect(0, mid - 0.5, endX, 1);
+      if (endX > startX) g.fillRect(startX, mid - 0.5, endX - startX, 1);
       g.fillStyle = col.accent;
       g.strokeStyle = col.accent;
       const lo = mins[c], hi = maxs[c];
@@ -1609,8 +1969,8 @@ export class AudioEditorPage {
         g.beginPath();
         for (let i = 0; i < hi.length; i++) {
           const y = mid - clip(hi[i]) * half;
-          if (i) g.lineTo(i, y);
-          else g.moveTo(i, y);
+          if (i) g.lineTo(skip + i, y);
+          else g.moveTo(skip + i, y);
         }
         g.stroke();
         continue;
@@ -1618,9 +1978,10 @@ export class AudioEditorPage {
       for (let i = 0; i < hi.length; i++) {
         const y0 = mid - clip(hi[i]) * half;
         const y1 = Math.max(mid - clip(lo[i]) * half, y0 + 1);
-        g.fillRect(i, y0, 1, y1 - y0);
+        g.fillRect(skip + i, y0, 1, y1 - y0);
       }
     }
+    this.drawBefore(g, RULER_H, hgt, col);
     this.drawRuler(g, w, col);
     g.fillStyle = col.text;
     for (const x of new Set([x0, x1])) if (x >= 0 && x <= w) g.fillRect(Math.round(x), RULER_H, 1, hgt - RULER_H);

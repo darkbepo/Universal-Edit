@@ -25,9 +25,13 @@ def window(qtbot):
     w.resize(1280, 800)
     w.show()
     yield w
-    if w.audio_editor is not None:
-        w.audio_editor.player.stop()
-        w.audio_editor.doc = None  # nothing to ask about when the test window closes
+    page = w.audio_editor
+    if page is not None:
+        page.player.stop()
+        page.doc = None  # nothing to ask about when the test window closes
+        for t in page.tracks:  # (also after a failed test, which would hang on the question)
+            t.doc.mark_saved()
+        page._tracks_saved_rev = page._tracks_rev
 
 
 @pytest.fixture
@@ -831,10 +835,177 @@ def test_tracks_line_up_rename_and_remove_from_the_menu(window, qtbot, media, mo
     assert edit.text().endswith(" b") and page.message.text() == message
     qtbot.keyClick(edit, Qt.Key.Key_Escape)
     assert not page.rename_track(1, "   ")  # an empty name is refused
-    # ⋯ menu: Rename… / Remove track
+    # ⋯ menu (also on right-click): Rename… … Remove track
     menu = panel.row_menu(1)
-    assert [a.text() for a in menu.actions()] == ["Rename…", "Remove track"]
+    labels = ["Rename…", "Mute", "Solo", "Start time…", "Duplicate", "", "Remove track"]
+    assert [a.text() for a in menu.actions()] == labels
     monkeypatch.setattr(page, "confirm", lambda text: True)
-    menu.actions()[1].trigger()
+    menu.actions()[-1].trigger()
     assert len(page.tracks) == 1 and page.tracks[0].name == "Voice over"
     page._tracks_saved_rev = page._tracks_rev
+
+
+def two_tracks(window, qtbot, media, mono):
+    """tone.wav (3 s, stereo) + beep.mp3 (1 s) as a second track, which is being edited."""
+    page = open_in_editor(window, qtbot, [media / "tone.wav"])
+    with qtbot.waitSignal(page.opened, timeout=20000):
+        assert page.add_track_file(mono)
+    page.show()
+    lane = page.tracks_panel.row_widgets[0]["lane"]
+    qtbot.waitUntil(lambda: lane.isVisible() and lane.width() > 100)
+    return page
+
+
+def test_dragging_any_lane_moves_that_track_in_time(window, qtbot, media, mono):
+    from PySide6.QtCore import QPoint, Qt
+
+    from umc.audioedit import tracks as tr
+
+    page = two_tracks(window, qtbot, media, mono)
+    panel = page.tracks_panel
+    lane = panel.row_widgets[0]["lane"]  # not the track being edited
+    assert page.active_track == 1
+    rev = page._tracks_rev
+    box = lane.block()
+    y = lane.height() // 2
+    start = QPoint(int(box.left()) + 20, y)
+    qtbot.mousePress(lane, Qt.MouseButton.LeftButton, pos=start)
+    qtbot.mouseMove(lane, start + QPoint(60, 0))
+    assert page.tracks[0].offset > 0  # moves while dragging …
+    span = panel.span()
+    qtbot.mouseRelease(lane, Qt.MouseButton.LeftButton, pos=start + QPoint(60, 0))
+    off = page.tracks[0].offset
+    assert off == pytest.approx(60 * span / (lane.width() - 2), rel=0.05)
+    assert page.active_track == 1  # … without switching the track being edited
+    assert page._tracks_rev == rev + 1 and page.dirty and page.mixing
+    assert tr.length(page.tracks) == off + page.tracks[0].doc.frames
+    lane.grab()
+    # dragged back close to the start, it snaps to 0:00
+    box = lane.block()
+    at = QPoint(int(box.left()) + 10, y)
+    qtbot.mousePress(lane, Qt.MouseButton.LeftButton, pos=at)
+    qtbot.mouseMove(lane, at - QPoint(int(box.left()) - 3, 0))
+    qtbot.mouseRelease(lane, Qt.MouseButton.LeftButton, pos=at - QPoint(int(box.left()) - 3, 0))
+    assert page.tracks[0].offset == 0
+    # a click without moving edits that track
+    qtbot.mouseClick(lane, Qt.MouseButton.LeftButton, pos=QPoint(int(lane.block().left()) + 5, y))
+    assert page.active_track == 0
+    page._tracks_saved_rev = page._tracks_rev
+
+
+def test_arrow_keys_move_a_focused_lane(window, qtbot, media, mono):
+    from PySide6.QtCore import Qt
+
+    page = two_tracks(window, qtbot, media, mono)
+    lane = page.tracks_panel.row_widgets[0]["lane"]
+    rate = page.tracks[0].doc.rate
+    lane.setFocus()
+    qtbot.keyClick(lane, Qt.Key.Key_Right)
+    assert page.tracks[0].offset == round(rate * 0.1)
+    qtbot.keyClick(lane, Qt.Key.Key_Right, Qt.KeyboardModifier.ShiftModifier)
+    assert page.tracks[0].offset == round(rate * 0.1) + rate
+    qtbot.keyClick(lane, Qt.Key.Key_Left, Qt.KeyboardModifier.ShiftModifier)
+    qtbot.keyClick(lane, Qt.Key.Key_Left)
+    qtbot.keyClick(lane, Qt.Key.Key_Left)  # never before 0:00
+    assert page.tracks[0].offset == 0
+    assert page.active_track == 1
+    page._tracks_saved_rev = page._tracks_rev
+
+
+def test_lane_waveforms_never_show_a_removed_track(window, qtbot, media, mono):
+    page = two_tracks(window, qtbot, media, mono)
+    panel = page.tracks_panel
+    gone = page.tracks[1].doc
+    panel.lane_peaks(page.tracks[1], 100.0, 50)
+    page.confirm = lambda *_: True  # a real question would block
+    assert page.remove_track(1)
+    assert all(v[0] is not gone for v in panel._peaks.values())  # dropped with the track
+    page._tracks_saved_rev = page._tracks_rev
+
+
+def test_start_time_duplicate_and_mute_from_the_track_menu(window, qtbot, media, mono, monkeypatch):
+    page = two_tracks(window, qtbot, media, mono)
+    panel = page.tracks_panel
+    rate = page.doc.rate
+    asked = []
+    monkeypatch.setattr(page, "ask_text", lambda *a: asked.append(a) or "1.5")
+    menu = panel.row_menu(1)
+    next(a for a in menu.actions() if a.text() == "Start time…").trigger()
+    assert asked and asked[0][2] == "0:00.000"
+    assert page.tracks[1].offset == round(1.5 * rate)
+    # the waveform, the time boxes and playback count from the start of the mix
+    assert page.view.offset == page.tracks[1].offset
+    page.doc.set_selection(0, rate // 2)
+    page._update_state()
+    assert page.time_boxes["start"].text() == "0:01.500"
+    assert page.type_time("start", "1.75") and page.doc.selection[0] == round(0.25 * rate)
+    played = []
+    monkeypatch.setattr(page, "_play", lambda a, b, paused=False: played.append((a, b)))
+    page.toggle_play()
+    assert played[-1] == (round(1.75 * rate), round(2 * rate))
+    page.view.set_spectrogram(True)  # paints with the track starting later, both ways
+    page.view.grab()
+    page.view.set_spectrogram(False)
+    page.view.grab()
+    assert page.view.doc_frame_at(0) == 0  # before the track starts: its first frame
+    # a time that isn't one says how to type it
+    monkeypatch.setattr(page, "ask_text", lambda *a: "soon")
+    assert not page.ask_track_start(1) and page.message.objectName() == "Error"
+    monkeypatch.setattr(page, "ask_text", lambda *a: None)  # Cancel
+    assert not page.ask_track_start(1)
+    # Duplicate: a copy right below, same sound and start, and it is the one being edited
+    menu = panel.row_menu(1)
+    next(a for a in menu.actions() if a.text() == "Duplicate").trigger()
+    assert [t.name for t in page.tracks][2] == "beep copy"
+    assert page.tracks[2].offset == page.tracks[1].offset and page.active_track == 2
+    assert page.tracks[2].doc is not page.tracks[1].doc
+    # Mute / Solo in the menu work like the row's buttons
+    menu = panel.row_menu(0)
+    mute = next(a for a in menu.actions() if a.text() == "Mute")
+    mute.trigger()
+    assert page.tracks[0].mute and panel.row_widgets[0]["mute"].isChecked()
+    menu.aboutToShow.emit()
+    assert mute.isChecked()
+    page._tracks_saved_rev = page._tracks_rev
+
+
+def test_right_click_on_the_waveform(window, qtbot, media, monkeypatch):
+    from PySide6.QtCore import QPoint, Qt
+
+    page = open_in_editor(window, qtbot, [media / "tone.wav"])
+    view, doc = page.view, page.doc
+    rate = doc.rate
+    shown = []
+    monkeypatch.setattr(page, "exec_menu", lambda menu, pos: shown.append(menu.actions()))
+    with qtbot.waitSignal(view.menu_requested) as got:
+        qtbot.mousePress(view, Qt.MouseButton.RightButton, pos=QPoint(view.width() // 2, 80))
+    assert got.args[0] == pytest.approx(doc.frames / 2, rel=0.02)
+    assert doc.selection == (0, 0)  # a right-click doesn't move the cursor
+    assert [a.text() for a in shown[0]] == ["Play from here", "Paste here", "Select all"]
+    # on the selection: what to do with it
+    doc.set_selection(rate, 2 * rate)
+    page._update_state()
+    menu = page.wave_menu(int(1.5 * rate))
+    labels = [a.text() for a in menu.actions() if a.text()]
+    assert labels[:4] == ["Play selection", "Cut", "Copy", "Paste"]
+    assert "Reduce noise…" in labels and labels[-1] == "Zoom to selection"
+    acts = {a.text(): a for a in menu.actions()}
+    assert not acts["Paste"].isEnabled()  # nothing copied yet
+    assert not acts["Reduce noise…"].isEnabled()  # no noise learned
+    acts["Copy"].trigger()
+    assert page.clipboard is not None
+    acts["Cut"].trigger()
+    assert doc.frames == 2 * rate
+    # elsewhere: play from there, paste there, select all
+    menu = page.wave_menu(rate // 2)
+    assert [a.text() for a in menu.actions()] == ["Play from here", "Paste here", "Select all"]
+    menu.actions()[1].trigger()
+    assert doc.frames == 3 * rate and doc.selection == (rate // 2, rate // 2 + rate)
+    played = []
+    monkeypatch.setattr(page, "_play", lambda a, b, paused=False: played.append((a, b)))
+    doc.set_selection(0)
+    page.wave_menu(rate).actions()[0].trigger()
+    assert played == [(rate, doc.frames)]
+    page.wave_menu(10).actions()[2].trigger()
+    assert doc.selection == (0, doc.frames)
+    doc.mark_saved()

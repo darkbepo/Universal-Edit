@@ -231,6 +231,8 @@ See `web/README.md` for commands and deployment.
   and `tests/conftest.py`): a collection inside a worker thread freed PySide objects and crashed.
   `gui/videoedit/threads.py`: never connect `worker.deleteLater` to `QThread.finished` — it runs on
   the worker thread while the GUI thread drops the last Python reference (double delete).
+  **Before writing or changing tests, read `tests/PITFALLS.md`** (mistakes earlier sessions made:
+  hangs on "Save changes?", weak references, flaky e2e timing …).
 
 Primary target platform is **Windows** (`.exe`); keep code cross-platform (macOS/Linux) where it costs nothing.
 
@@ -1077,7 +1079,19 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       double-click on a name (= rename) is lost. The desktop rename box must accept Esc's
       `ShortcutOverride`, or the page's Esc shortcut (deselect) takes it. pytest-qt closes the window before fixtures clean up:
       a test must not leave unsaved tracks (`_tracks_saved_rev = _tracks_rev`).
-      Not yet: moving a track in time, saving the tracks separately (project file).
+      Timing: `Track.offset` = frames where the track starts in the mix (`end`, `extent` = max end
+      of all tracks; `mix` reads only each track's overlap; cases "offsets" / "gap" in
+      `audio_mix_cases.json`). The wave view works in mix time (`start`, play head, time boxes);
+      the selection stays in the track's own frames — convert with `doc_frame_at` / `docFrameAt`
+      (mix − offset, clamped). Before the start it's hatched ("no sound before …"). Each row has a
+      lane (`_Lane` / `.audio-track-lane` canvas): any track's block drags (3 px threshold, snaps to
+      0 within 6 px, span frozen while dragging; ← / → on a focused lane: 0.1 s, Shift 1 s), a click
+      selects; offsets aren't undo steps. Row
+      menu (right-click or ⋯): Rename, Mute, Solo, Start time…, Duplicate, Remove. Waveform
+      right-click: on the selection its actions (`SELECTION_MENU`), elsewhere Play from here /
+      Paste here / Select all. Desktop tests replace `page.exec_menu` / `page.ask_text` (a real
+      `QMenu.exec` blocks). e2e: the wave canvas is `canvas.audio-canvas` (lanes are canvases too).
+      Not yet: saving the tracks separately (project file).
    14. Properties mode (both apps), step 1 = read-only "About this file" — spec
       `docs/superpowers/specs/2026-11-12-properties-design.md`. Model `properties/` (desktop, no
       Qt) ↔ `web/src/properties/`: each app reads a file with its own engines into the same plain

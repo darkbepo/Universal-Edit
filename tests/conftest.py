@@ -195,3 +195,40 @@ def _gui_thread_gc(request):
         gc.collect()
         gc.enable()
     yield
+
+
+@pytest.hookimpl(hookwrapper=True, tryfirst=True)
+def pytest_runtest_teardown(item):
+    """pytest-qt closes a test's windows in this hook, BEFORE the test's own fixtures clean up.
+    A test that stopped halfway (failed) can leave unsaved edits, and closing then waits for
+    ever on an editor's "Save changes?" box. While the windows close, answer any such box with
+    "Don't save" (or close it), so a failing test fails instead of hanging the whole run."""
+    timer = None
+    names = getattr(item, "fixturenames", ())
+    if "qtbot" in names or "qapp" in names:
+        from PySide6.QtCore import QTimer
+        from PySide6.QtWidgets import QApplication
+
+        if QApplication.instance() is not None:
+            timer = QTimer()
+            timer.setInterval(20)
+            timer.timeout.connect(_answer_leftover_question)
+            timer.start()
+    try:
+        yield
+    finally:
+        if timer is not None:
+            timer.stop()
+
+
+def _answer_leftover_question() -> None:
+    from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
+
+    box = QApplication.activeModalWidget()
+    if isinstance(box, QMessageBox):
+        dont_save = box.button(QMessageBox.StandardButton.Discard)
+        if dont_save is not None:
+            dont_save.click()
+            return
+    if isinstance(box, QDialog):
+        box.reject()

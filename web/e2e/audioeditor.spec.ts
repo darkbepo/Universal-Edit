@@ -243,7 +243,7 @@ test("the Spectrogram switch draws pitches in the lanes and is remembered", asyn
   const button = page.getByRole("button", { name: "Spectrogram" });
   await expect(button).toHaveAttribute("aria-pressed", "false");
   const lanePixel = () => page.evaluate(() => {
-    const c = document.querySelector<HTMLCanvasElement>(".audio-editor canvas")!;
+    const c = document.querySelector<HTMLCanvasElement>(".audio-editor canvas.audio-canvas")!;
     const dpr = devicePixelRatio || 1;
     const [r, g, b] = c.getContext("2d")!.getImageData(Math.round(c.width / 2), Math.round(c.height - 4 * dpr), 1, 1).data;
     return [r, g, b];
@@ -542,4 +542,103 @@ test("the play head is followed only while it is on screen", async ({ page }) =>
     return { jumped, stayed, turned: a.start > n };
   });
   expect(r).toEqual({ jumped: true, stayed: true, turned: true });
+});
+
+type TimingHook = { tracks: { name: string; offset: number; mute: boolean; doc: { rate: number; frames: number } }[]; activeTrack: number; dirty: boolean; offset: number; span(): number };
+const timing = (page: Page) => page.evaluate(() => {
+  const a = window.__audio as unknown as TimingHook;
+  return { offsets: a.tracks.map((t) => t.offset), names: a.tracks.map((t) => t.name), mutes: a.tracks.map((t) => t.mute), active: a.activeTrack, dirty: a.dirty, rate: a.tracks[0].doc.rate, viewOffset: a.offset };
+});
+
+test("tracks move in time: drag any lane, or type a start; duplicate and mute from the menu", async ({ page }) => {
+  await openEditor(page, [fx("tone.wav")]);
+  await page.locator(".audio-editor input[type=file][accept='audio/*']").setInputFiles(fx("beep.mp3"));
+  await expect.poll(async () => (await timing(page)).names, { timeout: 60_000 }).toEqual(["tone", "beep"]);
+  // drag the first track's block (not the one being edited) to the right
+  const lane = (await page.locator(".audio-track-lane").nth(0).boundingBox())!;
+  const y = lane.y + lane.height / 2;
+  await page.mouse.move(lane.x + 12, y);
+  await page.mouse.down();
+  await page.mouse.move(lane.x + 40, y, { steps: 3 });
+  await expect(page.locator(".audio-lane-tip")).toContainText("Starts 0:");
+  await page.mouse.move(lane.x + 72, y, { steps: 3 });
+  await page.mouse.up();
+  await expect(page.locator(".audio-lane-tip")).toBeHidden();
+  let t = await timing(page);
+  const span = await page.evaluate(() => (window.__audio as unknown as TimingHook).span());
+  expect(t.offsets[0]).toBeGreaterThan(0);
+  expect(Math.abs(t.offsets[0] - (60 * span) / (lane.width - 2))).toBeLessThan(span / 50);
+  expect(t).toMatchObject({ active: 1, dirty: true }); // still editing "beep"
+  // right-click on a row → Start time… (typed)
+  await page.locator(".audio-track").nth(1).click({ button: "right", position: { x: 260, y: 10 } });
+  await page.getByRole("menuitem", { name: "Start time…" }).click();
+  const dlg = page.locator("dialog.audio-start-dialog");
+  await dlg.getByRole("textbox", { name: "Start time" }).fill("1.5");
+  await dlg.getByRole("button", { name: "OK" }).click();
+  t = await timing(page);
+  expect(t.offsets[1]).toBe(Math.round(1.5 * t.rate));
+  expect(t.viewOffset).toBe(t.offsets[1]); // the waveform starts there too
+  await expect(page.getByRole("textbox", { name: "Start", exact: true })).toHaveValue("0:01.500");
+  await expect(page.locator(".audio-canvas")).toBeVisible();
+  // a time that isn't one says how to type it
+  await page.getByRole("button", { name: "More for beep" }).click();
+  await page.getByRole("menuitem", { name: "Start time…" }).click();
+  await dlg.getByRole("textbox", { name: "Start time" }).fill("soon");
+  await dlg.getByRole("button", { name: "OK" }).click();
+  await expect(page.locator(".audio-editor .msg")).toContainText("Type when the track starts");
+  // Duplicate: a copy right below, same start, and it is the one being edited
+  await page.getByRole("button", { name: "More for beep" }).click();
+  await page.getByRole("menuitem", { name: "Duplicate" }).click();
+  t = await timing(page);
+  expect(t.names).toEqual(["tone", "beep", "beep copy"]);
+  expect(t.offsets[2]).toBe(t.offsets[1]);
+  expect(t.active).toBe(2);
+  // Mute in the menu works like the M button
+  await page.getByRole("button", { name: "More for tone" }).click();
+  await page.getByRole("menuitemcheckbox", { name: "Mute" }).click();
+  expect((await timing(page)).mutes[0]).toBe(true);
+  await expect(page.getByRole("button", { name: "Mute tone" })).toHaveAttribute("aria-pressed", "true");
+  // a phone: the lanes get a line of their own, nothing wider than the screen
+  await page.setViewportSize({ width: 375, height: 740 });
+  const sizes = await page.locator(".audio-tracks").evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth, doc: document.documentElement.scrollWidth }));
+  expect(sizes.scroll).toBeLessThanOrEqual(sizes.client);
+  expect(sizes.doc).toBeLessThanOrEqual(375);
+  expect((await page.locator(".audio-track-lane").nth(0).boundingBox())!.width).toBeGreaterThan(250);
+  await page.locator(".audio-tracks").screenshot({ path: test.info().outputPath("lanes-375.png") });
+});
+
+test("right-click on the waveform: the selection's actions, or play / paste here", async ({ page }) => {
+  await openEditor(page, [fx("tone.wav")]);
+  const rate = (await info(page)).rate;
+  await page.evaluate((r) => {
+    window.__audio!.doc!.setSelection(r, 2 * r);
+    window.__audio!.update();
+  }, rate);
+  const box = (await page.locator(".audio-canvas").boundingBox())!;
+  const y = box.y + box.height / 2;
+  await page.mouse.click(box.x + box.width / 2, y, { button: "right" }); // 1.5 s: on the selection
+  const menu = page.getByRole("menu", { name: "Selection" });
+  await expect(menu).toBeVisible();
+  const labels = await menu.getByRole("menuitem").allTextContents();
+  expect(labels.slice(0, 4)).toEqual(["Play selection", "Cut", "Copy", "Paste"]);
+  expect(labels.at(-1)).toBe("Zoom to selection");
+  await expect(menu.getByRole("menuitem", { name: "Paste" })).toBeDisabled(); // nothing copied yet
+  await expect(menu.getByRole("menuitem", { name: "Reduce noise…" })).toBeDisabled();
+  await menu.getByRole("menuitem", { name: "Copy" }).click();
+  await expect(menu).toHaveCount(0);
+  expect((await info(page)).selection).toEqual([rate, 2 * rate]); // a right-click keeps the selection
+  // elsewhere: Play from here / Paste here / Select all
+  await page.mouse.click(box.x + box.width * 0.1, y, { button: "right" });
+  const spot = page.getByRole("menu", { name: "Waveform" });
+  expect(await spot.getByRole("menuitem").allTextContents()).toEqual(["Play from here", "Paste here", "Select all"]);
+  await page.keyboard.press("Escape");
+  await expect(spot).toHaveCount(0);
+  await page.mouse.click(box.x + box.width * 0.1, y, { button: "right" });
+  await page.mouse.click(box.x + box.width * 0.05, y); // a click on the waveform (left of the menu) closes it too
+  await expect(spot).toHaveCount(0);
+  await page.mouse.click(box.x + box.width * 0.1, y, { button: "right" });
+  await spot.getByRole("menuitem", { name: "Paste here" }).click();
+  const after = await info(page);
+  expect(after.duration).toBeCloseTo(4, 1);
+  expect(after.dirty).toBe(true);
 });
