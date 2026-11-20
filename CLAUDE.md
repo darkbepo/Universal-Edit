@@ -1184,6 +1184,7 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       "video editor". Website: still "Coming soon" (`core/editors.WEB_LATER`).
       Not yet: picture-in-picture, keyframes, the website editor.
       Website: step 1 model ✅ — `web/src/videoedit/` ports, shared `tests/fixtures/videoedit_cases.json` (`python scripts/make_videoedit_cases.py`, on purpose only), `Source.size`.
+      Website: step 2 maths ✅ — compose / textlayout / mix / tempo / limits in web/src/videoedit/ (no DOM); FFmpeg reference colours in videoedit_cases.json (grade, transition, fade, text).
    17. Code editor (both apps; owner, Nov 2026: "quick edits, Notepad++ in spirit") — spec
       `docs/superpowers/specs/2026-11-14-code-editor-design.md`, one plan per step.
       1. ✅ Accept code files (plan `docs/superpowers/plans/2026-11-14-code-editor-step1-detection.md`):
