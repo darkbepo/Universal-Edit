@@ -121,6 +121,37 @@ test("an AVI goes through the copy", async ({ page }) => {
   await expect(page.locator(".queue li")).toHaveCount(1); // the converter's queue still has clip.mp4 only
 });
 
+test("an odd-sized copy keeps the size it decodes at", async ({ page }) => {
+  test.skip(!existsSync(fx("odd.avi")), "needs ffmpeg");
+  await page.goto("./?e2e");
+  await openEditor(page, [fx("odd.avi")]);
+  const src = await ve<Src & { width: number; height: number }>(page, "project().sources[0]");
+  expect([src.width, src.height]).toEqual([320, 240]); // the copy's real size (yuv420p needs even sizes)
+  expect(src.path).toBe("odd.avi");
+});
+
+test("leaving stops an opening batch and the next open doesn't wait for it", async ({ page }) => {
+  test.skip(!existsSync(fx("clip.avi")), "needs ffmpeg");
+  await page.goto("./?e2e");
+  await addFiles(page, [fx("clip.avi"), fx("clip.mp4"), fx("img0.png")]);
+  await edit(page).click();
+  await expect(statusMsg(page)).toContainText(/Loading video engine|Converting/); // the copy runs
+  await page.getByRole("button", { name: "← Back to Convert" }).click();
+  await expect(page.locator(".video-editor")).toBeHidden();
+  await page.getByRole("button", { name: "Clear" }).click();
+  const t0 = Date.now();
+  await openEditor(page, [fx("red.mp4")]);
+  await expect(rows(page)).toHaveCount(1);
+  expect(Date.now() - t0).toBeLessThan(15_000);
+  await page.waitForTimeout(3000); // the old batch would have finished by now
+  await expect(rows(page)).toHaveCount(1);
+  await expect(rows(page).first()).toContainText("red.mp4");
+  expect(await ve(page, "project().sources.map((s) => s.path)")).toEqual(["red.mp4"]);
+  expect(await ve(page, `decodes("s1")`)).toBe(true);
+  expect(await ve(page, `decodes("s2")`)).toBe(false);
+  await expect(statusMsg(page)).toHaveText("");
+});
+
 test("limits are shown", async ({ page }) => {
   await page.goto("./?e2e");
   await openEditor(page, [fx("clip.mp4")]);

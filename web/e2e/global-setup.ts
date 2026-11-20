@@ -297,6 +297,13 @@ export default async function globalSetup() {
       // skipped like the other video tests
     }
   }
+  if (!existsSync(`${FIXTURES}odd.avi`)) {
+    try { // an odd size: the copy (yuv420p) is one pixel smaller each way
+      execFileSync("ffmpeg", ["-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc=duration=1:size=321x241:rate=25", "-c:v", "mpeg4", `${FIXTURES}odd.avi`]);
+    } catch {
+      // skipped like the other video tests
+    }
+  }
   if (!existsSync(`${FIXTURES}turned.mp4`) && existsSync(`${FIXTURES}clip.mp4`)) {
     try { // shown turned 90° anticlockwise (= 270° clockwise), like a phone clip
       execFileSync("ffmpeg", ["-loglevel", "error", "-y", "-display_rotation", "90", "-i", `${FIXTURES}clip.mp4`, "-c", "copy", `${FIXTURES}turned.mp4`]);

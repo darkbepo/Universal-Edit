@@ -54,9 +54,20 @@ interface Entry {
   bitmap?: ImageBitmap;
 }
 
+/** Thrown by `open` once the bank was abandoned (the page was left): nothing was kept. */
+export class Abandoned extends Error {
+  constructor() {
+    super("Abandoned.");
+    this.name = "Abandoned";
+  }
+}
+
 export class SourceBank {
   private entries = new Map<string, Entry>();
   private mb: Promise<MB> | null = null;
+  private gone = false;
+  /** A copy of this bank's is running in the (shared) worker right now. */
+  private copying = false;
 
   constructor(private client: ConversionClient) {}
 
@@ -66,6 +77,7 @@ export class SourceBank {
 
   /** Probe (and if needed copy) one file. Throws ConversionError with a message for the page. */
   async open(file: File, id: string, onProgress: (f: number, msg: string) => void): Promise<Opened> {
+    if (this.gone) throw new Abandoned();
     const ext = canonicalExt(file.name);
     const kind = kindOf(ext);
     if (!kind) throw cannotOpen(file.name);
@@ -76,6 +88,7 @@ export class SourceBank {
       if (kind === "image") bitmap = await this.bitmap(file);
       else media = await this.media(file, kind);
     }
+    this.check(bitmap, media);
     const decodes = kind === "image" ? bitmap !== null : media !== null;
     const copy = needsCopy(ext, decodes);
     const size = bitmap ? { width: bitmap.width, height: bitmap.height } : {};
@@ -91,11 +104,20 @@ export class SourceBank {
       const input: InputFile = { file, name: file.name, ext, family: kind === "audio" ? "audio" : kind === "image" ? "image" : "video" };
       let out: { name: string; data: Uint8Array; type?: string }[];
       try {
-        out = await this.client.run(SOURCE_TARGET, [input], { kind }, onProgress);
+        out = await this.client.run(SOURCE_TARGET, [input], { kind }, (f, msg) => {
+          // The first message means the worker runs this job (the client is shared and runs one
+          // job at a time): only then may cancel() stop it, as it stops whatever is running.
+          this.copying = true;
+          if (this.gone) this.cancelCopy();
+          else onProgress(f, msg);
+        });
       } catch (e) {
-        if (e instanceof JobCancelled) throw e;
+        if (this.gone || e instanceof JobCancelled) throw new Abandoned();
         throw e instanceof Error && e.message ? new ConversionError(e.message) : cannotOpen(file.name);
+      } finally {
+        this.copying = false;
       }
+      this.check(null, null);
       if (!out.length) throw cannotOpen(file.name);
       used = new File([out[0].data as BlobPart], out[0].name, { type: out[0].type ?? "" });
       if (kind === "image") {
@@ -110,6 +132,7 @@ export class SourceBank {
         media = await this.media(used, kind);
         if (!media) throw cannotOpen(file.name);
       }
+      this.check(bitmap, media);
     }
     let source: Source;
     this.forget(id);
@@ -196,5 +219,30 @@ export class SourceBank {
   /** Leaving the page. */
   dispose(): void {
     for (const id of [...this.entries.keys()]) this.forget(id);
+  }
+
+  /** Leaving for good: dispose, stop a running copy, and make an `open` still under way keep
+   *  nothing (it throws Abandoned). A copy still waiting for the worker is stopped as it starts. */
+  abandon(): void {
+    this.gone = true;
+    this.dispose();
+    if (this.copying) this.cancelCopy();
+  }
+
+  get abandoned(): boolean {
+    return this.gone;
+  }
+
+  private cancelCopy(): void {
+    this.copying = false;
+    this.client.cancel();
+  }
+
+  /** After each wait inside `open`: once abandoned, free what was decoded and stop. */
+  private check(bitmap: ImageBitmap | null, media: Media | null): void {
+    if (!this.gone) return;
+    bitmap?.close();
+    media?.input.dispose();
+    throw new Abandoned();
   }
 }

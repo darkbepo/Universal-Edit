@@ -12,7 +12,7 @@ import { projectFrom } from "../../videoedit/start";
 import type { ConversionClient } from "../../worker/client";
 import { backLabel } from "../back";
 import { MediaList } from "./media";
-import { SourceBank } from "./sources";
+import { Abandoned, SourceBank } from "./sources";
 
 const h = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> & { class?: string } = {}, ...children: (Node | string)[]) => {
   const el = document.createElement(tag);
@@ -45,8 +45,10 @@ export class VideoEditorPage {
   private selected: string | null = null;
   /** Opening / adding files: one batch after the other. */
   private work: Promise<unknown> = Promise.resolve();
-  /** Bumped on leaving, so a batch still probing doesn't fill a page that was left. */
+  /** Bumped by every new project and on leaving, so a batch still probing doesn't fill it. */
   private session = 0;
+  /** Bumped on leaving only: jobs queued before it never start. */
+  private epoch = 0;
 
   constructor(private opts: VideoEditorOptions) {
     this.bank = new SourceBank(opts.client);
@@ -121,11 +123,25 @@ export class VideoEditorPage {
   hide(): void {
     this.active = false;
     this.el.hidden = true;
-    this.session++;
-    this.history = null; // leaving drops the project and its decoders
-    this.notes = new Map();
-    this.bank.dispose();
+    this.leaveSession(); // leaving drops the project, its decoders and a batch still opening
     this.render();
+  }
+
+  /** Start over from outside the work queue (leaving, the empty project): a batch still opening
+   *  stops before its next file, its running copy is cancelled, whatever it opened is dropped,
+   *  and the next open doesn't wait behind it. */
+  private leaveSession(): void {
+    this.session++;
+    this.epoch++;
+    this.freshBank();
+    this.work = Promise.resolve();
+    this.history = null;
+    this.notes = new Map();
+  }
+
+  private freshBank(): void {
+    this.bank.abandon();
+    this.bank = new SourceBank(this.opts.client);
   }
 
   get shown(): boolean {
@@ -138,14 +154,13 @@ export class VideoEditorPage {
   }
 
   openEmpty(): void {
-    this.session++;
-    this.bank.dispose();
-    this.notes = new Map();
+    this.leaveSession();
     this.setProject(newProject());
     this.showMessage("");
   }
 
-  /** A new project from the files (ids s1…); false when none of them can be used. */
+  /** A new project from the files (ids s1…); false when none of them can be used
+   *  (true when it was superseded by leaving: the caller must not react to it). */
   open(files: InputFile[]): Promise<boolean> {
     return this.queue(() => this.openFiles(files.map((f) => f.file)));
   }
@@ -156,7 +171,9 @@ export class VideoEditorPage {
   }
 
   private queue(job: () => Promise<boolean>): Promise<boolean> {
-    const run = this.work.then(job, job);
+    const epoch = this.epoch;
+    const start = () => (epoch === this.epoch ? job() : Promise.resolve(true));
+    const run = this.work.then(start, start);
     this.work = run.catch(() => undefined);
     return run;
   }
@@ -167,13 +184,14 @@ export class VideoEditorPage {
       this.showMessage(files.length === 1 ? "Opening video projects isn't ready yet." : "Open a video project on its own, without other files.", true);
       return false;
     }
+    // a job of the queue: nothing else of this page is running, so the old bank only has decoders
     const session = ++this.session;
-    this.bank.dispose();
+    this.freshBank();
     this.history = null;
     this.notes = new Map();
     this.render();
-    const { sources, messages } = await this.probe(files, new Set());
-    if (session !== this.session) return false;
+    const { sources, messages } = await this.probe(files, new Set(), session);
+    if (session !== this.session) return true; // superseded (left meanwhile): nothing to report, the bank was abandoned
     if (!sources.length) {
       this.showMessage(messages.join(" ") || "Nothing to edit.", true);
       return false;
@@ -193,22 +211,22 @@ export class VideoEditorPage {
   private async addToProject(files: File[]): Promise<boolean> {
     const session = this.session;
     const taken = new Set(this.history!.project.sources.map((s) => s.id));
-    const { sources, messages } = await this.probe(files, taken);
-    if (session !== this.session || !this.history) {
-      for (const s of sources) this.bank.forget(s.id);
-      return false;
-    }
+    const { sources, messages } = await this.probe(files, taken, session);
+    if (session !== this.session || !this.history) return false; // left: that bank was abandoned
     if (sources.length) this.apply((p) => addSources(p, sources), "Add files");
     if (messages.length) this.showMessage(messages.join(" "), true);
     return sources.length > 0;
   }
 
-  /** Probe one file after the other; messages for those that can't be used. */
-  private async probe(files: File[], taken: Set<string>): Promise<{ sources: Source[]; messages: string[] }> {
+  /** Probe one file after the other; messages for those that can't be used. Stops between files
+   *  once `session` is over (the bank it used is abandoned then and keeps nothing). */
+  private async probe(files: File[], taken: Set<string>, session: number): Promise<{ sources: Source[]; messages: string[] }> {
     const sources: Source[] = [];
     const messages: string[] = [];
+    const bank = this.bank;
     let n = 1;
     for (const file of files) {
+      if (session !== this.session) break;
       if (isProjectFile(file)) {
         messages.push(`Open “${file.name}” on its own to edit that project.`);
         continue;
@@ -218,11 +236,13 @@ export class VideoEditorPage {
       const opening = `Opening “${file.name}”…`;
       this.showMessage(opening);
       try {
-        const opened = await this.bank.open(file, id, (f, msg) => this.showMessage(`${msg || opening} ${Math.round(f * 100)} %`));
+        const opened = await bank.open(file, id, (f, msg) => this.showMessage(`${msg || opening} ${Math.round(f * 100)} %`));
+        if (session !== this.session) break;
         sources.push(opened.source);
         taken.add(id);
         if (opened.note) this.notes = new Map(this.notes).set(id, opened.note);
       } catch (e) {
+        if (e instanceof Abandoned || session !== this.session) break;
         messages.push(e instanceof ConversionError ? e.message : `Couldn't open “${file.name}”.`);
       }
     }
