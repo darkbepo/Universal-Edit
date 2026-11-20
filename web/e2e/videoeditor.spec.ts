@@ -333,6 +333,38 @@ test("text", async ({ page }) => {
   expect(await ve(page, "project().text_rows[0][0].text")).toBe("Hello there\nagain");
 });
 
+test("leaving mid-drag clears the timeline and lands no edit", async ({ page }) => {
+  await page.goto("./?e2e");
+  await openEditor(page, [fx("clip.mp4"), fx("img0.png")]);
+  const [a, b] = await mainIds(page);
+  const s = await spans(page);
+  const from = await at(page, (s[a].start + s[a].end) / 2);
+  const past = await at(page, (s[b].start + s[b].end) / 2 + 0.5);
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(from.x + 20, from.y);
+  await page.mouse.move(past.x, past.y); // a reorder is under way
+  await page.evaluate(() => (document.querySelector(".video-editor .editor-top .link") as HTMLButtonElement).click()); // leave
+  await expect(page.locator(".video-editor")).toBeHidden();
+  expect(await ve(page, "painted()")).toEqual([]);
+  expect(await ve(page, "rows()")).toEqual([]);
+  await page.mouse.move(past.x + 10, past.y);
+  await page.mouse.up(); // the end of the old drag
+  expect(await ve(page, "project()")).toBeNull();
+  await page.getByRole("button", { name: "Clear" }).click();
+  await openEditor(page, [fx("red.mp4")]);
+  const ids = await mainIds(page);
+  expect(ids).toHaveLength(1);
+  expect(await ve(page, "painted()")).toEqual(ids); // only the new project's clip
+  expect(await ve(page, "history.canUndo")).toBe(false);
+  expect(await ve(page, "selected")).toBeNull();
+  // a click where the old picture was selects nothing stale and edits nothing
+  const old = await at(page, (s[b].start + s[b].end) / 2);
+  await page.mouse.click(old.x, old.y);
+  expect(await ve(page, "history.canUndo")).toBe(false);
+  expect(await ve(page, "selected")).toBeNull();
+});
+
 test("refused edits are shown", async ({ page }) => {
   await page.goto("./?e2e");
   await openEditor(page, [fx("clip.mp4")]);

@@ -131,6 +131,7 @@ export class VideoEditorPage {
       view: () => page.timeline.view(),
       rows: () => page.timeline.rows(),
       label: (id: string) => page.timeline.labelOf(id),
+      painted: () => page.timeline.itemIds(),
       /** A new project with `n` short texts (for the item limit). */
       loadBig: (n: number) => {
         const texts: TextItem[] = [];
@@ -163,6 +164,7 @@ export class VideoEditorPage {
   }
 
   hide(): void {
+    this.timeline.endGesture(); // a drag or seek in progress lands nowhere
     this.flushPending();
     document.removeEventListener("keydown", this.onKey);
     this.active = false;
@@ -511,9 +513,11 @@ export class VideoEditorPage {
       const id = this.selected.startsWith("tr:") ? this.selected.slice(3) : this.selected;
       if (!layout(shown).has(id)) this.selected = null;
     }
-    if (shown) {
-      this.timeline.setProject(shown);
-      this.playhead = Math.min(this.playhead, length(shown));
+    this.timeline.setProject(shown); // null clears it (left, or new files still opening)
+    if (shown) this.playhead = Math.min(this.playhead, length(shown));
+    else {
+      this.selected = null;
+      this.playhead = 0;
     }
     this.timeline.setSelected(this.selected);
     this.timeline.setPlayhead(this.playhead);

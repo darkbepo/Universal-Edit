@@ -55,6 +55,8 @@ export class TimelineView {
   private selected: string | null = null;
   private drag: Drag | null = null;
   private seeking = false;
+  /** The pointer of the gesture in progress (captured), if any. */
+  private pointer: number | null = null;
 
   constructor(private on: TimelineEvents) {
     const c = document.createElement("canvas");
@@ -81,18 +83,40 @@ export class TimelineView {
   }
 
   // ---- state ------------------------------------------------------------------------------
-  setProject(p: Project): void {
+  /** Show `p`; null clears the timeline (nothing painted, clicks do nothing). */
+  setProject(p: Project | null): void {
     if (p === this.project) return;
+    this.endGesture();
     this.project = p;
-    this.spans = layout(p);
-    this.rowList = rows(p, M);
+    this.spans = p ? layout(p) : new Map();
+    this.rowList = p ? rows(p, M) : [];
     this.items = new Map();
-    for (const m of p.main) this.items.set(m.id, m);
-    for (const r of p.text_rows) for (const t of r) this.items.set(t.id, t);
-    for (const r of p.music_rows) for (const a of r) this.items.set(a.id, a);
+    if (p) {
+      for (const m of p.main) this.items.set(m.id, m);
+      for (const r of p.text_rows) for (const t of r) this.items.set(t.id, t);
+      for (const r of p.music_rows) for (const a of r) this.items.set(a.id, a);
+    } else {
+      this.selected = null;
+      this.playhead = 0;
+      this.el.style.cursor = "";
+    }
+    this.resize();
+  }
+
+  /** Drop a drag or ruler seek in progress (no edit, no more seeks) and release the pointer. */
+  endGesture(): void {
     this.drag = null;
     this.seeking = false;
-    this.resize();
+    if (this.pointer !== null) {
+      const id = this.pointer;
+      this.pointer = null;
+      try {
+        if (this.el.hasPointerCapture?.(id)) this.el.releasePointerCapture(id);
+      } catch {
+        // the pointer is already gone
+      }
+    }
+    this.draw();
   }
 
   setPlayhead(t: number): void {
@@ -121,6 +145,11 @@ export class TimelineView {
   /** Row geometry (tests). */
   rows(): Row[] {
     return this.rowList;
+  }
+
+  /** The items painted now (tests). */
+  itemIds(): string[] {
+    return [...this.items.keys()];
   }
 
   /** The label painted on an item (tests). */
@@ -178,6 +207,7 @@ export class TimelineView {
       }
     }
     this.el.setPointerCapture?.(e.pointerId);
+    this.pointer = e.pointerId;
     if (y < M.ruler) {
       this.seeking = true;
       this.on.seek(Math.max(0, tFor(this.view(), x)));
@@ -194,6 +224,7 @@ export class TimelineView {
   }
 
   private pointerMove(e: PointerEvent): void {
+    if (!this.project) return;
     const { x, y } = this.pos(e);
     if (this.seeking) {
       this.on.seek(Math.max(0, tFor(this.view(), x)));
@@ -214,6 +245,7 @@ export class TimelineView {
 
   private pointerUp(e: PointerEvent): void {
     if (e.button !== 0) return;
+    if (e.pointerId === this.pointer) this.pointer = null;
     this.seeking = false;
     const d = this.drag;
     this.drag = null;
@@ -228,6 +260,7 @@ export class TimelineView {
   }
 
   private cancel(): void {
+    this.pointer = null;
     this.seeking = false;
     if (this.drag) {
       this.drag = null;
