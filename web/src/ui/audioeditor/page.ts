@@ -12,10 +12,11 @@ import { DEFAULT_VOLUME, gainFor, VOLUME_KEY } from "../../audioedit/volume";
 import { readWav, writeWav } from "../../audioedit/wav";
 import { carriedTags, editFor, EMPTY_TAGS, type CarriedTags } from "../../audioedit/tags";
 import type { MusicDetails } from "../../properties/music";
-import { MAX_SAMPLES, OPEN_TARGET, SPEED_TARGET, TOO_LONG } from "../../converters/audioedit";
+import { DENOISE_TARGET, MAX_SAMPLES, OPEN_TARGET, SPEED_TARGET, TOO_LONG } from "../../converters/audioedit";
+import * as noise from "../../audioedit/noise";
 import * as speed from "../../audioedit/speed";
 import { MUSIC_TAGS_TARGET } from "../../converters/musictags";
-import { defaults } from "../../core/options";
+import { defaults, type Values } from "../../core/options";
 import { converterById } from "../../core/registry";
 import type { InputFile, OutputFile } from "../../core/types";
 import { JobCancelled, type ConversionClient } from "../../worker/client";
@@ -42,7 +43,7 @@ const BITRATES = [64, 96, 128, 160, 192, 256, 320];
 const LOSSY = new Set(["mp3", "m4a", "ogg", "opus", "wma", "ac3"]);
 export const NO_AUDIO_OUTPUT = "This browser can't play sound here.";
 
-type Action = "cut" | "copy" | "paste" | "delete" | "trim" | "silence" | "fade_in" | "fade_out" | "amplify" | "normalize" | "reverse" | "speed" | "zoom_in" | "zoom_out" | "zoom_sel" | "fit" | "select_all" | "deselect";
+type Action = "cut" | "copy" | "paste" | "delete" | "trim" | "silence" | "fade_in" | "fade_out" | "amplify" | "normalize" | "reverse" | "speed" | "learn_noise" | "reduce_noise" | "zoom_in" | "zoom_out" | "zoom_sel" | "fit" | "select_all" | "deselect";
 
 const TOOL_GROUPS: [Action, string, string][][] = [
   [
@@ -60,6 +61,10 @@ const TOOL_GROUPS: [Action, string, string][][] = [
     ["normalize", "Normalize", "Make the loudest peak −1 dB (selection or everything)"],
     ["reverse", "Reverse", "Play the selection (or everything) backwards"],
     ["speed", "Speed / pitch…", "Change the speed, tempo or pitch of the selection (or everything)"],
+  ],
+  [
+    ["learn_noise", "Learn noise", "Select a part with only background noise, then press this"],
+    ["reduce_noise", "Reduce noise…", "Turn down the learned background noise in the selection (or everything)"],
   ],
   [
     ["zoom_in", "Zoom in", "Zoom in (+, or Ctrl+wheel)"],
@@ -97,9 +102,11 @@ export class AudioEditorPage {
   /** Shown while a speed / pitch change runs in the worker. */
   private cancelButton = h("button", { class: "btn small", type: "button", hidden: true, title: "Stop changing the sound" }, "Cancel");
   private lastSpeed: SpeedChoice = { mode: "tempo", value: 100 };
-  /** Counts speed changes; leaving the page bumps it so a late answer is ignored. */
+  /** Counts worker changes (speed, noise); leaving the page bumps it so a late answer is ignored. */
   private changeRun = 0;
   private changing = false;
+  private noise: { rate: number; profile: Float64Array } | null = null;
+  private lastNoise: NoiseChoice = { reduceDb: noise.REDUCE_DEFAULT, sensitivityDb: noise.SENSITIVITY_DEFAULT, smoothing: noise.SMOOTHING_DEFAULT };
   private selectionLabel = h("div", { class: "audio-selection" });
   /** Start / End / Length: typed times change the selection (Enter or leaving the box). */
   private timeBoxes = new Map<ops.TimeField, HTMLInputElement>();
@@ -544,6 +551,7 @@ export class AudioEditorPage {
     else if (key === "zoom_sel") this.zoomTo(...doc.selection);
     else if (key === "select_all") doc.selectAll();
     else if (key === "deselect") doc.setSelection(doc.selection[0]);
+    else if (key === "learn_noise") ok = this.learnNoise();
     else if (key === "copy") {
       const clip = doc.copy();
       if (clip) this.clipboard = clip;
@@ -566,6 +574,7 @@ export class AudioEditorPage {
       else if (key === "fade_out") ok = doc.fadeOut();
       else if (key === "reverse") ok = doc.reverse();
       else if (key === "speed") ok = await this.changeSpeed();
+      else if (key === "reduce_noise") ok = await this.reduceNoise();
       else if (key === "normalize") {
         ok = doc.normalize();
         if (!ok) this.showMessage("Already at −1 dB (or silent): nothing to change.");
@@ -577,7 +586,7 @@ export class AudioEditorPage {
     return ok;
   }
 
-  /** Stops the running speed change. Cancel is only shown once the worker runs *this* job
+  /** Stops the running worker change (speed / pitch, noise). Cancel is only shown once the worker runs *this* job
    *  (the client is shared, and `cancel()` stops whatever job it is running). */
   private cancelChange(): void {
     if (this.changing && !this.cancelButton.hidden) this.opts.client.cancel();
@@ -602,29 +611,74 @@ export class AudioEditorPage {
       this.showMessage(TOO_LONG_RESULT, true);
       return false;
     }
+    const part = speed.padded(ops.slice(doc.samples, a, b), doc.rate);
+    const want = speed.expectedFrames(mode, value, b - a, doc.rate);
+    return this.runChange(SPEED_LABELS[mode], SPEED_TARGET, { mode, value }, part, a, b, want);
+  }
+
+  /** The selection is background noise only: remember its profile for Reduce noise. */
+  learnNoise(): boolean {
+    const doc = this.doc;
+    if (!doc || this.busy || !doc.hasSelection) return false;
+    const [a, b] = doc.selection;
+    try {
+      this.noise = { rate: doc.rate, profile: noise.learn(ops.slice(doc.samples, a, b), doc.rate) };
+    } catch (e) {
+      this.showMessage(e instanceof Error ? e.message : String(e), true);
+      return false;
+    }
+    const seconds = Math.min((b - a) / doc.rate, noise.LEARN_MAX_SECONDS);
+    this.showMessage(`Noise learned from ${ops.formatTime(seconds)}. Now select what to clean (or nothing, for everything) and press “Reduce noise…”.`);
+    this.update();
+    return true;
+  }
+
+  /** The learned profile, if it was learned at this sound's sample rate. */
+  private noiseProfile(): Float64Array | null {
+    return this.noise && this.doc && this.noise.rate === this.doc.rate ? this.noise.profile : null;
+  }
+
+  private async reduceNoise(): Promise<boolean> {
+    const doc = this.doc!;
+    const profile = this.noiseProfile();
+    if (!profile) {
+      this.showMessage(noise.NO_PROFILE, true);
+      return false;
+    }
+    const [a, b] = doc.span();
+    const choice = await noiseDialog(this.lastNoise);
+    if (!choice) return false;
+    this.lastNoise = choice;
+    const values = { profile: JSON.stringify(Array.from(profile)), reduce_db: choice.reduceDb, sensitivity_db: choice.sensitivityDb, smoothing: choice.smoothing };
+    return this.runChange("Reduce noise", DENOISE_TARGET, values, ops.slice(doc.samples, a, b), a, b, b - a);
+  }
+
+  /** Sends `part` to the worker's `target`; the answer (fitted to `want` frames) replaces
+   *  [a, b) as one undo step called `label`. Cancel and leaving the page drop it. */
+  private async runChange(label: string, target: typeof SPEED_TARGET, values: Values, part: Float32Array[], a: number, b: number, want: number): Promise<boolean> {
+    const doc = this.doc!;
     const run = ++this.changeRun;
     this.busy = this.changing = true;
     this.update();
     try {
-      const wav = writeWav(doc.rate, speed.padded(ops.slice(doc.samples, a, b), doc.rate), 32);
+      const wav = writeWav(doc.rate, part, 32);
       const input: InputFile = { file: new File([wav as BlobPart], "part.wav", { type: "audio/wav" }), name: "part.wav", ext: "wav", family: "audio" };
-      const [out] = await this.opts.client.run(SPEED_TARGET, [input], { mode, value }, (p, m) => {
+      const [out] = await this.opts.client.run(target, [input], values, (p, m) => {
         if (run !== this.changeRun) return;
         this.cancelButton.hidden = false; // our job is the one running now
         this.showMessage(`${m || "Changing the sound…"} ${Math.round(p * 100)} %`);
       });
       if (run !== this.changeRun) return false; // left the page meanwhile
       const { rate, samples } = readWav(out.data);
-      if (rate !== doc.rate || !ops.frames(samples)) throw new Error(`Couldn't change the ${mode} of the sound.`);
+      if (rate !== doc.rate || !ops.frames(samples)) throw new Error(`Couldn't do “${label}”.`);
       this.showMessage("");
-      const want = speed.expectedFrames(mode, value, b - a, doc.rate);
-      return doc.replacePart(SPEED_LABELS[mode], a, b, speed.fitLength(ops.fitChannels(samples, doc.channels), want));
+      return doc.replacePart(label, a, b, speed.fitLength(ops.fitChannels(samples, doc.channels), want));
     } catch (e) {
       if (run !== this.changeRun) return false;
       if (e instanceof JobCancelled) this.showMessage("Cancelled: nothing was changed.");
       else {
         console.error(e);
-        this.showMessage(e instanceof Error && e.message ? e.message : `Couldn't change the ${mode} of the sound.`, true);
+        this.showMessage(e instanceof Error && e.message ? e.message : `Couldn't do “${label}”.`, true);
       }
       return false;
     } finally {
@@ -634,7 +688,6 @@ export class AudioEditorPage {
       }
     }
   }
-
   undo(): void {
     if (!this.doc || this.busy) return;
     this.stop();
@@ -873,7 +926,7 @@ export class AudioEditorPage {
     const has = ready && doc!.frames > 0;
     const enabled: Record<string, boolean> = {
       cut: sel, copy: sel, paste: ready && !!this.clipboard, delete: sel, trim: sel, silence: sel,
-      fade_in: sel, fade_out: sel, amplify: has, normalize: has, reverse: has, speed: has,
+      fade_in: sel, fade_out: sel, amplify: has, normalize: has, reverse: has, speed: has, learn_noise: sel, reduce_noise: has && !!this.noiseProfile(),
       zoom_in: ready, zoom_out: ready, zoom_sel: sel, fit: ready,
       home: has, end: has, play: has, stop: this.playing,
       undo: ready && doc!.canUndo(), redo: ready && doc!.canRedo(),
@@ -1055,6 +1108,32 @@ async function amplifyDialog(peakDb: number | null): Promise<number | null> {
     h("label", { class: "field" }, h("span", {}, "Change the volume by"), h("span", { class: "with-unit" }, input, "dB")),
     h("div", { class: "hint" }, peakDb === null ? "Silent" : `${headroom.toFixed(1)} dB louder at most without clipping`),
   ], "OK", () => Math.max(ops.GAIN_MIN_DB, Math.min(ops.GAIN_MAX_DB, Number(input.value) || 0)));
+  return r ? r.value : null;
+}
+
+interface NoiseChoice { reduceDb: number; sensitivityDb: number; smoothing: number }
+
+/** How much to reduce the learned noise; null = cancelled. */
+async function noiseDialog(last: NoiseChoice): Promise<NoiseChoice | null> {
+  const num = (label: string, value: number, min: number, max: number, step: number) =>
+    h("input", { type: "number", value: String(value), min: String(min), max: String(max), step: String(step), ariaLabel: label });
+  const reduce = num("Reduce by", last.reduceDb, noise.REDUCE_MIN, noise.REDUCE_MAX, 1);
+  const sens = num("Sensitivity", last.sensitivityDb, noise.SENSITIVITY_MIN, noise.SENSITIVITY_MAX, 0.5);
+  const smooth = num("Smoothing", last.smoothing, noise.SMOOTHING_MIN, noise.SMOOTHING_MAX, 1);
+  const read = (input: HTMLInputElement, fallback: number, min: number, max: number) => {
+    const v = input.value.trim() === "" ? NaN : Number(input.value);
+    return Math.max(min, Math.min(max, Number.isFinite(v) ? v : fallback));
+  };
+  const r = await dialog("noise", "Reduce noise", [
+    h("label", { class: "field" }, h("span", {}, "Reduce by"), h("span", { class: "with-unit" }, reduce, "dB")),
+    h("label", { class: "field" }, h("span", {}, "Sensitivity"), h("span", { class: "with-unit" }, sens, "dB")),
+    h("label", { class: "field" }, h("span", {}, "Smoothing"), h("span", { class: "with-unit" }, smooth, "bands")),
+    h("div", { class: "hint" }, "More sensitivity removes more noise but can make music sound watery; smoothing softens that."),
+  ], "OK", () => ({
+    reduceDb: read(reduce, last.reduceDb, noise.REDUCE_MIN, noise.REDUCE_MAX),
+    sensitivityDb: read(sens, last.sensitivityDb, noise.SENSITIVITY_MIN, noise.SENSITIVITY_MAX),
+    smoothing: Math.trunc(read(smooth, last.smoothing, noise.SMOOTHING_MIN, noise.SMOOTHING_MAX)),
+  }));
   return r ? r.value : null;
 }
 

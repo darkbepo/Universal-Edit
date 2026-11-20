@@ -15,6 +15,7 @@ interface AudioHook {
   playGain: number | null;
   stop(): void;
   draw(): void;
+  update(): void;
 }
 declare global {
   interface Window {
@@ -199,6 +200,42 @@ test("Speed / pitch can be cancelled, and the next change still works", async ({
   await dlg.getByRole("button", { name: "Cancel" }).click();
   await change("tempo", "200");
   await expect.poll(async () => (await info(page)).duration, { timeout: 120_000 }).toBeCloseTo(30, 3);
+});
+
+test("Learn noise, then Reduce noise turns the hiss down; undo puts it back", async ({ page }) => {
+  await openEditor(page, [fx("tone.wav")]); // 3 s
+  const hissRms = () => page.evaluate(() => {
+    const d = window.__audio!.doc! as unknown as { rate: number; samples: Float32Array[] };
+    let sum = 0;
+    for (const ch of d.samples) for (let i = 0; i < d.rate; i++) sum += ch[i] * ch[i];
+    return Math.sqrt(sum / (d.rate * d.samples.length));
+  });
+  // the first second becomes hiss only
+  await page.evaluate(() => {
+    const d = window.__audio!.doc! as unknown as { rate: number; samples: Float32Array[] };
+    let seed = 1;
+    for (const ch of d.samples) for (let i = 0; i < d.rate; i++) {
+      seed = (seed * 1103515245 + 12345) % 2147483648;
+      ch[i] = (seed / 2147483648 - 0.5) * 0.1;
+    }
+    window.__audio!.draw();
+  });
+  const before = await hissRms();
+  const reduce = page.getByRole("button", { name: "Reduce noise…" });
+  await expect(reduce).toBeDisabled();
+  await page.evaluate(() => { window.__audio!.doc!.setSelection(0, 44100); window.__audio!.update(); });
+  await page.getByRole("button", { name: "Learn noise", exact: true }).click();
+  await expect(page.locator(".audio-editor .msg")).toContainText("Noise learned");
+  await page.evaluate(() => window.__audio!.doc!.setSelection(0));
+  await reduce.click();
+  const dlg = page.locator("dialog.noise");
+  await dlg.getByLabel("Reduce by").fill("24");
+  await dlg.getByRole("button", { name: "OK" }).click();
+  await expect.poll(async () => (await info(page)).dirty, { timeout: 120_000 }).toBe(true);
+  expect(await hissRms()).toBeLessThan(before / 4);
+  expect((await info(page)).duration).toBeCloseTo(3, 3);
+  await page.keyboard.press("Control+z");
+  expect(await hissRms()).toBeCloseTo(before, 4);
 });
 
 test("the audio tile opens an empty editor; Edit is off for audio mixed with images", async ({ page }) => {

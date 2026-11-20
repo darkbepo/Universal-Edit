@@ -81,3 +81,29 @@ export const audioEditSpeedConverter: Converter = {
     }
   },
 };
+
+export const DENOISE_TARGET = { id: "denoise", label: "Audio editor", ext: "wav", group: "", converterId: "audio-edit-denoise" };
+
+/** Noise reduction of one float WAV (options `profile` = JSON list, `reduce_db`,
+ *  `sensitivity_db`, `smoothing`; audioedit/noise.ts). Runs here so the page stays responsive. */
+export const audioEditDenoiseConverter: Converter = {
+  id: "audio-edit-denoise",
+  family: "audio",
+  options: [],
+  targets: () => [],
+  async run(files, _target, o, ctx) {
+    const noise = await import("../audioedit/noise");
+    const { readWav, writeWav } = await import("../audioedit/wav");
+    const { rate, samples } = readWav(new Uint8Array(await files[0].file.arrayBuffer()));
+    const profile = JSON.parse(String(o.profile ?? "[]")) as number[];
+    if (profile.length !== noise.BANDS) throw new ConversionError("The learned noise doesn't fit this sound. Learn it again.");
+    const msg = "Reducing noise…";
+    ctx.progress(0, msg);
+    const out = noise.reduce(samples, rate, profile, {
+      reduceDb: Number(o.reduce_db), sensitivityDb: Number(o.sensitivity_db), smoothing: Number(o.smoothing),
+      progress: (p) => ctx.progress(p, msg),
+    });
+    ctx.progress(1, "Done");
+    return [{ name: "clean.wav", data: writeWav(rate, out, 32), type: "audio/wav" }];
+  },
+};

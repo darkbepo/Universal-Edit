@@ -26,12 +26,13 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollBar,
     QSlider,
+    QSpinBox,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
-from umc.audioedit import ops, speed
+from umc.audioedit import noise, ops, speed
 from umc.audioedit.document import AudioDoc
 from umc.audioedit.io import (
     BITRATES,
@@ -75,6 +76,14 @@ TOOL_GROUPS = (
             "speed",
             "Speed / pitch…",
             "Change the speed, tempo or pitch of the selection (or everything)",
+        ),
+    ),
+    (
+        ("learn_noise", "Learn noise", "Select a part with only background noise, then press this"),
+        (
+            "reduce_noise",
+            "Reduce noise…",
+            "Turn down the learned background noise in the selection (or everything)",
         ),
     ),
     (
@@ -213,6 +222,48 @@ class SpeedDialog(QDialog):
         self.result.setText(f"{ops.format_time(self.seconds)} → {ops.format_time(after)}")
 
 
+class NoiseDialog(QDialog):
+    """How much to reduce the learned noise: amount, sensitivity and smoothing."""
+
+    def __init__(self, reduce_db: float, sensitivity_db: float, smoothing: int, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Reduce noise")
+        self.reduce_db = QDoubleSpinBox()
+        self.reduce_db.setRange(noise.REDUCE_MIN, noise.REDUCE_MAX)
+        self.reduce_db.setDecimals(0)
+        self.reduce_db.setSuffix(" dB")
+        self.reduce_db.setValue(reduce_db)
+        self.sensitivity = QDoubleSpinBox()
+        self.sensitivity.setRange(noise.SENSITIVITY_MIN, noise.SENSITIVITY_MAX)
+        self.sensitivity.setDecimals(1)
+        self.sensitivity.setSuffix(" dB")
+        self.sensitivity.setValue(sensitivity_db)
+        self.smoothing = QSpinBox()
+        self.smoothing.setRange(noise.SMOOTHING_MIN, noise.SMOOTHING_MAX)
+        self.smoothing.setSuffix(" bands")
+        self.smoothing.setValue(smoothing)
+        form = QFormLayout(self)
+        form.addRow("Reduce by", self.reduce_db)
+        form.addRow("Sensitivity", self.sensitivity)
+        form.addRow("Smoothing", self.smoothing)
+        form.addRow(
+            QLabel(
+                "More sensitivity removes more noise but can make music sound watery;\n"
+                "smoothing softens that.",
+                objectName="Muted",
+            )
+        )
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        form.addRow(buttons)
+
+    def values(self) -> tuple[float, float, int]:
+        return self.reduce_db.value(), self.sensitivity.value(), self.smoothing.value()
+
+
 class BitrateDialog(QDialog):
     def __init__(self, fmt: str, kbps: int, parent=None) -> None:
         super().__init__(parent)
@@ -253,6 +304,12 @@ class AudioEditorPage(QWidget):
         self.changing = False  # a speed / pitch change runs on the worker thread
         self._change_request: tuple[str, int, int] = ("", 0, 0)
         self._last_speed: tuple[str, float] = ("tempo", 100.0)
+        self.noise: tuple[int, np.ndarray] | None = None  # (rate, profile) from Learn noise
+        self._last_noise = (
+            noise.REDUCE_DEFAULT,
+            noise.SENSITIVITY_DEFAULT,
+            noise.SMOOTHING_DEFAULT,
+        )
         self._save_target: tuple[Path, str] | None = None
         self._bitrate = DEFAULT_BITRATE
         self._saving_rev = -1
@@ -467,6 +524,8 @@ class AudioEditorPage(QWidget):
             "normalize": ready and doc.frames > 0,
             "reverse": ready and doc.frames > 0,
             "speed": ready and doc.frames > 0,
+            "learn_noise": sel,
+            "reduce_noise": ready and doc.frames > 0 and self._noise_profile() is not None,
             "zoom_in": ready,
             "zoom_out": ready,
             "zoom_sel": sel,
@@ -531,6 +590,8 @@ class AudioEditorPage(QWidget):
         if doc is None or self.busy:
             return False
         view = self.view
+        if key == "learn_noise":
+            return self.learn_noise()
         if key == "zoom_in":
             view.zoom(2.0)
         elif key == "zoom_out":
@@ -572,6 +633,8 @@ class AudioEditorPage(QWidget):
             changed = doc.amplify(dlg.db.value())
         elif key == "speed":
             return self._start_speed()
+        elif key == "reduce_noise":
+            return self._start_noise()
         elif key in ("delete", "trim", "silence", "fade_in", "fade_out", "normalize", "reverse"):
             changed = getattr(doc, key)()
         else:
@@ -583,7 +646,7 @@ class AudioEditorPage(QWidget):
 
     def _start_speed(self) -> bool:
         """Ask how, then change the speed / tempo / pitch on the worker thread (False: not
-        started). The result replaces the part in ``_changed_speed``."""
+        started). The result replaces the part in ``_changed_part``."""
         doc = self.doc
         a, b = doc.span()
         seconds = (b - a) / doc.rate
@@ -600,27 +663,86 @@ class AudioEditorPage(QWidget):
         if doc.samples.size + grows * doc.channels > MAX_SAMPLES:
             self.show_message(TOO_LONG_RESULT, error=True)
             return False
-        part = doc.samples[:, a:b].copy()
         rate = doc.rate
+        return self._start_change(
+            SPEED_LABELS[mode],
+            f"Changing the {mode}…",
+            a,
+            b,
+            lambda part, cancel, progress: change_speed(part, rate, mode, value, cancel, progress),
+        )
+
+    def _start_change(self, label: str, message: str, a: int, b: int, fn: Callable) -> bool:
+        """Run ``fn(part, cancel_event, progress)`` on the worker thread for ``[a, b)``; its
+        result replaces that part in ``_changed_part`` (one undo step called ``label``).
+        Returns False: nothing has changed yet."""
+        part = self.doc.samples[:, a:b].copy()
         self.changing = True
-        self._change_request = (SPEED_LABELS[mode], a, b)
+        self._change_request = (label, a, b)
         self._cancel = cancel = threading.Event()
         self.cancel_button.show()
-        self.show_message(f"Changing the {mode}…")
+        self.show_message(message)
         self._update_state()
         self._start(
-            lambda progress: change_speed(
-                part, rate, mode, value, cancel, lambda f: progress(f, f"Changing the {mode}…")
-            ),
-            f"Couldn't change the {mode} of the sound. See the log for details.",
+            lambda progress: fn(part, cancel, lambda f: progress(f, message)),
+            f"Couldn't do “{label}”. See the log for details.",
         )
         return False
+
+    def _start_noise(self) -> bool:
+        """Ask how much, then reduce the learned noise in the selection (or everything)."""
+        doc = self.doc
+        profile = self._noise_profile()
+        if profile is None:
+            self.show_message(noise.NO_PROFILE, error=True)
+            return False
+        a, b = doc.span()
+        dlg = NoiseDialog(*self._last_noise, parent=self)
+        if not dlg.exec():
+            return False
+        self._last_noise = settings = dlg.values()
+        rate = doc.rate
+        return self._start_change(
+            "Reduce noise",
+            "Reducing noise…",
+            a,
+            b,
+            lambda part, cancel, progress: noise.reduce(
+                part, rate, profile, *settings, cancel_event=cancel, progress=progress
+            ),
+        )
+
+    def learn_noise(self) -> bool:
+        """The selection is background noise only: remember its profile for Reduce noise."""
+        doc = self.doc
+        if doc is None or self.busy or not doc.has_selection:
+            return False
+        a, b = doc.selection
+        try:
+            profile = noise.learn(doc.samples[:, a:b], doc.rate)
+        except ValueError as exc:
+            self.show_message(str(exc), error=True)
+            return False
+        self.noise = (doc.rate, profile)
+        seconds = min((b - a) / doc.rate, noise.LEARN_MAX_SECONDS)
+        self.show_message(
+            f"Noise learned from {ops.format_time(seconds)}. Now select what to clean "
+            "(or nothing, for everything) and press “Reduce noise…”."
+        )
+        self._update_state()
+        return True
+
+    def _noise_profile(self) -> np.ndarray | None:
+        """The learned profile, if it was learned at this sound's sample rate."""
+        if self.noise is None or self.doc is None or self.noise[0] != self.doc.rate:
+            return None
+        return self.noise[1]
 
     def cancel_change(self) -> None:
         if self.changing:
             self._cancel.set()
 
-    def _changed_speed(self, samples: np.ndarray) -> None:
+    def _changed_part(self, samples: np.ndarray) -> None:
         label, a, b = self._change_request
         if self.doc is not None and self.doc.replace_part(label, a, b, samples):
             self.show_message("")
@@ -756,7 +878,7 @@ class AudioEditorPage(QWidget):
         elif self.saving:
             self._saved(*self._save_request)
         elif self.changing:
-            self._changed_speed(result)
+            self._changed_part(result)
 
     @Slot(str)
     def _on_failed(self, message: str) -> None:

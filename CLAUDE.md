@@ -1037,7 +1037,14 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       (Cancel = `client.cancel()`, shown only once the worker runs this job — the client is shared;
       leaving the page drops a running change via `changeRun`). Results longer than
       `MAX_SAMPLES` are refused first.
-      Not yet: several tracks / mixing, recording, spectrogram, noise reduction.
+      Noise reduction (both apps): our own spectral gate, `audioedit/noise.py` ↔
+      `web/src/audioedit/noise.ts` (FFmpeg's afftdn only managed ~9 dB): "Learn noise" = mean power
+      per band of the selection (≤ 30 s, ≥ 2 × SIZE frames; kept per sample rate), "Reduce noise…"
+      = STFT 2048 / hop 512, a band louder than profile × sensitivity passes, else `floor`; 100 ms
+      release, box smoothing over bands. float64 inside, own radix-2 FFT on the web (≈ 1.5 s per
+      stereo minute in the worker, converter `audio-edit-denoise`). Shared cases
+      `tests/fixtures/audioedit_noise_cases.json` (`python scripts/make_noise_cases.py`).
+      Not yet: several tracks / mixing, recording, spectrogram.
    14. Properties mode (both apps), step 1 = read-only "About this file" — spec
       `docs/superpowers/specs/2026-11-12-properties-design.md`. Model `properties/` (desktop, no
       Qt) ↔ `web/src/properties/`: each app reads a file with its own engines into the same plain

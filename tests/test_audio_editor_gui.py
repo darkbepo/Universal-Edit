@@ -209,6 +209,38 @@ def test_speed_change_can_be_cancelled(window, qtbot, media, monkeypatch):
     assert not page.busy and not page.doc.dirty
 
 
+def test_learn_noise_then_reduce_it(window, qtbot, media, monkeypatch):
+    import numpy as np
+
+    from umc.gui.audioeditor import audio_editor_page as mod
+
+    page = open_in_editor(window, qtbot, [media / "tone.wav"])
+    doc = page.doc
+    rng = np.random.default_rng(3)
+    doc.samples[:, : doc.rate] = 0.02 * rng.standard_normal((doc.channels, doc.rate))
+    hiss = float(np.abs(doc.samples[:, : doc.rate]).mean())
+    assert not page.edit_buttons["reduce_noise"].isEnabled()  # nothing learned yet
+    assert not page.edit_buttons["learn_noise"].isEnabled()  # needs a selection
+    doc.set_selection(0, doc.rate)
+    page._update_state()
+    assert page.run("learn_noise") and "Noise learned from 0:01.000" in page.message.text()
+    assert page.edit_buttons["reduce_noise"].isEnabled()
+    monkeypatch.setattr(mod.NoiseDialog, "exec", lambda dlg: True)
+    monkeypatch.setattr(mod.NoiseDialog, "values", lambda dlg: (24.0, 6.0, 3))
+    doc.set_selection(0)  # nothing selected: the whole sound
+    assert not page.run("reduce_noise") and page.busy
+    with qtbot.waitSignal(page.change_done, timeout=30_000):
+        pass
+    assert doc.dirty and page.undo_button.toolTip() == "Undo Reduce noise (Ctrl+Z)"
+    assert float(np.abs(doc.samples[:, : doc.rate]).mean()) < hiss / 4
+    assert doc.selection == (0, doc.frames)
+    # too short a noise sample: a plain message
+    doc.set_selection(0, 100)
+    assert not page.run("learn_noise") and "longer part" in page.message.text()
+    page.undo()
+    assert not doc.dirty
+
+
 def test_effects_and_save_as(window, qtbot, media, tmp_path, monkeypatch):
     from PySide6.QtWidgets import QFileDialog
 
