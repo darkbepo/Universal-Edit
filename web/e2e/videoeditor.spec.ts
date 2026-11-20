@@ -1,7 +1,7 @@
 // The website's video editor (behind ?e2e / ?video-editor): the gate, the Edit switch, the tile,
 // opening sources (straight, or through the FFmpeg copy), the media list, the timeline and the still preview.
 import { execFileSync } from "node:child_process";
-import { existsSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 import { FIXTURES } from "./global-setup";
 
@@ -534,4 +534,190 @@ test("source pictures of a turned video come upright", async ({ page }) => {
   await openEditor(page, [fx("turned.mp4")]);
   const got = (await pic(page, "s1", 0.5, 200))!;
   expect([got.width, got.height]).toEqual([150, 200]); // 320 x 240 shown turned: 240 x 320
+});
+
+// ---------------------------------------------------------------- saving and opening projects
+interface Saved {
+  format: string; version: number; settings: unknown;
+  sources: (Src & { relpath: string | null })[]; main: unknown[]; text_rows: unknown[][]; music_rows: unknown[][];
+}
+/** Chromium has the save window; these tests take the download path the other browsers get. */
+const noSavePicker = (page: Page) =>
+  page.addInitScript(() => { delete (window as unknown as { showSaveFilePicker?: unknown }).showSaveFilePicker; });
+/** "Save project as…" → the downloaded file's path and its project. */
+const saveAs = async (page: Page, where: string): Promise<{ path: string; name: string; json: Saved }> => {
+  const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Save project as…" }).click()]);
+  const path = `${where}/${download.suggestedFilename()}`;
+  await download.saveAs(path);
+  return { path, name: download.suggestedFilename(), json: JSON.parse(readFileSync(path, "utf-8")) as Saved };
+};
+const locate = (page: Page) => page.locator("dialog.ve-locate");
+const statuses = (page: Page) => locate(page).locator(".ve-locate-status");
+const pickSeveral = async (page: Page, files: string[]) => {
+  const [chooser] = await Promise.all([page.waitForEvent("filechooser"), locate(page).getByRole("button", { name: "Pick several files…" }).click()]);
+  await chooser.setFiles(files);
+};
+/** A small project as the website writes it (bare names, the fixtures' sizes); `change` edits it first. */
+const handProject = (where: string, change: (p: Saved) => void = () => undefined) => {
+  const size = (n: string) => statSync(fx(n)).size;
+  const json = {
+    format: "umcvideo", version: 1, settings: {},
+    sources: [
+      { id: "s1", path: "clip.mp4", kind: "video", duration: 2, width: 320, height: 240, fps: 30, has_audio: true, size: size("clip.mp4"), relpath: null },
+      { id: "s2", path: "img0.png", kind: "image", duration: 0, width: 321, height: 241, fps: 0, has_audio: false, size: size("img0.png"), relpath: null },
+      { id: "s3", path: "tone.wav", kind: "audio", duration: 3, width: 0, height: 0, fps: 0, has_audio: true, size: size("tone.wav"), relpath: null },
+    ],
+    main: [{ type: "video", id: "c1", source: "s1", in_: 0, out: 2 }, { type: "picture", id: "c2", source: "s2" }],
+    text_rows: [[]],
+    music_rows: [[{ type: "audio", id: "a1", source: "s3", start: 0, in_: 0, out: 3 }]],
+  };
+  change(json as Saved);
+  mkdirSync(where, { recursive: true });
+  const path = `${where}/hand.umcvideo`;
+  writeFileSync(path, JSON.stringify(json));
+  return path;
+};
+const needsTone = () => test.skip(!existsSync(fx("tone.wav")), "needs ffmpeg");
+const openProjectFile = async (page: Page, path: string) => {
+  await addFiles(page, [path]);
+  await edit(page).click();
+  await expect(locate(page)).toBeVisible();
+};
+
+test("save, reopen, locate, same timeline", async ({ page }, info) => {
+  needsTone();
+  await noSavePicker(page);
+  await page.goto("./?e2e");
+  await openEditor(page, MIXED());
+  await ve(page, "seek(1)");
+  await page.keyboard.press("s");
+  await expect.poll(() => ve(page, "project().main.length")).toBe(3);
+  await page.getByRole("button", { name: "+ Text" }).click();
+  await expect.poll(() => ve(page, "history.undoLabel")).toBe("Add text");
+  expect(await ve(page, "history.dirty")).toBe(true);
+  const saved = await saveAs(page, info.outputPath());
+  expect(saved.name).toBe("clip.umcvideo");
+  await expect(statusMsg(page)).toHaveText("Saved “clip.umcvideo”.");
+  expect(await ve(page, "history.dirty")).toBe(false);
+  expect(saved.json.format).toBe("umcvideo");
+  expect(saved.json.version).toBe(1);
+  expect(saved.json.sources.map((s) => s.path)).toEqual(["clip.mp4", "img0.png", "tone.wav"]);
+  expect(saved.json.sources.map((s) => s.size)).toEqual(MIXED().map((f) => statSync(f).size));
+
+  await page.goto("./?e2e");
+  await openProjectFile(page, saved.path);
+  await expect(locate(page)).toContainText("Some files of this project can't be found.");
+  await expect(locate(page).locator(".ve-locate-row")).toHaveCount(3);
+  await expect(statuses(page)).toHaveText(["Will be removed", "Will be removed", "Will be removed"]);
+  await pickSeveral(page, MIXED());
+  await expect(statuses(page)).toHaveText(["Use “clip.mp4”", "Use “img0.png”", "Use “tone.wav”"]);
+  await locate(page).getByRole("button", { name: "Open project" }).click();
+  await expect(locate(page)).toHaveCount(0);
+  await expect.poll(() => ve(page, "history.undoLabel")).toBe("Fix missing files");
+  const got = await ve<Saved>(page, "project()");
+  expect(got.sources).toEqual(saved.json.sources);
+  expect(got.main).toEqual(saved.json.main);
+  expect(got.text_rows).toEqual(saved.json.text_rows);
+  expect(got.music_rows).toEqual(saved.json.music_rows);
+  expect(got.settings).toEqual(saved.json.settings);
+  await expect(statusMsg(page)).toHaveText("");
+  await ve(page, "seek(0.5)");
+  const px = await pixel(page);
+  expect(px).not.toBeNull();
+  expect(near(px, [11, 12, 15], 6)).toBe(false); // a frame, not the empty screen
+});
+
+test("remove a missing file", async ({ page }, info) => {
+  needsTone();
+  await page.goto("./?e2e");
+  await openProjectFile(page, handProject(info.outputPath()));
+  await pickSeveral(page, [fx("clip.mp4")]);
+  await expect(statuses(page)).toHaveText(["Use “clip.mp4”", "Will be removed", "Will be removed"]);
+  await locate(page).getByRole("button", { name: "Open project" }).click();
+  await expect.poll(() => ve(page, "history.undoLabel")).toBe("Fix missing files");
+  expect(await ve(page, "project().sources.map((s) => s.id)")).toEqual(["s1"]);
+  expect(await ve(page, "project().main.map((m) => m.id)")).toEqual(["c1"]);
+  expect(await ve(page, "project().music_rows.flat().length")).toBe(0);
+  await expect(statusMsg(page)).toHaveText("Removed “img0.png” from the project. Removed “tone.wav” from the project.");
+  await expect(statusMsg(page)).toHaveClass(/error/);
+  // undo brings back the file's own project, with all three
+  await page.keyboard.press("Control+z");
+  await expect.poll(() => ve(page, "project().sources.length")).toBe(3);
+});
+
+test("Find file…, and a name-only match of another length is refused", async ({ page }, info) => {
+  needsTone();
+  // the project knows no sizes, so a name match must agree on the duration: clip.mp4 is 2 s
+  const path = handProject(info.outputPath(), (p) => {
+    for (const s of p.sources) s.size = 0;
+    p.sources[0] = { ...p.sources[0], duration: 30 };
+  });
+  await page.goto("./?e2e");
+  await openProjectFile(page, path);
+  await pickSeveral(page, [fx("clip.mp4"), fx("tone.wav")]);
+  await expect(statuses(page)).toHaveText(["Use “clip.mp4”", "Will be removed", "Use “tone.wav”"]);
+  const row = locate(page).locator(".ve-locate-row").nth(1);
+  const [chooser] = await Promise.all([page.waitForEvent("filechooser"), row.getByRole("button", { name: "Find file…" }).click()]);
+  await chooser.setFiles([fx("img0.png")]);
+  await expect(row.locator(".ve-locate-status")).toHaveText("Use “img0.png”");
+  await locate(page).getByRole("button", { name: "Open project" }).click();
+  await expect.poll(() => ve(page, "history.undoLabel")).toBe("Fix missing files");
+  expect(await ve(page, "project().sources.map((s) => s.id)")).toEqual(["s2", "s3"]);
+  await expect(statusMsg(page)).toHaveText("Couldn't use “clip.mp4” for “clip.mp4”.");
+});
+
+test("cancel", async ({ page }, info) => {
+  needsTone();
+  await page.goto("./?e2e");
+  await openProjectFile(page, handProject(info.outputPath()));
+  await locate(page).getByRole("button", { name: "Cancel" }).click();
+  await expect(locate(page)).toHaveCount(0);
+  await expect(page.locator(".video-editor")).toBeHidden();
+  await expect(page.locator(".note")).toHaveText("Opening the project was cancelled.");
+  await expect(page.locator(".queue li")).toHaveCount(1);
+  await expect(edit(page)).toBeEnabled();
+});
+
+test("unsaved changes are asked about", async ({ page }) => {
+  await page.goto("./?e2e");
+  await openEditor(page, [fx("clip.mp4")]);
+  const back = page.getByRole("button", { name: "← Back to Convert" });
+  await back.click(); // nothing changed: no question
+  await expect(page.locator(".video-editor")).toBeHidden();
+  await edit(page).click();
+  await expect.poll(() => ve(page, "project() !== null")).toBe(true);
+  await page.getByRole("button", { name: "+ Text" }).click();
+  await expect.poll(() => ve(page, "history.undoLabel")).toBe("Add text");
+  let asked = "";
+  page.once("dialog", (d) => { asked = d.message(); void d.dismiss(); });
+  await back.click();
+  await expect.poll(() => asked).toBe("Discard unsaved changes to this video project?");
+  await expect(page.locator(".video-editor")).toBeVisible();
+  expect(await ve(page, "history.undoLabel")).toBe("Add text");
+  page.once("dialog", (d) => void d.accept());
+  await back.click();
+  await expect(page.locator(".video-editor")).toBeHidden();
+});
+
+test("a desktop-saved project opens", async ({ page }, info) => {
+  test.skip(!existsSync(fx("desktop.umcvideo")), "needs Python and ffmpeg");
+  const desktop = JSON.parse(readFileSync(fx("desktop.umcvideo"), "utf-8")) as Saved;
+  expect(desktop.sources[0].path).toMatch(/[\\/]clip\.mp4$/);
+  expect(desktop.sources[0].relpath).toBe("clip.mp4");
+  await noSavePicker(page);
+  await page.goto("./?e2e");
+  await openProjectFile(page, fx("desktop.umcvideo"));
+  await pickSeveral(page, MIXED());
+  await expect(statuses(page)).toHaveText(["Use “clip.mp4”", "Use “img0.png”", "Use “tone.wav”"]);
+  await locate(page).getByRole("button", { name: "Open project" }).click();
+  await expect.poll(() => ve(page, "history.undoLabel")).toBe("Fix missing files");
+  const got = await ve<Saved>(page, "project()");
+  const where = (p: Saved) => p.sources.map((s) => [s.id, s.path, s.relpath]);
+  expect(where(got)).toEqual(where(desktop));
+  const ids = (p: Saved) => p.main.map((m) => (m as { id: string }).id);
+  expect(ids(got)).toEqual(ids(desktop));
+  expect(got.text_rows.flat().length).toBe(1);
+  const again = await saveAs(page, info.outputPath());
+  expect(again.name).toBe("clip.umcvideo");
+  expect(where(again.json)).toEqual(where(desktop)); // re-saving keeps the desktop's path / relpath
 });

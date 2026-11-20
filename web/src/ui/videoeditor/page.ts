@@ -4,9 +4,11 @@
 // ui/app.ts, only behind the test gate.
 import { canonicalExt, PROJECT_EXTS } from "../../core/detect";
 import { ConversionError, type InputFile } from "../../core/types";
-import { addAt, addSources, addText, applyChanges, remove, split, update } from "../../videoedit/edits";
+import { addAt, addSources, addText, applyChanges, relink, remove, removeSource, split, update } from "../../videoedit/edits";
 import { History } from "../../videoedit/history";
 import { setLimitsForTests, type LIMITS } from "../../videoedit/limits";
+import { defaultProjectName, keepsDuration, relinked } from "../../videoedit/locate";
+import { projectFromJson, projectToJson } from "../../videoedit/projectfile";
 import {
   NO_TRANSITION, find, layout, length, newProject, outputFps, textItem, type Project, type Source, type TextItem,
 } from "../../videoedit/project";
@@ -16,6 +18,7 @@ import type { ConversionClient } from "../../worker/client";
 import { backLabel } from "../back";
 import { loadBundledFonts } from "./fonts";
 import { Inspector } from "./inspector";
+import { locateWindow } from "./locate";
 import { MediaList } from "./media";
 import { Preview } from "./preview";
 import { actionFor, type ActionId } from "./shortcuts";
@@ -33,6 +36,14 @@ const h = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLEle
 };
 
 const isProjectFile = (f: File) => PROJECT_EXTS.has(canonicalExt(f.name));
+const baseName = (path: string): string => path.split(/[\\/]/).pop() ?? path;
+
+export const DISCARD_QUESTION = "Discard unsaved changes to this video project?";
+
+interface FileHandle {
+  name?: string;
+  createWritable(): Promise<{ write(data: Blob): Promise<void>; close(): Promise<void> }>;
+}
 
 export interface VideoEditorOptions {
   client: ConversionClient;
@@ -63,6 +74,9 @@ export class VideoEditorPage {
   private session = 0;
   /** Bumped on leaving only: jobs queued before it never start. */
   private epoch = 0;
+  /** The file "Save project as…" picked: "Save project" (Ctrl+S) writes there again. */
+  private handle: FileHandle | null = null;
+  private saving = false;
 
   constructor(private opts: VideoEditorOptions) {
     this.bank = new SourceBank(opts.client);
@@ -100,8 +114,8 @@ export class VideoEditorPage {
       btn("redo", "Redo", "Redo (Ctrl+Y)", () => this.redo()),
       h("div", { class: "top-tools" },
         h("span", { class: "spacer" }),
-        btn("save", "Save project", "Save the project (Ctrl+S)", () => {}),
-        btn("save_as", "Save project as…", "Save the project under a new name (Ctrl+Shift+S)", () => {})),
+        btn("save", "Save project", "Save the project (Ctrl+S)", () => void this.save()),
+        btn("save_as", "Save project as…", "Save the project under a new name (Ctrl+Shift+S)", () => void this.saveAs())),
       btn("export", "Export…", "Export comes soon", () => {}, "primary small"));
     for (const k of ["undo", "redo", "save", "save_as", "export"]) this.buttons.get(k)!.disabled = true;
     this.el = h("div", { class: "editor video-editor", hidden: true },
@@ -208,6 +222,7 @@ export class VideoEditorPage {
     this.pending = null;
     this.selected = null;
     this.notes = new Map();
+    this.handle = null;
   }
 
   private freshBank(): void {
@@ -219,9 +234,11 @@ export class VideoEditorPage {
     return this.active;
   }
 
-  /** Nothing can be saved yet (saving projects comes later), so there's nothing to ask. */
+  /** False when the visitor wants to keep an unsaved project (the audio editor's question). */
   maybeLeave(): boolean {
-    return true;
+    this.flushPending();
+    if (!this.history?.dirty) return true;
+    return window.confirm(DISCARD_QUESTION);
   }
 
   openEmpty(): void {
@@ -236,9 +253,13 @@ export class VideoEditorPage {
     return this.queue(() => this.openFiles(files.map((f) => f.file)));
   }
 
-  /** Dropped / picked files: into the open project as one "Add files" step, else a new project. */
+  /** Dropped / picked files: into the open project as one "Add files" step, else a new project
+   *  (a lone project file replaces the open project, asking first when it has unsaved changes). */
   addFiles(files: File[]): Promise<boolean> {
-    return this.queue(() => (this.history ? this.addToProject(files) : this.openFiles(files)));
+    return this.queue(() => {
+      if (files.length === 1 && isProjectFile(files[0])) return this.openProject(files[0]);
+      return this.history ? this.addToProject(files) : this.openFiles(files);
+    });
   }
 
   private queue(job: () => Promise<boolean>): Promise<boolean> {
@@ -250,9 +271,9 @@ export class VideoEditorPage {
   }
 
   private async openFiles(files: File[]): Promise<boolean> {
+    if (files.length === 1 && isProjectFile(files[0])) return this.openProject(files[0]);
     if (files.some(isProjectFile)) {
-      // opening a saved project comes with the locate window (a later task)
-      this.showMessage(files.length === 1 ? "Opening video projects isn't ready yet." : "Open a video project on its own, without other files.", true);
+      this.showMessage("Open a video project on its own, without other files.", true);
       return false;
     }
     // a job of the queue: nothing else of this page is running, so the old bank only has decoders
@@ -261,6 +282,7 @@ export class VideoEditorPage {
     this.history = null;
     this.pending = null;
     this.notes = new Map();
+    this.handle = null;
     this.render();
     const { sources, messages } = await this.probe(files, new Set(), session);
     if (session !== this.session) return true; // superseded (left meanwhile): nothing to report, the bank was abandoned
@@ -277,6 +299,138 @@ export class VideoEditorPage {
     }
     this.setProject(project);
     this.showMessage(messages.join(" "), messages.length > 0);
+    return true;
+  }
+
+  /** A saved project (editor_page._open_project_file): every source is picked again in the locate
+   *  window; the file's project is loaded first, the fixes are one "Fix missing files" step.
+   *  Cancel (or an unreadable file) leaves the page as it was. */
+  private async openProject(file: File): Promise<boolean> {
+    const session = this.session;
+    let project: Project;
+    try {
+      project = projectFromJson(await file.text());
+    } catch (e) {
+      this.showMessage(e instanceof ConversionError ? e.message : `Couldn't read “${file.name}”.`, true);
+      return false;
+    }
+    if (session !== this.session) return true;
+    if (this.history && !this.maybeLeave()) return false;
+    let picks = new Map<string, File | null>();
+    if (project.sources.length) {
+      const got = await locateWindow(project.sources);
+      if (session !== this.session) return true; // left meanwhile
+      if (!got) {
+        this.showMessage("Opening the project was cancelled.", true);
+        return false;
+      }
+      picks = got;
+    }
+    const mine = ++this.session;
+    this.freshBank();
+    this.history = null;
+    this.pending = null;
+    this.notes = new Map();
+    this.handle = null;
+    this.render();
+    const bank = this.bank;
+    let fixed = project;
+    const messages: string[] = [];
+    for (const s of project.sources) {
+      if (mine !== this.session) return true;
+      const name = baseName(s.path);
+      const f = picks.get(s.id) ?? null;
+      if (f) {
+        const opening = `Opening “${f.name}”…`;
+        this.showMessage(opening);
+        try {
+          const opened = await bank.open(f, s.id, (fr, msg) => this.showMessage(`${msg || opening} ${Math.round(fr * 100)} %`));
+          if (mine !== this.session) return true;
+          if (opened.source.kind === s.kind && keepsDuration(s, opened.source)) {
+            fixed = relink(fixed, s.id, relinked(s, opened.source));
+            if (opened.note) this.notes = new Map(this.notes).set(s.id, opened.note);
+            continue;
+          }
+          bank.forget(s.id);
+        } catch (e) {
+          if (e instanceof Abandoned || mine !== this.session) return true;
+          if (!(e instanceof ConversionError)) console.error(`Couldn't open ${f.name}`, e);
+        }
+        messages.push(`Couldn't use “${f.name}” for “${name}”.`);
+      } else messages.push(`Removed “${name}” from the project.`);
+      fixed = removeSource(fixed, s.id);
+    }
+    this.history = new History(project);
+    if (fixed !== project) this.history.push(fixed, "Fix missing files");
+    this.playhead = 0;
+    this.selected = null;
+    this.render();
+    this.showMessage(messages.join(" "), messages.length > 0);
+    return true;
+  }
+
+  // ---------------------------------------------------------------- saving
+  /** To the file picked before, else like "Save project as…". */
+  async save(): Promise<boolean> {
+    this.flushPending();
+    if (!this.history || this.saving) return false;
+    if (!this.handle) return this.saveAs();
+    return this.write(this.handle, this.handle.name ?? defaultProjectName(this.history.project));
+  }
+
+  /** The browser's save window where there is one (remembered for Ctrl+S), else a download. */
+  async saveAs(): Promise<boolean> {
+    this.flushPending();
+    const hi = this.history;
+    if (!hi || this.saving) return false;
+    const name = defaultProjectName(hi.project);
+    const w = window as unknown as { showSaveFilePicker?: (o: object) => Promise<FileHandle> };
+    if (typeof w.showSaveFilePicker !== "function") return this.write(null, name);
+    let handle: FileHandle;
+    try {
+      handle = await w.showSaveFilePicker({
+        suggestedName: name,
+        types: [{ description: "Video project", accept: { "application/json": [".umcvideo"] } }],
+      });
+    } catch (err) {
+      if ((err as { name?: string } | null)?.name !== "AbortError") {
+        console.error("The save window couldn't be opened", err);
+        this.showMessage("The browser couldn't open its save window. Try again.", true);
+      }
+      return false;
+    }
+    if (hi !== this.history) return false; // the project was left meanwhile
+    this.handle = handle;
+    return this.write(handle, handle.name ?? name);
+  }
+
+  private async write(handle: FileHandle | null, name: string): Promise<boolean> {
+    const hi = this.history!;
+    const project = hi.project;
+    const blob = new Blob([projectToJson(project)], { type: "application/json" });
+    this.saving = true;
+    try {
+      if (handle) {
+        const out = await handle.createWritable();
+        await out.write(blob);
+        await out.close();
+      } else {
+        const url = URL.createObjectURL(blob);
+        const a = h("a", { href: url, download: name });
+        document.body.append(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      }
+    } catch (err) {
+      console.error("Saving the project failed", err);
+      this.showMessage(`Couldn't save “${name}”.`, true);
+      return false;
+    } finally {
+      this.saving = false;
+    }
+    if (hi === this.history && hi.project === project) hi.markSaved();
+    this.showMessage(`Saved “${name}”.`);
     return true;
   }
 
@@ -524,8 +678,9 @@ export class VideoEditorPage {
       case "undo": return this.undo();
       case "redo": return this.redo();
       case "save":
+        return void this.save();
       case "save-as":
-        return this.flushPending(); // saving projects comes with a later task
+        return void this.saveAs();
       case "zoom-in": return this.timeline.zoomIn();
       case "zoom-out": return this.timeline.zoomOut();
       case "play":
@@ -556,6 +711,8 @@ export class VideoEditorPage {
     this.media.set(hi?.project.sources ?? [], this.notes);
     const undo = this.buttons.get("undo")!;
     const redo = this.buttons.get("redo")!;
+    this.buttons.get("save")!.disabled = !hi;
+    this.buttons.get("save_as")!.disabled = !hi;
     undo.disabled = !hi?.canUndo;
     redo.disabled = !hi?.canRedo;
     undo.title = hi?.canUndo ? `Undo ${hi.undoLabel} (Ctrl+Z)` : "Undo (Ctrl+Z)";

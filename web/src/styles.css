@@ -945,6 +945,17 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 .ve-inspector .form > *, .ve-inspector .slider-row input { min-width: 0; }
 .ve-inspector .slider-row output { min-width: 48px; }
 .ve-font-note { color: var(--muted); font-size: 12px; margin-top: 4px; }
+/* the "Missing files" window of an opened project */
+.ve-locate { max-width: min(720px, 94vw); }
+.ve-locate-intro { margin: 0 0 12px; color: var(--muted); }
+.ve-locate-list { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto auto; align-items: center; gap: 6px 10px; margin-bottom: 12px; }
+.ve-locate-row { display: contents; }
+.ve-locate-name, .ve-locate-status { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ve-locate-status { color: var(--muted); }
+@media (max-width: 560px) {
+  .ve-locate-list { grid-template-columns: minmax(0, 1fr) auto; }
+  .ve-locate-status { grid-column: 1 / -1; }
+}
 @media (max-width: 900px) {
   .video-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(120px, 1fr) auto auto; }
   .ve-screen { flex: none; width: 100%; aspect-ratio: 16 / 9; }

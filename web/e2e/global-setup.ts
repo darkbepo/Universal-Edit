@@ -321,4 +321,34 @@ export default async function globalSetup() {
       // the track test is skipped
     }
   }
+  // A video project saved by the desktop app's own code (absolute paths + relpath, its field
+  // order): the website must open it and keep those paths when it saves it again.
+  rmSync(`${FIXTURES}desktop.umcvideo`, { force: true });
+  const anyPython = findPython("import json");
+  if (anyPython && existsSync(`${FIXTURES}clip.mp4`) && existsSync(`${FIXTURES}tone.wav`)) {
+    try {
+      execFileSync(anyPython, ["-c", [
+        "import sys",
+        "sys.path.insert(0, sys.argv[1])",
+        "from pathlib import Path",
+        "from umc.videoedit import edits",
+        "from umc.videoedit.project import Project, ProjectSettings, Source",
+        "from umc.videoedit.projectfile import save_project",
+        "d = Path(sys.argv[2]).absolute()",
+        "def src(i, name, kind, dur, w, h, fps, audio):",
+        "    p = d / name",
+        "    return Source(i, p, kind, dur, w, h, fps, audio, p.stat().st_size)",
+        "s = [src('s1', 'clip.mp4', 'video', 2.0, 320, 240, 30.0, True), src('s2', 'img0.png', 'image', 0.0, 321, 241, 0.0, False),",
+        "     src('s3', 'tone.wav', 'audio', 3.0, 0, 0, 0.0, True)]",
+        "p = edits.add_sources(Project(ProjectSettings(), ()), s)",
+        "p, _ = edits.insert_main(p, 0, 's1')",
+        "p, _ = edits.insert_main(p, 1, 's2')",
+        "p, _ = edits.add_at(p, 's3', 0.0, 0)",
+        "p, _ = edits.add_text(p, 0.5)",
+        "save_project(p, d / 'desktop.umcvideo')",
+      ].join("\n"), fileURLToPath(new URL("../../src", import.meta.url)), FIXTURES]);
+    } catch (e) {
+      console.warn("couldn't write desktop.umcvideo: the cross-app video project test will be skipped", e);
+    }
+  }
 }
