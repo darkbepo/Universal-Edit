@@ -19,8 +19,10 @@ export function matchSources(sources: Source[], files: PickedFile[]): Map<string
       if (!used.has(i) && f.name.toLowerCase() === name) same.push(i);
     });
     let hit: number | undefined;
-    if (s.size > 0) hit = same.find((i) => files[i].size === s.size);
-    else if (same.length === 1) hit = same[0];
+    if (s.size > 0) {
+      const exact = same.filter((i) => files[i].size === s.size);
+      if (exact.length === 1) hit = exact[0];
+    } else if (same.length === 1) hit = same[0];
     if (hit !== undefined) {
       out.set(s.id, hit);
       used.add(hit);

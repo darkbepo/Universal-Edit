@@ -111,6 +111,14 @@ describe("matchSources", () => {
     );
     expect(m.size).toBe(1);
   });
+  it("same name and size twice is ambiguous: unmatched", () => {
+    const two = [
+      { name: "clip.mp4", size: 10 },
+      { name: "clip.mp4", size: 10 },
+    ];
+    expect(matchSources([src("a", "/x/clip.mp4", 10)], two).size).toBe(0);
+    expect(matchSources([src("a", "/x/clip.mp4", 10), src("b", "/y/clip.mp4", 10)], two).size).toBe(0);
+  });
   it("a different size does not match", () => {
     expect(matchSources([src("a", "/x/clip.mp4", 5)], [{ name: "clip.mp4", size: 6 }]).size).toBe(0);
   });
