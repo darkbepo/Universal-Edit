@@ -31,9 +31,17 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from umc.audioedit import ops
+from umc.audioedit import ops, speed
 from umc.audioedit.document import AudioDoc
-from umc.audioedit.io import BITRATES, DEFAULT_BITRATE, SAVE_FORMATS, open_audio, save_audio
+from umc.audioedit.io import (
+    BITRATES,
+    DEFAULT_BITRATE,
+    MAX_SAMPLES,
+    SAVE_FORMATS,
+    change_speed,
+    open_audio,
+    save_audio,
+)
 from umc.converters.audio import LOSSY_EXTS
 from umc.core.detect import AUDIO_EXTS, MediaFamily, detect
 from umc.core.errors import ConversionCancelled, ConversionError
@@ -63,6 +71,11 @@ TOOL_GROUPS = (
         ("amplify", "Amplify…", "Make the selection (or everything) louder or quieter"),
         ("normalize", "Normalize", "Make the loudest peak −1 dB (selection or everything)"),
         ("reverse", "Reverse", "Play the selection (or everything) backwards"),
+        (
+            "speed",
+            "Speed / pitch…",
+            "Change the speed, tempo or pitch of the selection (or everything)",
+        ),
     ),
     (
         ("zoom_in", "Zoom in", "Zoom in (+ or Ctrl+1, or Ctrl+wheel)"),
@@ -123,6 +136,83 @@ class AmplifyDialog(QDialog):
         form.addRow(buttons)
 
 
+SPEED_LABELS = {"speed": "Change speed", "tempo": "Change tempo", "pitch": "Change pitch"}
+SPEED_MODES = (
+    ("speed", "Speed", "Faster and higher, or slower and lower (like a record player)"),
+    ("tempo", "Tempo", "Faster or slower, the pitch stays"),
+    ("pitch", "Pitch", "Higher or lower, the length stays"),
+)
+TOO_LONG_RESULT = (
+    "The result would be too long for the audio editor (about 45 minutes of stereo sound). "
+    "Change a shorter part."
+)
+
+
+class SpeedDialog(QDialog):
+    """Speed (%), tempo (%) or pitch (semitones) of ``seconds`` of sound."""
+
+    def __init__(self, seconds: float, rate: int, mode: str, value: float, parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Speed / pitch")
+        self.seconds, self.rate = seconds, rate
+        self.values = {"speed": 100.0, "tempo": 100.0, "pitch": 0.0}
+        self.values[mode] = value
+        self.mode = QComboBox()
+        for key, label, _about in SPEED_MODES:
+            self.mode.addItem(label, key)
+        self.about = QLabel(objectName="Muted")
+        self.amount = QDoubleSpinBox()
+        self.amount.setAccessibleName("Amount")
+        self.result = QLabel(objectName="Muted")
+        form = QFormLayout(self)
+        form.addRow("Change", self.mode)
+        form.addRow(self.about)
+        form.addRow("By", self.amount)
+        form.addRow(self.result)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        form.addRow(buttons)
+        self._shown = mode
+        self.mode.setCurrentIndex([k for k, _l, _a in SPEED_MODES].index(mode))
+        self._show()
+        self.mode.currentIndexChanged.connect(self._show)
+        self.amount.valueChanged.connect(self._sync)
+
+    def choice(self) -> tuple[str, float]:
+        mode = self.mode.currentData()
+        return mode, speed.clamp(mode, self.amount.value())
+
+    def _show(self) -> None:
+        mode = self.mode.currentData()
+        if mode != self._shown:
+            self.values[self._shown] = self.amount.value()
+            self._shown = mode
+        pitch = mode == "pitch"
+        self.amount.blockSignals(True)
+        if pitch:
+            self.amount.setRange(speed.SEMITONES_MIN, speed.SEMITONES_MAX)
+            self.amount.setDecimals(1)
+            self.amount.setSingleStep(0.5)
+            self.amount.setSuffix(" semitones")
+        else:
+            self.amount.setRange(speed.PERCENT_MIN, speed.PERCENT_MAX)
+            self.amount.setDecimals(0)
+            self.amount.setSingleStep(5)
+            self.amount.setSuffix(" %")
+        self.amount.setValue(self.values[mode])
+        self.amount.blockSignals(False)
+        self.about.setText(next(a for k, _l, a in SPEED_MODES if k == mode))
+        self._sync()
+
+    def _sync(self) -> None:
+        mode, value = self.choice()
+        after = speed.new_seconds(mode, value, self.seconds, self.rate)
+        self.result.setText(f"{ops.format_time(self.seconds)} → {ops.format_time(after)}")
+
+
 class BitrateDialog(QDialog):
     def __init__(self, fmt: str, kbps: int, parent=None) -> None:
         super().__init__(parent)
@@ -148,6 +238,7 @@ class AudioEditorPage(QWidget):
     back_requested = Signal()
     opened = Signal()  # an open finished (also when it failed): for tests
     save_done = Signal()
+    change_done = Signal()  # a speed / pitch change finished (also cancelled / failed)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -159,6 +250,9 @@ class AudioEditorPage(QWidget):
         self.saving = False
         self._cancel = threading.Event()
         self._job: tuple[QThread, _Worker] | None = None
+        self.changing = False  # a speed / pitch change runs on the worker thread
+        self._change_request: tuple[str, int, int] = ("", 0, 0)
+        self._last_speed: tuple[str, float] = ("tempo", 100.0)
         self._save_target: tuple[Path, str] | None = None
         self._bitrate = DEFAULT_BITRATE
         self._saving_rev = -1
@@ -218,6 +312,11 @@ class AudioEditorPage(QWidget):
         sl.addWidget(self.times)
         sl.addSpacing(16)
         sl.addWidget(self.message, 1)
+        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button.setToolTip("Stop changing the sound")
+        self.cancel_button.clicked.connect(self.cancel_change)
+        self.cancel_button.hide()
+        sl.addWidget(self.cancel_button)
         sl.addWidget(self.info_label)
         root.addWidget(status)
 
@@ -339,7 +438,7 @@ class AudioEditorPage(QWidget):
     # ------------------------------------------------------------ state
     @property
     def busy(self) -> bool:
-        return self.opening or self.saving or self._job is not None
+        return self.opening or self.saving or self.changing or self._job is not None
 
     def show_message(self, text: str, error: bool = False) -> None:
         self.message.setObjectName("Error" if error else "Muted")
@@ -367,6 +466,7 @@ class AudioEditorPage(QWidget):
             "amplify": ready and doc.frames > 0,
             "normalize": ready and doc.frames > 0,
             "reverse": ready and doc.frames > 0,
+            "speed": ready and doc.frames > 0,
             "zoom_in": ready,
             "zoom_out": ready,
             "zoom_sel": sel,
@@ -470,6 +570,8 @@ class AudioEditorPage(QWidget):
             if not dlg.exec():
                 return False
             changed = doc.amplify(dlg.db.value())
+        elif key == "speed":
+            return self._start_speed()
         elif key in ("delete", "trim", "silence", "fade_in", "fade_out", "normalize", "reverse"):
             changed = getattr(doc, key)()
         else:
@@ -478,6 +580,51 @@ class AudioEditorPage(QWidget):
             self.show_message("Already at −1 dB (or silent): nothing to change.")
         self._after_edit()
         return changed
+
+    def _start_speed(self) -> bool:
+        """Ask how, then change the speed / tempo / pitch on the worker thread (False: not
+        started). The result replaces the part in ``_changed_speed``."""
+        doc = self.doc
+        a, b = doc.span()
+        seconds = (b - a) / doc.rate
+        if seconds < speed.MIN_SECONDS:
+            self.show_message(speed.TOO_SHORT, error=True)
+            return False
+        dlg = SpeedDialog(seconds, doc.rate, *self._last_speed, parent=self)
+        if not dlg.exec():
+            return False
+        mode, value = self._last_speed = dlg.choice()
+        if speed.is_identity(mode, value):
+            return False
+        grows = (speed.new_seconds(mode, value, seconds, doc.rate) - seconds) * doc.rate
+        if doc.samples.size + grows * doc.channels > MAX_SAMPLES:
+            self.show_message(TOO_LONG_RESULT, error=True)
+            return False
+        part = doc.samples[:, a:b].copy()
+        rate = doc.rate
+        self.changing = True
+        self._change_request = (SPEED_LABELS[mode], a, b)
+        self._cancel = cancel = threading.Event()
+        self.cancel_button.show()
+        self.show_message(f"Changing the {mode}…")
+        self._update_state()
+        self._start(
+            lambda progress: change_speed(
+                part, rate, mode, value, cancel, lambda f: progress(f, f"Changing the {mode}…")
+            ),
+            f"Couldn't change the {mode} of the sound. See the log for details.",
+        )
+        return False
+
+    def cancel_change(self) -> None:
+        if self.changing:
+            self._cancel.set()
+
+    def _changed_speed(self, samples: np.ndarray) -> None:
+        label, a, b = self._change_request
+        if self.doc is not None and self.doc.replace_part(label, a, b, samples):
+            self.show_message("")
+            self._after_edit()
 
     def _after_edit(self) -> None:
         self.view._clamp()
@@ -608,11 +755,15 @@ class AudioEditorPage(QWidget):
             self._opened(result, self._open_request)
         elif self.saving:
             self._saved(*self._save_request)
+        elif self.changing:
+            self._changed_speed(result)
 
     @Slot(str)
     def _on_failed(self, message: str) -> None:
         if self.opening:
             self._open_failed(message)
+        elif self.changing and not message:
+            self.show_message("Cancelled: nothing was changed.")
         else:
             self.show_message(message, error=True)
 
@@ -628,6 +779,10 @@ class AudioEditorPage(QWidget):
         if self.saving:
             self.saving = False
             self.save_done.emit()
+        if self.changing:
+            self.changing = False
+            self.cancel_button.hide()
+            self.change_done.emit()
         self._update_state()
 
     def _wait(self, signal) -> None:
@@ -809,6 +964,9 @@ class AudioEditorPage(QWidget):
                 self._wait(self.opened)
             if self.saving:
                 self._wait(self.save_done)
+            if self.changing:
+                self._cancel.set()
+                self._wait(self.change_done)
             if self.doc is None or not self.doc.dirty:
                 return True
             answer = self._ask_save_changes()

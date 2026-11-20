@@ -160,6 +160,13 @@ export class AudioDoc {
     return this.edit(label, () => this.splice(a, b, fn(ops.slice(this.samples, a, b))));
   }
 
+  /** Put `next` (any length) in place of [start, end) and select it; one undo step. */
+  replacePart(label: string, start: number, end: number, next: Samples): boolean {
+    const n = ops.frames(next);
+    if (end <= start || !n) return false;
+    return this.edit(label, () => this.splice(start, end, next), [start, start + n]);
+  }
+
   silence(): boolean { return this.effect("Silence", (x) => ops.silence(x.length, ops.frames(x)), true); }
   fadeIn(): boolean { return this.effect("Fade in", (x) => ops.fade(x, true), true); }
   fadeOut(): boolean { return this.effect("Fade out", (x) => ops.fade(x, false), true); }

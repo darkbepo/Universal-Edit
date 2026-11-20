@@ -12,7 +12,8 @@ import { DEFAULT_VOLUME, gainFor, VOLUME_KEY } from "../../audioedit/volume";
 import { readWav, writeWav } from "../../audioedit/wav";
 import { carriedTags, editFor, EMPTY_TAGS, type CarriedTags } from "../../audioedit/tags";
 import type { MusicDetails } from "../../properties/music";
-import { MAX_SAMPLES, OPEN_TARGET, TOO_LONG } from "../../converters/audioedit";
+import { MAX_SAMPLES, OPEN_TARGET, SPEED_TARGET, TOO_LONG } from "../../converters/audioedit";
+import * as speed from "../../audioedit/speed";
 import { MUSIC_TAGS_TARGET } from "../../converters/musictags";
 import { defaults } from "../../core/options";
 import { converterById } from "../../core/registry";
@@ -41,7 +42,7 @@ const BITRATES = [64, 96, 128, 160, 192, 256, 320];
 const LOSSY = new Set(["mp3", "m4a", "ogg", "opus", "wma", "ac3"]);
 export const NO_AUDIO_OUTPUT = "This browser can't play sound here.";
 
-type Action = "cut" | "copy" | "paste" | "delete" | "trim" | "silence" | "fade_in" | "fade_out" | "amplify" | "normalize" | "reverse" | "zoom_in" | "zoom_out" | "zoom_sel" | "fit" | "select_all" | "deselect";
+type Action = "cut" | "copy" | "paste" | "delete" | "trim" | "silence" | "fade_in" | "fade_out" | "amplify" | "normalize" | "reverse" | "speed" | "zoom_in" | "zoom_out" | "zoom_sel" | "fit" | "select_all" | "deselect";
 
 const TOOL_GROUPS: [Action, string, string][][] = [
   [
@@ -58,6 +59,7 @@ const TOOL_GROUPS: [Action, string, string][][] = [
     ["amplify", "Amplify…", "Make the selection (or everything) louder or quieter"],
     ["normalize", "Normalize", "Make the loudest peak −1 dB (selection or everything)"],
     ["reverse", "Reverse", "Play the selection (or everything) backwards"],
+    ["speed", "Speed / pitch…", "Change the speed, tempo or pitch of the selection (or everything)"],
   ],
   [
     ["zoom_in", "Zoom in", "Zoom in (+, or Ctrl+wheel)"],
@@ -92,6 +94,9 @@ export class AudioEditorPage {
   private placeholder = h("div", { class: "audio-placeholder" }, EMPTY_TEXT);
   private scroll = h("input", { type: "range", class: "audio-scroll", min: "0", max: "0", value: "0", ariaLabel: "Scroll" });
   private message = h("div", { class: "msg" });
+  /** Shown while a speed / pitch change runs in the worker. */
+  private cancelButton = h("button", { class: "btn small", type: "button", hidden: true, title: "Stop changing the sound" }, "Cancel");
+  private lastSpeed: SpeedChoice = { mode: "tempo", value: 100 };
   private selectionLabel = h("div", { class: "audio-selection" });
   /** Start / End / Length: typed times change the selection (Enter or leaving the box). */
   private timeBoxes = new Map<ops.TimeField, HTMLInputElement>();
@@ -150,7 +155,8 @@ export class AudioEditorPage {
     this.el = h("div", { class: "editor audio-editor", hidden: true },
       top,
       h("div", { class: "audio-body" }, tools, h("div", { class: "audio-view" }, this.host, this.placeholder), this.scroll),
-      h("div", { class: "editor-status" }, this.selectionLabel, this.message, this.infoLabel));
+      h("div", { class: "editor-status" }, this.selectionLabel, this.message, this.cancelButton, this.infoLabel));
+    this.cancelButton.addEventListener("click", () => this.opts.client.cancel());
     this.buildTimes();
 
     let saved = NaN;
@@ -547,6 +553,7 @@ export class AudioEditorPage {
       else if (key === "fade_in") ok = doc.fadeIn();
       else if (key === "fade_out") ok = doc.fadeOut();
       else if (key === "reverse") ok = doc.reverse();
+      else if (key === "speed") ok = await this.changeSpeed();
       else if (key === "normalize") {
         ok = doc.normalize();
         if (!ok) this.showMessage("Already at −1 dB (or silent): nothing to change.");
@@ -556,6 +563,50 @@ export class AudioEditorPage {
     }
     this.update();
     return ok;
+  }
+
+  /** Speed / tempo / pitch of the selection (or everything) through FFmpeg in the worker. */
+  private async changeSpeed(): Promise<boolean> {
+    const doc = this.doc!;
+    const [a, b] = doc.span();
+    const seconds = (b - a) / doc.rate;
+    if (seconds < speed.MIN_SECONDS) {
+      this.showMessage(speed.TOO_SHORT, true);
+      return false;
+    }
+    const choice = await speedDialog(seconds, doc.rate, this.lastSpeed);
+    if (!choice) return false;
+    this.lastSpeed = choice;
+    const { mode, value } = choice;
+    if (speed.isIdentity(mode, value)) return false;
+    const grows = (speed.newSeconds(mode, value, seconds, doc.rate) - seconds) * doc.rate * doc.channels;
+    if (doc.channels * doc.frames + grows > MAX_SAMPLES) {
+      this.showMessage(TOO_LONG_RESULT, true);
+      return false;
+    }
+    this.busy = true;
+    this.cancelButton.hidden = false;
+    this.update();
+    try {
+      const wav = writeWav(doc.rate, speed.padded(ops.slice(doc.samples, a, b), doc.rate), 32);
+      const input: InputFile = { file: new File([wav as BlobPart], "part.wav", { type: "audio/wav" }), name: "part.wav", ext: "wav", family: "audio" };
+      const [out] = await this.opts.client.run(SPEED_TARGET, [input], { mode, value }, (p, m) => this.showMessage(`${m || "Changing the sound…"} ${Math.round(p * 100)} %`));
+      const { rate, samples } = readWav(out.data);
+      if (rate !== doc.rate || !ops.frames(samples)) throw new Error(`Couldn't change the ${mode} of the sound.`);
+      this.showMessage("");
+      const want = speed.expectedFrames(mode, value, b - a, doc.rate);
+      return doc.replacePart(SPEED_LABELS[mode], a, b, speed.fitLength(ops.fitChannels(samples, doc.channels), want));
+    } catch (e) {
+      if (e instanceof JobCancelled) this.showMessage("Cancelled: nothing was changed.");
+      else {
+        console.error(e);
+        this.showMessage(e instanceof Error && e.message ? e.message : `Couldn't change the ${mode} of the sound.`, true);
+      }
+      return false;
+    } finally {
+      this.busy = false;
+      this.cancelButton.hidden = true;
+    }
   }
 
   undo(): void {
@@ -796,7 +847,7 @@ export class AudioEditorPage {
     const has = ready && doc!.frames > 0;
     const enabled: Record<string, boolean> = {
       cut: sel, copy: sel, paste: ready && !!this.clipboard, delete: sel, trim: sel, silence: sel,
-      fade_in: sel, fade_out: sel, amplify: has, normalize: has, reverse: has,
+      fade_in: sel, fade_out: sel, amplify: has, normalize: has, reverse: has, speed: has,
       zoom_in: ready, zoom_out: ready, zoom_sel: sel, fit: ready,
       home: has, end: has, play: has, stop: this.playing,
       undo: ready && doc!.canUndo(), redo: ready && doc!.canRedo(),
@@ -978,6 +1029,64 @@ async function amplifyDialog(peakDb: number | null): Promise<number | null> {
     h("label", { class: "field" }, h("span", {}, "Change the volume by"), h("span", { class: "with-unit" }, input, "dB")),
     h("div", { class: "hint" }, peakDb === null ? "Silent" : `${headroom.toFixed(1)} dB louder at most without clipping`),
   ], "OK", () => Math.max(ops.GAIN_MIN_DB, Math.min(ops.GAIN_MAX_DB, Number(input.value) || 0)));
+  return r ? r.value : null;
+}
+
+interface SpeedChoice { mode: speed.SpeedMode; value: number }
+
+const SPEED_LABELS: Record<speed.SpeedMode, string> = { speed: "Change speed", tempo: "Change tempo", pitch: "Change pitch" };
+const SPEED_MODES: [speed.SpeedMode, string, string][] = [
+  ["speed", "Speed", "Faster and higher, or slower and lower (like a record player)"],
+  ["tempo", "Tempo", "Faster or slower, the pitch stays"],
+  ["pitch", "Pitch", "Higher or lower, the length stays"],
+];
+const TOO_LONG_RESULT = "The result would be too long for the audio editor in the browser (about 15 minutes of stereo sound). Change a shorter part, or use the desktop app.";
+
+/** Speed (%), tempo (%) or pitch (semitones) of `seconds` of sound; null = cancelled. */
+async function speedDialog(seconds: number, rate: number, last: SpeedChoice): Promise<SpeedChoice | null> {
+  const mode = h("select", { ariaLabel: "Change" });
+  for (const [id, label] of SPEED_MODES) mode.append(h("option", { value: id, selected: id === last.mode }, label));
+  const about = h("div", { class: "hint" });
+  const input = h("input", { type: "number", ariaLabel: "Amount" });
+  const unit = h("span", {});
+  const result = h("div", { class: "hint speed-result" });
+  const values: Record<speed.SpeedMode, number> = { speed: 100, tempo: 100, pitch: 0 };
+  values[last.mode] = last.value;
+  let shown = mode.value as speed.SpeedMode;
+  const read = (): SpeedChoice => {
+    const m = mode.value as speed.SpeedMode;
+    const v = Number(input.value);
+    return { mode: m, value: speed.clamp(m, Number.isFinite(v) ? v : values[m]) };
+  };
+  const show = () => {
+    const m = mode.value as speed.SpeedMode;
+    if (m !== shown) {
+      const v = Number(input.value); // what was typed for the mode shown so far
+      if (Number.isFinite(v)) values[shown] = speed.clamp(shown, v);
+      shown = m;
+    }
+    const pitch = m === "pitch";
+    input.min = String(pitch ? speed.SEMITONES_MIN : speed.PERCENT_MIN);
+    input.max = String(pitch ? speed.SEMITONES_MAX : speed.PERCENT_MAX);
+    input.step = pitch ? "0.1" : "1";
+    input.value = String(values[m]);
+    unit.textContent = pitch ? "semitones" : "%";
+    about.textContent = SPEED_MODES.find(([id]) => id === m)![2];
+    sync();
+  };
+  const sync = () => {
+    const c = read();
+    result.textContent = `${ops.formatTime(seconds)} → ${ops.formatTime(speed.newSeconds(c.mode, c.value, seconds, rate))}`;
+  };
+  mode.addEventListener("change", show);
+  input.addEventListener("input", sync);
+  show();
+  const r = await dialog("speed", "Speed / pitch", [
+    h("label", { class: "field" }, h("span", {}, "Change"), mode),
+    about,
+    h("label", { class: "field" }, h("span", {}, "By"), h("span", { class: "with-unit" }, input, unit)),
+    result,
+  ], "OK", read);
   return r ? r.value : null;
 }
 

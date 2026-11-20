@@ -213,6 +213,13 @@ class AudioDoc:
             return False
         return self._edit(label, lambda: self._splice(a, b, fn(self.samples[:, a:b])))
 
+    def replace_part(self, label: str, start: int, end: int, new: np.ndarray) -> bool:
+        """Put ``new`` (any length) in place of ``[start, end)`` and select it; one undo step."""
+        if end <= start or new.shape[1] == 0:
+            return False
+        n = new.shape[1]
+        return self._edit(label, lambda: self._splice(start, end, new), (start, start + n))
+
     def silence(self) -> bool:
         return self._effect("Silence", lambda x: ops.silence(*x.shape), need_selection=True)
 

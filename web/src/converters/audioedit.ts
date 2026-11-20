@@ -46,3 +46,38 @@ export const audioEditOpenConverter: Converter = {
     return out;
   },
 };
+
+export const SPEED_TARGET = { id: "speed", label: "Audio editor", ext: "wav", group: "", converterId: "audio-edit-speed" };
+
+/** Speed / tempo / pitch of one float WAV (options `mode`, `value`; audioedit/speed.ts). */
+export const audioEditSpeedConverter: Converter = {
+  id: "audio-edit-speed",
+  family: "audio",
+  options: [],
+  targets: () => [],
+  async run(files, _target, o, ctx) {
+    const speed = await import("../audioedit/speed");
+    const { getFFmpeg } = await import("../engines/ffmpeg");
+    const { wavFormat } = await import("../audioedit/wav");
+    const mode = String(o.mode) as import("../audioedit/speed").SpeedMode;
+    if (!speed.MODES.includes(mode)) throw new ConversionError(`Unknown change “${mode}”.`);
+    const value = Number(o.value);
+    const f = files[0];
+    const data = new Uint8Array(await f.file.arrayBuffer());
+    const { rate, channels } = wavFormat(data);
+    const msg = `Changing the ${mode}…`;
+    const ff = await getFFmpeg((m) => ctx.progress(0, m));
+    ctx.progress(0, msg);
+    const { path, release } = await ff.mount(f.file);
+    try {
+      const seconds = speed.newSeconds(mode, value, (data.length - 44) / 4 / channels / rate, rate);
+      await ff.run(["-i", path, "-af", speed.filterChain(mode, value, rate), "-c:a", "pcm_f32le", "-ar", String(rate), "-f", "wav", "/changed.wav"],
+        seconds, (p) => ctx.progress(p, msg), `Couldn't change the ${mode} of the sound.`);
+      const out = await ff.readAndDelete("/changed.wav");
+      ctx.progress(1, "Done");
+      return [{ name: "changed.wav", data: out, type: "audio/wav" }];
+    } finally {
+      await release();
+    }
+  },
+};

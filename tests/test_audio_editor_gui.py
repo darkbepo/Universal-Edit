@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import threading
 
 import pytest
 
@@ -138,6 +139,68 @@ def test_typing_selection_times(window, qtbot, media):
     qtbot.keyClick(box, Qt.Key.Key_T, Qt.KeyboardModifier.ControlModifier)  # Trim
     qtbot.keyClick(box, Qt.Key.Key_L, Qt.KeyboardModifier.ControlModifier)  # Silence
     assert doc.frames == frames and not doc.dirty
+
+
+def test_speed_pitch_window_changes_the_selection(window, qtbot, media, monkeypatch):
+    from umc.gui.audioeditor import audio_editor_page as mod
+
+    page = open_in_editor(window, qtbot, [media / "tone.wav"])  # 3 s
+    doc = page.doc
+    seen = {}
+
+    def answer(mode, value):
+        def exec_(dlg):
+            seen["before"] = dlg.result.text()
+            dlg.mode.setCurrentIndex([k for k, _l, _a in mod.SPEED_MODES].index(mode))
+            dlg.amount.setValue(value)
+            seen["after"] = dlg.result.text()
+            return True
+
+        monkeypatch.setattr(mod.SpeedDialog, "exec", exec_)
+
+    doc.set_selection(0, doc.rate)  # the first second, at half the tempo
+    answer("tempo", 50)
+    assert not page.run("speed")  # started; the result arrives later
+    assert page.busy and page.cancel_button.isVisible()
+    assert not page.edit_buttons["speed"].isEnabled()
+    with qtbot.waitSignal(page.change_done, timeout=30_000):
+        pass
+    assert not page.busy and not page.cancel_button.isVisible()
+    assert doc.frames == 4 * doc.rate and doc.selection == (0, 2 * doc.rate)
+    assert seen["after"] == "0:01.000 → 0:02.000" and doc.dirty
+    assert page.undo_button.toolTip() == "Undo Change tempo (Ctrl+Z)"
+    page.undo()
+    assert doc.frames == 3 * doc.rate and not doc.dirty
+    # 0 semitones changes nothing
+    answer("pitch", 0)
+    assert not page.run("speed") and not page.busy and doc.frames == 3 * doc.rate
+    # too short a part: a plain message
+    doc.set_selection(0, 10)
+    assert not page.run("speed") and "longer part" in page.message.text()
+
+
+def test_speed_change_can_be_cancelled(window, qtbot, media, monkeypatch):
+    from umc.audioedit import io
+    from umc.core.errors import ConversionCancelled
+    from umc.gui.audioeditor import audio_editor_page as mod
+
+    page = open_in_editor(window, qtbot, [media / "tone.wav"])
+    started = threading.Event()
+
+    def slow(samples, rate, mode, value, cancel, progress):
+        started.set()
+        assert cancel.wait(10)
+        raise ConversionCancelled()
+
+    monkeypatch.setattr(mod, "change_speed", slow)
+    monkeypatch.setattr(mod.SpeedDialog, "exec", lambda dlg: True)
+    monkeypatch.setattr(mod.SpeedDialog, "choice", lambda dlg: ("pitch", 3.0))
+    page.run("speed")
+    assert started.wait(5)
+    with qtbot.waitSignal(page.change_done, timeout=10_000):
+        page.cancel_button.click()
+    assert "Cancelled" in page.message.text() and not page.doc.dirty
+    assert io.change_speed is not slow
 
 
 def test_effects_and_save_as(window, qtbot, media, tmp_path, monkeypatch):

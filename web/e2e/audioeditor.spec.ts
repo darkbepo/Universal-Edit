@@ -141,6 +141,31 @@ test("typing Start / End / Length sets the selection", async ({ page }) => {
   expect(d.selection).toEqual([d.rate, 1.5 * d.rate]);
 });
 
+test("Speed / pitch changes the selection's tempo, and undo puts it back", async ({ page }) => {
+  await openEditor(page, [fx("tone.wav")]); // 3 s
+  await page.evaluate(() => window.__audio!.doc!.setSelection(0, 44100));
+  await page.getByRole("button", { name: "Speed / pitch…" }).click();
+  const dlg = page.locator("dialog.speed");
+  await dlg.getByLabel("Change").selectOption("tempo");
+  await dlg.getByLabel("Amount").fill("50");
+  await expect(dlg.locator(".speed-result")).toHaveText("0:01.000 → 0:02.000");
+  await dlg.getByRole("button", { name: "OK" }).click();
+  await expect.poll(async () => (await info(page)).duration, { timeout: 120_000 }).toBeCloseTo(4, 3);
+  const d = await info(page);
+  expect(d.selection).toEqual([0, 2 * d.rate]);
+  expect(d.dirty).toBe(true);
+  await expect(page.locator(".audio-editor .msg")).toHaveText("");
+  await page.keyboard.press("Control+z");
+  expect((await info(page)).duration).toBeCloseTo(3, 3);
+  // pitch keeps the length exactly
+  await page.getByRole("button", { name: "Speed / pitch…" }).click();
+  await dlg.getByLabel("Change").selectOption("pitch");
+  await dlg.getByLabel("Amount").fill("12");
+  await dlg.getByRole("button", { name: "OK" }).click();
+  await expect.poll(async () => (await info(page)).dirty, { timeout: 120_000 }).toBe(true);
+  expect((await info(page)).duration).toBeCloseTo(3, 3);
+});
+
 test("the audio tile opens an empty editor; Edit is off for audio mixed with images", async ({ page }) => {
   await page.goto("./?e2e");
   await page.locator(".editor-tile[data-editor=audio]").click();

@@ -8,6 +8,7 @@ choice keep working."""
 from __future__ import annotations
 
 import logging
+import math
 import os
 import tempfile
 import threading
@@ -16,7 +17,7 @@ from pathlib import Path
 
 import numpy as np
 
-from umc.audioedit import ops
+from umc.audioedit import ops, speed
 from umc.audioedit.document import AudioDoc
 from umc.audioedit.tags import read_tags
 from umc.audioedit.wav import read_wav, write_wav
@@ -72,6 +73,44 @@ def decode(
         if out.stat().st_size > MAX_SAMPLES * 4 + 4096:
             raise too_long()
         return read_wav(out.read_bytes())
+
+
+def change_speed(
+    samples: np.ndarray,
+    rate: int,
+    mode: str,
+    value: float,
+    cancel_event: threading.Event | None = None,
+    progress: Callable[[float], None] = lambda _f: None,
+) -> np.ndarray:
+    """``samples`` with their speed, tempo or pitch changed by FFmpeg (``speed.filter_chain``);
+    same rate and channels, the length FFmpeg made."""
+    if samples.shape[1] < speed.MIN_SECONDS * rate:
+        raise ConversionError(speed.TOO_SHORT)
+    channels, frames = samples.shape
+    want = speed.expected_frames(mode, value, frames, rate)
+    padded = np.concatenate(
+        [samples, np.zeros((channels, math.ceil(speed.PAD_SECONDS * rate)), np.float32)], axis=1
+    )
+    seconds = speed.new_seconds(mode, value, padded.shape[1] / rate, rate)
+    with tempfile.TemporaryDirectory(prefix="umc-audioedit-") as tmp:
+        src, out = Path(tmp) / "part.wav", Path(tmp) / "changed.wav"
+        src.write_bytes(write_wav(rate, padded))
+        ffmpeg.run_ffmpeg(
+            ["-i", str(src), "-af", speed.filter_chain(mode, value, rate)]
+            + ["-c:a", "pcm_f32le", "-ar", str(rate), "-f", "wav", str(out)],
+            total_seconds=seconds,
+            progress=progress,
+            cancel_event=cancel_event or threading.Event(),
+            error_message=f"Couldn't change the {mode} of the sound.",
+        )
+        r, x = read_wav(out.read_bytes())
+    if r != rate or x.shape[1] == 0:
+        raise ConversionError(f"Couldn't change the {mode} of the sound.")
+    x = ops.fit_channels(x, channels)[:, :want]
+    if x.shape[1] < want:  # never seen, but the length must be what the window promised
+        x = np.concatenate([x, np.zeros((channels, want - x.shape[1]), np.float32)], axis=1)
+    return np.ascontiguousarray(x)
 
 
 def too_long() -> ConversionError:

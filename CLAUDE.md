@@ -1027,7 +1027,15 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       `edited_selection` / `editedSelection` (a start past the end moves the end, an end before
       the start moves the start, clamped to the sound); shared cases
       `tests/fixtures/audioedit_time_cases.json`.
-      Not yet: several tracks / mixing, recording, spectrogram, noise reduction, speed / pitch.
+      Speed / pitch… (both apps): `audioedit/speed.py` ↔ `web/src/audioedit/speed.ts` turn a
+      choice into FFmpeg's `-af` text (speed = `asetrate` + `aresample`, tempo = `atempo` chained
+      within 0.5…2, pitch = both), shared cases `tests/fixtures/audioedit_speed_cases.json`. The
+      part gets `PAD_SECONDS` of silence after it (else atempo drops its last ~1 %) and the result
+      is cut to `expected_frames` / `expectedFrames`; `AudioDoc.replace_part` / `replacePart` =
+      one undo step. Desktop: `io.change_speed` on the page's worker thread (`changing`, status-bar
+      Cancel, `change_done` for tests); web: hidden converter `audio-edit-speed` in the worker
+      (Cancel = `client.cancel()`). Results longer than `MAX_SAMPLES` are refused first.
+      Not yet: several tracks / mixing, recording, spectrogram, noise reduction.
    14. Properties mode (both apps), step 1 = read-only "About this file" — spec
       `docs/superpowers/specs/2026-11-12-properties-design.md`. Model `properties/` (desktop, no
       Qt) ↔ `web/src/properties/`: each app reads a file with its own engines into the same plain
