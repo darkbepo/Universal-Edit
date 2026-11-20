@@ -148,6 +148,40 @@ describe("fades multiply", () => {
   });
 });
 
+describe("fades shorter than half a frame", () => {
+  it("stay finite and switch in one step a frame late, like FFmpeg", () => {
+    const item = { ...pictureClip("f", "a", 2), fade_in: 0.01, fade_out: 0.01 };
+    const p = project([item]);
+    const times = [...Array.from({ length: 50 }, (_, n) => n / FPS), 0.001, 0.02, 1.99, 1.995, 1.9999];
+    for (const t of times) {
+      const fade = frameAt(p, t).layers[0].layer.fade;
+      expect(Number.isFinite(fade), `t ${t}`).toBe(true);
+      expect(fade).toBeGreaterThanOrEqual(0);
+      expect(fade).toBeLessThanOrEqual(1);
+    }
+    // FFmpeg: fade=t=in:d=0.01 blacks out frame 0 only; the fade-out snaps to frame 50, past the clip
+    expect(frameAt(p, 0).layers[0].layer.fade).toBe(1);
+    expect(frameAt(p, 1 / FPS).layers[0].layer.fade).toBe(0);
+    expect(frameAt(p, 49 / FPS).layers[0].layer.fade).toBe(0);
+    // fade=t=out:st=1:d=0.01 keeps frame 25 and blacks out from frame 26
+    const mid = project([{ ...pictureClip("f", "a", 1.01), fade_out: 0.01 }]);
+    expect(frameAt(mid, 25 / FPS).layers[0].layer.fade).toBe(0);
+    expect(frameAt(mid, 1.005).layers[0].layer.fade).toBe(1);
+  });
+
+  it("make a zero-length transition no transition (a project that wasn't normalized)", () => {
+    for (const duration of [0, 0.01]) {
+      const p = project([pictureClip("p", "a", 2), { ...pictureClip("q", "b", 2), transition_in: { kind: "fadeblack", duration } }]);
+      const start = 2 - duration;
+      for (const t of [start - 0.001, start, start + 0.005, 2]) {
+        const f = frameAt(p, t);
+        expect(f.layers).toHaveLength(1);
+        expect([f.mode, f.lift, f.layers[0].weight]).toEqual(["over", 0, 1]);
+      }
+    }
+  });
+});
+
 describe("source time", () => {
   it("follows in_ and speed and clamps to out", () => {
     const clip = { ...videoClip("v1", "v", 1, 5), speed: 2 };

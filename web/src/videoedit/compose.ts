@@ -58,7 +58,9 @@ export interface Rect {
 }
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+/** −0 + 0 = +0: keeps e.g. −width · (1 − 1) from coming out as −0 (toEqual tells −0 from 0). */
 const noNegZero = (v: number) => v + 0;
+const EPS = 1e-9;
 
 /** FFmpeg counts every time and duration in whole frames, rounding halves up (av_rescale_q):
  *  a 0.5 s fade at 25 fps lasts 13 frames, a fade-out from 1.5 s starts at frame 38. */
@@ -153,9 +155,20 @@ export function layerRect(layer: Layer, srcW: number, srcH: number, outW: number
 /** 1 − kin · kout: kin rises over fade_in from the clip's start, kout falls over fade_out up to
  *  its end; each 1 when its fade is 0. Times snapped to frames like FFmpeg's fade filter. */
 function fadeAmount(u: number, dur: number, fadeIn: number, fadeOut: number, fps: number): number {
-  const kin = fadeIn > 0 ? clamp(u / snap(fadeIn, fps), 0, 1) : 1;
-  const kout = fadeOut > 0 ? 1 - clamp((u - snap(dur - fadeOut, fps)) / snap(fadeOut, fps), 0, 1) : 1;
+  const kin = fadeIn > 0 ? ramp(u, 0, fadeIn, fps) : 1;
+  const kout = fadeOut > 0 ? 1 - ramp(u, dur - fadeOut, fadeOut, fps) : 1;
   return noNegZero(1 - kin * kout);
+}
+
+/** 0 → 1 over a fade of `length` (> 0) seconds from `from`. A fade shorter
+ *  than half a frame snaps to 0 frames; FFmpeg's fade filter then switches in one step a frame
+ *  late (checked with the bundled FFmpeg: fade=t=in:d=0.01 leaves frame 0 black, fade=t=out:
+ *  st=1:d=0.01 keeps frame 25 and blacks out from frame 26), so this does the same. */
+function ramp(u: number, from: number, length: number, fps: number): number {
+  const start = snap(from, fps);
+  const frames = snap(length, fps);
+  if (frames <= 0) return u > start + EPS ? 1 : 0;
+  return clamp((u - start) / frames, 0, 1);
 }
 
 function layerOf(item: MainItem, u: number, fps: number): Layer {
@@ -195,7 +208,8 @@ export function frameAt(p: Project, t: number, size?: [number, number]): Frame {
   const start = snap(span(i).start, fps);
   const d = snap(tr.duration, fps);
   // FFmpeg's window [start, start + d] in whole frames, which can reach a frame past the first clip
-  const inTransition = i > 0 && tr.kind !== "none" && t <= Math.max(span(i - 1).end, start + d);
+  // a transition that snaps to 0 frames (only in a project that wasn't normalized) is none
+  const inTransition = i > 0 && tr.kind !== "none" && d > 0 && t <=Math.max(span(i - 1).end, start + d);
   if (!inTransition) {
     frame.layers.push({ layer: layerOf(item, t - span(i).start, fps), weight: 1, clipX: null, offsetX: 0 });
     return frame;
