@@ -145,16 +145,27 @@ def _fit(fit: str, w: int, h: int, bg: str) -> list[str]:
     ]
 
 
+def _fade_filters(fade_in: float, fade_out: float, dur: float, bg: str) -> list[str]:
+    """The picture fades of a clip lasting ``dur`` seconds, towards / from the colour ``bg``."""
+    filters = []
+    if fade_in > 0:
+        filters.append(f"fade=t=in:d={_f(fade_in)}:color={bg}")
+    if fade_out > 0:
+        filters.append(f"fade=t=out:st={_f(dur - fade_out)}:d={_f(fade_out)}:color={bg}")
+    return filters
+
+
+def _xfade(kind: str, duration: float, offset: float) -> str:
+    return f"xfade=transition={kind}:duration={_f(duration)}:offset={_f(offset)}"
+
+
 def _video_chain(item: MainItem, k: int, i: int, w: int, h: int, fps: float, bg: str) -> str:
     dur = clip_duration(item)
     speed = item.speed if isinstance(item, VideoClip) else 1.0
     filters = [f"setpts=(PTS-STARTPTS)/{_f(speed)}", *_geometry(item), *_fit(item.fit, w, h, bg)]
     filters += [f"setsar=1,fps={_f(fps)},format=yuv420p"]
     filters += [f"tpad=stop_mode=clone:stop_duration={_f(dur)},trim=duration={_f(dur)}"]
-    if item.fade_in > 0:
-        filters.append(f"fade=t=in:d={_f(item.fade_in)}:color={bg}")
-    if item.fade_out > 0:
-        filters.append(f"fade=t=out:st={_f(dur - item.fade_out)}:d={_f(item.fade_out)}:color={bg}")
+    filters += _fade_filters(item.fade_in, item.fade_out, dur, bg)
     filters.append("settb=AVTB")
     return f"[{k}:v]" + ",".join(filters) + f"[v{i}]"
 
@@ -294,10 +305,7 @@ def build_render(
             for i, item in enumerate(project.main[1:], start=1):
                 tr = item.transition_in
                 if tr.kind != "none":
-                    join = (
-                        f"xfade=transition={tr.kind}:duration={_f(tr.duration)}"
-                        f":offset={_f(spans[item.id].start)}"
-                    )
+                    join = _xfade(tr.kind, tr.duration, spans[item.id].start)
                 else:
                     join = "concat=n=2:v=1:a=0"
                 graph.append(f"{acc}[v{i}]{join}[vj{i}]")

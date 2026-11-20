@@ -46,8 +46,8 @@ from umc.videoedit.projectfile import (  # noqa: E402
     _to_dict,
     save_project,
 )
-from umc.videoedit.render import _colour, _f, _geometry  # noqa: E402
-from umc.videoedit.text_ass import _ANCHORS, _BASE, _fades  # noqa: E402
+from umc.videoedit.render import _colour, _fade_filters, _geometry, _xfade  # noqa: E402
+from umc.videoedit.text_ass import _ANCHORS, _BASE, _fades, font_px, position  # noqa: E402
 
 OUT = ROOT / "tests" / "fixtures" / "videoedit_cases.json"
 HERE = Path(".")
@@ -653,7 +653,7 @@ def transition_cases() -> list[dict[str, Any]]:
             offset = 2 - d
             graph = (
                 "[0:v]format=yuv420p[a];[1:v]format=yuv420p[b];"
-                f"[a][b]xfade=transition={kind}:duration={_f(d)}:offset={_f(offset)},format=rgb24"
+                f"[a][b]{_xfade(kind, d, offset)},format=rgb24"
             )
             frames = _ffmpeg_frames(
                 [
@@ -693,11 +693,14 @@ def fade_cases() -> list[dict[str, Any]]:
     out = []
     for rgb, bg in (((0xD0, 0x20, 0x20), "#000000"), ((0x20, 0xA0, 0x60), "#203040")):
         for fin, fout, times in plans:
-            filters = ["format=yuv420p"]
-            if fin > 0:
-                filters.append(f"fade=t=in:d={_f(fin)}:color={_colour(bg)}")
-            if fout > 0:
-                filters.append(f"fade=t=out:st={_f(dur - fout)}:d={_f(fout)}:color={_colour(bg)}")
+            # the order of _video_chain: fps, format, tpad / trim, then the fades
+            filters = [
+                f"fps={FPS}",
+                "format=yuv420p",
+                f"tpad=stop_mode=clone:stop_duration={dur:.3f},trim=duration={dur:.3f}",
+                *_fade_filters(fin, fout, dur, _colour(bg)),
+                "settb=AVTB",
+            ]
             frames = _ffmpeg_frames(
                 [
                     *("-f", "lavfi", "-i", f"color=c={_hex(rgb)}:s=16x16:r={FPS}:d={dur:g}"),
@@ -742,15 +745,22 @@ def text_cases() -> list[dict[str, Any]]:
     for t, (w, h) in items:
         _an, col, row = _ANCHORS[t.anchor]
         fin, fout = _fades(t)
+        for value in (
+            w * (_BASE[col] + t.x_offset / 100),
+            h * (_BASE[row] + t.y_offset / 100),
+            t.size / 100 * h,
+        ):
+            # Python rounds .5 to even, JavaScript up: keep the cases clear of ties.
+            assert abs(value % 1 - 0.5) > 1e-6, value
         out.append(
             {
                 "item": _item_to_dict(t),
                 "size": [w, h],
-                "x": round(w * (_BASE[col] + t.x_offset / 100)),
-                "y": round(h * (_BASE[row] + t.y_offset / 100)),
+                "x": position(t, (w, h))[0],
+                "y": position(t, (w, h))[1],
                 "column": col,
                 "row": row,
-                "font_px": round(t.size / 100 * h),
+                "font_px": font_px(t, h),
                 "fade_in": fin,
                 "fade_out": fout,
             }

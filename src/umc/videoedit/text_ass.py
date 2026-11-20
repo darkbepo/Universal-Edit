@@ -42,6 +42,17 @@ def _fades(t: TextItem) -> tuple[float, float]:
     return fin, fout
 
 
+def position(t: TextItem, size: tuple[int, int]) -> tuple[int, int]:
+    """Where the anchor point of the text sits, in pixels of a ``size`` picture."""
+    w, h = size
+    _an, col, row = _ANCHORS[t.anchor]
+    return round(w * (_BASE[col] + t.x_offset / 100)), round(h * (_BASE[row] + t.y_offset / 100))
+
+
+def font_px(t: TextItem, h: int) -> int:
+    return round(t.size / 100 * h)
+
+
 def _time(t: float) -> str:
     cs = max(0, round(t * 100))
     h, rest = divmod(cs, 360000)
@@ -72,7 +83,7 @@ def _style(n: int, t: TextItem, h: int) -> str:
     fields = [
         f"T{n}",
         font_name(t),
-        str(round(t.size / 100 * h)),
+        str(font_px(t, h)),
         primary,
         primary,
         outline,
@@ -137,8 +148,7 @@ def build_ass(items: Sequence[TextItem], size: tuple[int, int]) -> str:
             continue
         lines.append(_style(n, t, h))
         an, col, row = _ANCHORS[t.anchor]
-        x = round(w * (_BASE[col] + t.x_offset / 100))
-        y = round(h * (_BASE[row] + t.y_offset / 100))
+        x, y = position(t, size)
         tags = f"{{\\an{an}\\pos({x},{y}){_fade_tag(t.start, t.end, *_fades(t))}}}"
         events.append(
             f"Dialogue: 0,{_time(max(t.start, 0.0))},{_time(t.end)},T{n},,0,0,0,,"
