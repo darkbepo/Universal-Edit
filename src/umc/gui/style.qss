@@ -823,3 +823,8 @@ QPushButton#TrackName:checked {
     color: @accent;
     font-weight: 600;
 }
+
+/* the editor tiles' scroll area shows the window behind it */
+QScrollArea#EditorHubScroll, QWidget#EditorHubTiles {
+    background: transparent;
+}

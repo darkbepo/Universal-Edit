@@ -62,7 +62,9 @@ def test_convert_end_to_end(window, media, tmp_path, qtbot):
 
 def test_empty_window_is_one_big_drop_zone(window, media):
     assert window.right.isHidden() and not window.files_card.isVisible()
-    assert window.drop.height() > 400
+    assert window.drop.height() >= 200  # the biggest thing on the page …
+    scroll = window.hub.scroll  # … with every editor tile fully visible below it (no scrolling)
+    assert scroll.verticalScrollBar().maximum() == 0
     window.add_files([str(media / "img0.png")])
     assert window.right.isVisible() and window.files_card.isVisible()
     assert window.drop.compact and window.drop.height() < 60

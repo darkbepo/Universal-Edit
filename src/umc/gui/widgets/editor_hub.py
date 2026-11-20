@@ -17,6 +17,8 @@ from PySide6.QtWidgets import (
     QLabel,
     QPushButton,
     QRadioButton,
+    QScrollArea,
+    QSizePolicy,
     QSpinBox,
     QVBoxLayout,
     QWidget,
@@ -31,9 +33,34 @@ from umc.gui.widgets.flow_layout import FlowLayout
 
 CUSTOM = "Custom size"
 TILE_W = 296  # three tiles per row on a normal window (owner, Nov 2026)
-TILE_H = 92
+TILE_H = 84
 PER_ROW = 3
 ICON_BOX = 48
+
+
+class _TilesScroll(QScrollArea):
+    """Frameless, vertical only; asks for the tiles' full height, takes less when it must."""
+
+    def __init__(self, inner: QWidget) -> None:
+        super().__init__(objectName="EditorHubScroll")
+        self.setWidget(inner)
+        self.setWidgetResizable(True)
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.viewport().setAutoFillBackground(False)
+        inner.setAutoFillBackground(False)
+
+    def sizeHint(self):  # noqa: N802
+        hint = super().sizeHint()
+        inner = self.widget()
+        height = inner.layout().heightForWidth(max(1, self.viewport().width()))
+        hint.setHeight(max(height, inner.sizeHint().height()))
+        return hint
+
+    def minimumSizeHint(self):  # noqa: N802
+        hint = super().minimumSizeHint()
+        hint.setHeight(TILE_H + 12)  # at least one row
+        return hint
 
 
 class EditorTile(QPushButton):
@@ -126,11 +153,16 @@ class EditorHub(QFrame):
             self.tiles[info.id] = tile
         # three tiles per row at most, centred; a narrow window wraps to fewer
         holder.setMaximumWidth(PER_ROW * (TILE_W + 10))
-        row = QHBoxLayout()
+        inner = QWidget(objectName="EditorHubTiles")
+        row = QHBoxLayout(inner)
+        row.setContentsMargins(0, 0, 0, 0)
         row.addStretch(1)
         row.addWidget(holder, 100)
         row.addStretch(1)
-        lay.addLayout(row)
+        # a short window scrolls the tiles instead of cutting the last row off
+        self.scroll = _TilesScroll(inner)
+        lay.addWidget(self.scroll, 1)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
 
     def retint(self) -> None:
         for tile in self.tiles.values():

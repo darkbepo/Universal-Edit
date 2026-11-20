@@ -69,7 +69,9 @@ def test_tiles_shown_until_files_are_added(window, media):
     hub = window.hub
     assert hub.isVisible()
     enabled = [t for t, tile in hub.tiles.items() if tile.isEnabled()]
-    assert enabled == ["image", "model", "video", "audio", "document", "code"]
+    assert enabled == ["image", "video", "audio", "document", "code", "model"]
+    for soon in ("vector", "font", "subtitle", "data"):
+        assert not hub.tiles[soon].isEnabled() and not hub.tiles[soon].badge.isHidden()
     assert hub.tiles["video"].badge.isHidden()
     assert hub.tiles["document"].badge.isHidden()
     assert hub.tiles["code"].badge.isHidden()
@@ -82,8 +84,9 @@ def test_tiles_shown_until_files_are_added(window, media):
 def test_tiles_are_three_per_row_with_the_icon_on_the_left(window):
     tiles = list(window.hub.tiles.values())
     tops = [t.geometry().top() for t in tiles]
-    assert len(tiles) == 6
-    assert tops[0] == tops[1] == tops[2] < tops[3] == tops[4] == tops[5]
+    assert len(tiles) == 10
+    assert tops[0] == tops[1] == tops[2] < tops[3] == tops[4] == tops[5] < tops[6] == tops[8]
+    assert tops[8] < tops[9]
     for tile in tiles:
         assert tile.icon.geometry().right() < tile.title.geometry().left()  # icon left of text
 

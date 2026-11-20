@@ -17,7 +17,7 @@ describe("new picture", () => {
 });
 
 describe("editor tiles", () => {
-  it("every editor but the video editor is ready", () => {
-    expect(EDITORS.filter((e) => e.available).map((e) => e.id)).toEqual(["image", "model", "audio", "document", "code"]);
+  it("the ready editors, in the owner's order (video, vector, font, subtitle, data: Coming soon)", () => {
+    expect(EDITORS.filter((e) => e.available).map((e) => e.id)).toEqual(["image", "audio", "document", "code", "model"]);
   });
 });

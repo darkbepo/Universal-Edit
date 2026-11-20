@@ -898,7 +898,7 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       page `ui/editor3d/page.ts` (three.js WebGL, models read in the worker by the hidden
       `model3d-view` converter → `mesh.bin` + `info.json`; `window.__viewer3d` with `?e2e`).
       Next: basic editing for 3D printing (plan in the session handoff / owner's go-ahead).
-   9. ✅ Start screen = hub (both apps): editor tiles under the empty drop zone, listed in
+   9. ✅ Start screen = hub (both apps; order and the four "Coming soon" tiles: roadmap 16): editor tiles under the empty drop zone, listed in
       `core/editors.py` / `web/src/core/editors.ts` (same order and text; `available` False =
       greyed "Coming soon" — on desktop none is left; the website's video tile is,
       `WEB_LATER`); tests/test_editor_hub.py checks both lists. Tiles are three per row
@@ -1252,6 +1252,20 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
     is pinned to a commit (v2.6.2) in both workflows; the installer installs the editors from
     [Code] `InstallEditors` and reports a failure (setup still finishes).
 12. Ideas: presets, batch queue.
+16. **More editors** (owner, Nov 2026): the start screen shows them as "Coming soon" tiles
+    (`core/editors.py` / `web/src/core/editors.ts`, `available` False), in the owner's order:
+    Image, Video, Audio, Document, Code, 3D viewer, then these. Each gets a spec + plan when its
+    turn comes, both apps, like the other editors (set `available` True, add-on on desktop):
+    1. Vector editor (`vector`): select / move / reshape SVG shapes and paths, fill / stroke,
+       text, layers (groups); saves SVG, exports PDF / PNG through the vector converter.
+    2. Font editor (`font`): font names / metadata, letter spacing (side bearings, kerning
+       pairs), glyph preview; fontTools on the desktop, HarfBuzz / own tables on the web.
+    3. Subtitle editor (`subtitle`): a list of cues (text, start / end) next to the video,
+       shift / stretch timing, split / join cues; saves through the subtitle converter.
+    4. Data editor (`data`): CSV / TSV / JSON / XML / YAML / XLSX as an editable table (add /
+       remove rows and columns, sort, find), saved back through the data converter.
+    The hub's tiles scroll in a short window (`EditorHub.scroll`); at 1280 × 800 all ten fit
+    (tiles 84 px high, empty drop zone ≥ 200 px — `test_empty_window_is_one_big_drop_zone`).
 13. ✅ Light / dark mode switch (both apps; owner, Nov 2026): sun / moon button in the top bar,
     System → Light → Dark, remembered (see "UI / UX requirements"). Tests `tests/test_theme.py`,
     `web/tests/theme.test.ts`, `web/e2e/theme.spec.ts` (incl. the 375 px top bar).

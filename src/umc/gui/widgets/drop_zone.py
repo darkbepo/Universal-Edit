@@ -58,7 +58,7 @@ class DropZone(QFrame):
             self.setMaximumHeight(48)
             self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         else:
-            self.setMinimumHeight(220)
+            self.setMinimumHeight(200)
             self.setMaximumHeight(16777215)
             self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
         self.retint()
