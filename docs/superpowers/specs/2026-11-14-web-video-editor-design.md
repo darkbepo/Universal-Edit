@@ -92,7 +92,8 @@ web/src/videoedit/          # model, no DOM — line-by-line ports of src/umc/vi
                             #   applyChanges, addRow, relink, removeSource, limits
   history.ts                #   snapshot undo (300 steps, dirty flag)
   projectfile.ts            #   .umcvideo read / write (same JSON as projectfile.py)
-  window.ts                 #   cut a project to [start, end) (port of window.py)
+  match.ts                  #   NEW: match picked files to missing sources (name + size)
+  # window.ts is NOT ported: the canvas compositor works per frame, so there is no render window to cut
   compose.ts                #   NEW: what one frame shows — a list of draw steps (source frame,
                             #   rects, rotation, flips, grade, alpha, clip rect for wipes,
                             #   offset for slides, background) for time t. Pure maths.

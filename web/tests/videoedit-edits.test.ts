@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import cases from "../../tests/fixtures/videoedit_cases.json";
 import * as edits from "../src/videoedit/edits";
 import { setIdMaker, type Project } from "../src/videoedit/project";
-import { projectFromJson, sourceFromJson } from "../src/videoedit/projectfile";
+import { projectFromJson, projectToJson, sourceFromJson } from "../src/videoedit/projectfile";
 
 const load = (dict: unknown) => projectFromJson(JSON.stringify(dict));
 
@@ -95,5 +95,17 @@ describe("purity", () => {
       }
     }
     expect(proj).toEqual(before);
+  });
+});
+
+describe("relink", () => {
+  it("leaves no stale relpath; saving gives the new file name", () => {
+    const c = (cases.edits as any[]).find((x) => x.op === "relink");
+    const p = load(c.project);
+    const out = edits.relink(p, c.args[0], sourceFromJson(c.args[1]));
+    const s = out.sources.find((x) => x.id === c.args[0])!;
+    expect(s.relpath ?? null).toBeNull();
+    const saved = JSON.parse(projectToJson(out)).sources.find((x: any) => x.id === c.args[0]);
+    expect(saved.relpath).toBe(String(c.args[1].path).split(/[\/]/).pop());
   });
 });
