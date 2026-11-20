@@ -137,11 +137,11 @@ export class AudioDoc {
   }
 
   /** Insert at the cursor, or replace the selection; the pasted part is selected. */
-  paste(clip: Samples | null): boolean {
+  paste(clip: Samples | null, label = "Paste"): boolean {
     if (!clip || !ops.frames(clip)) return false;
     const [a, b] = this.selection;
     const n = ops.frames(clip);
-    return this.edit("Paste", () => this.splice(a, b, clip), [a, a + n]);
+    return this.edit(label, () => this.splice(a, b, clip), [a, a + n]);
   }
 
   /** Keep only the selection. */

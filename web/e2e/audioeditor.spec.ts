@@ -262,6 +262,72 @@ test("the Spectrogram switch draws pitches in the lanes and is remembered", asyn
   expect(await page.evaluate(() => localStorage.getItem("umc-audio-spectrogram"))).toBe("0");
 });
 
+type RecordHook = { recording: boolean; doc: { frames: number; selection: [number, number]; undoLabel(): string } | null };
+const rec = (page: Page) => page.evaluate(() => {
+  const a = window.__audio as unknown as RecordHook;
+  const d = a.doc;
+  return { recording: a.recording, frames: d?.frames ?? 0, selection: d?.selection ?? [0, 0] };
+});
+
+test("Record puts a take from the microphone at the cursor; undo takes it out", async ({ page }) => {
+  await openEditor(page, [fx("tone.wav")]);
+  const before = await rec(page);
+  const button = page.getByRole("button", { name: "● Record" });
+  await button.click();
+  await expect(page.getByRole("button", { name: "■ Stop recording" })).toBeVisible();
+  await expect(page.locator(".audio-editor .msg")).toContainText("Recording…");
+  await expect.poll(async () => (await rec(page)).recording).toBe(true);
+  await page.waitForTimeout(1200);
+  await page.getByRole("button", { name: "■ Stop recording" }).click();
+  await expect(page.getByRole("button", { name: "● Record" })).toBeVisible();
+  const after = await rec(page);
+  expect(after.recording).toBe(false);
+  const added = after.frames - before.frames;
+  expect(added).toBeGreaterThan(44_100 * 0.8); // about a second at the sound's own rate
+  expect(after.selection[1] - after.selection[0]).toBe(added); // the take is selected
+  expect(await page.evaluate(() => (window.__audio as unknown as RecordHook).doc!.undoLabel())).toBe("Record");
+  await page.keyboard.press("Control+z");
+  expect((await rec(page)).frames).toBe(before.frames);
+});
+
+test("recording stops by itself when the sound is full, and leaving keeps a take", async ({ page }) => {
+  await openEditor(page, [fx("tone.wav")]);
+  const before = (await rec(page)).frames;
+  await page.evaluate(() => { (window.__audio as unknown as { recordRoom: number }).recordRoom = 4410; });
+  await page.getByRole("button", { name: "● Record" }).click();
+  await expect(page.getByRole("button", { name: "● Record" })).toBeVisible({ timeout: 10_000 }); // stopped by itself
+  await expect(page.locator(".audio-editor .msg")).toContainText("as long as the audio editor allows");
+  expect((await rec(page)).frames - before).toBe(4410);
+  // record again and leave while recording: the take is kept, and leaving asks about it
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await page.evaluate(() => { (window.__audio as unknown as { recordRoom: number | null }).recordRoom = null; });
+  await page.getByRole("button", { name: "● Record" }).click();
+  await expect.poll(async () => (await rec(page)).recording).toBe(true);
+  await page.waitForTimeout(600);
+  let asked = "";
+  page.once("dialog", (d) => { asked = d.message(); void d.dismiss(); });
+  await page.getByRole("button", { name: "← Back to Convert" }).click();
+  await expect.poll(() => asked).not.toBe("");
+  const after = await rec(page);
+  expect(after.recording).toBe(false);
+  expect(after.frames).toBeGreaterThan(before);
+  await expect(page.locator(".audio-editor")).toBeVisible();
+});
+
+test("recording in an empty editor makes a new sound", async ({ page }) => {
+  await page.goto("./?e2e");
+  await page.locator(".editor-tile[data-editor=audio]").click();
+  await expect(page.locator(".audio-editor")).toBeVisible();
+  await page.keyboard.press("r");
+  await expect(page.getByRole("button", { name: "■ Stop recording" })).toBeVisible();
+  await page.waitForTimeout(800);
+  await page.keyboard.press("r");
+  await expect(page.getByRole("button", { name: "● Record" })).toBeVisible();
+  expect((await rec(page)).frames).toBeGreaterThan(10_000);
+  await expect(page.locator(".audio-info")).toContainText("Stereo");
+  await expect(page.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
+});
+
 test("the audio tile opens an empty editor; Edit is off for audio mixed with images", async ({ page }) => {
   await page.goto("./?e2e");
   await page.locator(".editor-tile[data-editor=audio]").click();

@@ -625,6 +625,7 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 .audio-body { display: flex; flex-direction: column; min-height: 0; padding: 8px 12px 4px; gap: 6px; }
 .audio-tools { display: flex; flex-wrap: wrap; gap: 6px 14px; }
 .audio-tools .btn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.audio-record-level { width: 70px; height: 8px; align-self: center; }
 .audio-group { display: flex; flex-wrap: wrap; gap: 4px; }
 .audio-volume-box { display: flex; align-items: center; gap: 6px; margin-left: 8px; }
 .audio-volume { width: 110px; margin: 0; accent-color: var(--accent); }

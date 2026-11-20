@@ -1051,7 +1051,15 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       most `MAX_COLUMNS` (800; wider views stretch) and cached per view; the web FFTs two
       channels at once. Shared cases `tests/fixtures/audioedit_spectrum_cases.json`
       (`python scripts/make_spectrum_cases.py`).
-      Not yet: several tracks / mixing, recording.
+      Recording (both apps): "● Record" / R → `audioedit/record.py` ↔ `record.ts` (`Take` collects
+      chunks up to `room()`, the take goes in through `paste(…, label="Record")` = one undo step;
+      an empty editor gets a new sound at the take's rate, stereo). Desktop
+      `gui/audioeditor/recorder.py` (QAudioSource, Int16 else its preferred format, 50 ms poll);
+      another rate → `io.resample` (FFmpeg) on the change thread. Web: getUserMedia (no echo /
+      noise / gain processing) → an AudioWorklet from a Blob URL (`RECORDER_WORKLET`) at the
+      sound's rate when the browser allows (Firefox doesn't: then OfflineAudioContext resamples).
+      Leaving keeps the take. e2e uses Chromium's fake microphone (`playwright.config.ts` flags).
+      Not yet: several tracks / mixing.
    14. Properties mode (both apps), step 1 = read-only "About this file" — spec
       `docs/superpowers/specs/2026-11-12-properties-design.md`. Model `properties/` (desktop, no
       Qt) ↔ `web/src/properties/`: each app reads a file with its own engines into the same plain

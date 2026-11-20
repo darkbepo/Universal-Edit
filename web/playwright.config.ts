@@ -13,7 +13,15 @@ export default defineConfig({
   retries: external?.startsWith("https://") ? 1 : 0,
   globalSetup: "./e2e/global-setup.ts",
   use: { baseURL: external ?? "http://localhost:4173", acceptDownloads: true, trace: "off" },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [{
+    name: "chromium",
+    use: {
+      ...devices["Desktop Chrome"],
+      // a fake microphone (a steady beep) for the audio editor's Record button, allowed without asking
+      launchOptions: { args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"] },
+      permissions: ["microphone"],
+    },
+  }],
   webServer: external ? undefined : {
     command: "npm run build && npm run preview",
     url: "http://localhost:4173",

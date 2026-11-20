@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMessageBox,
+    QProgressBar,
     QPushButton,
     QScrollBar,
     QSlider,
@@ -32,7 +33,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from umc.audioedit import noise, ops, speed
+from umc.audioedit import noise, ops, record, speed
 from umc.audioedit.document import AudioDoc
 from umc.audioedit.io import (
     BITRATES,
@@ -41,12 +42,14 @@ from umc.audioedit.io import (
     SAVE_FORMATS,
     change_speed,
     open_audio,
+    resample,
     save_audio,
 )
 from umc.converters.audio import LOSSY_EXTS
 from umc.core.detect import AUDIO_EXTS, MediaFamily, detect
 from umc.core.errors import ConversionCancelled, ConversionError
 from umc.gui.audioeditor.player import DEFAULT_VOLUME, Player
+from umc.gui.audioeditor.recorder import Recorder
 from umc.gui.audioeditor.time_box import TimeBox
 from umc.gui.audioeditor.wave_view import WaveView
 from umc.gui.widgets.flow_layout import FlowLayout
@@ -324,6 +327,12 @@ class AudioEditorPage(QWidget):
         self.player = Player(self)
         self.player.position_changed.connect(self._on_play_position)
         self.player.finished.connect(self._on_play_finished)
+        self.take: record.Take | None = None  # set while recording
+        self._record_at = (0, 0)  # the selection when recording started: the take goes there
+        self._record_stopping = False
+        self.recorder = Recorder(self)
+        self.recorder.chunk.connect(self._on_record_chunk)
+        self.recorder.failed.connect(self._on_record_failed)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -437,6 +446,17 @@ class AudioEditorPage(QWidget):
         self.stop_button.clicked.connect(self.stop)
         self.end_button = b(lay, "▶|", "Go to the end (End)")
         self.end_button.clicked.connect(lambda: self.go_to(self.doc.frames if self.doc else 0))
+        self.record_button = b(
+            lay, "● Record", "Record from the microphone at the cursor, or over the selection (R)"
+        )
+        self.record_button.clicked.connect(self.toggle_record)
+        self.record_level = QProgressBar(objectName="RecordLevel")
+        self.record_level.setRange(0, 100)
+        self.record_level.setTextVisible(False)
+        self.record_level.setFixedSize(70, 8)
+        self.record_level.setAccessibleName("Recording level")
+        self.record_level.hide()
+        lay.addWidget(self.record_level)
         lay.addSpacing(8)
         self.volume_slider = QSlider(Qt.Orientation.Horizontal, objectName="AudioVolume")
         self.volume_slider.setRange(0, 100)
@@ -493,6 +513,7 @@ class AudioEditorPage(QWidget):
         sc(("Ctrl+3", "-"), lambda: self.run("zoom_out"))  # + / − as on the website
         sc("Ctrl+E", lambda: self.run("zoom_sel"))
         sc("Ctrl+F", lambda: self.run("fit"))
+        sc("R", self.toggle_record)
         sc("Ctrl+Z", self.undo)
         sc(("Ctrl+Y", "Ctrl+Shift+Z"), self.redo)
         sc("Ctrl+S", self.save)
@@ -501,7 +522,13 @@ class AudioEditorPage(QWidget):
     # ------------------------------------------------------------ state
     @property
     def busy(self) -> bool:
-        return self.opening or self.saving or self.changing or self._job is not None
+        return (
+            self.opening or self.saving or self.changing or self.recording or self._job is not None
+        )
+
+    @property
+    def recording(self) -> bool:
+        return self.take is not None
 
     def show_message(self, text: str, error: bool = False) -> None:
         self.message.setObjectName("Error" if error else "Muted")
@@ -543,6 +570,8 @@ class AudioEditorPage(QWidget):
         for btn in (self.home_button, self.end_button, self.play_button):
             btn.setEnabled(ready and doc.frames > 0)
         self.stop_button.setEnabled(self.player.active)
+        self.record_button.setEnabled(self.recording or not self.busy)
+        self.record_button.setText("■ Stop recording" if self.recording else "● Record")
         self.play_button.setText("❚❚ Pause" if self.player.active and not self.player.paused
                                  else "▶ Play")  # fmt: skip
         self.undo_button.setEnabled(ready and doc.can_undo())
@@ -753,7 +782,14 @@ class AudioEditorPage(QWidget):
 
     def _changed_part(self, samples: np.ndarray) -> None:
         label, a, b = self._change_request
-        if self.doc is not None and self.doc.replace_part(label, a, b, samples):
+        if self.doc is None:
+            return
+        if a == b:  # an insertion at the cursor (a recording)
+            self.doc.set_selection(a)
+            done = self.doc.paste(samples, label)
+        else:
+            done = self.doc.replace_part(label, a, b, samples)
+        if done:
             self.show_message("")
             self._after_edit()
 
@@ -836,7 +872,102 @@ class AudioEditorPage(QWidget):
         self._update_state()
 
     def stop(self) -> None:
+        """Stop playing (a recording goes on: it has its own Stop)."""
         self.player.stop()
+
+    # ------------------------------------------------------------ recording
+    def toggle_record(self) -> None:
+        if self.recording:
+            self.stop_recording()
+        else:
+            self.start_recording()
+
+    def start_recording(self) -> bool:
+        """Record from the microphone; Stop recording puts the take at the cursor."""
+        if self.busy:
+            return False
+        self.stop()
+        doc = self.doc
+        rate = doc.rate if doc is not None else record.NEW_RATE
+        channels = doc.channels if doc is not None else record.NEW_CHANNELS
+        why = self.recorder.start(rate, channels)
+        if why:
+            self.show_message(why, error=True)
+            return False
+        a, b = doc.selection if doc is not None else (0, 0)
+        frames = doc.frames if doc is not None else 0
+        width = doc.channels if doc is not None else 0
+        room = record.room(MAX_SAMPLES, frames, width, b - a, self.recorder.channels)
+        if doc is not None and doc.rate != self.recorder.rate:  # the take is resampled after
+            room = room * self.recorder.rate // doc.rate
+        if room <= 0:
+            self.recorder.stop()
+            self.show_message(record.NO_ROOM, error=True)
+            return False
+        self.take = record.Take(self.recorder.rate, self.recorder.channels, room)
+        self._record_at = (a, b)
+        self.record_level.setValue(0)
+        self.record_level.show()
+        self._show_recording()
+        self._update_state()
+        return True
+
+    def _show_recording(self) -> None:
+        self.show_message(
+            f"Recording… {ops.format_time(self.take.seconds)} — press “■ Stop recording” to finish."
+        )
+
+    def _on_record_chunk(self, chunk: np.ndarray) -> None:
+        take = self.take
+        if take is None:
+            return
+        more = take.add(chunk)
+        self.record_level.setValue(round(take.level * 100))
+        self._show_recording()
+        if not more and not self._record_stopping:
+            self.stop_recording(record.FULL)
+
+    def _on_record_failed(self, message: str) -> None:
+        if self.take is not None:
+            self.stop_recording(message)
+
+    def stop_recording(self, note: str = "") -> bool:
+        """End the recording and put the take in (one undo step). False if nothing came."""
+        take = self.take
+        if take is None or self._record_stopping:
+            return False
+        self._record_stopping = True  # the last chunk read below must not stop it again
+        try:
+            self.recorder.stop()
+        finally:
+            self._record_stopping = False
+        self.take = None
+        self.record_level.hide()
+        samples = take.samples()
+        self._update_state()
+        if samples.shape[1] == 0:
+            self.show_message(note or "Nothing was recorded.", error=bool(note))
+            return False
+        if self.doc is None:
+            self._opened(AudioDoc(take.rate, np.zeros((take.channels, 0), np.float32)), [])
+        doc = self.doc
+        samples = ops.fit_channels(samples, doc.channels)
+        a, b = self._record_at if doc.frames else (0, 0)
+        if take.rate == doc.rate:
+            doc.set_selection(a, b)  # where recording started, wherever the cursor went since
+            doc.paste(samples, record.LABEL)
+            self.show_message(note)
+            self._after_edit()
+            return True
+        source_rate, rate = take.rate, doc.rate
+        self._start_change(
+            record.LABEL,
+            "Converting the recording to the sound's sample rate…",
+            a,
+            b,
+            lambda _part, cancel, progress: resample(samples, source_rate, rate, cancel, progress),
+        )
+        return True
 
     def set_spectrogram(self, on: bool) -> bool:
         """Spectrogram (True) or waveform lanes; remembered for next time."""
@@ -1097,6 +1228,10 @@ class AudioEditorPage(QWidget):
         self._leaving = True
         try:
             self.stop()
+            if self.recording:  # keep what was recorded; it's then asked about like any edit
+                self.stop_recording()
+                if self.changing:  # converting the take's sample rate: let it finish
+                    self._wait(self.change_done)
             if self.opening:
                 self._cancel.set()
                 self._wait(self.opened)

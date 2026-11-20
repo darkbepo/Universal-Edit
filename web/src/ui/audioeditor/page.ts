@@ -15,6 +15,7 @@ import type { MusicDetails } from "../../properties/music";
 import { DENOISE_TARGET, MAX_SAMPLES, OPEN_TARGET, SPEED_TARGET, TOO_LONG } from "../../converters/audioedit";
 import * as noise from "../../audioedit/noise";
 import * as spectrum from "../../audioedit/spectrum";
+import * as record from "../../audioedit/record";
 import * as speed from "../../audioedit/speed";
 import { MUSIC_TAGS_TARGET } from "../../converters/musictags";
 import { defaults, type Values } from "../../core/options";
@@ -97,6 +98,10 @@ export class AudioEditorPage {
   fpp = 1; // frames per pixel
   playHead: number | null = null;
   busy = false;
+  private rec: Recording | null = null; // set while recording
+  private converting = false; // a stopped take is being resampled
+  recordRoom: number | null = null; // tests: a smaller limit for the take, in frames
+  private recordLevel = h("meter", { class: "audio-record-level", title: "Recording level", hidden: true });
   private summary: peaks.Peaks | null = null;
   private summaryRev = -1;
   spectrogram = false; // lanes show the spectrogram instead of the waveform
@@ -168,6 +173,8 @@ export class AudioEditorPage {
       btn("play", "▶ Play", "Play the selection, or from the cursor (Space)", () => this.togglePlay()),
       btn("stop", "■ Stop", "Stop playing", () => this.stop()),
       btn("end", "▶|", "Go to the end (End)", () => this.goTo(this.doc?.frames ?? 0)),
+      btn("record", "● Record", "Record from the microphone at the cursor, or over the selection (R)", () => void this.toggleRecord()),
+      this.recordLevel,
       h("label", { class: "audio-volume-box" }, h("span", { class: "muted" }, "Volume"), this.volumeSlider, this.volumeLabel));
     const groups = TOOL_GROUPS.map((items) => h("div", { class: "audio-group" },
       ...items.map(([key, label, title]) => btn(key, label, title, () => void this.run(key)))));
@@ -249,6 +256,8 @@ export class AudioEditorPage {
 
   maybeLeave(): boolean {
     this.stop();
+    if (this.rec) void this.stopRecording("", true); // keep the take; then asked about like any edit
+    if (this.converting) return false; // the take goes in within a moment: stay until it has
     if (this.changing) {
       // the change is dropped: the page is free at once for the next files
       this.cancelChange();
@@ -555,6 +564,7 @@ export class AudioEditorPage {
     else if (e.key === "Escape") void this.run("deselect");
     else if (e.key === "+" || e.key === "=") void this.run("zoom_in");
     else if (e.key === "-") void this.run("zoom_out");
+    else if (k === "r" && !e.altKey) void this.toggleRecord();
     else handled = false;
     if (handled) e.preventDefault();
   }
@@ -822,6 +832,150 @@ export class AudioEditorPage {
     requestAnimationFrame(() => this.tick());
   }
 
+  // ---------------------------------------------------------------- recording
+  get recording(): boolean {
+    return !!this.rec;
+  }
+
+  async toggleRecord(): Promise<boolean> {
+    return this.rec ? this.stopRecording() : this.startRecording();
+  }
+
+  /** Record from the microphone; Stop recording puts the take at the cursor. */
+  async startRecording(): Promise<boolean> {
+    if (this.busy || this.rec) return false;
+    this.stop();
+    this.busy = true; // while the browser asks for the microphone
+    this.update();
+    const doc = this.doc;
+    let stream: MediaStream | null = null;
+    let ctx: AudioContext | null = null;
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) throw new DOMException("", "NotFoundError");
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+      if (this.doc !== doc || !this.active) throw new DOMException("", "AbortError"); // left meanwhile
+      // record at the sound's own rate where the browser can (Firefox can't: then converted after)
+      let source: MediaStreamAudioSourceNode;
+      try {
+        ctx = new AudioContext(doc ? { sampleRate: doc.rate } : {});
+        source = ctx.createMediaStreamSource(stream);
+      } catch {
+        void ctx?.close();
+        ctx = new AudioContext();
+        source = ctx.createMediaStreamSource(stream);
+      }
+      const channels = doc ? doc.channels : record.NEW_CHANNELS;
+      const rate = ctx.sampleRate;
+      const [a, b] = doc ? doc.selection : [0, 0];
+      let room = record.room(MAX_SAMPLES, doc?.frames ?? 0, doc?.channels ?? 0, b - a, channels);
+      if (doc && doc.rate !== rate) room = Math.floor((room * rate) / doc.rate);
+      if (this.recordRoom !== null) room = Math.min(room, this.recordRoom);
+      if (room <= 0) throw new Error(record.NO_ROOM);
+      const url = URL.createObjectURL(new Blob([RECORDER_WORKLET], { type: "text/javascript" }));
+      try {
+        await ctx.audioWorklet.addModule(url);
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+      await ctx.resume(); // made after an await (the permission prompt): it may start suspended
+      if (this.doc !== doc || !this.active) throw new DOMException("", "AbortError");
+      const node = new AudioWorkletNode(ctx, "umc-recorder", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1], channelCount: channels, channelCountMode: "explicit", channelInterpretation: "speakers" });
+      const mute = ctx.createGain();
+      mute.gain.value = 0; // the worklet only runs when something pulls it
+      source.connect(node).connect(mute).connect(ctx.destination);
+      const rec: Recording = { take: new record.Take(rate, channels, room), at: [a, b], stream, ctx, node, flushed: null };
+      node.port.onmessage = (e: MessageEvent<Float32Array[] | "flushed">) => {
+        if (e.data === "flushed") return rec.flushed?.();
+        if (this.rec !== rec) return;
+        const more = rec.take.add(e.data);
+        this.recordLevel.value = rec.take.level;
+        this.showRecording();
+        if (!more) void this.stopRecording(record.FULL);
+      };
+      stream.getAudioTracks()[0]?.addEventListener("ended", () => {
+        if (this.rec === rec) void this.stopRecording("The microphone stopped, so the recording ended.");
+      });
+      this.rec = rec;
+      this.recordLevel.min = 0;
+      this.recordLevel.max = 1;
+      this.recordLevel.value = 0;
+      this.recordLevel.hidden = false;
+      this.showRecording();
+      return true;
+    } catch (e) {
+      stream?.getTracks().forEach((t) => t.stop());
+      void ctx?.close();
+      const name = e instanceof DOMException ? e.name : "";
+      if (name !== "AbortError") {
+        if (!(e instanceof DOMException)) console.error(e);
+        const text = name === "NotAllowedError" || name === "SecurityError" ? record.DENIED
+          : e instanceof Error && e.message === record.NO_ROOM ? record.NO_ROOM : record.NO_INPUT;
+        this.showMessage(text, true);
+      }
+      return false;
+    } finally {
+      this.busy = !!this.rec;
+      this.update();
+    }
+  }
+
+  private showRecording(): void {
+    if (this.rec) this.showMessage(`Recording… ${ops.formatTime(this.rec.take.seconds)} — press “■ Stop recording” to finish.`);
+  }
+
+  /** End the recording and put the take in (one undo step). `now` skips waiting for the last
+   *  few milliseconds the microphone still holds (leaving the page). False if nothing came. */
+  async stopRecording(note = "", now = false): Promise<boolean> {
+    const rec = this.rec;
+    if (!rec) return false;
+    if (!now) {
+      await new Promise<void>((done) => {
+        rec.flushed = done;
+        rec.node.port.postMessage("flush");
+        setTimeout(done, 500); // the worklet never answers if the context already stopped
+      });
+      if (this.rec !== rec) return false;
+    }
+    this.rec = null;
+    rec.node.port.onmessage = null;
+    rec.stream.getTracks().forEach((t) => t.stop());
+    void rec.ctx.close();
+    this.recordLevel.hidden = true;
+    const take = rec.take;
+    let samples = take.samples();
+    if (!take.frames) {
+      this.busy = false;
+      this.showMessage(note || "Nothing was recorded.", !!note);
+      this.update();
+      return false;
+    }
+    if (!this.doc) this.setDocument(new AudioDoc(take.rate, Array.from({ length: take.channels }, () => new Float32Array(0))), []);
+    const doc = this.doc!;
+    samples = ops.fitChannels(samples, doc.channels);
+    if (take.rate !== doc.rate) {
+      this.showMessage("Converting the recording to the sound's sample rate…");
+      this.converting = !now;
+      try {
+        samples = now ? resampleLinear(samples, take.rate, doc.rate) : await resample(samples, take.rate, doc.rate);
+      } catch (e) {
+        console.error(e);
+        samples = resampleLinear(samples, take.rate, doc.rate); // the browser's resampler failed
+      } finally {
+        this.converting = false;
+      }
+    }
+    this.busy = false;
+    if (this.doc === doc && samples[0].length) {
+      doc.setSelection(...(doc.frames ? rec.at : [0, 0] as [number, number])); // wherever the cursor went since
+      doc.paste(samples, record.LABEL);
+      this.clamp();
+      this.changed();
+    }
+    this.showMessage(note);
+    this.update();
+    return true;
+  }
+
   stop(): void {
     const p = this.player;
     if (!p) return;
@@ -952,12 +1106,13 @@ export class AudioEditorPage {
       cut: sel, copy: sel, paste: ready && !!this.clipboard, delete: sel, trim: sel, silence: sel,
       fade_in: sel, fade_out: sel, amplify: has, normalize: has, reverse: has, speed: has, learn_noise: sel, reduce_noise: has && !!this.noiseProfile(),
       zoom_in: ready, zoom_out: ready, zoom_sel: sel, fit: ready, spectrogram: !!doc,
-      home: has, end: has, play: has, stop: this.playing,
+      home: has, end: has, play: has, stop: this.playing, record: !!this.rec || !this.busy,
       undo: ready && doc!.canUndo(), redo: ready && doc!.canRedo(),
       save: has, save_as: has, open: !this.busy, back: true,
     };
     for (const [key, b] of this.buttons) b.disabled = !enabled[key];
     this.buttons.get("play")!.textContent = this.player && !this.player.paused ? "❚❚ Pause" : "▶ Play";
+    this.buttons.get("record")!.textContent = this.rec ? "■ Stop recording" : "● Record";
     this.buttons.get("undo")!.title = ready && doc!.canUndo() ? `Undo ${doc!.undoLabel()} (Ctrl+Z)` : "Undo (Ctrl+Z)";
     this.buttons.get("redo")!.title = ready && doc!.canRedo() ? `Redo ${doc!.redoLabel()} (Ctrl+Y)` : "Redo (Ctrl+Y)";
     this.selectionLabel.hidden = !doc;
@@ -1348,4 +1503,82 @@ async function readSongTags(files: InputFile[]): Promise<CarriedTags> {
     covers.push(cover);
   }
   return carriedTags(details, covers);
+}
+
+interface Recording {
+  take: record.Take;
+  at: [number, number]; // the selection when recording started: the take goes there
+  stream: MediaStream;
+  ctx: AudioContext;
+  node: AudioWorkletNode;
+  flushed: (() => void) | null;
+}
+
+/** Copies what the microphone hands over and posts it every ~2048 frames; "flush" posts the
+ *  rest and answers "flushed". */
+const RECORDER_WORKLET = `
+class UmcRecorder extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.parts = [];
+    this.frames = 0;
+    this.port.onmessage = () => { this.send(); this.port.postMessage("flushed"); };
+  }
+  send() {
+    if (!this.frames) return;
+    const channels = this.parts[0].length;
+    const out = Array.from({ length: channels }, () => new Float32Array(this.frames));
+    let at = 0;
+    for (const part of this.parts) {
+      for (let c = 0; c < channels; c++) out[c].set(part[c], at);
+      at += part[0].length;
+    }
+    this.port.postMessage(out, out.map((ch) => ch.buffer));
+    this.parts = [];
+    this.frames = 0;
+  }
+  process(inputs) {
+    const input = inputs[0];
+    if (input && input.length && input[0].length) {
+      this.parts.push(input.map((ch) => ch.slice()));
+      this.frames += input[0].length;
+      if (this.frames >= 2048) this.send();
+    }
+    return true;
+  }
+}
+registerProcessor("umc-recorder", UmcRecorder);
+`;
+
+/** The browser's own resampler (an offline audio context); round(frames × to / from) frames. */
+async function resample(x: Float32Array[], from: number, to: number): Promise<Float32Array[]> {
+  const frames = x[0].length;
+  const want = Math.round((frames * to) / from);
+  if (want < 1) return x.map(() => new Float32Array(0));
+  const off = new OfflineAudioContext(x.length, want, to);
+  const buffer = off.createBuffer(x.length, frames, from);
+  x.forEach((ch, c) => buffer.copyToChannel(Float32Array.from(ch), c));
+  const src = off.createBufferSource();
+  src.buffer = buffer;
+  src.connect(off.destination);
+  src.start();
+  const out = await off.startRendering();
+  return speed.fitLength(Array.from({ length: x.length }, (_, c) => out.getChannelData(c)), want);
+}
+
+/** A quick linear resample for when there's no time to wait (leaving the page). */
+function resampleLinear(x: Float32Array[], from: number, to: number): Float32Array[] {
+  const frames = x[0].length;
+  const want = Math.round((frames * to) / from);
+  if (!frames) return x;
+  return x.map((ch) => {
+    const out = new Float32Array(want);
+    for (let i = 0; i < want; i++) {
+      const t = (i * from) / to;
+      const j = Math.min(frames - 1, Math.floor(t));
+      const f = t - j;
+      out[i] = ch[j] * (1 - f) + (ch[Math.min(frames - 1, j + 1)] ?? 0) * f;
+    }
+    return out;
+  });
 }

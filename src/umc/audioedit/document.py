@@ -184,13 +184,13 @@ class AudioDoc:
         self._edit("Cut", lambda: self._splice(a, b, self.samples[:, :0]), (a, a))
         return clip
 
-    def paste(self, clip: np.ndarray) -> bool:
+    def paste(self, clip: np.ndarray, label: str = "Paste") -> bool:
         """Insert at the cursor, or replace the selection; the pasted part is selected."""
         if clip is None or clip.shape[1] == 0:
             return False
         a, b = self.selection
         n = clip.shape[1]
-        return self._edit("Paste", lambda: self._splice(a, b, clip), (a, a + n))
+        return self._edit(label, lambda: self._splice(a, b, clip), (a, a + n))
 
     def trim(self) -> bool:
         """Keep only the selection."""

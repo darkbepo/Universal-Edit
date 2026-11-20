@@ -376,3 +376,232 @@ def test_spectrogram_switch_draws_and_is_remembered(window, qtbot, media):
         assert QSettings().value(SPECTROGRAM_KEY, type=bool) is False
     finally:
         QSettings().remove(SPECTROGRAM_KEY)
+
+
+class FakeRecorder:
+    """Stands in for the microphone: the test hands over chunks with ``feed``."""
+
+    def __init__(self, rate: int = 0, channels: int = 0) -> None:
+        from PySide6.QtCore import QObject, Signal
+
+        class _Signals(QObject):
+            chunk = Signal(object)
+            failed = Signal(str)
+
+        self._signals = _Signals()
+        self.chunk, self.failed = self._signals.chunk, self._signals.failed
+        self.force = (rate, channels)
+        self.active, self.rate, self.channels = False, 0, 0
+
+    def __call__(self, _parent=None):  # used as the Recorder class
+        return self
+
+    def start(self, rate: int, channels: int) -> str:
+        self.rate, self.channels = self.force[0] or rate, self.force[1] or channels
+        self.active = True
+        return ""
+
+    def stop(self) -> None:
+        self.active = False
+
+    def feed(self, seconds: float, value: float = 0.5) -> None:
+        import numpy as np
+
+        self.chunk.emit(np.full((self.channels, round(seconds * self.rate)), value, np.float32))
+
+
+def test_record_explains_or_records(window, qtbot, media):
+    from umc.audioedit import record
+
+    page = open_in_editor(window, qtbot, [media / "tone.wav"])
+    if page.start_recording():  # a microphone exists here
+        qtbot.wait(200)
+        page.stop_recording()
+        assert not page.recording
+    else:
+        assert page.message.text() == record.NO_INPUT
+        assert page.record_button.isEnabled() and not page.busy
+
+
+def test_record_goes_in_at_the_cursor_as_one_step(window, qtbot, media, monkeypatch):
+    fake = FakeRecorder()
+    monkeypatch.setattr("umc.gui.audioeditor.audio_editor_page.Recorder", fake)
+    page = open_in_editor(window, qtbot, [media / "tone.wav"])
+    doc = page.doc
+    rate, frames = doc.rate, doc.frames
+    doc.set_selection(rate)
+    qtbot.keyClick(page, "r")  # R starts recording
+    assert page.recording and page.busy and fake.active
+    assert page.record_button.text() == "■ Stop recording" and page.record_level.isVisible()
+    assert not page.edit_buttons["cut"].isEnabled() and not page.play_button.isEnabled()
+    fake.feed(0.25)
+    fake.feed(0.25, 0.75)
+    assert page.record_level.value() == 75 and "0:00.500" in page.message.text()
+    page.record_button.click()
+    assert not page.recording and not fake.active and page.record_button.text() == "● Record"
+    assert doc.frames == frames + rate // 2
+    assert doc.selection == (rate, rate + rate // 2) and doc.dirty
+    assert doc.samples[0, rate] == pytest.approx(0.5)
+    assert page.undo_button.toolTip() == "Undo Record (Ctrl+Z)"
+    page.undo()
+    assert doc.frames == frames and not doc.dirty
+
+
+@needs_ffmpeg
+def test_record_at_another_rate_is_converted(window, qtbot, media, monkeypatch):
+    fake = FakeRecorder(rate=8000, channels=1)
+    monkeypatch.setattr("umc.gui.audioeditor.audio_editor_page.Recorder", fake)
+    page = open_in_editor(window, qtbot, [media / "tone.wav"])
+    doc = page.doc
+    rate, frames = doc.rate, doc.frames
+    doc.set_selection(0, rate)  # replaced by the take
+    assert page.start_recording()
+    fake.feed(0.5)
+    with qtbot.waitSignal(page.change_done, timeout=20000):
+        page.stop_recording()
+    assert doc.frames == frames - rate + rate // 2
+    assert doc.selection == (0, rate // 2)
+    assert doc.samples[:, 1000].tolist() == pytest.approx([0.5] * doc.channels, abs=0.01)
+    page.undo()
+    assert doc.frames == frames and not doc.dirty
+
+
+def test_record_in_an_empty_editor_makes_a_new_sound(window, qtbot, monkeypatch):
+    from umc.audioedit import record
+
+    fake = FakeRecorder()
+    monkeypatch.setattr("umc.gui.audioeditor.audio_editor_page.Recorder", fake)
+    assert window.open_editor("audio")
+    page = window.audio_editor
+    assert page.doc is None and page.record_button.isEnabled()
+    page.record_button.click()
+    assert fake.rate == record.NEW_RATE and fake.channels == record.NEW_CHANNELS
+    page.stop_recording()  # nothing came yet
+    assert page.doc is None and page.message.text() == "Nothing was recorded."
+    page.record_button.click()
+    fake.feed(1.0)
+    page.record_button.click()
+    doc = page.doc
+    assert doc is not None and doc.rate == record.NEW_RATE and doc.channels == 2
+    assert doc.frames == record.NEW_RATE and doc.dirty and page.save_button.isEnabled()
+    assert page.center.currentIndex() == 0
+    page.undo()
+
+
+def test_record_stops_when_the_sound_is_full(window, qtbot, media, monkeypatch):
+    from umc.audioedit import record
+
+    fake = FakeRecorder()
+    monkeypatch.setattr("umc.gui.audioeditor.audio_editor_page.Recorder", fake)
+    page = open_in_editor(window, qtbot, [media / "tone.wav"])
+    doc = page.doc
+    frames = doc.frames
+    monkeypatch.setattr(
+        "umc.gui.audioeditor.audio_editor_page.MAX_SAMPLES", (frames + 100) * doc.channels
+    )
+    assert page.start_recording()
+    fake.feed(1.0)
+    assert not page.recording and page.message.text() == record.FULL
+    assert doc.frames == frames + 100
+    page.undo()
+    monkeypatch.setattr("umc.gui.audioeditor.audio_editor_page.MAX_SAMPLES", 10)
+    assert not page.start_recording() and page.message.text() == record.NO_ROOM
+    assert not fake.active
+
+
+def test_leaving_while_recording_keeps_the_take(window, qtbot, media, monkeypatch):
+    fake = FakeRecorder()
+    monkeypatch.setattr("umc.gui.audioeditor.audio_editor_page.Recorder", fake)
+    page = open_in_editor(window, qtbot, [media / "tone.wav"])
+    frames = page.doc.frames
+    assert page.start_recording()
+    fake.feed(0.5)
+    monkeypatch.setattr(page, "_ask_save_changes", lambda: "cancel")
+    assert not page.maybe_leave()
+    assert not page.recording and page.doc.frames == frames + page.doc.rate // 2
+    page.undo()
+
+
+def test_real_recorder_survives_the_device_stopping(qtbot) -> None:
+    """The microphone stopping by itself: the last bytes are handed over, then one ``failed``
+    (it used to call stop() → read → stop() … forever)."""
+    import numpy as np
+
+    from umc.gui.audioeditor import recorder as rec_mod
+
+    class StubIO:
+        def __init__(self) -> None:
+            self.data = np.array([1000, -1000, 2000, -2000], np.int16).tobytes()
+
+        def readAll(self) -> bytes:  # noqa: N802
+            data, self.data = self.data, b""
+            return data
+
+    class StubSource:
+        def __init__(self) -> None:
+            self.stopped = False
+
+        def state(self):
+            return rec_mod.STOPPED
+
+        def error(self):
+            return rec_mod.NO_ERROR
+
+        def stop(self) -> None:
+            self.stopped = True
+
+        def deleteLater(self) -> None:  # noqa: N802
+            pass
+
+    r = rec_mod.Recorder()
+    source = StubSource()
+    r.source, r._io, r.channels, r._float = source, StubIO(), 2, False
+    chunks, failures = [], []
+    r.chunk.connect(chunks.append)
+    r.failed.connect(failures.append)
+    r._read()
+    assert not r.active and source.stopped
+    assert len(chunks) == 1 and chunks[0].shape == (2, 2)
+    assert failures == ["The microphone stopped, so the recording ended."]
+    r._read()  # the timer firing once more does nothing
+    assert len(failures) == 1
+
+
+def test_take_goes_where_recording_started(window, qtbot, media, monkeypatch):
+    fake = FakeRecorder()
+    monkeypatch.setattr("umc.gui.audioeditor.audio_editor_page.Recorder", fake)
+    page = open_in_editor(window, qtbot, [media / "tone.wav"])
+    doc = page.doc
+    doc.set_selection(1000)
+    frames = doc.frames
+    assert page.start_recording()
+    fake.feed(0.1)
+    doc.set_selection(5000)  # the cursor moves while recording (clicks aren't blocked)
+    page.stop_recording()
+    added = doc.frames - frames
+    assert added == round(0.1 * doc.rate)
+    assert doc.selection == (1000, 1000 + added)
+    doc.mark_saved()  # no "save changes?" question when the test ends
+
+
+def test_last_chunk_filling_the_take_pastes_it_once(window, qtbot, media, monkeypatch):
+    from umc.audioedit import record
+
+    fake = FakeRecorder()
+    monkeypatch.setattr("umc.gui.audioeditor.audio_editor_page.Recorder", fake)
+    monkeypatch.setattr(record, "room", lambda *_a: 1000)
+    page = open_in_editor(window, qtbot, [media / "tone.wav"])
+    doc = page.doc
+    frames = doc.frames
+    assert page.start_recording()
+    fake.feed(500 / fake.rate)
+    stop = fake.stop
+
+    def stop_with_last_chunk() -> None:  # the real recorder hands over what is still waiting
+        fake.feed(800 / fake.rate)
+        stop()
+
+    fake.stop = stop_with_last_chunk
+    page.stop_recording()
+    assert doc.frames == frames + 1000 and not page.recording
+    doc.mark_saved()

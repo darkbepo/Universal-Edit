@@ -113,6 +113,37 @@ def change_speed(
     return np.ascontiguousarray(x)
 
 
+def resample(
+    samples: np.ndarray,
+    rate: int,
+    new_rate: int,
+    cancel_event: threading.Event | None = None,
+    progress: Callable[[float], None] = lambda _f: None,
+) -> np.ndarray:
+    """``samples`` at ``new_rate`` (FFmpeg's resampler); round(frames × new / old) frames."""
+    channels, frames = samples.shape
+    if rate == new_rate or frames == 0:
+        return samples
+    want = round(frames * new_rate / rate)
+    with tempfile.TemporaryDirectory(prefix="umc-audioedit-") as tmp:
+        src, out = Path(tmp) / "take.wav", Path(tmp) / "resampled.wav"
+        src.write_bytes(write_wav(rate, samples))
+        ffmpeg.run_ffmpeg(
+            ["-i", str(src), "-c:a", "pcm_f32le", "-ar", str(new_rate), "-f", "wav", str(out)],
+            total_seconds=frames / rate,
+            progress=progress,
+            cancel_event=cancel_event or threading.Event(),
+            error_message="Couldn't convert the recording to the sound's sample rate.",
+        )
+        r, x = read_wav(out.read_bytes())
+    if r != new_rate or x.shape[1] == 0:
+        raise ConversionError("Couldn't convert the recording to the sound's sample rate.")
+    x = ops.fit_channels(x, channels)[:, :want]
+    if x.shape[1] < want:
+        x = np.concatenate([x, np.zeros((channels, want - x.shape[1]), np.float32)], axis=1)
+    return np.ascontiguousarray(x)
+
+
 def too_long() -> ConversionError:
     return ConversionError(
         "This is too long for the audio editor (about 45 minutes of stereo sound at most). "
