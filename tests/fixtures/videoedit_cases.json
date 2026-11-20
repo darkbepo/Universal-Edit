@@ -2693,6 +2693,162 @@
    "output_fps": 30.0
   },
   {
+   "name": "fps_first_fractional_ntsc",
+   "project": {
+    "format": "umcvideo",
+    "version": 1,
+    "settings": {
+     "resolution": "first",
+     "width": 1920,
+     "height": 1080,
+     "fps": "first",
+     "background": "#000000"
+    },
+    "sources": [
+     {
+      "id": "f1",
+      "path": "f1.mp4",
+      "kind": "video",
+      "duration": 10.0,
+      "width": 1920,
+      "height": 1080,
+      "fps": 29.97002997,
+      "has_audio": true,
+      "size": 1000000,
+      "relpath": "f1.mp4"
+     }
+    ],
+    "main": [
+     {
+      "type": "video",
+      "id": "a",
+      "source": "f1",
+      "in_": 0,
+      "out": 2,
+      "speed": 1.0,
+      "volume": 100,
+      "mute": false,
+      "fade_in": 0.0,
+      "fade_out": 0.0,
+      "fit": "letterbox",
+      "rotate": 0,
+      "flip_h": false,
+      "flip_v": false,
+      "crop_left": 0,
+      "crop_top": 0,
+      "crop_right": 0,
+      "crop_bottom": 0,
+      "brightness": 0,
+      "contrast": 0,
+      "saturation": 0,
+      "transition_in": {
+       "kind": "none",
+       "duration": 0.5
+      }
+     }
+    ],
+    "text_rows": [
+     []
+    ],
+    "music_rows": [
+     []
+    ]
+   },
+   "spans": {
+    "a": [
+     0.0,
+     2.0,
+     "main",
+     0,
+     0
+    ]
+   },
+   "length": 2.0,
+   "output_size": [
+    1920,
+    1080
+   ],
+   "output_fps": 29.97
+  },
+  {
+   "name": "fps_first_fractional_film_ntsc",
+   "project": {
+    "format": "umcvideo",
+    "version": 1,
+    "settings": {
+     "resolution": "first",
+     "width": 1920,
+     "height": 1080,
+     "fps": "first",
+     "background": "#000000"
+    },
+    "sources": [
+     {
+      "id": "f1",
+      "path": "f1.mp4",
+      "kind": "video",
+      "duration": 10.0,
+      "width": 1920,
+      "height": 1080,
+      "fps": 23.976023976,
+      "has_audio": true,
+      "size": 1000000,
+      "relpath": "f1.mp4"
+     }
+    ],
+    "main": [
+     {
+      "type": "video",
+      "id": "a",
+      "source": "f1",
+      "in_": 0,
+      "out": 2,
+      "speed": 1.0,
+      "volume": 100,
+      "mute": false,
+      "fade_in": 0.0,
+      "fade_out": 0.0,
+      "fit": "letterbox",
+      "rotate": 0,
+      "flip_h": false,
+      "flip_v": false,
+      "crop_left": 0,
+      "crop_top": 0,
+      "crop_right": 0,
+      "crop_bottom": 0,
+      "brightness": 0,
+      "contrast": 0,
+      "saturation": 0,
+      "transition_in": {
+       "kind": "none",
+       "duration": 0.5
+      }
+     }
+    ],
+    "text_rows": [
+     []
+    ],
+    "music_rows": [
+     []
+    ]
+   },
+   "spans": {
+    "a": [
+     0.0,
+     2.0,
+     "main",
+     0,
+     0
+    ]
+   },
+   "length": 2.0,
+   "output_size": [
+    1920,
+    1080
+   ],
+   "output_fps": 23.976
+  },
+  {
    "name": "empty_project",
    "project": {
     "format": "umcvideo",

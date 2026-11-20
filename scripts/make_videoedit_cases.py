@@ -188,6 +188,9 @@ def layout_cases() -> list[dict[str, Any]]:
     cases.append(("fps_first_skips_picture", proj([P("a"), V("b", 0, 2, "v2")])))
     cases.append(("fps_fixed_24", proj([V("a", 0, 2)], settings=ProjectSettings(fps="24"))))
     cases.append(("fps_first_without_video", proj([P("a")])))
+    for name, fps in (("ntsc", 29.97002997), ("film_ntsc", 23.976023976)):
+        src = Source("f1", Path("f1.mp4"), "video", 10.0, 1920, 1080, fps, True, 1_000_000)
+        cases.append((f"fps_first_fractional_{name}", proj([V("a", 0, 2, "f1")], sources=(src,))))
     cases.append(("empty_project", proj([])))
     out = []
     for name, project in cases:

@@ -89,6 +89,27 @@ describe("project file", () => {
   });
 });
 
+describe("references and placement", () => {
+  const msg = "This isn't a valid video project file.";
+  const good = cases.file.project as any;
+  const m0 = good.main[0];
+  it("refuses unknown sources, duplicate ids and misplaced items", () => {
+    const bad = [
+      { ...good, main: [{ ...m0, source: "nope" }] },
+      { ...good, music_rows: [[{ type: "audio", id: "x", source: "nope", start: 0, in_: 0, out: 1 }]] },
+      { ...good, sources: [...good.sources, good.sources[0]] },
+      { ...good, main: [m0, { ...m0 }] },
+      { ...good, main: [{ ...m0, in_: undefined }] },
+      { ...good, main: [{ ...m0, out: undefined }] },
+      { ...good, main: [{ type: "text", id: "tt", start: 0, end: 1 }] },
+      { ...good, music_rows: [[{ ...m0, id: "zz" }]] },
+      { ...good, text_rows: [[{ ...m0, id: "zz" }]] },
+    ];
+    for (const v of bad) expect(() => load(v), JSON.stringify(v).slice(0, 80)).toThrow(msg);
+    expect(() => load(good)).not.toThrow();
+  });
+});
+
 describe("ids and fps", () => {
   it("newId is 8 hex chars unless a maker is set", () => {
     expect(newId()).toMatch(/^[0-9a-f]{8}$/);

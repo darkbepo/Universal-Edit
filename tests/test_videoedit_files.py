@@ -218,3 +218,80 @@ def test_loads_web_style_file(tmp_path):
 def test_probe_source_fills_size(vmedia):
     src = probe_source(vmedia / "red.mp4", "s1")
     assert src.size == (vmedia / "red.mp4").stat().st_size > 0
+
+
+def _save_valid(vmedia, tmp_path):
+    shutil.copy(vmedia / "red.mp4", tmp_path / "red.mp4")
+    project, _ = new_project([tmp_path / "red.mp4", vmedia / "music.wav"])
+    path = tmp_path / "p.umcvideo"
+    projectfile.save_project(project, path)
+    return path, json.loads(path.read_text(encoding="utf-8"))
+
+
+def _refused(path, data):
+    path.write_text(json.dumps(data), encoding="utf-8")
+    with pytest.raises(ConversionError, match="isn't a valid video project file"):
+        projectfile.load_project(path)
+
+
+def test_load_refuses_unknown_duplicate_and_misplaced(vmedia, tmp_path):
+    path, good = _save_valid(vmedia, tmp_path)
+    import copy
+
+    d = copy.deepcopy(good)
+    d["main"][0]["source"] = "nope"
+    _refused(path, d)
+    d = copy.deepcopy(good)
+    d["music_rows"][0][0]["source"] = "nope"
+    _refused(path, d)
+    d = copy.deepcopy(good)
+    d["sources"].append(dict(d["sources"][0]))
+    _refused(path, d)
+    d = copy.deepcopy(good)
+    d["music_rows"][0][0]["id"] = d["main"][0]["id"]
+    _refused(path, d)
+    d = copy.deepcopy(good)
+    d["main"][0].pop("in_")
+    _refused(path, d)
+    d = copy.deepcopy(good)
+    d["main"].append({"type": "text", "id": "tt", "start": 0, "end": 1})
+    _refused(path, d)
+    d = copy.deepcopy(good)
+    d["music_rows"][0][0]["type"] = "video"
+    _refused(path, d)
+
+
+def test_missing_relative_source_stays_in_project_folder(tmp_path):
+    folder = tmp_path / "proj"
+    folder.mkdir()
+    data = {
+        "format": "umcvideo",
+        "version": 1,
+        "settings": {},
+        "sources": [
+            {
+                "id": "s1",
+                "path": "clip.mp4",
+                "kind": "video",
+                "duration": 1.0,
+                "width": 4,
+                "height": 4,
+                "fps": 30.0,
+                "has_audio": False,
+            }
+        ],
+        "main": [],
+        "text_rows": [[]],
+        "music_rows": [[]],
+    }
+    path = folder / "p.umcvideo"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    loaded, missing = projectfile.load_project(path)
+    assert loaded.sources[0].path == folder / "clip.mp4"
+    assert missing[0].path == folder / "clip.mp4"
+
+
+def test_find_source_ignores_folders_and_empty_paths(tmp_path):
+    (tmp_path / "adir").mkdir()
+    assert projectfile._find_source({"path": str(tmp_path / "adir")}, tmp_path) is None
+    assert projectfile._find_source({"path": ""}, tmp_path) is None

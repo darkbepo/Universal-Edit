@@ -35,6 +35,9 @@ function itemFromJson(data: unknown): MainItem | TextItem | AudioClip {
   if (!isDict(data) || typeof data.id !== "string") return bad();
   if ("transition_in" in data && !isDict(data.transition_in)) return bad();
   if (data.type !== "text" && typeof data.source !== "string") return bad();
+  if ((data.type === "video" || data.type === "audio") && (typeof data.in_ !== "number" || typeof data.out !== "number")) {
+    return bad();
+  }
   const tr = isDict(data.transition_in) ? build<Transition>(NO_TRANSITION, data.transition_in) : undefined;
   const id = data.id;
   let item: MainItem | TextItem | AudioClip;
@@ -59,6 +62,11 @@ export function sourceFromJson(entry: unknown): Source {
   return build<Source>(base, entry);
 }
 
+type Kind = "video" | "picture" | "audio" | "text";
+function placed(item: MainItem | TextItem | AudioClip, allowed: Kind[]): void {
+  if (!allowed.includes(item.type as Kind)) bad();
+}
+
 function list(x: unknown): unknown[] {
   return Array.isArray(x) ? x : bad();
 }
@@ -76,13 +84,28 @@ export function projectFromJson(text: string): Project {
   }
   if (data.version > VERSION) throw new ConversionError("This project was made by a newer version of the app.");
   if (!isDict(data.settings)) return bad();
-  return {
+  const project: Project = {
     settings: build<ProjectSettings>(DEFAULT_SETTINGS, data.settings),
     sources: list(data.sources).map(sourceFromJson),
     main: list(data.main).map((m) => itemFromJson(m) as MainItem),
     text_rows: rows<TextItem>(data.text_rows),
     music_rows: rows<AudioClip>(data.music_rows),
   };
+  const known = new Set(project.sources.map((s) => s.id));
+  if (known.size !== project.sources.length) bad();
+  const seen = new Set<string>();
+  const check = (items: readonly (MainItem | TextItem | AudioClip)[], allowed: Kind[]) => {
+    for (const item of items) {
+      placed(item, allowed);
+      if (seen.has(item.id)) bad();
+      seen.add(item.id);
+      if (item.type !== "text" && !known.has(item.source)) bad();
+    }
+  };
+  check(project.main, ["video", "picture"]);
+  for (const r of project.text_rows) check(r, ["text"]);
+  for (const r of project.music_rows) check(r, ["audio"]);
+  return project;
 }
 
 const basename = (path: string): string => path.split(/[\\/]/).pop() ?? path;

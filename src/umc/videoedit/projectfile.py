@@ -103,15 +103,36 @@ def _find_source(entry: dict[str, Any], folder: Path) -> Path | None:
     path = Path(entry["path"])
     if not path.is_absolute():  # a bare name (the website's files): next to the project
         path = folder / path
-    if path.exists():
+    if path.is_file():
         return path
     rel = entry.get("relpath") or path.name
     if rel:
         # "/" since the first release; "\\" from a Windows copy still reads anywhere
         candidate = (folder / rel.replace("\\", "/")).resolve()
-        if candidate.exists():
+        if candidate.is_file():
             return candidate
     return None
+
+
+def _check(project: Project) -> None:
+    """Unique ids, every clip on a known source, every item on the right kind of row."""
+    ids = [s.id for s in project.sources]
+    known = set(ids)
+    rows: list[tuple[tuple[Any, ...], tuple[type, ...]]] = [
+        (project.main, (VideoClip, PictureClip)),
+        *((row, (TextItem,)) for row in project.text_rows),
+        *((row, (AudioClip,)) for row in project.music_rows),
+    ]
+    item_ids: list[str] = []
+    for items, allowed in rows:
+        for item in items:
+            if type(item) not in allowed:
+                raise ValueError("item on the wrong row")
+            item_ids.append(item.id)
+            if not isinstance(item, TextItem) and item.source not in known:
+                raise ValueError("unknown source")
+    if len(known) != len(ids) or len(set(item_ids)) != len(item_ids):
+        raise ValueError("duplicate ids")
 
 
 def load_project(path: Path) -> tuple[Project, list[MissingSource]]:
@@ -134,6 +155,10 @@ def load_project(path: Path) -> tuple[Project, list[MissingSource]]:
             found = _find_source(entry, path.parent)
             if found is None:
                 found = Path(entry["path"])
+                if (
+                    not found.is_absolute()
+                ):  # keep it beside the project, so a save writes a sane relpath
+                    found = path.parent / found
                 missing.append(MissingSource(entry["id"], found))
             sources.append(_build(Source, {**entry, "path": found}))
         project = Project(
@@ -143,6 +168,7 @@ def load_project(path: Path) -> tuple[Project, list[MissingSource]]:
             text_rows=tuple(tuple(_item_from_dict(t) for t in r) for r in data["text_rows"]),
             music_rows=tuple(tuple(_item_from_dict(a) for a in r) for r in data["music_rows"]),
         )
+        _check(project)
     except (KeyError, TypeError, ValueError, AttributeError) as exc:
         raise ConversionError(_INVALID) from exc
     return project, missing
