@@ -442,6 +442,30 @@ def _audio_editor_check(d: Path) -> list[Path]:
     return [out]
 
 
+def _subtitle_editor_check(d: Path) -> list[Path]:
+    """Subtitle editor: the page loads (add-on), an untouched CRLF file saves byte for byte, and
+    a shifted ASS file keeps its styles."""
+    import importlib
+
+    from umc.subedit import edits, formats, io
+
+    importlib.import_module("umc.gui.subtitleeditor.subtitle_editor_page")
+    d.mkdir(parents=True, exist_ok=True)
+    f = d / "film.srt"
+    data = "1\r\n00:00:01,000 --> 00:00:02,000\r\nCafé\r\n".encode()
+    f.write_bytes(data)
+    opened = io.open_bytes(f.read_bytes(), "srt")
+    if io.to_bytes(opened, opened.doc, "srt").data != data:
+        raise RuntimeError("saving an untouched file changed its bytes")
+    ass = formats.parse(formats.write(opened.doc, "ass"), "ass")
+    moved = formats.SubDoc("ass", edits.shift(ass.cues, 500), ass.header, ass.footer, ass.fields)
+    out = d / "film.ass"
+    out.write_text(formats.write(moved, "ass"), encoding="utf-8")
+    if "Style: Default" not in out.read_text("utf-8") or moved.cues[0].start != 1500:
+        raise RuntimeError("shifting an ASS file lost its styles or times")
+    return [f, out]
+
+
 def _code_editor_check(d: Path) -> list[Path]:
     """Code editor: the page loads (add-on + Pygments), a comment over several lines is coloured
     on every line, and an untouched CRLF file saves back byte for byte."""
@@ -655,6 +679,10 @@ def run(report: Path) -> int:
             (
                 "code editor (colours, save byte-exact)",
                 lambda: _code_editor_check(d / "codeedit"),
+            ),
+            (
+                "subtitle editor (save byte-exact, ASS styles kept)",
+                lambda: _subtitle_editor_check(d / "subedit"),
             ),
             ("music tags: mp3 title / track / cover", lambda: _music_tags_check(d / "music", out)),
             ("video details: mp4 title / date / turn", lambda: _video_details_check(d / "video")),

@@ -11,14 +11,24 @@ export class History {
   private undoStack: [string, SubDoc][] = [];
   private redoStack: [string, SubDoc][] = [];
   private saved: SubDoc;
+  private merge: unknown = null; // the last step's merge key
 
   constructor(doc: SubDoc) {
     this.doc = doc;
     this.saved = doc;
   }
 
-  push(doc: SubDoc, label: string): void {
+  /** A new step; with the same `merge` key as the step before (typing in one cue's text) it
+   * becomes part of that step instead. */
+  push(doc: SubDoc, label: string, merge: unknown = null): void {
     if (doc === this.doc) return;
+    if (merge !== null && merge === this.merge && this.undoStack.length) {
+      this.doc = doc;
+      this.redoStack = [];
+      this.version++;
+      return;
+    }
+    this.merge = merge;
     this.undoStack.push([label, this.doc]);
     if (this.undoStack.length > MAX_STEPS) this.undoStack.shift();
     this.redoStack = [];
@@ -27,6 +37,7 @@ export class History {
   }
 
   undo(): string {
+    this.merge = null;
     const step = this.undoStack.pop();
     if (!step) return "";
     this.redoStack.push([step[0], this.doc]);
@@ -36,6 +47,7 @@ export class History {
   }
 
   redo(): string {
+    this.merge = null;
     const step = this.redoStack.pop();
     if (!step) return "";
     this.undoStack.push([step[0], this.doc]);
@@ -56,7 +68,14 @@ export class History {
     return this.doc !== this.saved;
   }
 
-  markSaved(): void {
-    this.saved = this.doc;
+  /** `doc` (default: the current one) is what the file now holds. */
+  markSaved(doc: SubDoc = this.doc): void {
+    this.saved = doc;
+    this.merge = null;
+  }
+
+  /** The next push starts a step of its own (e.g. another cue was chosen). */
+  endMerge(): void {
+    this.merge = null;
   }
 }

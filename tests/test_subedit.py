@@ -189,3 +189,16 @@ def test_new_document_and_history() -> None:
     h.mark_saved()
     assert not h.dirty
     assert io.to_bytes(opened, h.doc, "srt").data == b"1\n00:00:00,000 --> 00:00:02,000\nhi\n"
+
+
+def test_typing_in_one_cue_is_one_undo_step() -> None:
+    doc = formats.SubDoc("srt", (Cue(0, 1000, ""), Cue(1000, 2000, "")))
+    h = History(doc)
+    for text in ("h", "hi", "hi!"):
+        h.push(formats.SubDoc("srt", edits.set_text(h.doc.cues, 0, text)), "Edit text", (0,))
+    h.push(formats.SubDoc("srt", edits.set_text(h.doc.cues, 1, "x")), "Edit text", (1,))
+    assert h.undo() and h.doc.cues[0].text == "hi!" and h.doc.cues[1].text == ""
+    assert h.undo() and h.doc == doc and not h.can_undo
+    h.redo()
+    h.push(formats.SubDoc("srt", edits.set_text(h.doc.cues, 0, "again")), "Edit text", (0,))
+    assert h.undo() and h.doc.cues[0].text == "hi!"  # an undo ends the merging run

@@ -189,6 +189,7 @@ class MainWindow(QMainWindow):
         self.audio_editor = None  # AudioEditorPage, created on first use
         self.video_editor = None  # VideoEditorPage, created on first use
         self.code_editor = None  # CodeEditorPage, created on first use
+        self.subtitle_editor = None  # SubtitleEditorPage, created on first use
         self._convert_size = None
 
         # ---------------------------------------------------------- body: two columns
@@ -525,8 +526,19 @@ class MainWindow(QMainWindow):
             return "video"
         if len(self.files) == 1 and self.files[0].family == MediaFamily.PROJECT:
             return "video"
+        if self._subtitle_files() is not None:
+            return "subtitle"
         choices = self._text_edit_choices()
         return choices[0] if choices else None
+
+    def _subtitle_files(self) -> tuple[Path, Path | None] | None:
+        """(subtitle file, video or None) when the files are one subtitle file, maybe with
+        one video to preview it on (the subtitle editor's input); else None."""
+        subs = [f for f in self.files if f.family == MediaFamily.SUBTITLE]
+        videos = [f for f in self.files if f.family == MediaFamily.VIDEO]
+        if len(subs) != 1 or len(videos) > 1 or len(subs) + len(videos) != len(self.files):
+            return None
+        return subs[0].path, videos[0].path if videos else None
 
     def _text_edit_choices(self) -> list[str]:
         """Document / code editor choices for text-like files, default first."""
@@ -554,12 +566,18 @@ class MainWindow(QMainWindow):
             return []
         if kind in ("code", "document"):
             return self._text_edit_choices()
+        if kind == "subtitle" and len(self.files) == 1:
+            return ["subtitle", *self._text_edit_choices()]  # the code editor can open it too
         return [kind]
 
     def _fill_edit_menu(self) -> None:
         menu = self.edit_more.menu()
         menu.clear()
-        labels = {"code": "Edit as code", "document": "Edit as document"}
+        labels = {
+            "code": "Edit as code",
+            "document": "Edit as document",
+            "subtitle": "Edit as subtitles",
+        }
         for kind in self.edit_choices():
             menu.addAction(labels.get(kind, kind), lambda k=kind: self.enter_edit(k))
 
@@ -573,7 +591,9 @@ class MainWindow(QMainWindow):
 
     def _update_edit_tooltip(self) -> None:
         kind = self.edit_kind()
-        if kind == "code":
+        if kind == "subtitle":
+            tip = "Open the subtitles in the subtitle editor (with the video, if added)"
+        elif kind == "code":
             tip = "Open the files in the code editor"
         elif kind == "document":
             tip = "Open the document in the document editor"
@@ -586,7 +606,10 @@ class MainWindow(QMainWindow):
         elif kind == "video":
             tip = "Open the files in the video editor"
         else:
-            tip = "Add images, videos, audio, code, one text document, or 3D models to edit them"
+            tip = (
+                "Add images, videos, audio, code, subtitles, one text document, or 3D models "
+                "to edit them"
+            )
         self.edit_mode.setToolTip(tip)
 
     def cycle_theme(self) -> None:
@@ -630,6 +653,14 @@ class MainWindow(QMainWindow):
                 self.video_editor.back_requested.connect(self.leave_edit)
                 self.stack.addWidget(self.video_editor)
             return self.video_editor
+        if kind == "subtitle":
+            if self.subtitle_editor is None:
+                from umc.gui.subtitleeditor.subtitle_editor_page import SubtitleEditorPage
+
+                self.subtitle_editor = SubtitleEditorPage()
+                self.subtitle_editor.back_requested.connect(self.leave_edit)
+                self.stack.addWidget(self.subtitle_editor)
+            return self.subtitle_editor
         if kind == "code":
             if self.code_editor is None:
                 from umc.gui.codeeditor.code_editor_page import CodeEditorPage
@@ -695,6 +726,14 @@ class MainWindow(QMainWindow):
             self._check_mode_button()
             return
         page = self._page(kind)
+        if kind == "subtitle":
+            found = self._subtitle_files()
+            if found is not None and page.open_paths([found[0]], video=found[1]):
+                self._show_page(page)
+                page.table.setFocus()
+            else:
+                self._check_mode_button()
+            return
         if kind == "code":
             if page.open_paths([f.path for f in self.files]):
                 self._show_page(page)
@@ -775,6 +814,12 @@ class MainWindow(QMainWindow):
                 return False
             self._show_page(page)
             page.view.setFocus()
+            return True
+        if kind == "subtitle":
+            page = self._page("subtitle")
+            if not page.open_empty():  # unsaved changes kept, or still saving
+                return False
+            self._show_page(page)
             return True
         if kind == "code":
             page = self._page("code")
@@ -1114,6 +1159,8 @@ class MainWindow(QMainWindow):
             return
         if self.video_editor is not None:
             self.video_editor.shutdown()  # an embedded page never gets its own closeEvent
+        if self.subtitle_editor is not None:
+            self.subtitle_editor.shutdown()
         if self.editor is not None:
             self.editor.stop_background_removal()
         if self.viewer3d is not None:

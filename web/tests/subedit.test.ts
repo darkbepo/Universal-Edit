@@ -137,3 +137,20 @@ it("a new document and its history", () => {
   expect(h.dirty).toBe(false);
   expect(new TextDecoder().decode(toBytes(o, h.doc, "srt").data)).toBe("1\n00:00:00,000 --> 00:00:02,000\nhi\n");
 });
+
+it("typing in one cue is one undo step", () => {
+  const doc = { format: "srt", cues: [fromJson({ start: 0, end: 1000, text: "", extra: [] }), fromJson({ start: 1000, end: 2000, text: "", extra: [] })], header: "", footer: "", fields: [] };
+  const h = new History(doc);
+  const k0 = "cue-0", k1 = "cue-1";
+  for (const text of ["h", "hi", "hi!"]) h.push({ ...h.doc, cues: edits.setText(h.doc.cues, 0, text) }, "Edit text", k0);
+  h.push({ ...h.doc, cues: edits.setText(h.doc.cues, 1, "x") }, "Edit text", k1);
+  h.undo();
+  expect([h.doc.cues[0].text, h.doc.cues[1].text]).toEqual(["hi!", ""]);
+  h.undo();
+  expect(h.doc).toBe(doc);
+  expect(h.canUndo).toBe(false);
+  h.redo();
+  h.push({ ...h.doc, cues: edits.setText(h.doc.cues, 0, "again") }, "Edit text", k0);
+  h.undo();
+  expect(h.doc.cues[0].text).toBe("hi!");
+});

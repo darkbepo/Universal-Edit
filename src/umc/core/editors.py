@@ -25,14 +25,14 @@ EDITORS: tuple[EditorInfo, ...] = (
     EditorInfo("model", "3D viewer", "Look at and measure 3D models", "cube", True),
     EditorInfo("vector", "Vector editor", "Edit shapes and paths in SVG drawings", "vector", False),
     EditorInfo("font", "Font editor", "Change letters, spacing and font names", "font", False),
-    EditorInfo("subtitle", "Subtitle editor", "Fix subtitle text and timing", "subtitle", False),
+    EditorInfo("subtitle", "Subtitle editor", "Fix subtitle text and timing", "subtitle", True),
     EditorInfo("data", "Data editor", "Edit CSV, JSON, XML and spreadsheets", "table", False),
 )
 
 COMING_SOON = "Coming soon"
 
 # Editors the website doesn't have yet: its tile stays "Coming soon" (available false there).
-WEB_LATER: frozenset[str] = frozenset({"video"})
+WEB_LATER: frozenset[str] = frozenset({"video", "subtitle"})
 
 # Start-screen tile rows (owner, Nov 2026): as many tiles per row as fit, spread evenly over the
 # rows so no tile is left alone, each row centred; the tiles stretch to fill the width.

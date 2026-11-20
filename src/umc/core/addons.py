@@ -89,6 +89,13 @@ ADDONS: dict[str, Addon] = {
         packages=("pygments",),  # colours
         entry="umc.gui.codeeditor.code_editor_page",
     ),
+    "subtitle": Addon(
+        "subtitle",
+        "Subtitle editor",
+        modules=("umc.gui.subtitleeditor",),  # the Qt-free model umc.subedit stays in the app
+        packages=(),
+        entry="umc.gui.subtitleeditor.subtitle_editor_page",
+    ),
 }
 
 _activated: set[str] = set()

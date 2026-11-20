@@ -14,10 +14,19 @@ class History:
         self._undo: list[tuple[str, SubDoc]] = []
         self._redo: list[tuple[str, SubDoc]] = []
         self._saved: SubDoc = doc
+        self._merge: object = None  # the last step's merge key
 
-    def push(self, doc: SubDoc, label: str) -> None:
+    def push(self, doc: SubDoc, label: str, merge: object = None) -> None:
+        """A new step; with the same ``merge`` key as the step before (typing in one cue's
+        text) it becomes part of that step instead."""
         if doc == self.doc:
             return
+        if merge is not None and merge == self._merge and self._undo:
+            self.doc = doc
+            self._redo.clear()
+            self.version += 1
+            return
+        self._merge = merge
         self._undo.append((label, self.doc))
         if len(self._undo) > MAX_STEPS:
             del self._undo[0]
@@ -28,6 +37,7 @@ class History:
     def undo(self) -> str:
         if not self._undo:
             return ""
+        self._merge = None
         label, before = self._undo.pop()
         self._redo.append((label, self.doc))
         self.doc = before
@@ -37,6 +47,7 @@ class History:
     def redo(self) -> str:
         if not self._redo:
             return ""
+        self._merge = None
         label, after = self._redo.pop()
         self._undo.append((label, self.doc))
         self.doc = after
@@ -55,5 +66,11 @@ class History:
     def dirty(self) -> bool:
         return self.doc != self._saved
 
-    def mark_saved(self) -> None:
-        self._saved = self.doc
+    def mark_saved(self, doc: SubDoc | None = None) -> None:
+        """``doc`` (default: the current one) is what the file now holds."""
+        self._saved = self.doc if doc is None else doc
+        self._merge = None
+
+    def end_merge(self) -> None:
+        """The next push starts a step of its own (e.g. another cue was chosen)."""
+        self._merge = None

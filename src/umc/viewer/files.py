@@ -8,6 +8,7 @@ from pathlib import Path
 from umc.codeedit.languages import CODE_FIRST_TOO
 from umc.core.detect import (
     COMPOUND_EXTS,
+    SUBTITLE_EXTS,
     DetectedFile,
     MediaFamily,
     canonical_ext,
@@ -114,11 +115,14 @@ def folder_items(path: Path) -> list[Path]:
 
 
 def editor_id_for(kind: str, path: Path) -> str | None:
-    """The editor Edit opens for ``path`` (of view ``kind``): every plain text file — TXT,
+    """The editor Edit opens for ``path`` (of view ``kind``): subtitles go to the subtitle
+    editor; every other plain text file — TXT,
     INI, logs, code, JSON, and ones with an unknown or no extension — goes to the code editor;
     only Markdown (it has formatting) goes to the document editor."""
     if kind == TEXT:
         ext = _ext_of_name(path.name)
+        if ext in SUBTITLE_EXTS:
+            return "subtitle"
         if ext not in EDITABLE_DOCUMENT_EXTS or ext in CODE_FIRST_TOO:
             return "code"
     return _EDITOR_OF_KIND.get(kind)
