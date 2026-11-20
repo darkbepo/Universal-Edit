@@ -310,6 +310,47 @@ def test_play_starts_or_explains(window, qtbot, media):
         assert page.message.text() == NO_DEVICE
 
 
+def test_left_click_never_moves_playback_middle_click_does(window, qtbot, media, monkeypatch):
+    from PySide6.QtCore import QPoint, Qt
+
+    page = open_in_editor(window, qtbot, [media / "tone.wav"])
+    view = page.view
+    seeks: list[int] = []
+    monkeypatch.setattr(page, "_play", lambda a, b, paused=False: seeks.append(a))
+    view.playing = True  # as if it were playing: a click used to jump there
+    y = view.height() // 2
+    x = view.width() // 2
+    qtbot.mouseClick(view, Qt.MouseButton.LeftButton, pos=QPoint(x, y))
+    assert seeks == [] and page.doc.selection == (view.frame_at(x),) * 2
+    drag(qtbot, view, x // 2, x)  # marking a part doesn't jump either
+    assert seeks == []
+    selection = page.doc.selection
+    qtbot.mouseClick(view, Qt.MouseButton.MiddleButton, pos=QPoint(x // 4, y))
+    assert seeks == [view.frame_at(x // 4)] and page.doc.selection == selection
+    view.playing = False
+
+
+def test_middle_click_while_paused_moves_there_and_stays_paused(window, qtbot, media, monkeypatch):
+    from PySide6.QtCore import QPoint, Qt
+
+    from umc.gui.audioeditor.player import Player
+
+    page = open_in_editor(window, qtbot, [media / "tone.wav"])
+    plays: list[tuple[int, int, bool]] = []
+    monkeypatch.setattr(page, "_play", lambda a, b, paused=False: plays.append((a, b, paused)))
+    monkeypatch.setattr(Player, "active", property(lambda self: True))
+    monkeypatch.setattr(page.player, "paused", True)
+    view = page.view
+    x = view.width() // 3
+    qtbot.mouseClick(view, Qt.MouseButton.MiddleButton, pos=QPoint(x, view.height() // 2))
+    f = view.frame_at(x)
+    assert plays == [(f, page.doc.frames, True)] and view.play_head == f
+    monkeypatch.setattr(page.player, "paused", False)  # playing: plays from there
+    qtbot.mouseClick(view, Qt.MouseButton.MiddleButton, pos=QPoint(x, view.height() // 2))
+    assert plays[-1] == (f, page.doc.frames, False)
+    view.play_head = None
+
+
 @pytest.fixture
 def no_saved_volume(window):
     from PySide6.QtCore import QSettings
@@ -722,3 +763,18 @@ def test_mix_saves_with_an_empty_track_selected_and_one_track_settings_count(
     assert not page.select_track(0)
     assert not page.tracks_panel.row_widgets[0]["name"].isEnabled()
     page.saving = False
+
+
+def test_play_head_follows_only_while_on_screen(window, qtbot, media):
+    page = open_in_editor(window, qtbot, [media / "tone.wav"])
+    view = page.view
+    view.zoom(8)
+    view.set_start(0)
+    page_frames = view.visible_frames()
+    view.follow(None, int(page_frames * 1.5))  # playback starts off screen: the view goes there
+    assert view.start > page_frames
+    view.set_start(0)  # the user scrolls (or zooms) away from the play head …
+    view.follow(int(page_frames * 1.5), int(page_frames * 1.6))
+    assert view.start == 0  # … and it stays there
+    view.follow(int(page_frames * 0.9), int(page_frames * 1.1))  # on screen, past the edge
+    assert view.start > page_frames  # turns the page

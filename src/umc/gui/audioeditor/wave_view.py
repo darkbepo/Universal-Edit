@@ -1,8 +1,9 @@
 """The waveform: a time ruler on top, one lane per channel, the selection, cursor and play head.
 With ``spectrogram`` on, each lane shows how loud every pitch is instead (audioedit/spectrum.py).
 
-Click = put the cursor, drag = select, Shift+click = extend the selection, wheel = scroll,
-Ctrl+wheel = zoom around the pointer, double-click = select everything."""
+Click = put the cursor, drag = select, Shift+click = extend the selection (none of them moves
+playback), middle click = play from there, wheel = scroll, Ctrl+wheel = zoom around the pointer,
+double-click = select everything."""
 
 from __future__ import annotations
 
@@ -31,7 +32,7 @@ TICK_STEPS = (0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10,
 class WaveView(QWidget):
     selection_changed = Signal()
     view_changed = Signal()  # scrolled or zoomed (the page updates its scroll bar)
-    seek_requested = Signal(int)  # a click while playing: play from there
+    seek_requested = Signal(int)  # a middle click: play from there
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -122,6 +123,12 @@ class WaveView(QWidget):
         if frame < self.start or frame > self.start + self.visible_frames():
             self.set_start(frame - self.visible_frames() * 0.05)
 
+    def follow(self, before: int | None, frame: int) -> None:
+        """Turn the page with the play head, but only while it is on screen: scrolled away from it,
+        the view stays where the user put it (it follows again once the head is back in view)."""
+        if before is None or self.start <= before <= self.start + self.visible_frames():
+            self.ensure_visible(frame)
+
     def _changed(self) -> None:
         self._clamp()
         self.update()
@@ -142,9 +149,14 @@ class WaveView(QWidget):
 
     # ------------------------------------------------------------ mouse
     def mousePressEvent(self, event) -> None:  # noqa: N802
-        if self.doc is None or event.button() != Qt.MouseButton.LeftButton:
+        if self.doc is None:
             return
         f = self.frame_at(event.position().x())
+        if event.button() == Qt.MouseButton.MiddleButton:
+            self.seek_requested.emit(f)
+            return
+        if event.button() != Qt.MouseButton.LeftButton:
+            return
         if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
             a, b = self.doc.selection
             self._anchor = b if abs(f - a) < abs(f - b) else a
@@ -152,8 +164,6 @@ class WaveView(QWidget):
         else:
             self._anchor = f
             self.doc.set_selection(f)
-            if self.playing:
-                self.seek_requested.emit(f)
         self.update()
         self.selection_changed.emit()
 

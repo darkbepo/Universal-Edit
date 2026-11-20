@@ -79,8 +79,9 @@ class Player(QObject):
     def active(self) -> bool:
         return self.sink is not None
 
-    def play(self, doc: AudioDoc, start: int, end: int) -> str:
-        """Start playing frames [start, end). Returns "" or why it can't play."""
+    def play(self, doc: AudioDoc, start: int, end: int, paused: bool = False) -> str:
+        """Start playing frames [start, end) (``paused``: ready there, silent until resumed).
+        Returns "" or why it can't play."""
         self.stop()
         if end <= start:
             return ""
@@ -96,9 +97,12 @@ class Player(QObject):
         self.source = _Source(doc.samples, start, end)
         self.source.open(QIODevice.OpenModeFlag.ReadOnly)
         self.sink = QAudioSink(device, fmt, self)
-        self.sink.setVolume(sink_volume(self.volume))
+        self.sink.setVolume(0.0 if paused else sink_volume(self.volume))
         self.origin, self.rate, self.paused = start, doc.rate, False
         self.sink.start(self.source)
+        if paused:  # silent until resumed: no blip from what the device took already
+            self.sink.suspend()
+            self.paused = True
         if self.sink.error() != NO_ERROR:
             self.stop()
             return NO_DEVICE
@@ -126,6 +130,7 @@ class Player(QObject):
 
     def resume(self) -> None:
         if self.sink is not None and self.paused:
+            self.sink.setVolume(sink_volume(self.volume))
             self.sink.resume()
             self.paused = False
 

@@ -62,7 +62,10 @@ from umc.gui.widgets.flow_layout import FlowLayout
 log = logging.getLogger(__name__)
 
 EMPTY_TEXT = "Open a sound with “Open…”, or drop audio files here (MP3, WAV, FLAC, M4A, OGG, …)."
-HINT = "Click to place the cursor · drag to select · Ctrl+wheel to zoom · Space plays"
+HINT = (
+    "Click to place the cursor · drag to select · middle-click to play from there · "
+    "Ctrl+wheel to zoom · Space plays"
+)
 SCROLL_STEPS = 1000  # the scroll bar works in 1/1000 of a screen
 VOLUME_KEY = "audioeditor/volume"  # QSettings: the volume slider, 0…100
 SPECTROGRAM_KEY = "audioeditor/spectrogram"  # QSettings: show the spectrogram (bool)
@@ -371,7 +374,7 @@ class AudioEditorPage(QWidget):
         self.view.set_spectrogram(self.edit_buttons["spectrogram"].isChecked())
         self.view.selection_changed.connect(self._update_state)
         self.view.view_changed.connect(self._sync_scrollbar)
-        self.view.seek_requested.connect(lambda f: self.play_from(f))
+        self.view.seek_requested.connect(self.seek)
         self.scroll = QScrollBar(Qt.Orientation.Horizontal)
         self.scroll.valueChanged.connect(self._on_scroll)
         wave = QWidget()
@@ -920,14 +923,25 @@ class AudioEditorPage(QWidget):
         if self.doc is not None:
             self._play(frame, self._length())
 
-    def _play(self, start: int, end: int) -> None:
+    def seek(self, frame: int) -> None:
+        """Middle click: playback moves there (stays paused if it was); the cursor stays put."""
+        if self.doc is None or self.busy:
+            return
+        paused = self.player.active and self.player.paused
+        frame = min(frame, max(0, self._length() - 1))
+        self._play(frame, self._length(), paused=paused)
+        if paused:
+            self.view.play_head = frame
+            self.view.update()
+
+    def _play(self, start: int, end: int, paused: bool = False) -> None:
         if self.mixing:  # mixed bit by bit as the player reads it (settings as they are now)
             snapshot = [replace(t) for t in self.tracks]
             samples = tr.LazyMix(snapshot, end)
             mixed = SimpleNamespace(rate=self.doc.rate, channels=samples.shape[0], samples=samples)
-            why = self.player.play(mixed, start, end)
+            why = self.player.play(mixed, start, end, paused)
         else:
-            why = self.player.play(self.doc, start, end)
+            why = self.player.play(self.doc, start, end, paused)
         if why:
             self.show_message(why, error=True)
         self.view.playing = self.player.active
@@ -1051,8 +1065,8 @@ class AudioEditorPage(QWidget):
         QSettings().setValue(VOLUME_KEY, value)
 
     def _on_play_position(self, frame: int) -> None:
-        self.view.play_head = min(frame, self._play_end)
-        self.view.ensure_visible(self.view.play_head)
+        before, self.view.play_head = self.view.play_head, min(frame, self._play_end)
+        self.view.follow(before, self.view.play_head)
         self.view.update()
 
     def _on_play_finished(self) -> None:

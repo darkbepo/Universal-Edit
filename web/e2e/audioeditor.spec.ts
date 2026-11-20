@@ -400,6 +400,36 @@ test("the audio tile opens an empty editor; Edit is off for audio mixed with ima
   await expect(page.getByRole("button", { name: "Edit", exact: true })).toBeDisabled();
 });
 
+test("left click marks without moving playback; middle click moves it", async ({ page }) => {
+  await openEditor(page, [fx("tone.wav"), fx("tone.wav"), fx("tone.wav")]); // 9 s: time to click
+  await page.getByRole("slider", { name: "Volume", exact: true }).fill("0");
+  await page.getByRole("button", { name: "▶ Play" }).click();
+  await expect.poll(() => page.evaluate(() => window.__audio!.playing)).toBe(true);
+  const box = (await page.locator(".audio-canvas").boundingBox())!;
+  const y = box.y + box.height / 2;
+  const at = (f: number) => box.x + box.width * f;
+  const frameAt = (f: number) => page.evaluate((px) => window.__audio!.frameAt(px), box.width * f);
+  // where the current playback started (a jump starts a new one), and whether it is paused
+  const player = () => page.evaluate(() => (window.__audio as unknown as { player: { origin: number; paused: boolean } | null }).player);
+  await page.mouse.click(at(0.8), y);
+  expect((await info(page)).selection[0]).toBe(await frameAt(0.8));
+  expect(await player()).toMatchObject({ origin: 0 }); // still the same playback
+  await page.mouse.move(at(0.3), y);
+  await page.mouse.down();
+  await page.mouse.move(at(0.4), y);
+  await page.mouse.up();
+  expect(await player()).toMatchObject({ origin: 0 });
+  const selection = (await info(page)).selection;
+  await page.mouse.click(at(0.6), y, { button: "middle" });
+  expect(await player()).toMatchObject({ origin: await frameAt(0.6), paused: false });
+  expect((await info(page)).selection).toEqual(selection);
+  await page.evaluate(() => window.__audio!.togglePlay()); // pause, then move: stays paused
+  await page.mouse.click(at(0.2), y, { button: "middle" });
+  expect(await player()).toMatchObject({ origin: await frameAt(0.2), paused: true });
+  expect(await page.evaluate(() => window.__audio!.position())).toBe(await frameAt(0.2));
+  await page.evaluate(() => window.__audio!.stop());
+});
+
 test("the volume slider sets the playback volume and is remembered", async ({ page }) => {
   await openEditor(page, [fx("tone.wav")]);
   const slider = page.getByRole("slider", { name: "Volume", exact: true });
@@ -452,4 +482,22 @@ test("saving keeps the cover picture", async ({ page }, info) => {
   const probe = JSON.parse(execFileSync("ffprobe", ["-v", "error", "-show_entries", "format_tags=title:stream=codec_type:stream_disposition=attached_pic", "-of", "json", await file.path()], { encoding: "utf8" }));
   expect(probe.format.tags.title).toBe("Covered");
   expect(probe.streams.some((s: { codec_type: string; disposition?: { attached_pic?: number } }) => s.codec_type === "video" && s.disposition?.attached_pic === 1)).toBe(true);
+});
+
+test("the play head is followed only while it is on screen", async ({ page }) => {
+  await openEditor(page, [fx("tone.wav")]);
+  const r = await page.evaluate(() => {
+    const a = window.__audio! as unknown as { zoom(f: number): void; setStart(s: number): void; start: number; visibleFrames(): number; follow(b: number | null, f: number): void };
+    a.zoom(8);
+    a.setStart(0);
+    const n = a.visibleFrames();
+    a.follow(null, n * 1.5); // playback starts off screen: the view goes there
+    const jumped = a.start > n;
+    a.setStart(0); // scrolled away from the play head: the view stays
+    a.follow(n * 1.5, n * 1.6);
+    const stayed = a.start === 0;
+    a.follow(n * 0.9, n * 1.1); // on screen, past the edge: turns the page
+    return { jumped, stayed, turned: a.start > n };
+  });
+  expect(r).toEqual({ jumped: true, stayed: true, turned: true });
 });

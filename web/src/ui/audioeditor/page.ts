@@ -34,7 +34,7 @@ const h = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLEle
   return el;
 };
 
-export const HINT = "Click to place the cursor · drag to select · Ctrl+wheel to zoom · Space plays";
+export const HINT = "Click to place the cursor · drag to select · middle-click to play from there · Ctrl+wheel to zoom · Space plays";
 const EMPTY_TEXT = "Open a sound with “Open…”, or drop audio files here (MP3, WAV, FLAC, M4A, OGG, …).";
 const AUDIO_ACCEPT = "audio/*,.mp3,.wav,.flac,.m4a,.aac,.ogg,.oga,.opus,.wma,.aiff,.aif,.ac3,.amr,.ape,.mka";
 const RULER_H = 24;
@@ -599,6 +599,12 @@ export class AudioEditorPage {
     this.changed();
   }
 
+  /** Turn the page with the play head, but only while it is on screen: scrolled away from it, the
+   * view stays where the user put it (it follows again once the head is back in view). */
+  follow(before: number | null, frame: number): void {
+    if (before === null || (before >= this.start && before <= this.start + this.visibleFrames())) this.ensureVisible(frame);
+  }
+
   private ensureVisible(frame: number): void {
     if (frame < this.start || frame > this.start + this.visibleFrames()) this.setStart(frame - this.visibleFrames() * 0.05);
   }
@@ -637,6 +643,11 @@ export class AudioEditorPage {
     const c = this.canvas;
     const x = (e: PointerEvent | MouseEvent | WheelEvent) => e.clientX - c.getBoundingClientRect().left;
     c.addEventListener("pointerdown", (e) => {
+      if (e.button === 1) {
+        e.preventDefault(); // no autoscroll
+        if (this.doc && !this.busy) this.seek(this.frameAt(x(e)));
+        return;
+      }
       if (!this.doc || e.button !== 0 || this.busy) return;
       c.setPointerCapture(e.pointerId);
       c.focus();
@@ -647,8 +658,7 @@ export class AudioEditorPage {
         this.doc.setSelection(this.anchor, f);
       } else {
         this.anchor = f;
-        this.doc.setSelection(f);
-        if (this.player) this.play(f, this.doc.frames);
+        this.doc.setSelection(f); // playback stays where it is (middle click moves it)
       }
       this.update();
     });
@@ -659,6 +669,7 @@ export class AudioEditorPage {
       this.doc.setSelection(this.anchor, this.frameAt(px));
       this.update();
     });
+    c.addEventListener("auxclick", (e) => e.button === 1 && e.preventDefault()); // no paste (Linux)
     const end = () => (this.anchor = null);
     c.addEventListener("pointerup", end);
     c.addEventListener("pointercancel", end);
@@ -960,8 +971,17 @@ export class AudioEditorPage {
     else this.play(a < n ? a : 0, n);
   }
 
-  play(start: number, end: number): void {
-    this.stop();
+  /** Middle click: playback moves there (stays paused if it was); the cursor stays put. */
+  seek(frame: number): void {
+    if (!this.doc || this.busy) return;
+    const n = this.length();
+    this.play(Math.min(frame, Math.max(0, n - 1)), n, !!this.player?.paused);
+  }
+
+  /** Play frames [start, end); `paused`: the context is suspended already (a paused player
+   * moved by a middle click) and stays so until Play resumes it. */
+  play(start: number, end: number, paused = false): void {
+    this.stop(paused);
     const doc = this.doc;
     if (!doc || end <= start) return;
     try {
@@ -979,9 +999,9 @@ export class AudioEditorPage {
       this.gain.gain.cancelScheduledValues(this.ctx.currentTime);
       this.gain.gain.value = gainFor(this.volume);
       src.connect(this.gain);
-      void this.ctx.resume();
+      if (!paused) void this.ctx.resume();
       src.start();
-      const player = { src, origin: start, end, t0: this.ctx.currentTime, paused: false };
+      const player = { src, origin: start, end, t0: this.ctx.currentTime, paused };
       src.onended = () => {
         if (this.player === player) this.stop();
       };
@@ -1024,8 +1044,9 @@ export class AudioEditorPage {
 
   private tick(): void {
     if (!this.player) return;
+    const before = this.playHead;
     this.playHead = this.position();
-    if (this.playHead !== null) this.ensureVisible(this.playHead);
+    if (this.playHead !== null) this.follow(before, this.playHead);
     this.requestDraw();
     requestAnimationFrame(() => this.tick());
   }
@@ -1175,7 +1196,7 @@ export class AudioEditorPage {
     return true;
   }
 
-  stop(): void {
+  stop(keepSuspended = false): void {
     const p = this.player;
     if (!p) return;
     this.player = null;
@@ -1185,7 +1206,7 @@ export class AudioEditorPage {
     } catch {
       /* never started */
     }
-    if (p.paused) void this.ctx?.resume();
+    if (p.paused && !keepSuspended) void this.ctx?.resume();
     this.playHead = null;
     this.requestDraw();
     this.update();

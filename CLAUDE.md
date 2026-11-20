@@ -1009,7 +1009,9 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       `umc-audio-volume`) → a GainNode, `audioedit/volume.ts` `gainFor` = Qt's formula
       (−ln(1 − v) / ln 100, clamped), both test suites check the same numbers.
       Worker results must reach the page through bound-method slots (a lambda runs on the worker
-      thread). Shortcuts: Space, Home / End, Ctrl+X / C / V, Delete, Ctrl+T, Ctrl+L, Ctrl+A, Esc,
+      thread). Left click / drag only place the cursor / select; middle click = `seek` (play from
+      there, a paused player stays paused: `play(…, paused)` starts silent); the view follows the
+      play head only while it is on screen (`follow` / `follow`). Shortcuts: Space, Home / End, Ctrl+X / C / V, Delete, Ctrl+T, Ctrl+L, Ctrl+A, Esc,
       + / − (desktop also Ctrl+1 / 3; Chrome keeps those for tabs), Ctrl+E, Ctrl+F, Ctrl+Z / Y,
       Ctrl+S. Desktop add-on "audio" (`umc.gui.audioeditor`; the model stays in the app); self-test
       step "audio editor". e2e `e2e/audioeditor.spec.ts` (`window.__audio` with `?e2e`).
