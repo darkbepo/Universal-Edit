@@ -52,19 +52,24 @@ function score(x: Float32Array, at: number, target: number, step: number): numbe
   return energy > 0 ? dot / Math.sqrt(energy) : 0;
 }
 
-/** The input position in [lo, hi] that best continues from `target`. */
-function bestShift(x: Float32Array, lo: number, hi: number, target: number): number {
+/**
+ * The input position in [lo, hi] that best continues from `target` — and, when `back` ≥ 0, whose
+ * second half best leads into x[back…] (the frame just before the pinned end frames).
+ */
+function bestShift(x: Float32Array, lo: number, hi: number, target: number, back: number): number {
+  const both = (at: number, step: number) =>
+    score(x, at, target, step) + (back >= 0 ? score(x, at + HOP, back, step) : 0);
   let best = lo;
   let bestScore = -Infinity;
   for (let at = lo; at <= hi; at += COARSE_STEP) {
-    const s = score(x, at, target, COARSE_DECIMATE);
+    const s = both(at, COARSE_DECIMATE);
     if (s > bestScore) [best, bestScore] = [at, s];
   }
   const from = Math.max(lo, best - COARSE_STEP + 1);
   const to = Math.min(hi, best + COARSE_STEP - 1);
   bestScore = -Infinity;
   for (let at = from; at <= to; at++) {
-    const s = score(x, at, target, FINE_DECIMATE);
+    const s = both(at, FINE_DECIMATE);
     if (s > bestScore) [best, bestScore] = [at, s];
   }
   return best;
@@ -77,6 +82,7 @@ function bestShift(x: Float32Array, lo: number, hi: number, target: number): num
  */
 export function stretch(input: Float32Array[], speed: number, frames?: number): Float32Array[] {
   const length = input.length ? input[0].length : 0;
+  if (!Number.isFinite(speed) || speed <= 0) speed = 1;
   const total = Math.max(0, Math.round(frames ?? length / speed));
   if (speed === 1) return input.map((a) => fitted(a, total));
   if (length < FRAME) return input.map((a) => resample(a, total));
@@ -91,15 +97,26 @@ export function stretch(input: Float32Array[], speed: number, frames?: number): 
   }
   const weights = new Float32Array(total);
   const last = length - FRAME;
+  // The first frame reads the input's start and the last ones are pinned to its end, so the
+  // output ends on the input's last sample and the next window (which starts at the following
+  // input sample) joins without a click. Frame starts in between are spread evenly over that
+  // (`rate` is within a frame's worth of `speed` for any real window).
+  const rate = total > FRAME ? last / (total - FRAME) : speed;
+  const pinStart = Math.max(0, Math.ceil((total - FRAME) / HOP)) * HOP;
+  const pinAt = length - (total - pinStart);
   let prev = 0;
   for (let k = 0, start = 0; start < total; k++, start += HOP) {
-    let at = 0;
-    if (k > 0) {
-      const nominal = Math.min(last, Math.max(0, Math.round(start * speed)));
-      const target = Math.min(last, prev + HOP);
-      at = bestShift(mono, Math.max(0, nominal - SEARCH), Math.min(last, nominal + SEARCH), target);
-    }
     const n = Math.min(FRAME, total - start);
+    let at = 0;
+    if (k > 0 && start >= pinStart) {
+      at = length - n;
+    } else if (k > 0) {
+      const nominal = Math.min(last, Math.max(0, Math.round(start * rate)));
+      const target = prev + HOP; // ≤ length − HOP: the score reads HOP samples from there
+      // The frame just before the pinned ones also has to lead into them: a compromise of both.
+      const back = start + HOP === pinStart ? pinAt : -1;
+      at = bestShift(mono, Math.max(0, nominal - SEARCH), Math.min(last, nominal + SEARCH), target, back);
+    }
     for (let c = 0; c < input.length; c++) {
       const src = input[c];
       const dst = out[c];

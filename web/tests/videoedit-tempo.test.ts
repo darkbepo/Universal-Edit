@@ -51,6 +51,33 @@ describe("stretch", () => {
     expect(Math.abs(out[0] - window[0])).toBeLessThan(1e-6);
   });
 
+  for (const speed of [0.25, 0.5, 2, 4]) {
+    it(`joins consecutive windows without a click at ${speed}×`, () => {
+      const frames = 24000;
+      const take = Math.round(frames * speed);
+      const whole = sine(437, (4 * take) / RATE + 0.01);
+      const parts = [0, 1, 2, 3].map((w) => stretch([whole.subarray(w * take, (w + 1) * take)], speed, frames)[0]);
+      let inner = 0;
+      for (const p of parts) for (let i = 1; i < p.length; i++) inner = Math.max(inner, Math.abs(p[i] - p[i - 1]));
+      let seam = 0;
+      for (let w = 1; w < 4; w++) seam = Math.max(seam, Math.abs(parts[w][0] - parts[w - 1][frames - 1]));
+      expect(seam).toBeLessThan(inner * 1.5);
+      // the end of a window cut from the middle is at full level too
+      const last = parts[1];
+      expect(rms(last, frames - 240, frames) / rms(whole)).toBeGreaterThan(0.8);
+      expect(Math.abs(last[frames - 1] - whole[2 * take - 1])).toBeLessThan(1e-6);
+    });
+  }
+
+  it("treats a speed that isn't a positive number as 1", () => {
+    const input = sine(300, 0.1);
+    for (const speed of [0, -2, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const [out] = stretch([input], speed);
+      expect(out.length).toBe(input.length);
+      expect(Array.from(out)).toEqual(Array.from(input));
+    }
+  });
+
   it("speed 1 is a copy", () => {
     const input = sine(300, 0.5);
     const [out] = stretch([input], 1);
