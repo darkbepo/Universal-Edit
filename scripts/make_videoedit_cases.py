@@ -22,6 +22,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from umc.core.errors import ToolMissingError  # noqa: E402
+from umc.core.options import option_specs  # noqa: E402
 from umc.tools.ffmpeg import ffmpeg_path  # noqa: E402
 from umc.videoedit import edits  # noqa: E402
 from umc.videoedit.project import (  # noqa: E402
@@ -768,6 +769,28 @@ def text_cases() -> list[dict[str, Any]]:
     return out
 
 
+def schema_cases() -> dict[str, list[dict[str, Any]]]:
+    """Each editable class's option specs (the inspector's forms); `show_if` is code, left out."""
+    out: dict[str, list[dict[str, Any]]] = {}
+    for cls in (ProjectSettings, Transition, VideoClip, PictureClip, AudioClip, TextItem):
+        out[cls.__name__] = [
+            {
+                "name": s.name,
+                "label": s.label,
+                "kind": s.kind,
+                "default": s.default,
+                "min": s.min,
+                "max": s.max,
+                "step": s.step,
+                "decimals": s.decimals,
+                "unit": s.unit,
+                "choices": [[v, lbl] for v, lbl in s.choices],
+            }
+            for s in option_specs(cls)
+        ]
+    return out
+
+
 def main() -> None:
     cases = {
         "layout": layout_cases(),
@@ -777,6 +800,7 @@ def main() -> None:
         "transition": transition_cases(),
         "fade": fade_cases(),
         "text": text_cases(),
+        "schemas": schema_cases(),
     }
     OUT.write_text(json.dumps(cases, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
     errors = sum(1 for e in cases["edits"] if e["error"])

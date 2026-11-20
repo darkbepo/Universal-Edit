@@ -2,7 +2,7 @@
 // panel renders them automatically (same idea as the desktop app's opt()).
 import { ConversionError } from "./types";
 
-export type Kind = "slider" | "int" | "float" | "choice" | "bool" | "text" | "password" | "color" | "file";
+export type Kind = "slider" | "int" | "float" | "choice" | "bool" | "text" | "textarea" | "password" | "color" | "file";
 export type Value = string | number | boolean | File | null;
 export type Values = Record<string, Value>;
 

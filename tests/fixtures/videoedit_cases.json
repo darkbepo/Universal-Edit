@@ -32535,5 +32535,823 @@
    "fade_in": 1.5,
    "fade_out": 0.0
   }
- ]
+ ],
+ "schemas": {
+  "ProjectSettings": [
+   {
+    "name": "resolution",
+    "label": "Resolution",
+    "kind": "choice",
+    "default": "first",
+    "min": null,
+    "max": null,
+    "step": null,
+    "decimals": 0,
+    "unit": "",
+    "choices": [
+     [
+      "first",
+      "Match first video"
+     ],
+     [
+      "720p",
+      "720p (1280×720)"
+     ],
+     [
+      "1080p",
+      "1080p (1920×1080)"
+     ],
+     [
+      "4k",
+      "4K (3840×2160)"
+     ],
+     [
+      "vertical",
+      "Vertical (1080×1920)"
+     ],
+     [
+      "square",
+      "Square (1080×1080)"
+     ],
+     [
+      "custom",
+      "Custom"
+     ]
+    ]
+   },
+   {
+    "name": "width",
+    "label": "Width",
+    "kind": "int",
+    "default": 1920,
+    "min": 2,
+    "max": 7680,
+    "step": null,
+    "decimals": 0,
+    "unit": "px",
+    "choices": []
+   },
+   {
+    "name": "height",
+    "label": "Height",
+    "kind": "int",
+    "default": 1080,
+    "min": 2,
+    "max": 7680,
+    "step": null,
+    "decimals": 0,
+    "unit": "px",
+    "choices": []
+   },
+   {
+    "name": "fps",
+    "label": "Frame rate",
+    "kind": "choice",
+    "default": "first",
+    "min": null,
+    "max": null,
+    "step": null,
+    "decimals": 0,
+    "unit": "",
+    "choices": [
+     [
+      "first",
+      "Match first video"
+     ],
+     [
+      "24",
+      "24"
+     ],
+     [
+      "25",
+      "25"
+     ],
+     [
+      "30",
+      "30"
+     ],
+     [
+      "50",
+      "50"
+     ],
+     [
+      "60",
+      "60"
+     ]
+    ]
+   },
+   {
+    "name": "background",
+    "label": "Background",
+    "kind": "color",
+    "default": "#000000",
+    "min": null,
+    "max": null,
+    "step": null,
+    "decimals": 0,
+    "unit": "",
+    "choices": []
+   }
+  ],
+  "Transition": [
+   {
+    "name": "kind",
+    "label": "Transition",
+    "kind": "choice",
+    "default": "none",
+    "min": null,
+    "max": null,
+    "step": null,
+    "decimals": 0,
+    "unit": "",
+    "choices": [
+     [
+      "none",
+      "None"
+     ],
+     [
+      "fade",
+      "Crossfade"
+     ],
+     [
+      "fadeblack",
+      "Fade through black"
+     ],
+     [
+      "wipeleft",
+      "Wipe left"
+     ],
+     [
+      "wiperight",
+      "Wipe right"
+     ],
+     [
+      "slideleft",
+      "Slide left"
+     ],
+     [
+      "slideright",
+      "Slide right"
+     ]
+    ]
+   },
+   {
+    "name": "duration",
+    "label": "Duration",
+    "kind": "float",
+    "default": 0.5,
+    "min": 0.1,
+    "max": 3.0,
+    "step": 0.1,
+    "decimals": 1,
+    "unit": "s",
+    "choices": []
+   }
+  ],
+  "VideoClip": [
+   {
+    "name": "speed",
+    "label": "Speed",
+    "kind": "float",
+    "default": 1.0,
+    "min": 0.25,
+    "max": 4.0,
+    "step": 0.25,
+    "decimals": 2,
+    "unit": "×",
+    "choices": []
+   },
+   {
+    "name": "volume",
+    "label": "Volume",
+    "kind": "slider",
+    "default": 100,
+    "min": 0,
+    "max": 200,
+    "step": null,
+    "decimals": 0,
+    "unit": "%",
+    "choices": []
+   },
+   {
+    "name": "mute",
+    "label": "Mute",
+    "kind": "bool",
+    "default": false,
+    "min": null,
+    "max": null,
+    "step": null,
+    "decimals": 0,
+    "unit": "",
+    "choices": []
+   },
+   {
+    "name": "fade_in",
+    "label": "Fade in",
+    "kind": "float",
+    "default": 0.0,
+    "min": 0.0,
+    "max": 5.0,
+    "step": 0.1,
+    "decimals": 1,
+    "unit": "s",
+    "choices": []
+   },
+   {
+    "name": "fade_out",
+    "label": "Fade out",
+    "kind": "float",
+    "default": 0.0,
+    "min": 0.0,
+    "max": 5.0,
+    "step": 0.1,
+    "decimals": 1,
+    "unit": "s",
+    "choices": []
+   },
+   {
+    "name": "fit",
+    "label": "Fit",
+    "kind": "choice",
+    "default": "letterbox",
+    "min": null,
+    "max": null,
+    "step": null,
+    "decimals": 0,
+    "unit": "",
+    "choices": [
+     [
+      "letterbox",
+      "Letterbox"
+     ],
+     [
+      "crop",
+      "Crop to fill"
+     ],
+     [
+      "stretch",
+      "Stretch"
+     ]
+    ]
+   },
+   {
+    "name": "rotate",
+    "label": "Rotate",
+    "kind": "choice",
+    "default": 0,
+    "min": null,
+    "max": null,
+    "step": null,
+    "decimals": 0,
+    "unit": "",
+    "choices": [
+     [
+      0,
+      "None"
+     ],
+     [
+      90,
+      "90°"
+     ],
+     [
+      180,
+      "180°"
+     ],
+     [
+      270,
+      "270°"
+     ]
+    ]
+   },
+   {
+    "name": "flip_h",
+    "label": "Flip horizontally",
+    "kind": "bool",
+    "default": false,
+    "min": null,
+    "max": null,
+    "step": null,
+    "decimals": 0,
+    "unit": "",
+    "choices": []
+   },
+   {
+    "name": "flip_v",
+    "label": "Flip vertically",
+    "kind": "bool",
+    "default": false,
+    "min": null,
+    "max": null,
+    "step": null,
+    "decimals": 0,
+    "unit": "",
+    "choices": []
+   },
+   {
+    "name": "crop_left",
+    "label": "Crop left",
+    "kind": "slider",
+    "default": 0,
+    "min": 0,
+    "max": 100,
+    "step": null,
+    "decimals": 0,
+    "unit": "%",
+    "choices": []
+   },
+   {
+    "name": "crop_top",
+    "label": "Crop top",
+    "kind": "slider",
+    "default": 0,
+    "min": 0,
+    "max": 100,
+    "step": null,
+    "decimals": 0,
+    "unit": "%",
+    "choices": []
+   },
+   {
+    "name": "crop_right",
+    "label": "Crop right",
+    "kind": "slider",
+    "default": 0,
+    "min": 0,
+    "max": 100,
+    "step": null,
+    "decimals": 0,
+    "unit": "%",
+    "choices": []
+   },
+   {
+    "name": "crop_bottom",
+    "label": "Crop bottom",
+    "kind": "slider",
+    "default": 0,
+    "min": 0,
+    "max": 100,
+    "step": null,
+    "decimals": 0,
+    "unit": "%",
+    "choices": []
+   },
+   {
+    "name": "brightness",
+    "label": "Brightness",
+    "kind": "slider",
+    "default": 0,
+    "min": -100,
+    "max": 100,
+    "step": null,
+    "decimals": 0,
+    "unit": "",
+    "choices": []
+   },
+   {
+    "name": "contrast",
+    "label": "Contrast",
+    "kind": "slider",
+    "default": 0,
+    "min": -100,
+    "max": 100,
+    "step": null,
+    "decimals": 0,
+    "unit": "",
+    "choices": []
+   },
+   {
+    "name": "saturation",
+    "label": "Saturation",
+    "kind": "slider",
+    "default": 0,
+    "min": -100,
+    "max": 100,
+    "step": null,
+    "decimals": 0,
+    "unit": "",
+    "choices": []
+   }
+  ],
+  "PictureClip": [
+   {
+    "name": "duration",
+    "label": "Duration",
+    "kind": "float",
+    "default": 3.0,
+    "min": 0.1,
+    "max": 60.0,
+    "step": 0.1,
+    "decimals": 1,
+    "unit": "s",
+    "choices": []
+   },
+   {
+    "name": "fit",
+    "label": "Fit",
+    "kind": "choice",
+    "default": "letterbox",
+    "min": null,
+    "max": null,
+    "step": null,
+    "decimals": 0,
+    "unit": "",
+    "choices": [
+     [
+      "letterbox",
+      "Letterbox"
+     ],
+     [
+      "crop",
+      "Crop to fill"
+     ],
+     [
+      "stretch",
+      "Stretch"
+     ]
+    ]
+   },
+   {
+    "name": "rotate",
+    "label": "Rotate",
+    "kind": "choice",
+    "default": 0,
+    "min": null,
+    "max": null,
+    "step": null,
+    "decimals": 0,
+    "unit": "",
+    "choices": [
+     [
+      0,
+      "None"
+     ],
+     [
+      90,
+      "90°"
+     ],
+     [
+      180,
+      "180°"
+     ],
+     [
+      270,
+      "270°"
+     ]
+    ]
+   },
+   {
+    "name": "flip_h",
+    "label": "Flip horizontally",
+    "kind": "bool",
+    "default": false,
+    "min": null,
+    "max": null,
+    "step": null,
+    "decimals": 0,
+    "unit": "",
+    "choices": []
+   },
+   {
+    "name": "flip_v",
+    "label": "Flip vertically",
+    "kind": "bool",
+    "default": false,
+    "min": null,
+    "max": null,
+    "step": null,
+    "decimals": 0,
+    "unit": "",
+    "choices": []
+   },
+   {
+    "name": "fade_in",
+    "label": "Fade in",
+    "kind": "float",
+    "default": 0.0,
+    "min": 0.0,
+    "max": 5.0,
+    "step": 0.1,
+    "decimals": 1,
+    "unit": "s",
+    "choices": []
+   },
+   {
+    "name": "fade_out",
+    "label": "Fade out",
+    "kind": "float",
+    "default": 0.0,
+    "min": 0.0,
+    "max": 5.0,
+    "step": 0.1,
+    "decimals": 1,
+    "unit": "s",
+    "choices": []
+   },
+   {
+    "name": "brightness",
+    "label": "Brightness",
+    "kind": "slider",
+    "default": 0,
+    "min": -100,
+    "max": 100,
+    "step": null,
+    "decimals": 0,
+    "unit": "",
+    "choices": []
+   },
+   {
+    "name": "contrast",
+    "label": "Contrast",
+    "kind": "slider",
+    "default": 0,
+    "min": -100,
+    "max": 100,
+    "step": null,
+    "decimals": 0,
+    "unit": "",
+    "choices": []
+   },
+   {
+    "name": "saturation",
+    "label": "Saturation",
+    "kind": "slider",
+    "default": 0,
+    "min": -100,
+    "max": 100,
+    "step": null,
+    "decimals": 0,
+    "unit": "",
+    "choices": []
+   }
+  ],
+  "AudioClip": [
+   {
+    "name": "volume",
+    "label": "Volume",
+    "kind": "slider",
+    "default": 100,
+    "min": 0,
+    "max": 200,
+    "step": null,
+    "decimals": 0,
+    "unit": "%",
+    "choices": []
+   },
+   {
+    "name": "fade_in",
+    "label": "Fade in",
+    "kind": "float",
+    "default": 0.0,
+    "min": 0.0,
+    "max": 5.0,
+    "step": 0.1,
+    "decimals": 1,
+    "unit": "s",
+    "choices": []
+   },
+   {
+    "name": "fade_out",
+    "label": "Fade out",
+    "kind": "float",
+    "default": 0.0,
+    "min": 0.0,
+    "max": 5.0,
+    "step": 0.1,
+    "decimals": 1,
+    "unit": "s",
+    "choices": []
+   }
+  ],
+  "TextItem": [
+   {
+    "name": "text",
+    "label": "Text",
+    "kind": "textarea",
+    "default": "Text",
+    "min": null,
+    "max": null,
+    "step": null,
+    "decimals": 0,
+    "unit": "",
+    "choices": []
+   },
+   {
+    "name": "anchor",
+    "label": "Position",
+    "kind": "choice",
+    "default": "bottom",
+    "min": null,
+    "max": null,
+    "step": null,
+    "decimals": 0,
+    "unit": "",
+    "choices": [
+     [
+      "top-left",
+      "Top left"
+     ],
+     [
+      "top",
+      "Top"
+     ],
+     [
+      "top-right",
+      "Top right"
+     ],
+     [
+      "left",
+      "Left"
+     ],
+     [
+      "center",
+      "Centre"
+     ],
+     [
+      "right",
+      "Right"
+     ],
+     [
+      "bottom-left",
+      "Bottom left"
+     ],
+     [
+      "bottom",
+      "Bottom"
+     ],
+     [
+      "bottom-right",
+      "Bottom right"
+     ]
+    ]
+   },
+   {
+    "name": "x_offset",
+    "label": "Horizontal offset",
+    "kind": "float",
+    "default": 0.0,
+    "min": -100,
+    "max": 100,
+    "step": 0.5,
+    "decimals": 1,
+    "unit": "%",
+    "choices": []
+   },
+   {
+    "name": "y_offset",
+    "label": "Vertical offset",
+    "kind": "float",
+    "default": 0.0,
+    "min": -100,
+    "max": 100,
+    "step": 0.5,
+    "decimals": 1,
+    "unit": "%",
+    "choices": []
+   },
+   {
+    "name": "font",
+    "label": "Font",
+    "kind": "text",
+    "default": "DejaVu Sans",
+    "min": null,
+    "max": null,
+    "step": null,
+    "decimals": 0,
+    "unit": "",
+    "choices": []
+   },
+   {
+    "name": "size",
+    "label": "Size",
+    "kind": "float",
+    "default": 8.0,
+    "min": 1,
+    "max": 50,
+    "step": 0.5,
+    "decimals": 1,
+    "unit": "%",
+    "choices": []
+   },
+   {
+    "name": "bold",
+    "label": "Bold",
+    "kind": "bool",
+    "default": false,
+    "min": null,
+    "max": null,
+    "step": null,
+    "decimals": 0,
+    "unit": "",
+    "choices": []
+   },
+   {
+    "name": "italic",
+    "label": "Italic",
+    "kind": "bool",
+    "default": false,
+    "min": null,
+    "max": null,
+    "step": null,
+    "decimals": 0,
+    "unit": "",
+    "choices": []
+   },
+   {
+    "name": "colour",
+    "label": "Colour",
+    "kind": "color",
+    "default": "#ffffff",
+    "min": null,
+    "max": null,
+    "step": null,
+    "decimals": 0,
+    "unit": "",
+    "choices": []
+   },
+   {
+    "name": "outline_colour",
+    "label": "Outline colour",
+    "kind": "color",
+    "default": "#000000",
+    "min": null,
+    "max": null,
+    "step": null,
+    "decimals": 0,
+    "unit": "",
+    "choices": []
+   },
+   {
+    "name": "outline",
+    "label": "Outline",
+    "kind": "float",
+    "default": 2.0,
+    "min": 0,
+    "max": 10,
+    "step": 0.5,
+    "decimals": 1,
+    "unit": "px",
+    "choices": []
+   },
+   {
+    "name": "box",
+    "label": "Background box",
+    "kind": "bool",
+    "default": false,
+    "min": null,
+    "max": null,
+    "step": null,
+    "decimals": 0,
+    "unit": "",
+    "choices": []
+   },
+   {
+    "name": "box_colour",
+    "label": "Box colour",
+    "kind": "color",
+    "default": "#000000",
+    "min": null,
+    "max": null,
+    "step": null,
+    "decimals": 0,
+    "unit": "",
+    "choices": []
+   },
+   {
+    "name": "box_opacity",
+    "label": "Box opacity",
+    "kind": "slider",
+    "default": 50,
+    "min": 0,
+    "max": 100,
+    "step": null,
+    "decimals": 0,
+    "unit": "%",
+    "choices": []
+   },
+   {
+    "name": "fade_in",
+    "label": "Fade in",
+    "kind": "float",
+    "default": 0.0,
+    "min": 0.0,
+    "max": 5.0,
+    "step": 0.1,
+    "decimals": 1,
+    "unit": "s",
+    "choices": []
+   },
+   {
+    "name": "fade_out",
+    "label": "Fade out",
+    "kind": "float",
+    "default": 0.0,
+    "min": 0.0,
+    "max": 5.0,
+    "step": 0.1,
+    "decimals": 1,
+    "unit": "s",
+    "choices": []
+   }
+  ]
+ }
 }

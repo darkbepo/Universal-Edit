@@ -85,3 +85,19 @@ def test_file_case_matches_save_project():
     maker_file = maker.file_case()
     assert CASES["file"]["text"] == maker_file["text"]
     assert_same(CASES["file"]["project"], maker_file["project"])
+
+
+def test_schemas_section():
+    assert set(CASES["schemas"]) == {
+        "ProjectSettings",
+        "Transition",
+        "VideoClip",
+        "PictureClip",
+        "AudioClip",
+        "TextItem",
+    }
+    for name, specs in CASES["schemas"].items():
+        assert specs, name
+        for spec in specs:
+            assert spec["name"] and spec["label"] and spec["kind"], name
+    assert_same(CASES["schemas"], maker.schema_cases())
