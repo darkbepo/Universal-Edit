@@ -1,0 +1,1869 @@
+{
+ "files": [
+  {
+   "name": "srt basic",
+   "format": "srt",
+   "text": "1\n00:00:01,000 --> 00:00:02,500\n<i>Hello</i> there\nsecond <font color=red>line</font>\n\n2\n00:00:03,000 --> 00:00:04,000 X1:10 X2:20\nBye & so\n",
+   "doc": {
+    "format": "srt",
+    "cues": [
+     {
+      "start": 1000,
+      "end": 2500,
+      "text": "<i>Hello</i> there\nsecond <font color=red>line</font>",
+      "extra": []
+     },
+     {
+      "start": 3000,
+      "end": 4000,
+      "text": "Bye & so",
+      "extra": [
+       [
+        "pos",
+        " X1:10 X2:20"
+       ]
+      ]
+     }
+    ],
+    "header": "",
+    "footer": "",
+    "fields": []
+   },
+   "write": {
+    "srt": "1\n00:00:01,000 --> 00:00:02,500\n<i>Hello</i> there\nsecond <font color=red>line</font>\n\n2\n00:00:03,000 --> 00:00:04,000 X1:10 X2:20\nBye & so\n",
+    "vtt": "WEBVTT\n\n00:00:01.000 --> 00:00:02.500\n<i>Hello</i> there\nsecond line\n\n00:00:03.000 --> 00:00:04.000\nBye & so\n",
+    "ass": "[Script Info]\nScriptType: v4.00+\nPlayResX: 1920\nPlayResY: 1080\nWrapStyle: 0\nScaledBorderAndShadow: yes\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,Arial,64,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,3,1,2,40,40,50,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\nDialogue: 0,0:00:01.00,0:00:02.50,Default,,0,0,0,,{\\i1}Hello{\\i0} there\\Nsecond line\nDialogue: 0,0:00:03.00,0:00:04.00,Default,,0,0,0,,Bye & so\n",
+    "ssa": {
+     "error": "Only SSA files can be saved as SSA; choose ASS instead."
+    },
+    "lrc": "[00:01.00]Hello there second line\n[00:02.50]\n[00:03.00]Bye & so\n[00:04.00]\n"
+   },
+   "lost": {
+    "srt": [],
+    "vtt": [],
+    "ass": [],
+    "ssa": [],
+    "lrc": [
+     "italic / bold text",
+     "line breaks (LRC has one line per subtitle)"
+    ]
+   },
+   "save_formats": [
+    "srt",
+    "vtt",
+    "ass",
+    "lrc"
+   ],
+   "problems": []
+  },
+  {
+   "name": "srt loose",
+   "format": "srt",
+   "text": "\n\n1\n0:00:01.5 --> 0:00:02,25\nshort hours\n\n\n3\n00:00:05,000 --> 00:00:09,000\nline one\n\nafter a blank\n\n00:00:10,000 --> 00:00:10,400\nno index\n",
+   "doc": {
+    "format": "srt",
+    "cues": [
+     {
+      "start": 1500,
+      "end": 2250,
+      "text": "short hours",
+      "extra": []
+     },
+     {
+      "start": 5000,
+      "end": 9000,
+      "text": "line one\nafter a blank",
+      "extra": []
+     },
+     {
+      "start": 10000,
+      "end": 10400,
+      "text": "no index",
+      "extra": []
+     }
+    ],
+    "header": "",
+    "footer": "",
+    "fields": []
+   },
+   "write": {
+    "srt": "1\n00:00:01,500 --> 00:00:02,250\nshort hours\n\n2\n00:00:05,000 --> 00:00:09,000\nline one\nafter a blank\n\n3\n00:00:10,000 --> 00:00:10,400\nno index\n",
+    "vtt": "WEBVTT\n\n00:00:01.500 --> 00:00:02.250\nshort hours\n\n00:00:05.000 --> 00:00:09.000\nline one\nafter a blank\n\n00:00:10.000 --> 00:00:10.400\nno index\n",
+    "ass": "[Script Info]\nScriptType: v4.00+\nPlayResX: 1920\nPlayResY: 1080\nWrapStyle: 0\nScaledBorderAndShadow: yes\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,Arial,64,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,3,1,2,40,40,50,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\nDialogue: 0,0:00:01.50,0:00:02.25,Default,,0,0,0,,short hours\nDialogue: 0,0:00:05.00,0:00:09.00,Default,,0,0,0,,line one\\Nafter a blank\nDialogue: 0,0:00:10.00,0:00:10.40,Default,,0,0,0,,no index\n",
+    "ssa": {
+     "error": "Only SSA files can be saved as SSA; choose ASS instead."
+    },
+    "lrc": "[00:01.50]short hours\n[00:02.25]\n[00:05.00]line one after a blank\n[00:09.00]\n[00:10.00]no index\n[00:10.40]\n"
+   },
+   "lost": {
+    "srt": [],
+    "vtt": [],
+    "ass": [],
+    "ssa": [],
+    "lrc": [
+     "line breaks (LRC has one line per subtitle)"
+    ]
+   },
+   "save_formats": [
+    "srt",
+    "vtt",
+    "ass",
+    "lrc"
+   ],
+   "problems": [
+    {
+     "index": 2,
+     "kind": "short",
+     "message": "Shown for only 0.4 s"
+    }
+   ]
+  },
+  {
+   "name": "vtt",
+   "format": "vtt",
+   "text": "WEBVTT - film\nKind: captions\n\nNOTE first note\n\nSTYLE\n::cue { color: red }\n\nintro\n00:01.000 --> 00:02.000 line:0 align:start\n<v Bob>Hi <c.loud>there</c></v>\n\n01:00:00.000 --> 01:00:01.000\n<b>bold</b> <00:01:00.500>karaoke\n\nNOTE late note\n\n00:00:03.000 --> 00:00:03.500\nfast fast fast fast fast fast\n",
+   "doc": {
+    "format": "vtt",
+    "cues": [
+     {
+      "start": 1000,
+      "end": 2000,
+      "text": "<v Bob>Hi <c.loud>there</c></v>",
+      "extra": [
+       [
+        "id",
+        "intro"
+       ],
+       [
+        "settings",
+        "line:0 align:start"
+       ]
+      ]
+     },
+     {
+      "start": 3600000,
+      "end": 3601000,
+      "text": "<b>bold</b> <00:01:00.500>karaoke",
+      "extra": []
+     },
+     {
+      "start": 3000,
+      "end": 3500,
+      "text": "fast fast fast fast fast fast",
+      "extra": []
+     }
+    ],
+    "header": "WEBVTT - film\nKind: captions\n\nNOTE first note\n\nSTYLE\n::cue { color: red }",
+    "footer": "",
+    "fields": []
+   },
+   "write": {
+    "srt": "1\n00:00:01,000 --> 00:00:02,000\nHi there\n\n2\n01:00:00,000 --> 01:00:01,000\n<b>bold</b> karaoke\n\n3\n00:00:03,000 --> 00:00:03,500\nfast fast fast fast fast fast\n",
+    "vtt": "WEBVTT - film\nKind: captions\n\nNOTE first note\n\nSTYLE\n::cue { color: red }\n\nintro\n00:00:01.000 --> 00:00:02.000 line:0 align:start\n<v Bob>Hi <c.loud>there</c></v>\n\n01:00:00.000 --> 01:00:01.000\n<b>bold</b> <00:01:00.500>karaoke\n\n00:00:03.000 --> 00:00:03.500\nfast fast fast fast fast fast\n",
+    "ass": "[Script Info]\nScriptType: v4.00+\nPlayResX: 1920\nPlayResY: 1080\nWrapStyle: 0\nScaledBorderAndShadow: yes\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,Arial,64,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,3,1,2,40,40,50,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\nDialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,Hi there\nDialogue: 0,1:00:00.00,1:00:01.00,Default,,0,0,0,,{\\b1}bold{\\b0} karaoke\nDialogue: 0,0:00:03.00,0:00:03.50,Default,,0,0,0,,fast fast fast fast fast fast\n",
+    "ssa": {
+     "error": "Only SSA files can be saved as SSA; choose ASS instead."
+    },
+    "lrc": "[00:01.00]Hi there\n[00:02.00]\n[00:03.00]fast fast fast fast fast fast\n[00:03.50]\n[60:00.00]bold karaoke\n[60:01.00]\n"
+   },
+   "lost": {
+    "srt": [
+     "cue positions, names and notes"
+    ],
+    "vtt": [],
+    "ass": [
+     "cue positions, names and notes"
+    ],
+    "ssa": [
+     "cue positions, names and notes"
+    ],
+    "lrc": [
+     "cue positions, names and notes",
+     "italic / bold text"
+    ]
+   },
+   "save_formats": [
+    "vtt",
+    "srt",
+    "ass",
+    "lrc"
+   ],
+   "problems": [
+    {
+     "index": 2,
+     "kind": "short",
+     "message": "Shown for only 0.5 s"
+    },
+    {
+     "index": 2,
+     "kind": "overlap",
+     "message": "Starts before line 2 ends"
+    },
+    {
+     "index": 2,
+     "kind": "fast",
+     "message": "Too fast to read (58 characters a second)"
+    }
+   ]
+  },
+  {
+   "name": "ass",
+   "format": "ass",
+   "text": "[Script Info]\n; made by hand\nScriptType: v4.00+\nPlayResY: 720\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Top,Arial,40,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,0,8,10,10,10,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\nDialogue: 0,0:00:01.00,0:00:03.20,Top,Ann,0,0,0,,{\\i1}Hi{\\i0}, you\\Nthere, {\\pos(10,20)}ok\nComment: 0,0:00:02.00,0:00:02.50,Top,,0,0,0,,a note\nDialogue: 1,0:00:04.05,0:00:05.00,Top,,0,0,0,,Comma, in, text\n\n[Fonts]\nfontname: x.ttf\n",
+   "doc": {
+    "format": "ass",
+    "cues": [
+     {
+      "start": 1000,
+      "end": 3200,
+      "text": "{\\i1}Hi{\\i0}, you\nthere, {\\pos(10,20)}ok",
+      "extra": [
+       [
+        "kind",
+        "Dialogue"
+       ],
+       [
+        "Layer",
+        "0"
+       ],
+       [
+        "Style",
+        "Top"
+       ],
+       [
+        "Name",
+        "Ann"
+       ],
+       [
+        "MarginL",
+        "0"
+       ],
+       [
+        "MarginR",
+        "0"
+       ],
+       [
+        "MarginV",
+        "0"
+       ],
+       [
+        "Effect",
+        ""
+       ]
+      ]
+     },
+     {
+      "start": 2000,
+      "end": 2500,
+      "text": "a note",
+      "extra": [
+       [
+        "kind",
+        "Comment"
+       ],
+       [
+        "Layer",
+        "0"
+       ],
+       [
+        "Style",
+        "Top"
+       ],
+       [
+        "Name",
+        ""
+       ],
+       [
+        "MarginL",
+        "0"
+       ],
+       [
+        "MarginR",
+        "0"
+       ],
+       [
+        "MarginV",
+        "0"
+       ],
+       [
+        "Effect",
+        ""
+       ]
+      ]
+     },
+     {
+      "start": 4050,
+      "end": 5000,
+      "text": "Comma, in, text",
+      "extra": [
+       [
+        "kind",
+        "Dialogue"
+       ],
+       [
+        "Layer",
+        "1"
+       ],
+       [
+        "Style",
+        "Top"
+       ],
+       [
+        "Name",
+        ""
+       ],
+       [
+        "MarginL",
+        "0"
+       ],
+       [
+        "MarginR",
+        "0"
+       ],
+       [
+        "MarginV",
+        "0"
+       ],
+       [
+        "Effect",
+        ""
+       ]
+      ]
+     }
+    ],
+    "header": "[Script Info]\n; made by hand\nScriptType: v4.00+\nPlayResY: 720\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Top,Arial,40,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,0,8,10,10,10,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
+    "footer": "[Fonts]\nfontname: x.ttf",
+    "fields": [
+     "Layer",
+     "Start",
+     "End",
+     "Style",
+     "Name",
+     "MarginL",
+     "MarginR",
+     "MarginV",
+     "Effect",
+     "Text"
+    ]
+   },
+   "write": {
+    "srt": "1\n00:00:01,000 --> 00:00:03,200\n<i>Hi</i>, you\nthere, ok\n\n2\n00:00:04,050 --> 00:00:05,000\nComma, in, text\n",
+    "vtt": "WEBVTT\n\n00:00:01.000 --> 00:00:03.200\n<i>Hi</i>, you\nthere, ok\n\n00:00:04.050 --> 00:00:05.000\nComma, in, text\n",
+    "ass": "[Script Info]\n; made by hand\nScriptType: v4.00+\nPlayResY: 720\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Top,Arial,40,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,0,8,10,10,10,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\nDialogue: 0,0:00:01.00,0:00:03.20,Top,Ann,0,0,0,,{\\i1}Hi{\\i0}, you\\Nthere, {\\pos(10,20)}ok\nComment: 0,0:00:02.00,0:00:02.50,Top,,0,0,0,,a note\nDialogue: 1,0:00:04.05,0:00:05.00,Top,,0,0,0,,Comma, in, text\n\n[Fonts]\nfontname: x.ttf\n",
+    "ssa": {
+     "error": "Only SSA files can be saved as SSA; choose ASS instead."
+    },
+    "lrc": "[00:01.00]Hi, you there, ok\n[00:03.20]\n[00:04.05]Comma, in, text\n[00:05.00]\n"
+   },
+   "lost": {
+    "srt": [
+     "styles, positions and effects",
+     "comment lines"
+    ],
+    "vtt": [
+     "styles, positions and effects",
+     "comment lines"
+    ],
+    "ass": [],
+    "ssa": [],
+    "lrc": [
+     "styles, positions and effects",
+     "comment lines",
+     "italic / bold text",
+     "line breaks (LRC has one line per subtitle)"
+    ]
+   },
+   "save_formats": [
+    "ass",
+    "srt",
+    "vtt",
+    "lrc"
+   ],
+   "problems": []
+  },
+  {
+   "name": "ssa",
+   "format": "ssa",
+   "text": "[Script Info]\nScriptType: v4.00\n\n[V4 Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, TertiaryColour, BackColour, Bold, Italic, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, AlphaLevel, Encoding\nStyle: Default,Arial,20,16777215,65535,65535,0,0,0,1,2,0,2,10,10,10,0,0\n\n[Events]\nFormat: Marked, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\nDialogue: Marked=0,0:00:00.50,0:00:01.50,Default,,0000,0000,0000,,Old {\\b1}style{\\b0}\n",
+   "doc": {
+    "format": "ssa",
+    "cues": [
+     {
+      "start": 500,
+      "end": 1500,
+      "text": "Old {\\b1}style{\\b0}",
+      "extra": [
+       [
+        "kind",
+        "Dialogue"
+       ],
+       [
+        "Marked",
+        "Marked=0"
+       ],
+       [
+        "Style",
+        "Default"
+       ],
+       [
+        "Name",
+        ""
+       ],
+       [
+        "MarginL",
+        "0000"
+       ],
+       [
+        "MarginR",
+        "0000"
+       ],
+       [
+        "MarginV",
+        "0000"
+       ],
+       [
+        "Effect",
+        ""
+       ]
+      ]
+     }
+    ],
+    "header": "[Script Info]\nScriptType: v4.00\n\n[V4 Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, TertiaryColour, BackColour, Bold, Italic, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, AlphaLevel, Encoding\nStyle: Default,Arial,20,16777215,65535,65535,0,0,0,1,2,0,2,10,10,10,0,0\n\n[Events]\nFormat: Marked, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
+    "footer": "",
+    "fields": [
+     "Marked",
+     "Start",
+     "End",
+     "Style",
+     "Name",
+     "MarginL",
+     "MarginR",
+     "MarginV",
+     "Effect",
+     "Text"
+    ]
+   },
+   "write": {
+    "srt": "1\n00:00:00,500 --> 00:00:01,500\nOld <b>style</b>\n",
+    "vtt": "WEBVTT\n\n00:00:00.500 --> 00:00:01.500\nOld <b>style</b>\n",
+    "ass": "[Script Info]\nScriptType: v4.00\n\n[V4 Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, TertiaryColour, BackColour, Bold, Italic, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, AlphaLevel, Encoding\nStyle: Default,Arial,20,16777215,65535,65535,0,0,0,1,2,0,2,10,10,10,0,0\n\n[Events]\nFormat: Marked, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\nDialogue: Marked=0,0:00:00.50,0:00:01.50,Default,,0000,0000,0000,,Old {\\b1}style{\\b0}\n",
+    "ssa": "[Script Info]\nScriptType: v4.00\n\n[V4 Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, TertiaryColour, BackColour, Bold, Italic, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, AlphaLevel, Encoding\nStyle: Default,Arial,20,16777215,65535,65535,0,0,0,1,2,0,2,10,10,10,0,0\n\n[Events]\nFormat: Marked, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\nDialogue: Marked=0,0:00:00.50,0:00:01.50,Default,,0000,0000,0000,,Old {\\b1}style{\\b0}\n",
+    "lrc": "[00:00.50]Old style\n[00:01.50]\n"
+   },
+   "lost": {
+    "srt": [
+     "styles, positions and effects"
+    ],
+    "vtt": [
+     "styles, positions and effects"
+    ],
+    "ass": [],
+    "ssa": [],
+    "lrc": [
+     "styles, positions and effects",
+     "italic / bold text"
+    ]
+   },
+   "save_formats": [
+    "ssa",
+    "srt",
+    "vtt",
+    "ass",
+    "lrc"
+   ],
+   "problems": []
+  },
+  {
+   "name": "lrc",
+   "format": "lrc",
+   "text": "[ti:Song]\n[ar:Someone]\n[00:01.00]First\n[00:03.50][01:00.00]Twice\n[00:05.00]\n[00:06.5]Third <00:07.00>word\n[00:20.123]Last\n",
+   "doc": {
+    "format": "lrc",
+    "cues": [
+     {
+      "start": 1000,
+      "end": 3500,
+      "text": "First",
+      "extra": []
+     },
+     {
+      "start": 3500,
+      "end": 5000,
+      "text": "Twice",
+      "extra": []
+     },
+     {
+      "start": 6500,
+      "end": 20123,
+      "text": "Third <00:07.00>word",
+      "extra": []
+     },
+     {
+      "start": 20123,
+      "end": 60000,
+      "text": "Last",
+      "extra": []
+     },
+     {
+      "start": 60000,
+      "end": 64000,
+      "text": "Twice",
+      "extra": []
+     }
+    ],
+    "header": "[ti:Song]\n[ar:Someone]",
+    "footer": "",
+    "fields": []
+   },
+   "write": {
+    "srt": "1\n00:00:01,000 --> 00:00:03,500\nFirst\n\n2\n00:00:03,500 --> 00:00:05,000\nTwice\n\n3\n00:00:06,500 --> 00:00:20,123\nThird word\n\n4\n00:00:20,123 --> 00:01:00,000\nLast\n\n5\n00:01:00,000 --> 00:01:04,000\nTwice\n",
+    "vtt": "WEBVTT\n\n00:00:01.000 --> 00:00:03.500\nFirst\n\n00:00:03.500 --> 00:00:05.000\nTwice\n\n00:00:06.500 --> 00:00:20.123\nThird word\n\n00:00:20.123 --> 00:01:00.000\nLast\n\n00:01:00.000 --> 00:01:04.000\nTwice\n",
+    "ass": "[Script Info]\nScriptType: v4.00+\nPlayResX: 1920\nPlayResY: 1080\nWrapStyle: 0\nScaledBorderAndShadow: yes\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,Arial,64,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,3,1,2,40,40,50,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\nDialogue: 0,0:00:01.00,0:00:03.50,Default,,0,0,0,,First\nDialogue: 0,0:00:03.50,0:00:05.00,Default,,0,0,0,,Twice\nDialogue: 0,0:00:06.50,0:00:20.12,Default,,0,0,0,,Third word\nDialogue: 0,0:00:20.12,0:01:00.00,Default,,0,0,0,,Last\nDialogue: 0,0:01:00.00,0:01:04.00,Default,,0,0,0,,Twice\n",
+    "ssa": {
+     "error": "Only SSA files can be saved as SSA; choose ASS instead."
+    },
+    "lrc": "[ti:Song]\n[ar:Someone]\n[00:01.00]First\n[00:03.50]Twice\n[00:05.00]\n[00:06.50]Third <00:07.00>word\n[00:20.12]Last\n[01:00.00]Twice\n"
+   },
+   "lost": {
+    "srt": [
+     "song details (title, artist …)"
+    ],
+    "vtt": [
+     "song details (title, artist …)"
+    ],
+    "ass": [
+     "song details (title, artist …)"
+    ],
+    "ssa": [
+     "song details (title, artist …)"
+    ],
+    "lrc": []
+   },
+   "save_formats": [
+    "lrc",
+    "srt",
+    "vtt",
+    "ass"
+   ],
+   "problems": []
+  },
+  {
+   "name": "smi",
+   "format": "smi",
+   "text": "<SAMI><HEAD><TITLE>x</TITLE></HEAD><BODY>\n<SYNC Start=1000><P Class=ENCC>Hello<br><i>world</i>\n<SYNC Start=2500><P Class=ENCC>&nbsp;\n<SYNC Start=3000><P>A &amp; B\n</BODY></SAMI>\n",
+   "doc": {
+    "format": "smi",
+    "cues": [
+     {
+      "start": 1000,
+      "end": 2500,
+      "text": "Hello\n<i>world</i>",
+      "extra": []
+     },
+     {
+      "start": 3000,
+      "end": 7000,
+      "text": "A & B",
+      "extra": []
+     }
+    ],
+    "header": "",
+    "footer": "",
+    "fields": []
+   },
+   "write": {
+    "srt": "1\n00:00:01,000 --> 00:00:02,500\nHello\n<i>world</i>\n\n2\n00:00:03,000 --> 00:00:07,000\nA & B\n",
+    "vtt": "WEBVTT\n\n00:00:01.000 --> 00:00:02.500\nHello\n<i>world</i>\n\n00:00:03.000 --> 00:00:07.000\nA & B\n",
+    "ass": "[Script Info]\nScriptType: v4.00+\nPlayResX: 1920\nPlayResY: 1080\nWrapStyle: 0\nScaledBorderAndShadow: yes\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,Arial,64,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,3,1,2,40,40,50,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\nDialogue: 0,0:00:01.00,0:00:02.50,Default,,0,0,0,,Hello\\N{\\i1}world{\\i0}\nDialogue: 0,0:00:03.00,0:00:07.00,Default,,0,0,0,,A & B\n",
+    "ssa": {
+     "error": "Only SSA files can be saved as SSA; choose ASS instead."
+    },
+    "lrc": "[00:01.00]Hello world\n[00:02.50]\n[00:03.00]A & B\n"
+   },
+   "lost": {
+    "srt": [],
+    "vtt": [],
+    "ass": [],
+    "ssa": [],
+    "lrc": [
+     "italic / bold text",
+     "line breaks (LRC has one line per subtitle)"
+    ]
+   },
+   "save_formats": [
+    "srt",
+    "vtt",
+    "ass",
+    "lrc"
+   ],
+   "problems": []
+  },
+  {
+   "name": "srt empty",
+   "format": "srt",
+   "text": "",
+   "doc": {
+    "format": "srt",
+    "cues": [],
+    "header": "",
+    "footer": "",
+    "fields": []
+   },
+   "write": {
+    "srt": "",
+    "vtt": "WEBVTT\n",
+    "ass": "[Script Info]\nScriptType: v4.00+\nPlayResX: 1920\nPlayResY: 1080\nWrapStyle: 0\nScaledBorderAndShadow: yes\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,Arial,64,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,3,1,2,40,40,50,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n",
+    "ssa": {
+     "error": "Only SSA files can be saved as SSA; choose ASS instead."
+    },
+    "lrc": "\n"
+   },
+   "lost": {
+    "srt": [],
+    "vtt": [],
+    "ass": [],
+    "ssa": [],
+    "lrc": []
+   },
+   "save_formats": [
+    "srt",
+    "vtt",
+    "ass",
+    "lrc"
+   ],
+   "problems": []
+  }
+ ],
+ "base": [
+  {
+   "start": 1000,
+   "end": 2000,
+   "text": "One two three four",
+   "extra": []
+  },
+  {
+   "start": 2500,
+   "end": 4000,
+   "text": "Line a\nLine b",
+   "extra": [
+    [
+     "id",
+     "x"
+    ],
+    [
+     "kind",
+     "Dialogue"
+    ]
+   ]
+  },
+  {
+   "start": 5000,
+   "end": 5000,
+   "text": "",
+   "extra": []
+  },
+  {
+   "start": 4500,
+   "end": 9000,
+   "text": "Overlapping text that is quite a lot longer than forty two characters",
+   "extra": []
+  }
+ ],
+ "edits": [
+  {
+   "op": "set_text",
+   "args": {
+    "i": 0,
+    "text": "new"
+   },
+   "result": {
+    "cues": [
+     {
+      "start": 1000,
+      "end": 2000,
+      "text": "new",
+      "extra": []
+     },
+     {
+      "start": 2500,
+      "end": 4000,
+      "text": "Line a\nLine b",
+      "extra": [
+       [
+        "id",
+        "x"
+       ],
+       [
+        "kind",
+        "Dialogue"
+       ]
+      ]
+     },
+     {
+      "start": 5000,
+      "end": 5000,
+      "text": "",
+      "extra": []
+     },
+     {
+      "start": 4500,
+      "end": 9000,
+      "text": "Overlapping text that is quite a lot longer than forty two characters",
+      "extra": []
+     }
+    ]
+   }
+  },
+  {
+   "op": "set_times",
+   "args": {
+    "i": 0,
+    "start": 2500
+   },
+   "result": {
+    "cues": [
+     {
+      "start": 2500,
+      "end": 2500,
+      "text": "One two three four",
+      "extra": []
+     },
+     {
+      "start": 2500,
+      "end": 4000,
+      "text": "Line a\nLine b",
+      "extra": [
+       [
+        "id",
+        "x"
+       ],
+       [
+        "kind",
+        "Dialogue"
+       ]
+      ]
+     },
+     {
+      "start": 5000,
+      "end": 5000,
+      "text": "",
+      "extra": []
+     },
+     {
+      "start": 4500,
+      "end": 9000,
+      "text": "Overlapping text that is quite a lot longer than forty two characters",
+      "extra": []
+     }
+    ]
+   }
+  },
+  {
+   "op": "set_times",
+   "args": {
+    "i": 1,
+    "end": 2000
+   },
+   "result": {
+    "cues": [
+     {
+      "start": 1000,
+      "end": 2000,
+      "text": "One two three four",
+      "extra": []
+     },
+     {
+      "start": 2000,
+      "end": 2000,
+      "text": "Line a\nLine b",
+      "extra": [
+       [
+        "id",
+        "x"
+       ],
+       [
+        "kind",
+        "Dialogue"
+       ]
+      ]
+     },
+     {
+      "start": 5000,
+      "end": 5000,
+      "text": "",
+      "extra": []
+     },
+     {
+      "start": 4500,
+      "end": 9000,
+      "text": "Overlapping text that is quite a lot longer than forty two characters",
+      "extra": []
+     }
+    ]
+   }
+  },
+  {
+   "op": "set_times",
+   "args": {
+    "i": 1,
+    "start": -5
+   },
+   "result": {
+    "cues": [
+     {
+      "start": 1000,
+      "end": 2000,
+      "text": "One two three four",
+      "extra": []
+     },
+     {
+      "start": 0,
+      "end": 4000,
+      "text": "Line a\nLine b",
+      "extra": [
+       [
+        "id",
+        "x"
+       ],
+       [
+        "kind",
+        "Dialogue"
+       ]
+      ]
+     },
+     {
+      "start": 5000,
+      "end": 5000,
+      "text": "",
+      "extra": []
+     },
+     {
+      "start": 4500,
+      "end": 9000,
+      "text": "Overlapping text that is quite a lot longer than forty two characters",
+      "extra": []
+     }
+    ]
+   }
+  },
+  {
+   "op": "set_length",
+   "args": {
+    "i": 1,
+    "length": 700
+   },
+   "result": {
+    "cues": [
+     {
+      "start": 1000,
+      "end": 2000,
+      "text": "One two three four",
+      "extra": []
+     },
+     {
+      "start": 2500,
+      "end": 3200,
+      "text": "Line a\nLine b",
+      "extra": [
+       [
+        "id",
+        "x"
+       ],
+       [
+        "kind",
+        "Dialogue"
+       ]
+      ]
+     },
+     {
+      "start": 5000,
+      "end": 5000,
+      "text": "",
+      "extra": []
+     },
+     {
+      "start": 4500,
+      "end": 9000,
+      "text": "Overlapping text that is quite a lot longer than forty two characters",
+      "extra": []
+     }
+    ]
+   }
+  },
+  {
+   "op": "shift",
+   "args": {
+    "delta": 1500
+   },
+   "result": {
+    "cues": [
+     {
+      "start": 2500,
+      "end": 3500,
+      "text": "One two three four",
+      "extra": []
+     },
+     {
+      "start": 4000,
+      "end": 5500,
+      "text": "Line a\nLine b",
+      "extra": [
+       [
+        "id",
+        "x"
+       ],
+       [
+        "kind",
+        "Dialogue"
+       ]
+      ]
+     },
+     {
+      "start": 6500,
+      "end": 6500,
+      "text": "",
+      "extra": []
+     },
+     {
+      "start": 6000,
+      "end": 10500,
+      "text": "Overlapping text that is quite a lot longer than forty two characters",
+      "extra": []
+     }
+    ]
+   }
+  },
+  {
+   "op": "shift",
+   "args": {
+    "delta": -3000
+   },
+   "result": {
+    "cues": [
+     {
+      "start": 0,
+      "end": 1000,
+      "text": "One two three four",
+      "extra": []
+     },
+     {
+      "start": 1500,
+      "end": 3000,
+      "text": "Line a\nLine b",
+      "extra": [
+       [
+        "id",
+        "x"
+       ],
+       [
+        "kind",
+        "Dialogue"
+       ]
+      ]
+     },
+     {
+      "start": 4000,
+      "end": 4000,
+      "text": "",
+      "extra": []
+     },
+     {
+      "start": 3500,
+      "end": 8000,
+      "text": "Overlapping text that is quite a lot longer than forty two characters",
+      "extra": []
+     }
+    ]
+   }
+  },
+  {
+   "op": "shift",
+   "args": {
+    "delta": -3000,
+    "indices": [
+     1,
+     3
+    ]
+   },
+   "result": {
+    "cues": [
+     {
+      "start": 1000,
+      "end": 2000,
+      "text": "One two three four",
+      "extra": []
+     },
+     {
+      "start": 0,
+      "end": 1500,
+      "text": "Line a\nLine b",
+      "extra": [
+       [
+        "id",
+        "x"
+       ],
+       [
+        "kind",
+        "Dialogue"
+       ]
+      ]
+     },
+     {
+      "start": 5000,
+      "end": 5000,
+      "text": "",
+      "extra": []
+     },
+     {
+      "start": 2000,
+      "end": 6500,
+      "text": "Overlapping text that is quite a lot longer than forty two characters",
+      "extra": []
+     }
+    ]
+   }
+  },
+  {
+   "op": "sync",
+   "args": {
+    "a": 0,
+    "a_time": 1500,
+    "b": 3,
+    "b_time": 10000
+   },
+   "result": {
+    "cues": [
+     {
+      "start": 1500,
+      "end": 3929,
+      "text": "One two three four",
+      "extra": []
+     },
+     {
+      "start": 5143,
+      "end": 8786,
+      "text": "Line a\nLine b",
+      "extra": [
+       [
+        "id",
+        "x"
+       ],
+       [
+        "kind",
+        "Dialogue"
+       ]
+      ]
+     },
+     {
+      "start": 11214,
+      "end": 11214,
+      "text": "",
+      "extra": []
+     },
+     {
+      "start": 10000,
+      "end": 20929,
+      "text": "Overlapping text that is quite a lot longer than forty two characters",
+      "extra": []
+     }
+    ]
+   }
+  },
+  {
+   "op": "sync",
+   "args": {
+    "a": 0,
+    "a_time": 0,
+    "b": 1,
+    "b_time": 1001
+   },
+   "result": {
+    "cues": [
+     {
+      "start": 0,
+      "end": 667,
+      "text": "One two three four",
+      "extra": []
+     },
+     {
+      "start": 1001,
+      "end": 2002,
+      "text": "Line a\nLine b",
+      "extra": [
+       [
+        "id",
+        "x"
+       ],
+       [
+        "kind",
+        "Dialogue"
+       ]
+      ]
+     },
+     {
+      "start": 2669,
+      "end": 2669,
+      "text": "",
+      "extra": []
+     },
+     {
+      "start": 2336,
+      "end": 5339,
+      "text": "Overlapping text that is quite a lot longer than forty two characters",
+      "extra": []
+     }
+    ]
+   }
+  },
+  {
+   "op": "add",
+   "args": {
+    "after": 0
+   },
+   "result": {
+    "cues": [
+     {
+      "start": 1000,
+      "end": 2000,
+      "text": "One two three four",
+      "extra": []
+     },
+     {
+      "start": 2000,
+      "end": 4000,
+      "text": "",
+      "extra": []
+     },
+     {
+      "start": 2500,
+      "end": 4000,
+      "text": "Line a\nLine b",
+      "extra": [
+       [
+        "id",
+        "x"
+       ],
+       [
+        "kind",
+        "Dialogue"
+       ]
+      ]
+     },
+     {
+      "start": 5000,
+      "end": 5000,
+      "text": "",
+      "extra": []
+     },
+     {
+      "start": 4500,
+      "end": 9000,
+      "text": "Overlapping text that is quite a lot longer than forty two characters",
+      "extra": []
+     }
+    ],
+    "value": 1
+   }
+  },
+  {
+   "op": "add",
+   "args": {
+    "after": 1
+   },
+   "result": {
+    "cues": [
+     {
+      "start": 1000,
+      "end": 2000,
+      "text": "One two three four",
+      "extra": []
+     },
+     {
+      "start": 2500,
+      "end": 4000,
+      "text": "Line a\nLine b",
+      "extra": [
+       [
+        "id",
+        "x"
+       ],
+       [
+        "kind",
+        "Dialogue"
+       ]
+      ]
+     },
+     {
+      "start": 4000,
+      "end": 5000,
+      "text": "",
+      "extra": [
+       [
+        "kind",
+        "Dialogue"
+       ]
+      ]
+     },
+     {
+      "start": 5000,
+      "end": 5000,
+      "text": "",
+      "extra": []
+     },
+     {
+      "start": 4500,
+      "end": 9000,
+      "text": "Overlapping text that is quite a lot longer than forty two characters",
+      "extra": []
+     }
+    ],
+    "value": 2
+   }
+  },
+  {
+   "op": "add",
+   "args": {
+    "after": -1
+   },
+   "result": {
+    "cues": [
+     {
+      "start": 0,
+      "end": 1000,
+      "text": "",
+      "extra": []
+     },
+     {
+      "start": 1000,
+      "end": 2000,
+      "text": "One two three four",
+      "extra": []
+     },
+     {
+      "start": 2500,
+      "end": 4000,
+      "text": "Line a\nLine b",
+      "extra": [
+       [
+        "id",
+        "x"
+       ],
+       [
+        "kind",
+        "Dialogue"
+       ]
+      ]
+     },
+     {
+      "start": 5000,
+      "end": 5000,
+      "text": "",
+      "extra": []
+     },
+     {
+      "start": 4500,
+      "end": 9000,
+      "text": "Overlapping text that is quite a lot longer than forty two characters",
+      "extra": []
+     }
+    ],
+    "value": 0
+   }
+  },
+  {
+   "op": "add",
+   "args": {
+    "after": 3,
+    "length": 500
+   },
+   "result": {
+    "cues": [
+     {
+      "start": 1000,
+      "end": 2000,
+      "text": "One two three four",
+      "extra": []
+     },
+     {
+      "start": 2500,
+      "end": 4000,
+      "text": "Line a\nLine b",
+      "extra": [
+       [
+        "id",
+        "x"
+       ],
+       [
+        "kind",
+        "Dialogue"
+       ]
+      ]
+     },
+     {
+      "start": 5000,
+      "end": 5000,
+      "text": "",
+      "extra": []
+     },
+     {
+      "start": 4500,
+      "end": 9000,
+      "text": "Overlapping text that is quite a lot longer than forty two characters",
+      "extra": []
+     },
+     {
+      "start": 9000,
+      "end": 9500,
+      "text": "",
+      "extra": []
+     }
+    ],
+    "value": 4
+   }
+  },
+  {
+   "op": "delete",
+   "args": {
+    "indices": [
+     0,
+     2
+    ]
+   },
+   "result": {
+    "cues": [
+     {
+      "start": 2500,
+      "end": 4000,
+      "text": "Line a\nLine b",
+      "extra": [
+       [
+        "id",
+        "x"
+       ],
+       [
+        "kind",
+        "Dialogue"
+       ]
+      ]
+     },
+     {
+      "start": 4500,
+      "end": 9000,
+      "text": "Overlapping text that is quite a lot longer than forty two characters",
+      "extra": []
+     }
+    ]
+   }
+  },
+  {
+   "op": "split",
+   "args": {
+    "i": 0
+   },
+   "result": {
+    "cues": [
+     {
+      "start": 1000,
+      "end": 1412,
+      "text": "One two",
+      "extra": []
+     },
+     {
+      "start": 1412,
+      "end": 2000,
+      "text": "three four",
+      "extra": []
+     },
+     {
+      "start": 2500,
+      "end": 4000,
+      "text": "Line a\nLine b",
+      "extra": [
+       [
+        "id",
+        "x"
+       ],
+       [
+        "kind",
+        "Dialogue"
+       ]
+      ]
+     },
+     {
+      "start": 5000,
+      "end": 5000,
+      "text": "",
+      "extra": []
+     },
+     {
+      "start": 4500,
+      "end": 9000,
+      "text": "Overlapping text that is quite a lot longer than forty two characters",
+      "extra": []
+     }
+    ]
+   }
+  },
+  {
+   "op": "split",
+   "args": {
+    "i": 0,
+    "at": 3
+   },
+   "result": {
+    "cues": [
+     {
+      "start": 1000,
+      "end": 1176,
+      "text": "One",
+      "extra": []
+     },
+     {
+      "start": 1176,
+      "end": 2000,
+      "text": "two three four",
+      "extra": []
+     },
+     {
+      "start": 2500,
+      "end": 4000,
+      "text": "Line a\nLine b",
+      "extra": [
+       [
+        "id",
+        "x"
+       ],
+       [
+        "kind",
+        "Dialogue"
+       ]
+      ]
+     },
+     {
+      "start": 5000,
+      "end": 5000,
+      "text": "",
+      "extra": []
+     },
+     {
+      "start": 4500,
+      "end": 9000,
+      "text": "Overlapping text that is quite a lot longer than forty two characters",
+      "extra": []
+     }
+    ]
+   }
+  },
+  {
+   "op": "split",
+   "args": {
+    "i": 1
+   },
+   "result": {
+    "cues": [
+     {
+      "start": 1000,
+      "end": 2000,
+      "text": "One two three four",
+      "extra": []
+     },
+     {
+      "start": 2500,
+      "end": 3250,
+      "text": "Line a",
+      "extra": [
+       [
+        "id",
+        "x"
+       ],
+       [
+        "kind",
+        "Dialogue"
+       ]
+      ]
+     },
+     {
+      "start": 3250,
+      "end": 4000,
+      "text": "Line b",
+      "extra": [
+       [
+        "kind",
+        "Dialogue"
+       ]
+      ]
+     },
+     {
+      "start": 5000,
+      "end": 5000,
+      "text": "",
+      "extra": []
+     },
+     {
+      "start": 4500,
+      "end": 9000,
+      "text": "Overlapping text that is quite a lot longer than forty two characters",
+      "extra": []
+     }
+    ]
+   }
+  },
+  {
+   "op": "split",
+   "args": {
+    "i": 2
+   },
+   "result": {
+    "cues": [
+     {
+      "start": 1000,
+      "end": 2000,
+      "text": "One two three four",
+      "extra": []
+     },
+     {
+      "start": 2500,
+      "end": 4000,
+      "text": "Line a\nLine b",
+      "extra": [
+       [
+        "id",
+        "x"
+       ],
+       [
+        "kind",
+        "Dialogue"
+       ]
+      ]
+     },
+     {
+      "start": 5000,
+      "end": 5000,
+      "text": "",
+      "extra": []
+     },
+     {
+      "start": 5000,
+      "end": 5000,
+      "text": "",
+      "extra": []
+     },
+     {
+      "start": 4500,
+      "end": 9000,
+      "text": "Overlapping text that is quite a lot longer than forty two characters",
+      "extra": []
+     }
+    ]
+   }
+  },
+  {
+   "op": "join",
+   "args": {
+    "indices": [
+     1,
+     0
+    ]
+   },
+   "result": {
+    "cues": [
+     {
+      "start": 1000,
+      "end": 4000,
+      "text": "One two three four\nLine a\nLine b",
+      "extra": []
+     },
+     {
+      "start": 5000,
+      "end": 5000,
+      "text": "",
+      "extra": []
+     },
+     {
+      "start": 4500,
+      "end": 9000,
+      "text": "Overlapping text that is quite a lot longer than forty two characters",
+      "extra": []
+     }
+    ],
+    "value": 0
+   }
+  },
+  {
+   "op": "join",
+   "args": {
+    "indices": [
+     0,
+     2,
+     3
+    ]
+   },
+   "result": {
+    "cues": [
+     {
+      "start": 1000,
+      "end": 9000,
+      "text": "One two three four\nOverlapping text that is quite a lot longer than forty two characters",
+      "extra": []
+     },
+     {
+      "start": 2500,
+      "end": 4000,
+      "text": "Line a\nLine b",
+      "extra": [
+       [
+        "id",
+        "x"
+       ],
+       [
+        "kind",
+        "Dialogue"
+       ]
+      ]
+     }
+    ],
+    "value": 0
+   }
+  },
+  {
+   "op": "sort",
+   "args": {},
+   "result": {
+    "cues": [
+     {
+      "start": 1000,
+      "end": 2000,
+      "text": "One two three four",
+      "extra": []
+     },
+     {
+      "start": 2500,
+      "end": 4000,
+      "text": "Line a\nLine b",
+      "extra": [
+       [
+        "id",
+        "x"
+       ],
+       [
+        "kind",
+        "Dialogue"
+       ]
+      ]
+     },
+     {
+      "start": 4500,
+      "end": 9000,
+      "text": "Overlapping text that is quite a lot longer than forty two characters",
+      "extra": []
+     },
+     {
+      "start": 5000,
+      "end": 5000,
+      "text": "",
+      "extra": []
+     }
+    ]
+   }
+  },
+  {
+   "op": "replace_all",
+   "args": {
+    "query": "line",
+    "replacement": "Row",
+    "case": false,
+    "whole_word": true,
+    "regex": false
+   },
+   "result": {
+    "cues": [
+     {
+      "start": 1000,
+      "end": 2000,
+      "text": "One two three four",
+      "extra": []
+     },
+     {
+      "start": 2500,
+      "end": 4000,
+      "text": "Row a\nRow b",
+      "extra": [
+       [
+        "id",
+        "x"
+       ],
+       [
+        "kind",
+        "Dialogue"
+       ]
+      ]
+     },
+     {
+      "start": 5000,
+      "end": 5000,
+      "text": "",
+      "extra": []
+     },
+     {
+      "start": 4500,
+      "end": 9000,
+      "text": "Overlapping text that is quite a lot longer than forty two characters",
+      "extra": []
+     }
+    ],
+    "value": 2
+   }
+  },
+  {
+   "op": "replace_all",
+   "args": {
+    "query": "(\\w+) (\\w+)",
+    "replacement": "\\2 \\1",
+    "case": true,
+    "whole_word": false,
+    "regex": true
+   },
+   "result": {
+    "cues": [
+     {
+      "start": 1000,
+      "end": 2000,
+      "text": "two One four three",
+      "extra": []
+     },
+     {
+      "start": 2500,
+      "end": 4000,
+      "text": "a Line\nb Line",
+      "extra": [
+       [
+        "id",
+        "x"
+       ],
+       [
+        "kind",
+        "Dialogue"
+       ]
+      ]
+     },
+     {
+      "start": 5000,
+      "end": 5000,
+      "text": "",
+      "extra": []
+     },
+     {
+      "start": 4500,
+      "end": 9000,
+      "text": "text Overlapping is that a quite longer lot forty than characters two",
+      "extra": []
+     }
+    ],
+    "value": 10
+   }
+  },
+  {
+   "op": "cue_at",
+   "args": {
+    "ms": 4600
+   },
+   "result": [
+    3
+   ]
+  }
+ ],
+ "base_problems": [
+  {
+   "index": 2,
+   "kind": "empty",
+   "message": "No text"
+  },
+  {
+   "index": 2,
+   "kind": "backwards",
+   "message": "Ends before it starts"
+  },
+  {
+   "index": 3,
+   "kind": "overlap",
+   "message": "Starts before line 3 ends"
+  },
+  {
+   "index": 3,
+   "kind": "long",
+   "message": "A line is 69 characters long"
+  }
+ ],
+ "markup": [
+  {
+   "text": "{\\i1}a{\\i0} {\\b1\\fs20}b{\\b0}\\hc {\\pos(1,2)}d",
+   "src": "ass",
+   "dst": "srt",
+   "out": "<i>a</i> <b>b</b> c d"
+  },
+  {
+   "text": "{\\i1}a{\\i0}",
+   "src": "ass",
+   "dst": "lrc",
+   "out": "a"
+  },
+  {
+   "text": "<i>a</i> <font color=red>b</font> {x}",
+   "src": "srt",
+   "dst": "ass",
+   "out": "{\\i1}a{\\i0} b (x)"
+  },
+  {
+   "text": "<v Bob>a</v> <c.x>b</c> <00:01.000>c <B>d</B>",
+   "src": "vtt",
+   "dst": "srt",
+   "out": "a b c <b>d</b>"
+  },
+  {
+   "text": "<i>a</i> <font color=red>b</font>",
+   "src": "srt",
+   "dst": "vtt",
+   "out": "<i>a</i> b"
+  },
+  {
+   "text": "<i>a</i> <b>b",
+   "src": "smi",
+   "dst": "lrc",
+   "out": "a b"
+  },
+  {
+   "text": "<i>a</i> < 3",
+   "src": "srt",
+   "dst": "srt",
+   "out": "<i>a</i> < 3"
+  },
+  {
+   "text": "plain <tag>",
+   "src": "lrc",
+   "dst": "srt",
+   "out": "plain "
+  }
+ ],
+ "clock": [
+  [
+   0,
+   "0:00:00.000"
+  ],
+  [
+   999,
+   "0:00:00.999"
+  ],
+  [
+   61005,
+   "0:01:01.005"
+  ],
+  [
+   3723004,
+   "1:02:03.004"
+  ],
+  [
+   360000000,
+   "100:00:00.000"
+  ]
+ ]
+}

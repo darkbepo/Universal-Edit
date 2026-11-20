@@ -64,7 +64,7 @@ function decodeText(body: Uint8Array, encoding: Encoding): string {
   }).decode(body);
 }
 
-function newlines(text: string): [Newline, boolean] {
+export function newlines(text: string): [Newline, boolean] {
   const count = (s: string) => text.split(s).length - 1;
   const crlf = count("\r\n");
   const counts: [number, Newline][] = [[crlf, "\r\n"], [count("\n") - crlf, "\n"], [count("\r") - crlf, "\r"]];

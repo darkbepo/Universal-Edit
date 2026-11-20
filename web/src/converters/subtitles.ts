@@ -20,7 +20,7 @@ export const ISO639_2: Record<string, string> = {
   uk: "ukr", ar: "ara", he: "heb", hi: "hin", fa: "per", zh: "chi", ja: "jpn", ko: "kor", vi: "vie", th: "tha", id: "ind",
   hr: "hrv", sr: "srp", bg: "bul", et: "est", lv: "lav", lt: "lit", sl: "slv", ca: "cat", eu: "baq",
 };
-const CHARSETS: [string, string][] = [
+export const CHARSETS: [string, string][] = [
   ["windows-1252", "Western European (Windows-1252)"], ["iso-8859-1", "Latin-1 (ISO-8859-1)"],
   ["windows-1250", "Central European (Windows-1250)"], ["windows-1251", "Cyrillic (Windows-1251)"],
   ["windows-1253", "Greek (Windows-1253)"], ["windows-1254", "Turkish (Windows-1254)"], ["windows-1256", "Arabic (Windows-1256)"],
