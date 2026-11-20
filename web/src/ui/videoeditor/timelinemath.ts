@@ -225,10 +225,11 @@ export function zoom(v: View, factor: number, anchorX?: number): { pps: number; 
   return { pps, scroll: Math.max(0, at - (ax - v.m.header) / pps) };
 }
 
+/** `deltaY` is the DOM `WheelEvent.deltaY` as is (positive = wheel down): with Ctrl it zooms out at x (up zooms in), otherwise it scrolls right (up scrolls left) by delta/120 * 60 px. */
 export function wheel(v: View, deltaY: number, ctrl: boolean, x: number): { pps: number; scroll: number } {
-  if (ctrl) return zoom(v, deltaY > 0 ? ZOOM_STEP : 1 / ZOOM_STEP, x);
+  if (ctrl) return zoom(v, deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP, x);
   const shift = ((deltaY / 120) * 60) / v.pps;
-  return { pps: v.pps, scroll: Math.max(0, v.scroll - shift) };
+  return { pps: v.pps, scroll: Math.max(0, v.scroll + shift) };
 }
 
 /** New scroll for playback: the view pages when the playhead leaves it. */

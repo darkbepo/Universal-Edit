@@ -67,7 +67,7 @@ describe("hitTest", () => {
     const bx = tl.xFor(s.v, 2);
     const y = 52 + 40;
     expect(tl.hitTest(s.v, s.p, s.spans, s.rs, bx, y)).toEqual({ itemId: a.id, part: "right" });
-    expect(tl.hitTest(s.v, s.p, s.spans, s.rs, bx + 1, y)).toEqual({ itemId: b.id, part: "left" }); // nearer to b's left? 1 vs 1.0 + 0.5
+    expect(tl.hitTest(s.v, s.p, s.spans, s.rs, bx + 1, y)).toEqual({ itemId: b.id, part: "left" }); // 1 px inside b: left edge 1.0 beats a's right edge 1.5
   });
 
   it("finds the transition tab, then edges below it, and bodies", () => {
@@ -127,7 +127,7 @@ describe("snapping", () => {
     const s = setup(clip2(threeClips()), { playhead: 20 });
     const c = s.p.main[2];
     expect(tl.snapMove(s.v, s.spans, 0.04, 3, c.id, false)).toBe(0);
-    expect(tl.snapMove(s.v, s.spans, 3.06, 2.98, "none", false)).toBeCloseTo(3.02, 9); 
+    expect(tl.snapMove(s.v, s.spans, 3.06, 2.98, "none", false)).toBeCloseTo(3.02, 9);
     expect(tl.snapMove(s.v, s.spans, 3.01, 3.0, c.id, true)).toBe(3.01);
   });
 });
@@ -214,9 +214,10 @@ describe("zoom and scroll", () => {
 
   it("zooms with ctrl and scrolls without", () => {
     const { v } = setup(newProject(), { scroll: 2 });
-    expect(tl.wheel(v, 120, true, 400).pps).toBeCloseTo(100, 9);
-    expect(tl.wheel(v, -120, false, 400)).toEqual({ pps: 80, scroll: 2 + 60 / 80 });
-    expect(tl.wheel(v, 1200, false, 400).scroll).toBe(0);
+    expect(tl.wheel(v, -120, true, 400).pps).toBeCloseTo(100, 9);
+    expect(tl.wheel(v, 120, true, 400).pps).toBeCloseTo(64, 9);
+    expect(tl.wheel(v, 120, false, 400)).toEqual({ pps: 80, scroll: 2 + 60 / 80 });
+    expect(tl.wheel(v, -1200, false, 400).scroll).toBe(0);
   });
 
   it("pages the view for playback", () => {
