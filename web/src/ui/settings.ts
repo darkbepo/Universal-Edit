@@ -138,6 +138,12 @@ export class SettingsForm {
       input.addEventListener("change", this.changed);
       cell.append(input);
       field.get = () => input.files?.[0] ?? null;
+    } else if (spec.kind === "textarea") {
+      const area = Object.assign(document.createElement("textarea"), { id, value: String(value ?? ""), rows: 3 });
+      area.addEventListener("input", this.changed);
+      cell.append(area);
+      field.get = () => area.value;
+      field.set = (v) => (area.value = String(v ?? ""));
     } else {
       const input = Object.assign(document.createElement("input"), {
         type: spec.kind === "password" ? "password" : "text", id, value: String(value ?? ""),
@@ -147,6 +153,7 @@ export class SettingsForm {
       input.addEventListener("input", this.changed);
       cell.append(input);
       field.get = () => input.value;
+      field.set = (v) => (input.value = String(v ?? ""));
     }
     if (spec.help) {
       const help = document.createElement("div");

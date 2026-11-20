@@ -4,15 +4,23 @@
 // ui/app.ts, only behind the test gate.
 import { canonicalExt, PROJECT_EXTS } from "../../core/detect";
 import { ConversionError, type InputFile } from "../../core/types";
-import { addAt, addSources, addText } from "../../videoedit/edits";
+import { addAt, addSources, addText, applyChanges, remove, split, update } from "../../videoedit/edits";
 import { History } from "../../videoedit/history";
 import { setLimitsForTests, type LIMITS } from "../../videoedit/limits";
-import { length, newProject, type Project, type Source } from "../../videoedit/project";
+import {
+  NO_TRANSITION, find, layout, length, newProject, outputFps, textItem, type Project, type Source, type TextItem,
+} from "../../videoedit/project";
+import { changeLabel, targetOf } from "../../videoedit/schemas";
 import { projectFrom } from "../../videoedit/start";
 import type { ConversionClient } from "../../worker/client";
 import { backLabel } from "../back";
+import { loadBundledFonts } from "./fonts";
+import { Inspector } from "./inspector";
 import { MediaList } from "./media";
+import { actionFor, type ActionId } from "./shortcuts";
 import { Abandoned, SourceBank } from "./sources";
+import { TimelineView } from "./timeline";
+import { frameNumber } from "./timelinemath";
 
 const h = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> & { class?: string } = {}, ...children: (Node | string)[]) => {
   const el = document.createElement(tag);
@@ -36,13 +44,17 @@ export class VideoEditorPage {
   private message = h("div", { class: "msg" });
   private error = "";
   private buttons = new Map<string, HTMLButtonElement>();
-  private timeline = h("div", { class: "video-timeline", ariaLabel: "Timeline" });
+  private timelineBox = h("div", { class: "video-timeline" });
+  private timeline: TimelineView;
+  private inspector: Inspector;
   private bank: SourceBank;
   private media: MediaList;
   private history: History | null = null;
   private notes: Map<string, string> = new Map();
   private playhead = 0;
   private selected: string | null = null;
+  /** An inspector edit being made: previewed, pushed as one step once it's finished. */
+  private pending: { project: Project; label: string } | null = null;
   /** Opening / adding files: one batch after the other. */
   private work: Promise<unknown> = Promise.resolve();
   /** Bumped by every new project and on leaving, so a batch still probing doesn't fill it. */
@@ -55,7 +67,18 @@ export class VideoEditorPage {
     this.media = new MediaList({
       add: (id) => this.addSourceAtPlayhead(id),
       files: () => this.media.picker.click(),
-      text: () => this.apply((p) => addText(p, this.playhead), "Add text"),
+      text: () => this.addText(),
+    });
+    this.timeline = new TimelineView({
+      edit: (p, label) => this.timelineEdit(p, label),
+      seek: (t) => this.seek(t),
+      select: (id) => this.select(id),
+      drop: (id, t, kind, row) => this.addSource(id, t, kind === "music" ? row : 0),
+    });
+    this.timelineBox.append(this.timeline.el);
+    this.inspector = new Inspector({
+      change: (changes) => this.inspectorChanged(changes),
+      commit: () => this.flushPending(),
     });
     this.media.picker.addEventListener("change", () => {
       const picked = [...(this.media.picker.files ?? [])];
@@ -83,8 +106,8 @@ export class VideoEditorPage {
       h("div", { class: "video-body" },
         h("div", { class: "video-media", ariaLabel: "Media" }, this.media.el),
         h("div", { class: "video-preview", ariaLabel: "Preview" }),
-        h("div", { class: "video-inspector", ariaLabel: "Inspector" }),
-        this.timeline),
+        h("div", { class: "video-inspector", ariaLabel: "Inspector" }, this.inspector.el),
+        this.timelineBox),
       h("div", { class: "editor-status" }, this.message));
     if (location.search.includes("e2e")) (window as unknown as { __videoeditor: unknown }).__videoeditor = this.hook();
   }
@@ -95,9 +118,25 @@ export class VideoEditorPage {
     const page = this;
     return {
       project: (): Project | null => page.history?.project ?? null,
+      /** What the page shows: the project with an inspector edit still being made. */
+      shown: (): Project | null => page.shownProject(),
       get history() {
         const hi = page.history;
-        return { canUndo: hi?.canUndo ?? false, undoLabel: hi?.undoLabel ?? "", dirty: hi?.dirty ?? false };
+        return { canUndo: hi?.canUndo ?? false, undoLabel: hi?.undoLabel ?? "", dirty: hi?.dirty ?? false, steps: hi?.steps ?? 0 };
+      },
+      spans: () => {
+        const p = page.shownProject();
+        return p ? Object.fromEntries(layout(p)) : {};
+      },
+      view: () => page.timeline.view(),
+      rows: () => page.timeline.rows(),
+      label: (id: string) => page.timeline.labelOf(id),
+      /** A new project with `n` short texts (for the item limit). */
+      loadBig: (n: number) => {
+        const texts: TextItem[] = [];
+        for (let i = 0; i < n; i++) texts.push(textItem(`big${i}`, i, i + 0.5));
+        const base = page.history?.project ?? newProject();
+        page.setProject({ ...base, main: [], music_rows: [[]], text_rows: [texts] });
       },
       setLimits: (l: Partial<typeof LIMITS> | null) => setLimitsForTests(l),
       get playhead() {
@@ -116,11 +155,16 @@ export class VideoEditorPage {
   }
 
   show(): void {
+    if (!this.active) document.addEventListener("keydown", this.onKey);
     this.active = true;
     this.el.hidden = false;
+    void loadBundledFonts().then(() => this.inspector.updateFontNote(), () => undefined);
+    this.render();
   }
 
   hide(): void {
+    this.flushPending();
+    document.removeEventListener("keydown", this.onKey);
     this.active = false;
     this.el.hidden = true;
     this.leaveSession(); // leaving drops the project, its decoders and a batch still opening
@@ -136,6 +180,8 @@ export class VideoEditorPage {
     this.freshBank();
     this.work = Promise.resolve();
     this.history = null;
+    this.pending = null;
+    this.selected = null;
     this.notes = new Map();
   }
 
@@ -188,6 +234,7 @@ export class VideoEditorPage {
     const session = ++this.session;
     this.freshBank();
     this.history = null;
+    this.pending = null;
     this.notes = new Map();
     this.render();
     const { sources, messages } = await this.probe(files, new Set(), session);
@@ -251,54 +298,226 @@ export class VideoEditorPage {
 
   private setProject(project: Project): void {
     this.history = new History(project);
+    this.pending = null;
     this.playhead = 0;
     this.selected = null;
     this.render();
   }
 
-  /** One undo step from `fn`; an edit the project refuses is shown in the status line. */
-  private apply(fn: (p: Project) => Project | [Project, string], label: string): void {
-    if (!this.history) return;
+  // ---------------------------------------------------------------- history (editor_page._apply)
+  /** One undo step from `fn` (an inspector edit still being made goes in first); an edit the
+   *  project refuses is shown in the status line. Returns the new item's id, if any. */
+  private apply(fn: (p: Project) => Project | [Project, string], label: string): string | null {
+    if (!this.history) return null;
+    this.flushPending();
+    let got: Project | [Project, string];
     try {
-      const got = fn(this.history.project);
-      const [project, newId] = Array.isArray(got) ? got : [got, null];
-      this.history.push(project, label);
-      if (newId) this.selected = newId;
-      this.showMessage("");
+      got = fn(this.history.project);
     } catch (e) {
       if (!(e instanceof ConversionError)) throw e;
       this.showMessage(e.message, true);
+      return null;
     }
+    const [project, newId] = Array.isArray(got) ? got : [got, null];
+    this.showMessage("");
+    this.history.push(project, label);
+    if (newId) this.selected = newId;
+    this.render();
+    return newId;
+  }
+
+  /** The inspector edit being made, as its own step (commit, selection change, undo, save, leaving). */
+  private flushPending(): void {
+    const pending = this.pending;
+    this.pending = null;
+    if (!pending || !this.history) return;
+    this.showMessage("");
+    this.history.push(pending.project, pending.label);
     this.render();
   }
 
+  private inspectorChanged(changes: Record<string, unknown>): void {
+    const hi = this.history;
+    if (!hi) return;
+    const base = hi.project;
+    const id = this.inspector.selectionId;
+    if (!Object.keys(changes).length) {
+      this.pending = null;
+      this.render(false);
+      return;
+    }
+    try {
+      const project = applyChanges(base, id, changes);
+      this.pending = { project, label: changeLabel(targetOf(base, id).kind, changes) };
+    } catch (e) {
+      this.pending = null;
+      this.showMessage(e instanceof ConversionError ? e.message : "That item no longer exists.", true);
+      this.inspector.show(base, this.selected);
+      this.render(false);
+      return;
+    }
+    this.render(false);
+  }
+
+  /** A timeline drag or "+" row, computed from what it shows (which includes a pending edit:
+   *  that goes in first, as its own step). */
+  private timelineEdit(project: Project, label: string): void {
+    if (!this.history) return;
+    this.flushPending();
+    this.showMessage("");
+    this.history.push(project, label);
+    this.render();
+  }
+
+  // ---------------------------------------------------------------- editing actions
   private addSourceAtPlayhead(id: string): void {
+    this.addSource(id, this.playhead, 0);
+  }
+
+  private addSource(id: string, t: number, row: number): void {
     const src = this.history?.project.sources.find((s) => s.id === id);
     if (!src) return;
-    this.apply((p) => addAt(p, id, this.playhead, 0), src.kind === "audio" ? "Add music" : "Add clip");
+    this.apply((p) => addAt(p, id, t, row), src.kind === "audio" ? "Add music" : "Add clip");
+  }
+
+  private addText(): void {
+    this.apply((p) => addText(p, this.playhead), "Add text");
+  }
+
+  private splitTarget(): string | null {
+    const sel = this.selected;
+    if (sel !== null && !sel.startsWith("tr:")) return sel;
+    if (!this.history) return null;
+    for (const [id, span] of layout(this.history.project)) {
+      if (span.row_kind === "main" && span.start < this.playhead && this.playhead < span.end) return id;
+    }
+    return null;
+  }
+
+  private split(): void {
+    if (!this.history) return;
+    this.flushPending();
+    const target = this.splitTarget();
+    if (target === null) {
+      this.showMessage("Put the playhead inside a clip to split it.");
+      return;
+    }
+    this.apply((p) => split(p, target, this.playhead), "Split clip");
+  }
+
+  private deleteSelected(): void {
+    const sel = this.selected;
+    if (sel === null || !this.history) return;
+    this.flushPending();
+    if (sel.startsWith("tr:")) {
+      this.apply((p) => update(p, sel.slice(3), { transition_in: NO_TRANSITION }), "Remove transition");
+      return;
+    }
+    let type: string;
+    try {
+      type = find(this.history.project, sel).item.type;
+    } catch {
+      return;
+    }
+    this.apply((p) => remove(p, sel), type === "text" ? "Delete text" : type === "audio" ? "Delete music" : "Delete clip");
   }
 
   private undo(): void {
-    this.history?.undo();
+    this.flushPending();
+    if (!this.history?.canUndo) return;
+    this.history.undo();
     this.render();
   }
 
   private redo(): void {
-    this.history?.redo();
+    this.flushPending();
+    if (!this.history?.canRedo) return;
+    this.history.redo();
     this.render();
   }
 
   private select(id: string | null): void {
+    this.flushPending();
     this.selected = id;
+    this.render();
+  }
+
+  // ---------------------------------------------------------------- playhead
+  /** The project as the page shows it: with an inspector edit still being made. */
+  private shownProject(): Project | null {
+    return this.pending?.project ?? this.history?.project ?? null;
   }
 
   private seek(t: number): void {
-    const end = this.history ? length(this.history.project) : 0;
+    const p = this.shownProject();
+    const end = p ? length(p) : 0;
     this.playhead = Math.max(0, Math.min(t, end));
+    this.timeline.setPlayhead(this.playhead);
+    this.viewChanged();
   }
 
-  private render(): void {
+  private stepFrames(n: number): void {
+    const p = this.shownProject();
+    if (!p) return;
+    this.seek((frameNumber(p, this.playhead) + n) / outputFps(p));
+  }
+
+  /** The shown project or the playhead changed (the still preview hooks in here). */
+  private viewChanged(): void {}
+
+  // ---------------------------------------------------------------- keys
+  private onKey = (e: KeyboardEvent): void => {
+    if (!this.active || e.defaultPrevented) return;
+    const t = e.target as HTMLElement | null;
+    const inField = !!t && (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName));
+    const id = actionFor(e, inField);
+    if (!id) return;
+    // Space on a button presses it; leave that to the browser
+    if (id === "play" && t?.tagName === "BUTTON") return;
+    e.preventDefault();
+    this.run(id);
+  };
+
+  private run(id: ActionId): void {
+    switch (id) {
+      case "split": return this.split();
+      case "delete": return this.deleteSelected();
+      case "prev-frame": return this.stepFrames(-1);
+      case "next-frame": return this.stepFrames(1);
+      case "back-second": return this.seek(this.playhead - 1);
+      case "forward-second": return this.seek(this.playhead + 1);
+      case "home": return this.seek(0);
+      case "end": return this.seek(Number.MAX_VALUE);
+      case "undo": return this.undo();
+      case "redo": return this.redo();
+      case "save":
+      case "save-as":
+        return this.flushPending(); // saving projects comes with a later task
+      case "zoom-in": return this.timeline.zoomIn();
+      case "zoom-out": return this.timeline.zoomOut();
+      case "play":
+      case "export":
+      case "loop":
+        return; // playback and export come with later steps
+    }
+  }
+
+  /** Bring everything in line with the history (and a pending edit); `inspector` false while an
+   *  inspector edit is being made (its fields already show it). */
+  private render(inspector = true): void {
     const hi = this.history;
+    const shown = this.shownProject();
+    if (shown && this.selected !== null) {
+      const id = this.selected.startsWith("tr:") ? this.selected.slice(3) : this.selected;
+      if (!layout(shown).has(id)) this.selected = null;
+    }
+    if (shown) {
+      this.timeline.setProject(shown);
+      this.playhead = Math.min(this.playhead, length(shown));
+    }
+    this.timeline.setSelected(this.selected);
+    this.timeline.setPlayhead(this.playhead);
+    if (inspector) this.inspector.show(hi?.project ?? null, this.selected);
     this.media.set(hi?.project.sources ?? [], this.notes);
     const undo = this.buttons.get("undo")!;
     const redo = this.buttons.get("redo")!;
@@ -306,6 +525,7 @@ export class VideoEditorPage {
     redo.disabled = !hi?.canRedo;
     undo.title = hi?.canUndo ? `Undo ${hi.undoLabel} (Ctrl+Z)` : "Undo (Ctrl+Z)";
     redo.title = hi?.canRedo ? `Redo ${hi.redoLabel} (Ctrl+Y)` : "Redo (Ctrl+Y)";
+    this.viewChanged();
   }
 
   lastError(): string {

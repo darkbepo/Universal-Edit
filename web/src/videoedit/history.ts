@@ -46,6 +46,10 @@ export class History {
   get canRedo(): boolean {
     return this.redoStack.length > 0;
   }
+  /** How many steps can be undone. */
+  get steps(): number {
+    return this.undoStack.length;
+  }
   get undoLabel(): string {
     return this.undoStack.length ? this.undoStack[this.undoStack.length - 1][0] : "";
   }
