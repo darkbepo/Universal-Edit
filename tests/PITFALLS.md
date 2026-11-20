@@ -8,8 +8,12 @@ tests (CLAUDE.md points here); add one line when a new kind of mistake costs you
   "Save changes?" for ever. `conftest.pytest_runtest_teardown` answers such boxes "Don't save"
   while windows close (`tests/test_teardown_guard.py`) — don't rely on fixture clean-up.
   A menu / dialog a test opens itself must go through a page method the test replaces
-  (`exec_menu`, `ask_text`, `confirm`); patching `QMenu.exec` on the class does not reach Qt. Run new GUI tests with `timeout 120 pytest …` so a hang shows
-  up at once; `timeout -s ABRT` makes Python's faulthandler print where it hung.
+  (`exec_menu`, `ask_text`, `confirm`); patching `QMenu.exec` on the class does not reach Qt.
+  pytest-timeout (`pyproject.toml`: 300 s, method "thread") stops a stuck test, prints every
+  thread's stack (look for your test file's line) and ends the run. Give a genuinely long test
+  `@pytest.mark.timeout(seconds)` instead of raising the default; while writing a new GUI
+  test, `pytest --timeout 30 …` shows a hang sooner. A venv made before it was added stops with "Missing required
+  plugins": run `pip install -e ".[dev]"` again.
 - pytest-qt keeps only a **weak** reference to `qtbot.addWidget` windows: hold your own.
 - Track settings aren't undo steps: a test that changes them ends with
   `page._tracks_saved_rev = page._tracks_rev` (else the page counts as unsaved).

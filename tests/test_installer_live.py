@@ -11,10 +11,13 @@ import pytest
 
 from tests.conftest import convert
 
-pytestmark = pytest.mark.skipif(
-    os.environ.get("UMC_LIVE_INSTALL") != "1" or sys.platform != "win32",
-    reason="live installer test: set UMC_LIVE_INSTALL=1 on Windows",
-)
+pytestmark = [
+    pytest.mark.skipif(
+        os.environ.get("UMC_LIVE_INSTALL") != "1" or sys.platform != "win32",
+        reason="live installer test: set UMC_LIVE_INSTALL=1 on Windows",
+    ),
+    pytest.mark.timeout(1800),  # real downloads + installs (one may wait 900 s): not the usual 300
+]
 
 
 @pytest.fixture(autouse=True)

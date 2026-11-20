@@ -220,7 +220,8 @@ See `web/README.md` for commands and deployment.
 - **Office documents:** LibreOffice in headless mode (`soffice --headless --convert-to`) — *not bundled; one-click install*
 - **Text-ish formats:** Pandoc CLI (called directly via `subprocess`, no `pypandoc`) for md/html/epub/rst/tex ↔ docx etc. — *not bundled; one-click install*
 - **Packaging:** PyInstaller one-folder build; FFmpeg bundled; LibreOffice/Pandoc installed on demand by the app
-- **Tests:** pytest + pytest-qt (GUI tests run with `QT_QPA_PLATFORM=offscreen`)
+- **Tests:** pytest + pytest-qt (GUI tests run with `QT_QPA_PLATFORM=offscreen`) + pytest-timeout
+  (300 s per test, `pyproject.toml`; a stuck test prints its stack and ends the run)
   `tests/conftest.py` ends the test process with `os._exit(pytest's code)` after the summary:
   Python + Qt's final clean-up crashed at random after green runs (Windows CI failed with all
   tests passed). Don't remove it; release Qt objects in tests anyway (close servers, wait for

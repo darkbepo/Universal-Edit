@@ -40,7 +40,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "pytest-qt>=4.4", "ruff>=0.6", "pyinstaller>=6.6"]
+dev = ["pytest>=8", "pytest-qt>=4.4", "pytest-timeout>=2.3", "ruff>=0.6", "pyinstaller>=6.6"]
 
 [project.gui-scripts]
 umc = "umc.app:main"
@@ -60,3 +60,10 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# a stuck test (an unanswered question, a blocking menu, a hung program) fails after 5 minutes
+# with every thread's stack printed, instead of hanging the run; "thread" works on Windows too
+# and even when the hang is inside Qt's C++ code. Long tests: @pytest.mark.timeout(seconds).
+timeout = 300
+timeout_method = "thread"
+# an older venv without it would run with no limit at all: say so (pip install -e ".[dev]")
+required_plugins = ["pytest-timeout>=2.3"]
