@@ -52,7 +52,7 @@ for (let i = 0; i < SIZE / 2; i++) {
 }
 
 /** In-place complex FFT of (re, im); `inverse` without the 1/N. */
-function fft(re: Float64Array, im: Float64Array, inverse: boolean): void {
+export function fft(re: Float64Array, im: Float64Array, inverse: boolean): void {
   for (let i = 0; i < SIZE; i++) {
     const j = REV[i];
     if (j > i) {

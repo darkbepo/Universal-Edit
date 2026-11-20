@@ -1044,7 +1044,14 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       release, box smoothing over bands. float64 inside, own radix-2 FFT on the web (≈ 1.5 s per
       stereo minute in the worker, converter `audio-edit-denoise`). Shared cases
       `tests/fixtures/audioedit_noise_cases.json` (`python scripts/make_noise_cases.py`).
-      Not yet: several tracks / mixing, recording, spectrogram.
+      Spectrogram (both apps): the "Spectrogram" switch (QSettings `audioeditor/spectrogram`,
+      localStorage `umc-audio-spectrogram`) draws each lane from `audioedit/spectrum.py` ↔
+      `spectrum.ts`: one 2048-frame Hann block per column, bands grouped into log-frequency rows
+      (30 Hz … rate / 2; low rows may share a band), −100…0 dB → `RAMP` colours. Computed for at
+      most `MAX_COLUMNS` (800; wider views stretch) and cached per view; the web FFTs two
+      channels at once. Shared cases `tests/fixtures/audioedit_spectrum_cases.json`
+      (`python scripts/make_spectrum_cases.py`).
+      Not yet: several tracks / mixing, recording.
    14. Properties mode (both apps), step 1 = read-only "About this file" — spec
       `docs/superpowers/specs/2026-11-12-properties-design.md`. Model `properties/` (desktop, no
       Qt) ↔ `web/src/properties/`: each app reads a file with its own engines into the same plain

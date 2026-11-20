@@ -238,6 +238,30 @@ test("Learn noise, then Reduce noise turns the hiss down; undo puts it back", as
   expect(await hissRms()).toBeCloseTo(before, 4);
 });
 
+test("the Spectrogram switch draws pitches in the lanes and is remembered", async ({ page }) => {
+  await openEditor(page, [fx("tone.wav")]);
+  const button = page.getByRole("button", { name: "Spectrogram" });
+  await expect(button).toHaveAttribute("aria-pressed", "false");
+  const lanePixel = () => page.evaluate(() => {
+    const c = document.querySelector<HTMLCanvasElement>(".audio-editor canvas")!;
+    const dpr = devicePixelRatio || 1;
+    const [r, g, b] = c.getContext("2d")!.getImageData(Math.round(c.width / 2), Math.round(c.height - 4 * dpr), 1, 1).data;
+    return [r, g, b];
+  });
+  const wave = await lanePixel();
+  await button.click();
+  await expect(button).toHaveAttribute("aria-pressed", "true");
+  expect(await page.evaluate(() => (window.__audio as unknown as { spectrogram: boolean }).spectrogram)).toBe(true);
+  const spectro = await lanePixel();
+  expect(spectro).not.toEqual(wave); // the dark spectrogram colours, not the lane background
+  expect(spectro[0] + spectro[1] + spectro[2]).toBeLessThan(250);
+  expect(await page.evaluate(() => localStorage.getItem("umc-audio-spectrogram"))).toBe("1");
+  await openEditor(page, [fx("tone.wav")]); // a new visit keeps it on
+  await expect(page.getByRole("button", { name: "Spectrogram" })).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: "Spectrogram" }).click();
+  expect(await page.evaluate(() => localStorage.getItem("umc-audio-spectrogram"))).toBe("0");
+});
+
 test("the audio tile opens an empty editor; Edit is off for audio mixed with images", async ({ page }) => {
   await page.goto("./?e2e");
   await page.locator(".editor-tile[data-editor=audio]").click();

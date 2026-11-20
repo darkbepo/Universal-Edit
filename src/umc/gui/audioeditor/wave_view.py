@@ -1,4 +1,5 @@
 """The waveform: a time ruler on top, one lane per channel, the selection, cursor and play head.
+With ``spectrogram`` on, each lane shows how loud every pitch is instead (audioedit/spectrum.py).
 
 Click = put the cursor, drag = select, Shift+click = extend the selection, wheel = scroll,
 Ctrl+wheel = zoom around the pointer, double-click = select everything."""
@@ -6,13 +7,14 @@ Ctrl+wheel = zoom around the pointer, double-click = select everything."""
 from __future__ import annotations
 
 import math
+import time
 
 import numpy as np
-from PySide6.QtCore import QLineF, QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPen
+from PySide6.QtCore import QLineF, QPointF, QRectF, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPen
 from PySide6.QtWidgets import QSizePolicy, QWidget
 
-from umc.audioedit import peaks
+from umc.audioedit import peaks, spectrum
 from umc.audioedit.document import AudioDoc
 from umc.audioedit.ops import format_time
 from umc.gui import theme
@@ -21,6 +23,7 @@ RULER_H = 24
 LANE_GAP = 6
 MIN_FPP = 1 / 32  # most zoomed in: 32 px per sample
 ZOOM_STEP = 2.0
+SETTLE_MS = 150  # zooming / scrolling faster than this stretches the last spectrogram instead
 TICK_STEPS = (0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120,
               300, 600, 900, 1800, 3600)  # fmt: skip
 
@@ -45,11 +48,23 @@ class WaveView(QWidget):
         self._peaks: peaks.Peaks | None = None
         self._peaks_rev = -1
         self._anchor: int | None = None  # where the drag started (frames)
+        self.spectrogram = False
+        self._spectro_key: tuple | None = None
+        self._spectro: list[QImage] = []
+        self._spectro_place = (0.0, 1.0)  # the images' first frame, frames per image column
+        self._spectro_at = 0.0  # when they were computed (time.monotonic)
+        self._spectro_timer = QTimer(self, singleShot=True, interval=SETTLE_MS)
+        self._spectro_timer.timeout.connect(self.update)
+
+    def set_spectrogram(self, on: bool) -> None:
+        self.spectrogram = on
+        self.update()
 
     # ------------------------------------------------------------ model
     def set_document(self, doc: AudioDoc | None) -> None:
         self.doc = doc
         self._peaks, self._peaks_rev, self.play_head = None, -1, None
+        self._spectro_key, self._spectro = None, []
         self.fit()
 
     def _summary(self) -> peaks.Peaks:
@@ -189,14 +204,23 @@ class WaveView(QWidget):
         sel_x0, sel_x1 = self.x_of(a), self.x_of(b)
         end_x = min(w, self.x_of(self.frames))
 
+        images = self._spectrogram_images(lane_h) if self.spectrogram else []
         for c in range(doc.channels):
             top = lanes_top + c * (lane_h + LANE_GAP)
             painter.fillRect(QRectF(0, top, end_x, lane_h), QColor(p["surface_alt"]))
+            if images:
+                img = images[c]
+                first, per_col = self._spectro_place
+                x = (first - self.start) / self.fpp
+                painter.drawImage(QRectF(x, top, img.width() * per_col / self.fpp, lane_h), img)
             if b > a:
-                sel = QColor(p["accent"])
-                sel.setAlpha(45)
+                sel = QColor(p["accent"] if not images else "#ffffff")
+                sel.setAlpha(45 if not images else 60)
                 painter.fillRect(QRectF(sel_x0, top, sel_x1 - sel_x0, lane_h), sel)
-        self._paint_waves(painter, lanes_top, lane_h, p)
+        if images:
+            self._paint_freq_labels(painter, lanes_top, lane_h)
+        else:
+            self._paint_waves(painter, lanes_top, lane_h, p)
         self._paint_ruler(painter, w, p)
 
         # cursor / selection edges, then the play head
@@ -213,6 +237,58 @@ class WaveView(QWidget):
                 pen.setWidthF(2)
                 painter.setPen(pen)
                 painter.drawLine(QLineF(x, 0, x, h))
+
+    def _spectrogram_images(self, lane_h: float) -> list[QImage]:
+        """One image per channel (columns × rows, lowest pitch at the bottom), cached until the
+        sound, the view or the size changes."""
+        rows = max(1, min(spectrum.MAX_ROWS, int(lane_h)))
+        key = (self.doc.revision, self.start, self.fpp, self.width(), rows)
+        old = self._spectro_key
+        # only the view moved (same sound, size): while that happens quickly, stretch the last
+        # images and compute once it settles (an edit or a new size is drawn at once)
+        only_view = old is not None and (old[0], old[3], old[4]) == (key[0], key[3], key[4])
+        quick = (time.monotonic() - self._spectro_at) * 1000 < SETTLE_MS
+        if key != old and self._spectro and only_view and quick:
+            self._spectro_timer.start()
+            return self._spectro
+        if key != old:
+            step = spectrum.column_step(self.width())
+            levels = spectrum.columns(
+                self.doc.samples,
+                self.doc.rate,
+                self.start,
+                self.fpp * step,
+                math.ceil(self.width() / step),
+                rows,
+            )
+            self._spectro_place = (self.start, self.fpp * step)
+            self._spectro_at = time.monotonic()
+            self._spectro = []
+            for lv in levels:
+                k = lv.shape[0]
+                if k == 0:
+                    continue
+                rgb = np.ascontiguousarray(spectrum.colours(lv[:, ::-1].T))  # rows top-down
+                img = QImage(rgb.data, k, rows, 3 * k, QImage.Format.Format_RGB888).copy()
+                self._spectro.append(img)
+            self._spectro_key = key
+        return self._spectro
+
+    def _paint_freq_labels(self, painter: QPainter, top0: float, lane_h: float) -> None:
+        rate = self.doc.rate
+        font = QFont(painter.font())
+        font.setPointSizeF(7.5)
+        painter.setFont(font)
+        painter.setPen(QColor(255, 255, 255, 190))
+        for c in range(self.doc.channels):
+            bottom = top0 + c * (lane_h + LANE_GAP) + lane_h
+            for hz in spectrum.LABELS:
+                if hz >= rate / 2:
+                    continue
+                y = bottom - spectrum.row_of(hz, rate, 1) * lane_h
+                text = f"{hz // 1000} kHz" if hz >= 1000 else f"{hz} Hz"
+                painter.drawLine(QLineF(0, y, 4, y))
+                painter.drawText(QPointF(6, y + 3), text)
 
     def _paint_waves(self, painter: QPainter, top0: float, lane_h: float, p) -> None:
         doc = self.doc

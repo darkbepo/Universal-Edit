@@ -14,6 +14,7 @@ import { carriedTags, editFor, EMPTY_TAGS, type CarriedTags } from "../../audioe
 import type { MusicDetails } from "../../properties/music";
 import { DENOISE_TARGET, MAX_SAMPLES, OPEN_TARGET, SPEED_TARGET, TOO_LONG } from "../../converters/audioedit";
 import * as noise from "../../audioedit/noise";
+import * as spectrum from "../../audioedit/spectrum";
 import * as speed from "../../audioedit/speed";
 import { MUSIC_TAGS_TARGET } from "../../converters/musictags";
 import { defaults, type Values } from "../../core/options";
@@ -37,13 +38,16 @@ const AUDIO_ACCEPT = "audio/*,.mp3,.wav,.flac,.m4a,.aac,.ogg,.oga,.opus,.wma,.ai
 const RULER_H = 24;
 const LANE_GAP = 6;
 const MIN_FPP = 1 / 32; // most zoomed in: 32 px per sample
+const COLOURS = spectrum.colourTable();
+const SETTLE_MS = 150; // zooming / scrolling faster than this stretches the last spectrogram instead
+const SPECTROGRAM_KEY = "umc-audio-spectrogram"; // localStorage: "1" = show the spectrogram
 const SCROLL_STEPS = 1000; // the scroll bar works in 1/1000 of a screen
 const TICK_STEPS = [0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600];
 const BITRATES = [64, 96, 128, 160, 192, 256, 320];
 const LOSSY = new Set(["mp3", "m4a", "ogg", "opus", "wma", "ac3"]);
 export const NO_AUDIO_OUTPUT = "This browser can't play sound here.";
 
-type Action = "cut" | "copy" | "paste" | "delete" | "trim" | "silence" | "fade_in" | "fade_out" | "amplify" | "normalize" | "reverse" | "speed" | "learn_noise" | "reduce_noise" | "zoom_in" | "zoom_out" | "zoom_sel" | "fit" | "select_all" | "deselect";
+type Action = "cut" | "copy" | "paste" | "delete" | "trim" | "silence" | "fade_in" | "fade_out" | "amplify" | "normalize" | "reverse" | "speed" | "learn_noise" | "reduce_noise" | "zoom_in" | "zoom_out" | "zoom_sel" | "fit" | "spectrogram" | "select_all" | "deselect";
 
 const TOOL_GROUPS: [Action, string, string][][] = [
   [
@@ -71,6 +75,7 @@ const TOOL_GROUPS: [Action, string, string][][] = [
     ["zoom_out", "Zoom out", "Zoom out (−)"],
     ["zoom_sel", "Selection", "Zoom to the selection (Ctrl+E)"],
     ["fit", "Fit", "Show the whole sound (Ctrl+F)"],
+    ["spectrogram", "Spectrogram", "Show how loud each pitch is, instead of the waveform"],
   ],
 ];
 
@@ -94,6 +99,12 @@ export class AudioEditorPage {
   busy = false;
   private summary: peaks.Peaks | null = null;
   private summaryRev = -1;
+  spectrogram = false; // lanes show the spectrogram instead of the waveform
+  private spectroKey = "";
+  private spectro: HTMLCanvasElement[] = [];
+  private spectroPlace = { first: 0, perColumn: 1 }; // the images' first frame, frames per image column
+  private spectroAt = 0; // when they were computed (performance.now)
+  private spectroTimer = 0;
   private canvas = h("canvas", { class: "audio-canvas", tabIndex: 0, ariaLabel: "Waveform" });
   private host = h("div", { class: "audio-wave" });
   private placeholder = h("div", { class: "audio-placeholder" }, EMPTY_TEXT);
@@ -177,6 +188,13 @@ export class AudioEditorPage {
     }
     this.volumeSlider.value = String(Number.isFinite(saved) ? Math.min(100, Math.max(0, Math.round(saved))) : Math.round(DEFAULT_VOLUME * 100));
     this.showVolume();
+    let spectro = false;
+    try {
+      spectro = localStorage.getItem(SPECTROGRAM_KEY) === "1";
+    } catch {
+      /* storage blocked: the waveform */
+    }
+    this.setSpectrogram(spectro, false);
     this.volumeSlider.addEventListener("input", () => {
       this.showVolume();
       try {
@@ -311,6 +329,8 @@ export class AudioEditorPage {
     this.doc = doc;
     this.sources = sources;
     this.summary = null;
+    this.spectroKey = ""; // a new sound starts at revision 0 too
+    this.spectro = [];
     this.playHead = null;
     this.placeholder.textContent = EMPTY_TEXT;
     this.placeholder.hidden = !!doc;
@@ -543,6 +563,10 @@ export class AudioEditorPage {
   /** One tool-row action by name. True if it did something. */
   async run(key: Action): Promise<boolean> {
     const doc = this.doc;
+    if (key === "spectrogram") { // only changes the view: fine while busy
+      if (doc) this.setSpectrogram(!this.spectrogram);
+      return !!doc;
+    }
     if (!doc || this.busy) return false;
     let ok = true;
     if (key === "zoom_in") this.zoom(2);
@@ -927,7 +951,7 @@ export class AudioEditorPage {
     const enabled: Record<string, boolean> = {
       cut: sel, copy: sel, paste: ready && !!this.clipboard, delete: sel, trim: sel, silence: sel,
       fade_in: sel, fade_out: sel, amplify: has, normalize: has, reverse: has, speed: has, learn_noise: sel, reduce_noise: has && !!this.noiseProfile(),
-      zoom_in: ready, zoom_out: ready, zoom_sel: sel, fit: ready,
+      zoom_in: ready, zoom_out: ready, zoom_sel: sel, fit: ready, spectrogram: !!doc,
       home: has, end: has, play: has, stop: this.playing,
       undo: ready && doc!.canUndo(), redo: ready && doc!.canRedo(),
       save: has, save_as: has, open: !this.busy, back: true,
@@ -968,6 +992,71 @@ export class AudioEditorPage {
     });
   }
 
+  private drawFreqLabels(g: CanvasRenderingContext2D, bottom: number, laneH: number): void {
+    const rate = this.doc!.rate;
+    g.fillStyle = "rgba(255, 255, 255, 0.75)";
+    g.font = "10px system-ui, sans-serif";
+    g.textBaseline = "middle";
+    for (const hz of spectrum.LABELS) {
+      if (hz >= rate / 2) continue;
+      const y = bottom - spectrum.rowOf(hz, rate, 1) * laneH;
+      g.fillRect(0, Math.round(y), 4, 1);
+      g.fillText(hz >= 1000 ? `${hz / 1000} kHz` : `${hz} Hz`, 6, y);
+    }
+  }
+
+  /** Spectrogram (true) or waveform lanes; remembered for next time unless `remember` is false. */
+  setSpectrogram(on: boolean, remember = true): void {
+    this.spectrogram = on;
+    this.buttons.get("spectrogram")?.setAttribute("aria-pressed", String(on));
+    if (remember) {
+      try {
+        localStorage.setItem(SPECTROGRAM_KEY, on ? "1" : "0");
+      } catch {
+        /* fine: just not remembered */
+      }
+    }
+    this.draw();
+  }
+
+  /** One canvas per channel (columns × rows, lowest pitch at the bottom), kept until the sound,
+   *  the view or the size changes. */
+  private spectrogramImages(width: number, laneH: number): HTMLCanvasElement[] {
+    const doc = this.doc!;
+    const rows = Math.max(1, Math.min(spectrum.MAX_ROWS, Math.floor(laneH)));
+    const fixed = `${doc.revision}/${width}/${rows}`; // what must be drawn again at once
+    const key = `${fixed}/${this.start}/${this.fpp}`;
+    if (key === this.spectroKey) return this.spectro;
+    // only the view moved: while that happens quickly, stretch the last images and compute once
+    // it settles (an edit or a new size is drawn at once)
+    if (this.spectro.length && this.spectroKey.startsWith(`${fixed}/`) && performance.now() - this.spectroAt < SETTLE_MS) {
+      clearTimeout(this.spectroTimer);
+      this.spectroTimer = window.setTimeout(() => this.draw(), SETTLE_MS);
+      return this.spectro;
+    }
+    const step = spectrum.columnStep(width);
+    const { k, levels } = spectrum.columns(doc.samples, doc.rate, this.start, this.fpp * step, Math.ceil(width / step), rows);
+    this.spectroPlace = { first: this.start, perColumn: this.fpp * step };
+    this.spectroAt = performance.now();
+    this.spectro = k ? levels.map((lv) => {
+      const c = document.createElement("canvas");
+      c.width = k;
+      c.height = rows;
+      const img = new ImageData(k, rows);
+      for (let col = 0; col < k; col++) {
+        for (let r = 0; r < rows; r++) {
+          const t = Math.round(lv[col * rows + r] * 255) * 3;
+          const at = ((rows - 1 - r) * k + col) * 4;
+          img.data[at] = COLOURS[t]; img.data[at + 1] = COLOURS[t + 1]; img.data[at + 2] = COLOURS[t + 2]; img.data[at + 3] = 255;
+        }
+      }
+      c.getContext("2d")?.putImageData(img, 0, 0);
+      return c;
+    }) : [];
+    this.spectroKey = key;
+    return this.spectro;
+  }
+
   /** Draws now (tests call it; normally once per animation frame). */
   draw(): void {
     if (!this.active || this.host.hidden) return;
@@ -999,15 +1088,24 @@ export class AudioEditorPage {
       this.summaryRev = doc.revision;
     }
     const { mins, maxs } = peaks.columns(doc.samples, this.summary, this.start, this.fpp, Math.ceil(w));
+    const images = this.spectrogram ? this.spectrogramImages(Math.ceil(w), laneH) : [];
     for (let c = 0; c < doc.channels; c++) {
       const top = RULER_H + c * (laneH + LANE_GAP);
       g.fillStyle = col.alt;
       g.fillRect(0, top, endX, laneH);
+      if (images.length) {
+        const { first, perColumn } = this.spectroPlace;
+        g.drawImage(images[c], (first - this.start) / this.fpp, top, (images[c].width * perColumn) / this.fpp, laneH);
+      }
       if (b > a) {
-        g.fillStyle = col.accent;
-        g.globalAlpha = 0.18;
+        g.fillStyle = images.length ? "#ffffff" : col.accent;
+        g.globalAlpha = images.length ? 0.24 : 0.18;
         g.fillRect(x0, top, x1 - x0, laneH);
         g.globalAlpha = 1;
+      }
+      if (images.length) {
+        this.drawFreqLabels(g, top + laneH, laneH);
+        continue;
       }
       const mid = top + laneH / 2, half = (laneH / 2) * 0.95;
       g.fillStyle = col.strong;

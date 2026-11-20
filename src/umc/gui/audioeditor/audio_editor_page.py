@@ -57,6 +57,7 @@ EMPTY_TEXT = "Open a sound with “Open…”, or drop audio files here (MP3, WA
 HINT = "Click to place the cursor · drag to select · Ctrl+wheel to zoom · Space plays"
 SCROLL_STEPS = 1000  # the scroll bar works in 1/1000 of a screen
 VOLUME_KEY = "audioeditor/volume"  # QSettings: the volume slider, 0…100
+SPECTROGRAM_KEY = "audioeditor/spectrogram"  # QSettings: show the spectrogram (bool)
 TOOL_GROUPS = (
     (
         ("cut", "Cut", "Cut the selection (Ctrl+X)"),
@@ -91,6 +92,7 @@ TOOL_GROUPS = (
         ("zoom_out", "Zoom out", "Zoom out (− or Ctrl+3)"),
         ("zoom_sel", "Selection", "Zoom to the selection (Ctrl+E)"),
         ("fit", "Fit", "Show the whole sound (Ctrl+F)"),
+        ("spectrogram", "Spectrogram", "Show how loud each pitch is, instead of the waveform"),
     ),
 )
 
@@ -330,6 +332,7 @@ class AudioEditorPage(QWidget):
         root.addWidget(self._build_tools())
 
         self.view = WaveView()
+        self.view.set_spectrogram(self.edit_buttons["spectrogram"].isChecked())
         self.view.selection_changed.connect(self._update_state)
         self.view.view_changed.connect(self._sync_scrollbar)
         self.view.seek_requested.connect(lambda f: self.play_from(f))
@@ -455,6 +458,9 @@ class AudioEditorPage(QWidget):
                 btn = b(lay, label, tip)
                 btn.clicked.connect(lambda _c=False, k=key: self.run(k))
                 self.edit_buttons[key] = btn
+        spectro = self.edit_buttons["spectrogram"]
+        spectro.setCheckable(True)
+        spectro.setChecked(QSettings().value(SPECTROGRAM_KEY, False, type=bool))
         return bar
 
     @staticmethod
@@ -530,6 +536,7 @@ class AudioEditorPage(QWidget):
             "zoom_out": ready,
             "zoom_sel": sel,
             "fit": ready,
+            "spectrogram": doc is not None,
         }
         for key, btn in self.edit_buttons.items():
             btn.setEnabled(bool(enabled[key]))
@@ -587,6 +594,8 @@ class AudioEditorPage(QWidget):
     def run(self, key: str) -> bool:
         """One tool-row action by name. True if it did something."""
         doc = self.doc
+        if key == "spectrogram":  # only changes the view: fine while busy
+            return doc is not None and self.set_spectrogram(not self.view.spectrogram)
         if doc is None or self.busy:
             return False
         view = self.view
@@ -828,6 +837,13 @@ class AudioEditorPage(QWidget):
 
     def stop(self) -> None:
         self.player.stop()
+
+    def set_spectrogram(self, on: bool) -> bool:
+        """Spectrogram (True) or waveform lanes; remembered for next time."""
+        self.view.set_spectrogram(on)
+        self.edit_buttons["spectrogram"].setChecked(on)
+        QSettings().setValue(SPECTROGRAM_KEY, on)
+        return True
 
     def _show_volume(self) -> None:
         value = self.volume_slider.value()

@@ -571,6 +571,11 @@ QPushButton#Small:disabled {
     color: @muted;
     background: @bg;
 }
+QPushButton#Small:checked {
+    background: @accent_soft;
+    border-color: @accent;
+    color: @accent;
+}
 QFrame#EditorTopBar QPushButton#Primary {
     padding: 6px 22px;
     border-radius: 8px;

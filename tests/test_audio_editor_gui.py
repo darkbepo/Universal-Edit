@@ -350,3 +350,29 @@ def test_broken_file_is_a_plain_message(window, qtbot, tmp_path):
     with qtbot.waitSignal(page.opened, timeout=20000):
         page.open_paths([bad])
     assert page.doc is None and page.message.text() and "Traceback" not in page.message.text()
+
+
+def test_spectrogram_switch_draws_and_is_remembered(window, qtbot, media):
+    from PySide6.QtCore import QSettings
+
+    from umc.gui.audioeditor.audio_editor_page import SPECTROGRAM_KEY
+
+    QSettings().remove(SPECTROGRAM_KEY)
+    try:
+        page = open_in_editor(window, qtbot, [media / "tone.wav"])
+        btn = page.edit_buttons["spectrogram"]
+        assert btn.isCheckable() and not btn.isChecked() and not page.view.spectrogram
+        btn.click()
+        assert btn.isChecked() and page.view.spectrogram
+        assert QSettings().value(SPECTROGRAM_KEY, type=bool) is True
+        page.view.grab()  # paints the lanes
+        assert len(page.view._spectro) == page.doc.channels
+        assert page.view._spectro[0].height() > 10
+        page.view.zoom(2.0)
+        page.view.grab()  # quick zooms stretch the last picture, then it's drawn again
+        qtbot.waitUntil(lambda: page.view._spectro_key[2] == page.view.fpp, timeout=3000)
+        btn.click()
+        assert not btn.isChecked() and not page.view.spectrogram
+        assert QSettings().value(SPECTROGRAM_KEY, type=bool) is False
+    finally:
+        QSettings().remove(SPECTROGRAM_KEY)
