@@ -5,7 +5,7 @@ Tiles come from ``core.editors.EDITORS``; editors that aren't ready are greyed o
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QRect, QSize, Qt, Signal
 from PySide6.QtWidgets import (
     QButtonGroup,
     QComboBox,
@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLayout,
     QPushButton,
     QRadioButton,
     QScrollArea,
@@ -25,17 +26,74 @@ from PySide6.QtWidgets import (
 )
 
 from umc.core import addons
-from umc.core.editors import COMING_SOON, EDITORS, EditorInfo
+from umc.core.editors import (
+    COMING_SOON,
+    EDITORS,
+    MIN_TILE_W,
+    TILE_GAP,
+    EditorInfo,
+    hub_rows,
+    hub_tile_width,
+)
 from umc.editor.blank import BACKGROUNDS, PRESETS
 from umc.editor.document import MAX_SIDE
 from umc.gui import icons, theme
-from umc.gui.widgets.flow_layout import FlowLayout
 
 CUSTOM = "Custom size"
-TILE_W = 296  # three tiles per row on a normal window (owner, Nov 2026)
 TILE_H = 84
-PER_ROW = 3
 ICON_BOX = 48
+
+
+class _RowsLayout(QLayout):
+    """Tiles in centred rows, as many per row as fit, spread evenly (``core.editors.hub_rows``);
+    every tile is as wide as the longest row needs to fill the width."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._items = []
+        self.setContentsMargins(0, 0, 0, 0)
+
+    def addItem(self, item) -> None:  # noqa: N802
+        self._items.append(item)
+
+    def count(self) -> int:
+        return len(self._items)
+
+    def itemAt(self, i: int):  # noqa: N802
+        return self._items[i] if 0 <= i < len(self._items) else None
+
+    def takeAt(self, i: int):  # noqa: N802
+        return self._items.pop(i) if 0 <= i < len(self._items) else None
+
+    def expandingDirections(self):  # noqa: N802
+        return Qt.Orientation.Horizontal
+
+    def hasHeightForWidth(self) -> bool:  # noqa: N802
+        return True
+
+    def heightForWidth(self, width: int) -> int:  # noqa: N802
+        rows = len(hub_rows(len(self._items), width))
+        return max(0, rows * TILE_H + (rows - 1) * TILE_GAP)
+
+    def sizeHint(self) -> QSize:  # noqa: N802
+        return self.minimumSize()
+
+    def minimumSize(self) -> QSize:  # noqa: N802
+        return QSize(MIN_TILE_W, TILE_H)
+
+    def setGeometry(self, rect: QRect) -> None:  # noqa: N802
+        super().setGeometry(rect)
+        rows = hub_rows(len(self._items), rect.width())
+        tile = int(hub_tile_width(rows, rect.width()))
+        at, y = 0, rect.y()
+        for n in rows:
+            used = n * tile + (n - 1) * TILE_GAP
+            x = rect.x() + (rect.width() - used) // 2
+            for item in self._items[at : at + n]:
+                item.setGeometry(QRect(x, y, tile, TILE_H))
+                x += tile + TILE_GAP
+            at += n
+            y += TILE_H + TILE_GAP
 
 
 class _TilesScroll(QScrollArea):
@@ -54,13 +112,18 @@ class _TilesScroll(QScrollArea):
         hint = super().sizeHint()
         inner = self.widget()
         height = inner.layout().heightForWidth(max(1, self.viewport().width()))
-        hint.setHeight(max(height, inner.sizeHint().height()))
+        hint.setHeight(max(height, TILE_H))  # the rows at the real width (not at the narrowest)
         return hint
 
     def minimumSizeHint(self):  # noqa: N802
         hint = super().minimumSizeHint()
         hint.setHeight(TILE_H + 12)  # at least one row
         return hint
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        if event.size().width() != event.oldSize().width():
+            self.updateGeometry()  # a new width can mean another number of rows (its height)
 
 
 class EditorTile(QPushButton):
@@ -72,7 +135,9 @@ class EditorTile(QPushButton):
         self.info = info
         self.setObjectName("EditorTile")
         self.setAccessibleName(info.title)
-        self.setFixedSize(TILE_W, TILE_H)
+        self.setFixedHeight(TILE_H)
+        self.setMinimumWidth(MIN_TILE_W)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.setEnabled(info.available)
         if info.available:
             self.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -143,26 +208,19 @@ class EditorHub(QFrame):
         head = QLabel("Or start in an editor", objectName="CardTitle")
         head.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lay.addWidget(head)
-        holder = QWidget()
-        self._flow = FlowLayout(holder, spacing=10)
+        inner = QWidget(objectName="EditorHubTiles")
+        self._rows = _RowsLayout(inner)
         self.tiles: dict[str, EditorTile] = {}
         for info in EDITORS:
             tile = EditorTile(info)
             tile.clicked.connect(lambda _c=False, i=info.id: self.editor_chosen.emit(i))
-            self._flow.addWidget(tile)
+            self._rows.addWidget(tile)
             self.tiles[info.id] = tile
-        # three tiles per row at most, centred; a narrow window wraps to fewer
-        holder.setMaximumWidth(PER_ROW * (TILE_W + 10))
-        inner = QWidget(objectName="EditorHubTiles")
-        row = QHBoxLayout(inner)
-        row.setContentsMargins(0, 0, 0, 0)
-        row.addStretch(1)
-        row.addWidget(holder, 100)
-        row.addStretch(1)
         # a short window scrolls the tiles instead of cutting the last row off
         self.scroll = _TilesScroll(inner)
         lay.addWidget(self.scroll, 1)
-        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+        # never taller than its rows: the drop zone above takes the rest of the window
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
 
     def retint(self) -> None:
         for tile in self.tiles.values():

@@ -29,24 +29,39 @@ test("tiles: in the owner's order; the ready editors open, the others say Coming
   await expect(page.locator(".editor-hub")).toBeVisible();
 });
 
-test("tiles: three per row with the icon on the left; one per row on phones", async ({ page }) => {
-  const tops = async () => {
-    const boxes = await page.locator(".editor-tile").evaluateAll((els) => els.map((e) => e.getBoundingClientRect().top));
-    return boxes.map(Math.round);
+test("tiles: as many per row as fit, no tile alone, filling the width; one per row on phones", async ({ page }) => {
+  const rows = async () => {
+    const tops = await page.locator(".editor-tile").evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)));
+    const counts: number[] = [];
+    tops.forEach((t, i) => (i && t === tops[i - 1] ? counts[counts.length - 1]++ : counts.push(1)));
+    return counts;
   };
-  await page.setViewportSize({ width: 1280, height: 900 });
+  const edges = () => page.evaluate(() => {
+    const r = (el: Element) => el.getBoundingClientRect();
+    const tiles = [...document.querySelectorAll(".editor-tile")].map(r);
+    const drop = r(document.querySelector(".drop")!);
+    return { left: Math.min(...tiles.map((t) => t.left)) - drop.left, right: drop.right - Math.max(...tiles.map((t) => t.right)) };
+  });
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
+  await page.setViewportSize({ width: 1920, height: 1000 });
   await page.goto("./");
-  const t = await tops();
-  expect(t[0]).toBe(t[1]);
-  expect(t[1]).toBe(t[2]);
-  expect(t[3]).toBeGreaterThan(t[2]);
-  expect(t[3]).toBe(t[5]);
+  await expect.poll(rows).toEqual([5, 5]);
+  const e = await edges();
+  expect(Math.abs(e.left)).toBeLessThan(6); // the tiles fill the drop zone's width
+  expect(Math.abs(e.right)).toBeLessThan(6);
   const icon = await page.locator(".editor-tile[data-editor=image] .tile-icon").boundingBox();
   const title = await page.locator(".editor-tile[data-editor=image] .tile-title").boundingBox();
   expect(icon!.x + icon!.width).toBeLessThan(title!.x);
+  await page.locator(".editor-tile[data-editor=audio]").focus();
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await expect.poll(rows).toEqual([4, 3, 3]);
+  await expect(page.locator(".editor-tile[data-editor=audio]")).toBeFocused(); // rows rebuilt, focus kept
   await page.setViewportSize({ width: 375, height: 812 });
-  const p = await tops();
-  for (let i = 1; i < p.length; i++) expect(p[i]).toBeGreaterThan(p[i - 1]);
+  await expect.poll(rows).toEqual([1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
+  expect(errors.filter((e) => e.includes("ResizeObserver"))).toEqual([]);
 });
 
 test("image editor tile: New picture window makes an empty picture of that size and colour", async ({ page }) => {

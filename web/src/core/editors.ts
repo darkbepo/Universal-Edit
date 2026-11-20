@@ -24,3 +24,23 @@ export const EDITORS: EditorInfo[] = [
 ];
 
 export const COMING_SOON = "Coming soon";
+
+// Start-screen tile rows (owner, Nov 2026): as many tiles per row as fit, spread evenly over the
+// rows so no tile is left alone, each row centred; the tiles stretch to fill the width.
+export const MIN_TILE_W = 260;
+export const TILE_GAP = 10;
+
+/** How many tiles go in each row for `count` tiles in `width` px (same as core/editors.py). */
+export function hubRows(count: number, width: number, minTile = MIN_TILE_W, gap = TILE_GAP): number[] {
+  if (count <= 0) return [];
+  const fit = Math.max(1, Math.floor((width + gap) / (minTile + gap)));
+  const rows = Math.ceil(count / fit);
+  const base = Math.floor(count / rows), extra = count % rows;
+  return [...Array<number>(extra).fill(base + 1), ...Array<number>(rows - extra).fill(base)];
+}
+
+/** Every tile's width: the longest row fills `width`. */
+export function hubTileWidth(rows: number[], width: number, gap = TILE_GAP): number {
+  const most = Math.max(1, ...rows);
+  return Math.max(1, (width - gap * (most - 1)) / most);
+}

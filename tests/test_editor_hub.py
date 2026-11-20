@@ -81,14 +81,64 @@ def test_tiles_shown_until_files_are_added(window, media):
     assert hub.isVisible()
 
 
-def test_tiles_are_three_per_row_with_the_icon_on_the_left(window):
-    tiles = list(window.hub.tiles.values())
-    tops = [t.geometry().top() for t in tiles]
+def _rows(tiles) -> list[int]:
+    counts: list[int] = []
+    last = None
+    for t in tiles:
+        top = t.mapTo(t.window(), t.rect().topLeft()).y()
+        if top == last:
+            counts[-1] += 1
+        else:
+            counts.append(1)
+        last = top
+    return counts
+
+
+def test_tiles_fill_the_width_in_even_rows_with_the_icon_on_the_left(window, qtbot):
+    from umc.core.editors import hub_rows
+
+    hub = window.hub
+    tiles = list(hub.tiles.values())
     assert len(tiles) == 10
-    assert tops[0] == tops[1] == tops[2] < tops[3] == tops[4] == tops[5] < tops[6] == tops[8]
-    assert tops[8] < tops[9]
+    for width, expected in ((1920, [5, 5]), (1280, [4, 3, 3])):
+        window.resize(width, 1000)
+        qtbot.waitUntil(lambda e=expected: _rows(tiles) == e)
+        holder = tiles[0].parentWidget()
+        assert hub_rows(10, holder.width()) == expected
+        left = min(t.geometry().left() for t in tiles)
+        right = max(t.geometry().right() for t in tiles)
+        assert left <= 1 and right >= holder.width() - 2  # no empty sides
+        last = [t for t in tiles if t.geometry().top() == tiles[-1].geometry().top()]
+        centre = (last[0].geometry().left() + last[-1].geometry().right()) / 2
+        assert abs(centre - holder.width() / 2) <= 2  # a shorter last row is centred
+        assert window.drop.height() > hub.height()  # the drop zone gets the spare height
     for tile in tiles:
         assert tile.icon.geometry().right() < tile.title.geometry().left()  # icon left of text
+
+
+def test_a_short_window_scrolls_the_tiles_instead_of_cutting_rows_off(window, qtbot):
+    hub = window.hub
+    window.resize(1280, 520)
+    bar = hub.scroll.verticalScrollBar()
+    qtbot.waitUntil(lambda: bar.maximum() > 0)
+    inner = hub.scroll.widget()
+    bottom = max(t.geometry().bottom() for t in hub.tiles.values())
+    assert bottom <= inner.height()  # every row is inside what the scroll area can show
+    window.resize(1280, 1000)
+    qtbot.waitUntil(lambda: bar.maximum() == 0)
+
+
+def test_shared_row_cases():
+    import json
+    from pathlib import Path
+
+    from umc.core.editors import hub_rows, hub_tile_width
+
+    path = Path(__file__).parent / "fixtures" / "hub_rows_cases.json"
+    for case in json.loads(path.read_text()):
+        rows = hub_rows(case["count"], case["width"])
+        assert rows == case["rows"], case
+        assert abs(hub_tile_width(rows, case["width"]) - case["tile"]) < 1e-3
 
 
 def test_icons_sit_on_a_tinted_square(window):

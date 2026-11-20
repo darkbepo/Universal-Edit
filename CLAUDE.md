@@ -902,9 +902,12 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       Next: basic editing for 3D printing (plan in the session handoff / owner's go-ahead).
    9. ✅ Start screen = hub (both apps; order and the four "Coming soon" tiles: roadmap 16): editor tiles under the empty drop zone, listed in
       `core/editors.py` / `web/src/core/editors.ts` (same order and text; `available` False =
-      greyed "Coming soon" — on desktop none is left; the website's video tile is,
-      `WEB_LATER`); tests/test_editor_hub.py checks both lists. Tiles are three per row
-      (two on mid widths, one on phones) with a 48 px tinted icon square on the left; desktop
+      greyed "Coming soon"; the website's video tile is, `WEB_LATER`); tests/test_editor_hub.py
+      checks both lists. Rows (owner, Nov 2026): as many tiles as fit (≥ `MIN_TILE_W` 260 px),
+      spread evenly so none is alone (`hub_rows` / `hubRows`, cases `hub_rows_cases.json`), rows
+      centred, tiles stretched to fill the width (desktop `_RowsLayout`, hub vertical policy
+      Maximum so the drop zone keeps the spare height; web `.editor-row` + `--tile-w` from a
+      ResizeObserver). A 48 px tinted icon square on the left; desktop
       marks a not-ready icon with the `soon` property — Qt ignores an ancestor's `:disabled` in
       a descendant selector, so `QPushButton:disabled QLabel#…` styled every tile. Image tile → "New picture" (`editor/blank.py` / `blank.ts`, presets in
       `web/src/editor/presets.ts` so the start page doesn't load the editor) → `MainWindow.new_picture`

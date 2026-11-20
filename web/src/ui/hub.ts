@@ -1,6 +1,6 @@
 // Editor tiles on the empty start screen (open an editor without a file) and the "New picture"
 // window the image editor tile opens. Same tiles as src/umc/gui/widgets/editor_hub.py.
-import { COMING_SOON, EDITORS } from "../core/editors";
+import { COMING_SOON, EDITORS, TILE_GAP, hubRows, hubTileWidth } from "../core/editors";
 import { BACKGROUNDS, PRESETS, type Background } from "../editor/presets";
 import { icon } from "./icons";
 
@@ -30,8 +30,26 @@ export function editorHub(onChoose: (id: string) => void): HTMLElement {
     b.addEventListener("click", () => onChoose(e.id));
     return b;
   });
-  return h("section", { class: "editor-hub", ariaLabel: "Editors" },
-    h("h2", {}, "Or start in an editor"), h("div", { class: "editor-tiles" }, ...tiles));
+  const box = h("div", { class: "editor-tiles" });
+  box.style.setProperty("--tile-gap", `${TILE_GAP}px`);
+  let shown = "";
+  const arrange = () => {
+    const width = box.clientWidth;
+    if (!width) return; // hidden (files added): keep the last rows
+    const rows = hubRows(tiles.length, width);
+    box.style.setProperty("--tile-w", `${Math.floor(hubTileWidth(rows, width))}px`);
+    const key = rows.join(",");
+    if (key === shown) return;
+    shown = key;
+    const focused = tiles.find((t) => t === document.activeElement); // moving a tile drops its focus
+    let at = 0;
+    box.replaceChildren(...rows.map((n) => h("div", { class: "editor-row" }, ...tiles.slice(at, (at += n)))));
+    focused?.focus({ preventScroll: true });
+  };
+  arrange();
+  // next frame: changing the box's height inside the observer's own callback logs a loop error
+  new ResizeObserver(() => requestAnimationFrame(arrange)).observe(box);
+  return h("section", { class: "editor-hub", ariaLabel: "Editors" }, h("h2", {}, "Or start in an editor"), box);
 }
 
 export interface NewPicture {

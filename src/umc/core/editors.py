@@ -33,3 +33,26 @@ COMING_SOON = "Coming soon"
 
 # Editors the website doesn't have yet: its tile stays "Coming soon" (available false there).
 WEB_LATER: frozenset[str] = frozenset({"video"})
+
+# Start-screen tile rows (owner, Nov 2026): as many tiles per row as fit, spread evenly over the
+# rows so no tile is left alone, each row centred; the tiles stretch to fill the width.
+MIN_TILE_W = 260
+TILE_GAP = 10
+
+
+def hub_rows(
+    count: int, width: float, min_tile: int = MIN_TILE_W, gap: int = TILE_GAP
+) -> list[int]:
+    """How many tiles go in each row for ``count`` tiles in ``width`` px (same in editors.ts)."""
+    if count <= 0:
+        return []
+    fit = max(1, int((width + gap) // (min_tile + gap)))
+    rows = -(-count // fit)
+    base, extra = divmod(count, rows)
+    return [base + 1] * extra + [base] * (rows - extra)
+
+
+def hub_tile_width(rows: list[int], width: float, gap: int = TILE_GAP) -> float:
+    """Every tile's width: the longest row fills ``width``."""
+    most = max(rows, default=1)
+    return max(1.0, (width - gap * (most - 1)) / most)
