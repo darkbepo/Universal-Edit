@@ -44,6 +44,7 @@ CATEGORIES: tuple[Category, ...] = (
     Category("documents", "Documents", "document"),
     Category("models", "3D models", "cube"),
     Category("text", "Text & code", "code"),
+    Category("archives", "Archives", "archive"),
 )
 _CATEGORY_OF_KIND = {
     vf.IMAGE: "pictures",
@@ -53,6 +54,7 @@ _CATEGORY_OF_KIND = {
     vf.CONVERT: "documents",
     vf.MODEL: "models",
     vf.TEXT: "text",
+    vf.ARCHIVE: "archives",
 }
 
 

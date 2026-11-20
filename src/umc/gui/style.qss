@@ -326,6 +326,34 @@ QTreeWidget#ViewerList::item:selected {
 QTreeWidget#ViewerList::item:hover:!selected {
     background: @bg;
 }
+QTreeWidget#ArchiveList {
+    background: @surface;
+    border: 1px solid @border;
+    border-radius: 10px;
+    outline: none;
+    padding: 4px;
+}
+QTreeWidget#ArchiveList::item {
+    padding: 4px 2px;
+}
+QTreeWidget#ArchiveList::item:selected {
+    background: @accent_soft;
+    color: @accent;
+}
+QTreeWidget#ArchiveList::item:hover:!selected {
+    background: @bg;
+}
+QTreeWidget#ArchiveList QHeaderView::section {
+    background: @surface;
+    color: @muted;
+    border: none;
+    border-bottom: 1px solid @border;
+    padding: 4px 6px;
+}
+QFrame#ViewerInnerBar {
+    background: @surface;
+    border-bottom: 1px solid @border;
+}
 QFrame#ViewerNav {
     background: @surface;
     border-bottom: 1px solid @border;

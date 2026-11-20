@@ -24,6 +24,7 @@ PAGES = "pages"  # PyMuPDF opens it directly: page by page
 CONVERT = "convert"  # turned into a PDF first (in the background), then shown page by page
 TEXT = "text"  # plain text shown as it is
 MODEL = "model"  # 3D view
+ARCHIVE = "archive"  # ZIP / 7Z / RAR / TAR: the files inside, extract, add, delete
 OTHER = "other"  # name, kind and size only
 
 PAGES_EXTS = {"pdf", "epub", "xps", "cbz", "fb2", "mobi", "svg"}
@@ -42,6 +43,7 @@ _EDITOR_OF_KIND |= {PAGES: "document", CONVERT: "document", TEXT: "document"}
 
 ICON_OF_KIND = {IMAGE: "photo", VIDEO: "movie", AUDIO: "music", PAGES: "pdf"}
 ICON_OF_KIND |= {CONVERT: "document", TEXT: "document", MODEL: "cube", OTHER: "file"}
+ICON_OF_KIND |= {ARCHIVE: "archive"}
 
 
 def _ext_of_name(name: str) -> str:
@@ -61,6 +63,8 @@ def kind_of(family: MediaFamily | None, ext: str) -> str:
         return AUDIO
     if family == MediaFamily.MODEL:
         return MODEL
+    if family == MediaFamily.ARCHIVE:
+        return ARCHIVE
     if ext in PAGES_EXTS:
         return PAGES
     if ext in TEXT_EXTS or family == MediaFamily.CODE:

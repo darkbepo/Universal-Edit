@@ -42,7 +42,16 @@ def mimeapps_path(home: Path | None = None) -> Path:
 
 
 def viewer_types() -> list[str]:
-    return linux_desktop.mime_types(shell_integration.view_extensions())
+    """What "make the viewer the default" takes: everything it shows except archives (they
+    stay with the archive manager; the viewer is only offered for them under Open with)."""
+    from umc.viewer import files as vf
+
+    shown = [
+        e
+        for e in shell_integration.view_extensions()
+        if vf.kind_of_path(Path("x." + e)) != vf.ARCHIVE
+    ]
+    return linux_desktop.mime_types(shown)
 
 
 # --------------------------------------------------------------------------- mimeapps.list

@@ -34,6 +34,7 @@ ICONS: tuple[FileIcon, ...] = (
     FileIcon("cad", "CAD drawing", "cad", "#16a0b5", (MediaFamily.CAD,)),
     FileIcon("subtitle", "Subtitles", "subtitle", "#b7861a", (MediaFamily.SUBTITLE,)),
     FileIcon("code", "Code or text", "code", "#5b6475", (MediaFamily.CODE,)),
+    FileIcon("archive", "Archive", "archive", "#8a6d3b", (MediaFamily.ARCHIVE,)),
 )
 BY_KIND = {i.kind: i for i in ICONS}
 _BY_FAMILY = {f: i for i in ICONS for f in i.families}

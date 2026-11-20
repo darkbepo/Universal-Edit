@@ -61,7 +61,8 @@ def test_extension_lists():
     assert all("." not in e for e in conv)  # no "tar.gz": Explorer keys by the last suffix
     view = shell.view_extensions()
     assert "png" in view and "mp4" in view and "pdf" in view and "stl" in view
-    assert "zip" not in view and "ttf" not in view  # nothing to show for those
+    assert "zip" in view and "7z" in view  # the viewer lists what's inside
+    assert "ttf" not in view  # nothing to show for those
 
 
 def test_code_files_are_open_with_only():

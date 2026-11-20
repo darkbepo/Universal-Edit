@@ -37,6 +37,7 @@ from PySide6.QtWidgets import (
 
 from umc.core.detect import DetectedFile, detect
 from umc.gui import branding, icons, theme
+from umc.gui.viewer.archive_view import ArchiveView
 from umc.gui.viewer.media import MediaView, MiniPlayer, Playback, clock
 from umc.gui.viewer.tasks import TaskRunner
 from umc.gui.viewer.views import (
@@ -62,6 +63,7 @@ KIND_NAMES = {
     vf.CONVERT: "Document",
     vf.TEXT: "Text",
     vf.MODEL: "3D model",
+    vf.ARCHIVE: "Archive",
     vf.OTHER: "File",
 }
 PATH_ROLE = Qt.ItemDataRole.UserRole  # file / folder items: the path (str)
@@ -131,6 +133,8 @@ class ViewerWindow(QMainWindow):
         self._preview_cancel: threading.Event | None = None
         self._wave_cancel: threading.Event | None = None
         self._pdf_for_pages: Path | None = None
+        self.inner: str | None = None  # a file inside the archive shown: its name there
+        self._archive_file: DetectedFile | None = None
         self._thumbs_requested: set[Path] = set()
         self._thumb_icons: dict[Path, QIcon] = {}
         self._file_items: dict[Path, QTreeWidgetItem] = {}
@@ -159,9 +163,34 @@ class ViewerWindow(QMainWindow):
         self.text_file: textedit.Opened | None = None  # the text file being edited here
         self.text.document().modificationChanged.connect(self._on_text_modified)
         self.info = InfoView()
-        for w in (self.canvas, self.media, self.pages, self.text, self.info):
+        self.archive = ArchiveView()
+        self.archive.asker = lambda text, buttons: self.ask(text, buttons)
+        self.archive.temp_root = self._temp_dir
+        self.archive.preview_requested.connect(self._preview_inner)
+        self.archive.show_folder.connect(self._show_extracted)
+        self.archive.summary_changed.connect(self._archive_summary)
+        self.archive.folder_changed.connect(self._update_nav)
+        for w in (self.canvas, self.media, self.pages, self.text, self.info, self.archive):
             self.stack.addWidget(w)
-        body.addWidget(self.stack, 1)
+        stage = QWidget()
+        stage_lay = QVBoxLayout(stage)
+        stage_lay.setContentsMargins(0, 0, 0, 0)
+        stage_lay.setSpacing(0)
+        self.inner_bar = QFrame(objectName="ViewerInnerBar")
+        ib = QHBoxLayout(self.inner_bar)
+        ib.setContentsMargins(16, 6, 16, 6)
+        ib.setSpacing(10)
+        self.inner_back = QPushButton(objectName="Secondary")
+        self.inner_back.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.inner_back.setToolTip("Back to the archive's list (Alt+←)")
+        self.inner_back.clicked.connect(self.back_to_archive)
+        self.inner_label = QLabel(objectName="Muted")
+        ib.addWidget(self.inner_back)
+        ib.addWidget(self.inner_label, 1)
+        self.inner_bar.hide()
+        stage_lay.addWidget(self.inner_bar)
+        stage_lay.addWidget(self.stack, 1)
+        body.addWidget(stage, 1)
 
         side = QFrame(objectName="ViewerSide")
         side.setFixedWidth(SIDE_WIDTH)
@@ -531,6 +560,9 @@ class ViewerWindow(QMainWindow):
 
     # ------------------------------------------------------------ folders
     def go_back(self) -> None:
+        if self.inner is not None:
+            self.back_to_archive()
+            return
         if not self._leave_ok():
             return
         location = self.history.back()
@@ -545,6 +577,11 @@ class ViewerWindow(QMainWindow):
             self._go(location)
 
     def go_up(self) -> None:
+        if self.inner is not None:
+            self.back_to_archive()
+            return
+        if self.stack.currentWidget() is self.archive and self.archive.go_up():
+            return
         if self.location is None:
             return
         parent = browse.parent_of(self.location)
@@ -576,10 +613,14 @@ class ViewerWindow(QMainWindow):
         return None
 
     def _update_nav(self) -> None:
-        self.back_button.setEnabled(self.history.can_back())
+        in_archive = self.inner is not None or (
+            self.kind == vf.ARCHIVE and bool(self.archive.folder)
+        )
+        self.back_button.setEnabled(self.history.can_back() or self.inner is not None)
         self.forward_button.setEnabled(self.history.can_forward())
         self.up_button.setEnabled(
-            self.location is not None and browse.parent_of(self.location) is not None
+            in_archive
+            or (self.location is not None and browse.parent_of(self.location) is not None)
         )
 
     def _address_entered(self) -> None:
@@ -623,6 +664,7 @@ class ViewerWindow(QMainWindow):
                 self._select(self.shown, show=False)
             return
         self._stop_current()
+        self._leave_inner()
         f = detect(path)
         self.current = f
         self.shown = path
@@ -636,6 +678,7 @@ class ViewerWindow(QMainWindow):
             self._show_info("file", "There's no preview for this kind of file.")
             return
         getattr(self, f"_show_{self.kind}")(f)
+        self._update_nav()
 
     def _stop_current(self) -> None:
         self.text_file = None
@@ -710,6 +753,11 @@ class ViewerWindow(QMainWindow):
                 pb.set_volume(percent)
 
     def _reopen_from_mini(self, path: Path) -> None:
+        unpacked = {p: n for n, p in self.archive._unpacked.items()}
+        if self._preview_dir is not None and path.is_relative_to(self._preview_dir):
+            if path in unpacked and self.inner != unpacked[path]:
+                self._preview_inner(path, unpacked[path])  # from the archive still shown
+            return
         if path in self._file_items:
             self._select(path)
         else:
@@ -898,6 +946,16 @@ class ViewerWindow(QMainWindow):
     def _leave_ok(self) -> bool:
         """Before showing something else: unsaved text edits are saved, dropped, or kept (the
         move is called off). True = go ahead."""
+        if self.archive.busy() and self.archive.job_quiet:
+            self.archive.shutdown()  # only reading: nothing to lose
+        if self.archive.busy() and (self.kind == vf.ARCHIVE or self.inner is not None):
+            answer = self.ask(
+                "The archive is still being worked on. Stop that?", ("Stop", "Keep waiting")
+            )
+            if answer != "Stop":
+                return False
+            self.archive.cancel()
+            self.archive.shutdown()
         if not self.text_modified():
             return True
         assert self.text_file is not None
@@ -964,6 +1022,79 @@ class ViewerWindow(QMainWindow):
 
         self.tasks.submit("main", load, done, self._failed("This 3D model can't be opened."))
 
+    def _show_archive(self, f: DetectedFile) -> None:
+        self._archive_file = f
+        self.archive.open(f.path, f.ext)
+        self.stack.setCurrentWidget(self.archive)
+        self.archive.list.setFocus()
+
+    def _archive_summary(self, text: str) -> None:
+        if self.kind == vf.ARCHIVE and self.inner is None:
+            self.details = text
+            self._update_details()
+
+    def _temp_dir(self) -> Path:
+        """The viewer's own temporary folder (removed when the window closes)."""
+        if self._preview_dir is None:
+            self._preview_dir = Path(tempfile.mkdtemp(prefix="umc-view-"))
+        return self._preview_dir
+
+    def _preview_inner(self, file: Path, name: str) -> None:
+        """Show a file unpacked from the archive; Back returns to the archive's list."""
+        archive = self._archive_file
+        if archive is None or self.shown != archive.path:
+            return
+        self._stop_current()
+        f = detect(file)
+        self.inner = name
+        self.current = f
+        self.kind = vf.view_kind(f) if f is not None else vf.OTHER
+        self.details = ""
+        leaf = name.rsplit("/", 1)[-1]
+        self.inner_back.setText(f"←  {archive.path.name}")
+        self.inner_label.setText(f"Inside {archive.path.name}: {name}")
+        self.inner_bar.show()
+        self.setWindowTitle(f"{leaf} — {branding.APP_NAME}")
+        self.name_label.setText(leaf)
+        self._update_buttons()
+        self._update_details()
+        self._update_nav()
+        if f is None or self.kind == vf.OTHER:
+            self._show_info("file", "There's no preview for this kind of file.", title=leaf)
+        elif self.kind == vf.ARCHIVE:
+            self._show_info(
+                "archive", "An archive inside the archive: extract it to look inside.", title=leaf
+            )
+        elif self.kind == vf.TEXT:
+            self._show_text_read_only(f)
+        else:
+            getattr(self, f"_show_{self.kind}")(f)
+
+    def back_to_archive(self) -> None:
+        if self.inner is None or self._archive_file is None:
+            return
+        self._stop_current()
+        self._leave_inner()
+        self.current = self._archive_file
+        self.kind = vf.ARCHIVE
+        self.details = ""
+        self.setWindowTitle(f"{self.current.path.name} — {branding.APP_NAME}")
+        self.name_label.setText(self.current.path.name)
+        self.archive._emit_summary()
+        self._update_buttons()
+        self._update_details()
+        self._update_nav()
+        self.stack.setCurrentWidget(self.archive)
+        self.archive.list.setFocus()
+
+    def _leave_inner(self) -> None:
+        self.inner = None
+        self.inner_bar.hide()
+
+    def _show_extracted(self, folder: Path) -> None:
+        if folder.is_dir():
+            self.navigate(folder)
+
     # ------------------------------------------------------------ bottom bar
     def _update_details(self) -> None:
         if self.shown is None:
@@ -974,9 +1105,10 @@ class ViewerWindow(QMainWindow):
         parts = [KIND_NAMES.get(self.kind, "File")]
         if self.details:
             parts.append(self.details)
+        on_disk = self.current.path if self.inner is not None and self.current else self.shown
         with contextlib.suppress(OSError):
-            parts.append(fmt_size(self.shown.stat().st_size))
-        index = self.current_index()
+            parts.append(fmt_size(on_disk.stat().st_size))
+        index = self.current_index() if self.inner is None else -1
         if index >= 0:
             parts.append(f"{index + 1} of {len(self.items)}")
         self.detail_label.setText(" · ".join(parts))
@@ -987,6 +1119,13 @@ class ViewerWindow(QMainWindow):
             self._update_details()
 
     def _update_buttons(self) -> None:
+        if self.inner is not None:  # a temporary copy: extract it to convert or edit it
+            for b in (self.convert_button, self.properties_button, self.edit_button):
+                b.setEnabled(False)
+                b.setToolTip("Extract the file from the archive first")
+            return
+        self.convert_button.setToolTip("Open this file in the converter")
+        self.properties_button.setToolTip("See this file's details")
         self.convert_button.setEnabled(self.current is not None)
         self.properties_button.setEnabled(self.current is not None)
         editor = vf.editor_for(self.kind, self.current.path if self.current else None)
@@ -1066,6 +1205,7 @@ class ViewerWindow(QMainWindow):
             event.ignore()
             return
         self._stop_current()
+        self.archive.shutdown()
         self.mini.stop()
         old = self.watcher.directories()
         if old:

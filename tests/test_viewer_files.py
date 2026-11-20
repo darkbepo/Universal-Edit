@@ -24,7 +24,8 @@ def test_kinds(tmp_path):
         "a.json": vf.TEXT,
         "a.srt": vf.TEXT,
         "a.stl": vf.MODEL,
-        "a.zip": vf.OTHER,
+        "a.zip": vf.ARCHIVE,
+        "a.tar.gz": vf.ARCHIVE,
         "a.ttf": vf.OTHER,
         "a.bin": vf.OTHER,
     }
@@ -43,9 +44,10 @@ def test_folder_items(tmp_path):
         (tmp_path / n).write_bytes(b"x")
     (tmp_path / "sub.png").mkdir()  # a folder named like a picture
     names = [p.name for p in vf.folder_items(tmp_path / "b10.png")]
-    assert names == ["b2.png", "b10.png", "notes.txt"]
+    assert names == ["archive.zip", "b2.png", "b10.png", "notes.txt"]
     # a file it can't show still opens (and is listed) when it's the one asked for
     assert [p.name for p in vf.folder_items(tmp_path / "x.bin")] == [
+        "archive.zip",
         "b2.png",
         "b10.png",
         "notes.txt",

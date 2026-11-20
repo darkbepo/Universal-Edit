@@ -1359,6 +1359,28 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
        and `switch_video_output` pauses around a switch — playing before the output was set
        showed a green frame on Windows.
 
+    7. ✅ Archives in the viewer (owner, Nov 2026; desktop): view kind `ARCHIVE`, side-list group
+       "Archives". Engine `tools/archive.py`: `entries` → `Contents` (ZIP / 7Z / TAR by their
+       libraries, RAR by `parse_tv_listing` of `bsdtar -tv`; links left out), `extract(…, only,
+       strip, unique)` (a folder name takes what's below it; 7Z / bsdtar unpack into a
+       `.umc-extract-*` staging folder first), `rewrite` (ZIP / TAR copy untouched entries
+       across with their headers — modes, links, empty folders kept; 7Z unpacks + `create`s and
+       refuses when it holds links) into a hidden `.umc-tmp-*` file next to it, then
+       `os.replace`; keeps the password. `PasswordNeeded` (py7zr reports a wrong password as
+       LZMAError / CrcError, so with a password given those mean "wrong password"). Model `viewer/archive.py` (`Tree` with made-up folders,
+       `files_to_add`, `keep_both`, `extract_here_folder`). Page `gui/viewer/archive_view.py`:
+       jobs on a plain thread (`Job`, results through bound-method slots; `drag_files` waits in a
+       local event loop polling `job.outcome`). A file inside is unpacked into the viewer's temp
+       folder and shown with the normal views (`ViewerWindow._preview_inner`, `inner` = its name;
+       Convert / Edit / Properties off, text read-only); Back / Up return to the list. Offscreen
+       Qt can't drag: tests call `drag_files` / `dropEvent` — check a real drag on Windows.
+       Write jobs run on non-daemon threads and `shutdown` joins them (else quitting mid-save
+       left the temp file); finished `Job`s stay in `_old_jobs` until their thread ends (the last
+       reference to a QObject must not drop on the worker thread). `.tar.gz` gets no Open with:
+       Explorer / MIME match the last suffix, and every plain `.gz` would be caught.
+       Archives are registered for Open with (`fileicons` kind "archive", `archive.ico`) but
+       never made the default: `linux_integration.viewer_types` leaves them out (owner).
+
 ## Handoff — read this first (for the next Claude account)
 
 The converter (roadmap items 1–9) is done in both apps except the one parked item (9.15
