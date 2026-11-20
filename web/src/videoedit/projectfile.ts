@@ -20,12 +20,21 @@ const isDict = (x: unknown): x is Dict => typeof x === "object" && x !== null &&
 /** Defaults plus the known keys of `data` (unknown keys dropped), like `_build`. */
 function build<T extends object>(defaults: T, data: Dict): T {
   const out: Dict = { ...(defaults as Dict) };
-  for (const k of Object.keys(defaults)) if (k in data) out[k] = data[k];
+  for (const k of Object.keys(defaults)) {
+    if (!(k in data)) continue;
+    const want = (defaults as Dict)[k];
+    const got = data[k];
+    if (want === null ? got !== null && typeof got !== "string" : typeof got !== typeof want) return bad();
+    if (typeof got === "number" && !Number.isFinite(got)) return bad();
+    out[k] = got;
+  }
   return out as T;
 }
 
 function itemFromJson(data: unknown): MainItem | TextItem | AudioClip {
   if (!isDict(data) || typeof data.id !== "string") return bad();
+  if ("transition_in" in data && !isDict(data.transition_in)) return bad();
+  if (data.type !== "text" && typeof data.source !== "string") return bad();
   const tr = isDict(data.transition_in) ? build<Transition>(NO_TRANSITION, data.transition_in) : undefined;
   const id = data.id;
   let item: MainItem | TextItem | AudioClip;

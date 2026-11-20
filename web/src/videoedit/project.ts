@@ -154,14 +154,14 @@ export interface Span {
   readonly index: number;
 }
 
-export const DEFAULT_SETTINGS: ProjectSettings = {
+export const DEFAULT_SETTINGS: ProjectSettings = Object.freeze({
   resolution: "first",
   width: 1920,
   height: 1080,
   fps: "first",
   background: "#000000",
-};
-export const NO_TRANSITION: Transition = { kind: "none", duration: 0.5 };
+});
+export const NO_TRANSITION: Transition = Object.freeze({ kind: "none", duration: 0.5 });
 
 let idMaker: (() => string) | null = null;
 /** Tests: deterministic ids. `null` goes back to random ones. */
@@ -271,7 +271,7 @@ function firstVideo(p: Project): Source | null {
 
 export function outputSize(p: Project): [number, number] {
   const res = p.settings.resolution;
-  if (res in PRESET_SIZES) return [...PRESET_SIZES[res]];
+  if (Object.hasOwn(PRESET_SIZES, res)) return [...PRESET_SIZES[res]];
   if (res === "custom") return [even(p.settings.width), even(p.settings.height)];
   const first = firstVideo(p);
   if (!first) return [1920, 1080];

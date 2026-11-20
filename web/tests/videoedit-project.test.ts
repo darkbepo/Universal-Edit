@@ -1,8 +1,8 @@
 // The video project model, layout maths and file format (same cases as the desktop: tests/fixtures/videoedit_cases.json).
 import { describe, expect, it } from "vitest";
 import cases from "../../tests/fixtures/videoedit_cases.json";
-import { layout, length, newId, newProject, outputFps, outputSize, setIdMaker, type Project } from "../src/videoedit/project";
-import { projectFromJson, projectToJson } from "../src/videoedit/projectfile";
+import { layout, length, newId, newProject, outputFps, outputSize, setIdMaker, videoClip, type Project } from "../src/videoedit/project";
+import { projectFromJson, projectToJson, sourceFromJson } from "../src/videoedit/projectfile";
 
 const nearlyEqual = (a: number, b: number, eps = 1e-9) => Math.abs(a - b) <= eps;
 const load = (dict: unknown) => projectFromJson(JSON.stringify(dict));
@@ -71,6 +71,20 @@ describe("project file", () => {
     for (const text of ["{", "[]", '{"format":"other"}', JSON.stringify({ ...good, version: "1" }), JSON.stringify(badItem), JSON.stringify({ ...good, main: 5 })]) {
       expect(() => projectFromJson(text)).toThrow(msg);
     }
+    const m0 = good.main[0];
+    const { source: _s, ...noSource } = m0;
+    const variants = [
+      { ...good, main: [{ ...m0, in_: "0" }] },
+      { ...good, main: [{ ...m0, transition_in: "fade" }] },
+      { ...good, main: [{ ...m0, mute: 1 }] },
+      { ...good, main: [noSource] },
+      { ...good, settings: { ...good.settings, width: "5" } },
+    ];
+    for (const v of variants) expect(() => load(v)).toThrow(msg);
+    const a = { type: "audio", id: "x", start: 0, in_: 0, out: 1 };
+    expect(() => load({ ...good, music_rows: [[a]] })).toThrow(msg);
+    expect(() => load({ ...good, music_rows: [[{ ...a, source: "m1" }]] })).not.toThrow();
+    expect(() => load({ ...good, main: [{ ...m0, in_: 3 }] })).not.toThrow();
     expect(() => load({ ...good, version: 2 })).toThrow("This project was made by a newer version of the app.");
   });
 });
@@ -93,5 +107,26 @@ describe("ids and fps", () => {
       };
       expect(outputFps(p)).toBe(want);
     }
+  });
+});
+
+describe("hardening", () => {
+  it("sourceFromJson reads, defaults size and rejects", () => {
+    const e = { id: "a", path: "a.mp4", kind: "video", duration: 2, width: 4, height: 4, fps: 30, has_audio: true, size: 77 };
+    expect(sourceFromJson(e).size).toBe(77);
+    const { size: _z, ...noSize } = e;
+    expect(sourceFromJson(noSize).size).toBe(0);
+    expect(() => sourceFromJson({ ...e, kind: "x" })).toThrow("This isn't a valid video project file.");
+    expect(() => sourceFromJson(5)).toThrow("This isn't a valid video project file.");
+  });
+
+  it("an unknown resolution name falls back instead of matching prototype keys", () => {
+    const p: Project = { ...newProject(), settings: { ...newProject().settings, resolution: "constructor" } };
+    expect(outputSize(p)).toEqual([1920, 1080]);
+  });
+
+  it("default settings are frozen", () => {
+    expect(Object.isFrozen(newProject().settings)).toBe(true);
+    expect(Object.isFrozen(videoClip("a", "b", 0, 1).transition_in)).toBe(true);
   });
 });
