@@ -201,6 +201,12 @@ def test_speed_change_can_be_cancelled(window, qtbot, media, monkeypatch):
         page.cancel_button.click()
     assert "Cancelled" in page.message.text() and not page.doc.dirty
     assert io.change_speed is not slow
+    # leaving while a change runs stops it first
+    started.clear()
+    page.run("speed")
+    assert started.wait(5) and page.busy
+    assert page.maybe_leave()
+    assert not page.busy and not page.doc.dirty
 
 
 def test_effects_and_save_as(window, qtbot, media, tmp_path, monkeypatch):

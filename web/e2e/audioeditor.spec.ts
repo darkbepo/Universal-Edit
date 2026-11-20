@@ -166,6 +166,41 @@ test("Speed / pitch changes the selection's tempo, and undo puts it back", async
   expect((await info(page)).duration).toBeCloseTo(3, 3);
 });
 
+test("Speed / pitch can be cancelled, and the next change still works", async ({ page }) => {
+  await openEditor(page, [fx("tone.wav")]);
+  const dlg = page.locator("dialog.speed");
+  const change = async (mode: string, amount: string) => {
+    await page.getByRole("button", { name: "Speed / pitch…" }).click();
+    await dlg.getByLabel("Change").selectOption(mode);
+    await dlg.getByLabel("Amount").fill(amount);
+    await dlg.getByRole("button", { name: "OK" }).click();
+  };
+  // a minute of sound, so the change is still running when Cancel is clicked
+  const frames = await page.evaluate(() => {
+    const d = window.__audio!.doc!;
+    d.selectAll();
+    const clip = d.copy()!;
+    for (let i = 0; i < 19; i++) { d.setSelection(d.frames); d.paste(clip); }
+    d.setSelection(0);
+    return d.frames;
+  });
+  await change("pitch", "3");
+  const cancel = page.locator(".audio-editor .editor-status").getByRole("button", { name: "Cancel" });
+  await cancel.click({ timeout: 60_000 });
+  await expect(page.locator(".audio-editor .msg")).toHaveText("Cancelled: nothing was changed.");
+  await expect(cancel).toBeHidden();
+  expect(await page.evaluate(() => window.__audio!.doc!.undoLabel())).toBe("Paste");
+  expect(await page.evaluate(() => window.__audio!.doc!.frames)).toBe(frames);
+  // an empty amount keeps the last value instead of the smallest one
+  await page.getByRole("button", { name: "Speed / pitch…" }).click();
+  await dlg.getByLabel("Change").selectOption("tempo");
+  await dlg.getByLabel("Amount").fill("");
+  await expect(dlg.locator(".speed-result")).toHaveText("1:00.000 → 1:00.000");
+  await dlg.getByRole("button", { name: "Cancel" }).click();
+  await change("tempo", "200");
+  await expect.poll(async () => (await info(page)).duration, { timeout: 120_000 }).toBeCloseTo(30, 3);
+});
+
 test("the audio tile opens an empty editor; Edit is off for audio mixed with images", async ({ page }) => {
   await page.goto("./?e2e");
   await page.locator(".editor-tile[data-editor=audio]").click();

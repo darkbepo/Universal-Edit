@@ -1034,7 +1034,9 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       is cut to `expected_frames` / `expectedFrames`; `AudioDoc.replace_part` / `replacePart` =
       one undo step. Desktop: `io.change_speed` on the page's worker thread (`changing`, status-bar
       Cancel, `change_done` for tests); web: hidden converter `audio-edit-speed` in the worker
-      (Cancel = `client.cancel()`). Results longer than `MAX_SAMPLES` are refused first.
+      (Cancel = `client.cancel()`, shown only once the worker runs this job — the client is shared;
+      leaving the page drops a running change via `changeRun`). Results longer than
+      `MAX_SAMPLES` are refused first.
       Not yet: several tracks / mixing, recording, spectrogram, noise reduction.
    14. Properties mode (both apps), step 1 = read-only "About this file" — spec
       `docs/superpowers/specs/2026-11-12-properties-design.md`. Model `properties/` (desktop, no

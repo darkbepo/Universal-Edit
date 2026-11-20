@@ -97,6 +97,9 @@ export class AudioEditorPage {
   /** Shown while a speed / pitch change runs in the worker. */
   private cancelButton = h("button", { class: "btn small", type: "button", hidden: true, title: "Stop changing the sound" }, "Cancel");
   private lastSpeed: SpeedChoice = { mode: "tempo", value: 100 };
+  /** Counts speed changes; leaving the page bumps it so a late answer is ignored. */
+  private changeRun = 0;
+  private changing = false;
   private selectionLabel = h("div", { class: "audio-selection" });
   /** Start / End / Length: typed times change the selection (Enter or leaving the box). */
   private timeBoxes = new Map<ops.TimeField, HTMLInputElement>();
@@ -156,7 +159,7 @@ export class AudioEditorPage {
       top,
       h("div", { class: "audio-body" }, tools, h("div", { class: "audio-view" }, this.host, this.placeholder), this.scroll),
       h("div", { class: "editor-status" }, this.selectionLabel, this.message, this.cancelButton, this.infoLabel));
-    this.cancelButton.addEventListener("click", () => this.opts.client.cancel());
+    this.cancelButton.addEventListener("click", () => this.cancelChange());
     this.buildTimes();
 
     let saved = NaN;
@@ -221,6 +224,15 @@ export class AudioEditorPage {
 
   maybeLeave(): boolean {
     this.stop();
+    if (this.changing) {
+      // the change is dropped: the page is free at once for the next files
+      this.cancelChange();
+      this.changeRun++;
+      this.changing = this.busy = false;
+      this.cancelButton.hidden = true;
+      this.showMessage("");
+      this.update();
+    }
     if (!this.dirty) return true;
     return window.confirm("Discard unsaved changes to this sound?");
   }
@@ -565,6 +577,12 @@ export class AudioEditorPage {
     return ok;
   }
 
+  /** Stops the running speed change. Cancel is only shown once the worker runs *this* job
+   *  (the client is shared, and `cancel()` stops whatever job it is running). */
+  private cancelChange(): void {
+    if (this.changing && !this.cancelButton.hidden) this.opts.client.cancel();
+  }
+
   /** Speed / tempo / pitch of the selection (or everything) through FFmpeg in the worker. */
   private async changeSpeed(): Promise<boolean> {
     const doc = this.doc!;
@@ -584,19 +602,25 @@ export class AudioEditorPage {
       this.showMessage(TOO_LONG_RESULT, true);
       return false;
     }
-    this.busy = true;
-    this.cancelButton.hidden = false;
+    const run = ++this.changeRun;
+    this.busy = this.changing = true;
     this.update();
     try {
       const wav = writeWav(doc.rate, speed.padded(ops.slice(doc.samples, a, b), doc.rate), 32);
       const input: InputFile = { file: new File([wav as BlobPart], "part.wav", { type: "audio/wav" }), name: "part.wav", ext: "wav", family: "audio" };
-      const [out] = await this.opts.client.run(SPEED_TARGET, [input], { mode, value }, (p, m) => this.showMessage(`${m || "Changing the sound…"} ${Math.round(p * 100)} %`));
+      const [out] = await this.opts.client.run(SPEED_TARGET, [input], { mode, value }, (p, m) => {
+        if (run !== this.changeRun) return;
+        this.cancelButton.hidden = false; // our job is the one running now
+        this.showMessage(`${m || "Changing the sound…"} ${Math.round(p * 100)} %`);
+      });
+      if (run !== this.changeRun) return false; // left the page meanwhile
       const { rate, samples } = readWav(out.data);
       if (rate !== doc.rate || !ops.frames(samples)) throw new Error(`Couldn't change the ${mode} of the sound.`);
       this.showMessage("");
       const want = speed.expectedFrames(mode, value, b - a, doc.rate);
       return doc.replacePart(SPEED_LABELS[mode], a, b, speed.fitLength(ops.fitChannels(samples, doc.channels), want));
     } catch (e) {
+      if (run !== this.changeRun) return false;
       if (e instanceof JobCancelled) this.showMessage("Cancelled: nothing was changed.");
       else {
         console.error(e);
@@ -604,8 +628,10 @@ export class AudioEditorPage {
       }
       return false;
     } finally {
-      this.busy = false;
-      this.cancelButton.hidden = true;
+      if (run === this.changeRun) {
+        this.busy = this.changing = false;
+        this.cancelButton.hidden = true;
+      }
     }
   }
 
@@ -1055,13 +1081,13 @@ async function speedDialog(seconds: number, rate: number, last: SpeedChoice): Pr
   let shown = mode.value as speed.SpeedMode;
   const read = (): SpeedChoice => {
     const m = mode.value as speed.SpeedMode;
-    const v = Number(input.value);
+    const v = input.value.trim() === "" ? NaN : Number(input.value);
     return { mode: m, value: speed.clamp(m, Number.isFinite(v) ? v : values[m]) };
   };
   const show = () => {
     const m = mode.value as speed.SpeedMode;
     if (m !== shown) {
-      const v = Number(input.value); // what was typed for the mode shown so far
+      const v = input.value.trim() === "" ? NaN : Number(input.value); // typed for the mode shown so far
       if (Number.isFinite(v)) values[shown] = speed.clamp(shown, v);
       shown = m;
     }
