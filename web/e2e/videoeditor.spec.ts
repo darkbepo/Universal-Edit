@@ -1,5 +1,5 @@
 // The website's video editor (behind ?e2e / ?video-editor): the gate, the Edit switch, the tile,
-// opening sources (straight, or through the FFmpeg copy) and the media list.
+// opening sources (straight, or through the FFmpeg copy), the media list, the timeline and the still preview.
 import { execFileSync } from "node:child_process";
 import { existsSync, statSync } from "node:fs";
 import { expect, test } from "@playwright/test";
@@ -373,4 +373,165 @@ test("refused edits are shown", async ({ page }) => {
   await expect(statusMsg(page)).toHaveText("This project is too big to edit (max 4 hours and 500 items).");
   await expect(statusMsg(page)).toHaveClass(/error/);
   expect(await ve(page, "history.canUndo")).toBe(false);
+});
+
+// ---------------------------------------------------------------- the still preview
+type RGBA = [number, number, number, number];
+const RED: [number, number, number] = [208, 32, 32];
+/** red.mp4 is untagged BT.601 (FFmpeg's default); Chromium decodes it as BT.709, which comes
+ *  out ~(223, 49, 30): the red checks allow for that. */
+const VIDEO_TOL = 24;
+const BLUE: [number, number, number] = [32, 64, 208];
+/** The preview's pixel at fractions of the frame, once every still asked for is drawn. */
+const pixel = async (page: Page, fx = 0.5, fy = 0.5) => {
+  await ve(page, "still()");
+  return ve<RGBA | null>(page, `pixel(${fx}, ${fy})`);
+};
+const near = (got: RGBA | null, want: [number, number, number], tol = 12) =>
+  got !== null && got.slice(0, 3).every((v, i) => Math.abs(v - want[i]) <= tol);
+/** Every pixel of the shown still (to tell two stills apart). */
+const stillPixels = async (page: Page) => {
+  await ve(page, "still()");
+  return page.locator("canvas.ve-still").evaluate((c: HTMLCanvasElement) => {
+    const d = c.getContext("2d")!.getImageData(0, 0, c.width, c.height).data;
+    const out: number[] = []; // every 4th pixel each way is plenty to see the text
+    for (let y = 0; y < c.height; y += 4) for (let x = 0; x < c.width; x += 4) out.push(d[(y * c.width + x) * 4]);
+    return out;
+  });
+};
+const differs = (a: number[], b: number[]) => a.length !== b.length || a.some((v, i) => Math.abs(v - b[i]) > 40);
+const RED_BLUE = () => [fx("red.mp4"), fx("blue.png")];
+const needsRed = () => test.skip(!existsSync(fx("red.mp4")), "needs ffmpeg");
+
+test("the preview shows the frame under the playhead", async ({ page }) => {
+  needsRed();
+  await page.goto("./?e2e");
+  await openEditor(page, RED_BLUE());
+  await expect(page.locator("canvas.ve-still")).toBeVisible();
+  await ve(page, "seek(0.5)");
+  expect(near(await pixel(page), RED, VIDEO_TOL)).toBe(true);
+  await ve(page, "seek(1.5)");
+  expect(near(await pixel(page), BLUE)).toBe(true);
+  await expect(page.locator(".ve-time")).toHaveText("0:01.50 / 0:04.00");
+  // the screen is SCREEN_BG in both themes
+  expect(await page.locator(".ve-screen").evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgb(11, 12, 15)");
+  await expect(page.getByRole("button", { name: "▶" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "▶" })).toHaveAttribute("title", "Playback comes soon");
+});
+
+test("scrubbing", async ({ page }) => {
+  needsRed();
+  await page.goto("./?e2e");
+  await openEditor(page, RED_BLUE());
+  const from = await at(page, 0);
+  const to = await at(page, 1.5);
+  const y = (await timeline(page).boundingBox())!.y + 12; // the ruler
+  await page.mouse.move(from.x, y);
+  await page.mouse.down();
+  for (let i = 1; i <= 10; i++) await page.mouse.move(from.x + ((to.x - from.x) * i) / 10, y);
+  await page.mouse.up();
+  expect(await ve<number>(page, "playhead")).toBeCloseTo(1.5, 1);
+  expect(near(await pixel(page), BLUE)).toBe(true);
+  await expect(page.locator(".ve-time")).toHaveText("0:01.50 / 0:04.00");
+});
+
+test("text shows in the preview", async ({ page }) => {
+  needsRed();
+  await page.goto("./?e2e");
+  await openEditor(page, RED_BLUE());
+  await ve(page, "seek(0.5)");
+  const plain = await stillPixels(page);
+  await page.getByRole("button", { name: "+ Text" }).click();
+  await expect.poll(() => ve(page, "history.undoLabel")).toBe("Add text");
+  const withText = await stillPixels(page);
+  expect(differs(plain, withText)).toBe(true);
+  expect(near(await pixel(page), RED, VIDEO_TOL)).toBe(true); // the text sits at the bottom, not the centre
+});
+
+test("a crossfade's middle frame mixes both clips", async ({ page }) => {
+  needsRed();
+  await page.goto("./?e2e");
+  await openEditor(page, RED_BLUE());
+  const [, b] = await mainIds(page);
+  const s = await spans(page);
+  const tab = await at(page, s[b].start, "main", 0, 10);
+  await page.mouse.click(tab.x, tab.y);
+  await page.locator("#ve-kind").selectOption({ label: "Crossfade" });
+  await expect.poll(() => ve(page, "history.undoLabel")).toBe("Change transition");
+  const s2 = await spans(page);
+  await ve(page, `seek(${(s2[b].start + s2[b].start + 0.5) / 2})`);
+  const got = (await pixel(page))!;
+  expect(got[0]).toBeGreaterThan(70);
+  expect(got[0]).toBeLessThan(170);
+  expect(got[2]).toBeGreaterThan(70);
+  expect(got[2]).toBeLessThan(170);
+});
+
+test("a picture's grade shows in the preview", async ({ page }) => {
+  needsRed();
+  await page.goto("./?e2e");
+  await openEditor(page, RED_BLUE());
+  await ve(page, "seek(2)");
+  const before = (await pixel(page))!;
+  const pic = (await mainIds(page))[1];
+  await ve(page, `select("${pic}")`);
+  await page.locator("#ve-brightness").evaluate((el: HTMLInputElement) => {
+    el.value = "100";
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await expect.poll(() => ve(page, "history.undoLabel")).toBe("Change brightness");
+  const after = (await pixel(page))!;
+  expect(after[0] + after[1] + after[2]).toBeGreaterThan(before[0] + before[1] + before[2] + 60);
+});
+
+test("past the end shows the background", async ({ page }) => {
+  needsRed();
+  await page.goto("./?e2e");
+  await openEditor(page, RED_BLUE());
+  await ve(page, "seek(0.5)");
+  expect(near(await pixel(page), RED, VIDEO_TOL)).toBe(true);
+  await timeline(page).focus();
+  await page.keyboard.press("End");
+  expect(await ve<number>(page, "playhead")).toBeCloseTo(4, 5);
+  expect(near(await pixel(page), [0, 0, 0], 4)).toBe(true);
+});
+
+test("leaving blanks the preview", async ({ page }) => {
+  needsRed();
+  await page.goto("./?e2e");
+  await openEditor(page, RED_BLUE());
+  expect(near(await pixel(page), RED, VIDEO_TOL)).toBe(true);
+  await page.getByRole("button", { name: "← Back to Convert" }).click();
+  await expect(page.locator(".video-editor")).toBeHidden();
+  expect(await pixel(page)).toBeNull();
+});
+
+// SourceBank.picture (the still preview is its first user)
+interface Pic { width: number; height: number; samples: number[] }
+const pic = (page: Page, id: string, t: number, h: number) => ve<Pic | null>(page, `picture("${id}", ${t}, ${h})`);
+
+test("source pictures: video frames at the asked height and time, pictures whole", async ({ page }) => {
+  await page.goto("./?e2e");
+  await openEditor(page, [fx("clip.mp4"), fx("blue.png")]);
+  const small = (await pic(page, "s1", 0.5, 120))!;
+  expect([small.width, small.height]).toEqual([160, 120]); // aspect kept
+  const big = (await pic(page, "s1", 0.5, 2000))!;
+  expect([big.width, big.height]).toEqual([320, 240]); // never above the source's own size
+  const later = (await pic(page, "s1", 1.5, 120))!;
+  expect(later.samples).not.toEqual(small.samples); // testsrc moves: another frame
+  expect((await pic(page, "s1", 0.5, 120))!.samples).toEqual(small.samples); // same time, same frame
+  expect(await pic(page, "s1", -1, 120)).not.toBeNull(); // before the first frame: the first frame
+  const png = (await pic(page, "s2", 0, 50))!;
+  expect([png.width, png.height]).toEqual([64, 36]); // a picture is its whole bitmap
+  expect(png.samples.slice(0, 3)).toEqual([0x20, 0x40, 0xd0]);
+  expect(await pic(page, "s9", 0, 100)).toBeNull(); // unknown source
+});
+
+test("source pictures of a turned video come upright", async ({ page }) => {
+  test.skip(!existsSync(fx("turned.mp4")), "needs ffmpeg with -display_rotation");
+  await page.goto("./?e2e");
+  await openEditor(page, [fx("turned.mp4")]);
+  const got = (await pic(page, "s1", 0.5, 200))!;
+  expect([got.width, got.height]).toEqual([150, 200]); // 320 x 240 shown turned: 240 x 320
 });

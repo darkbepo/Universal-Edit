@@ -1,6 +1,6 @@
 // The website's video editor page (port of the desktop's gui/videoedit/): top bar, media list,
 // preview, inspector, timeline and a status line. Sources are opened on the page (sources.ts);
-// the timeline, inspector, preview and player arrive in the next steps. Loaded on demand from
+// the player and export arrive in the next steps. Loaded on demand from
 // ui/app.ts, only behind the test gate.
 import { canonicalExt, PROJECT_EXTS } from "../../core/detect";
 import { ConversionError, type InputFile } from "../../core/types";
@@ -17,6 +17,7 @@ import { backLabel } from "../back";
 import { loadBundledFonts } from "./fonts";
 import { Inspector } from "./inspector";
 import { MediaList } from "./media";
+import { Preview } from "./preview";
 import { actionFor, type ActionId } from "./shortcuts";
 import { Abandoned, SourceBank } from "./sources";
 import { TimelineView } from "./timeline";
@@ -49,6 +50,7 @@ export class VideoEditorPage {
   private inspector: Inspector;
   private bank: SourceBank;
   private media: MediaList;
+  private preview: Preview;
   private history: History | null = null;
   private notes: Map<string, string> = new Map();
   private playhead = 0;
@@ -64,6 +66,7 @@ export class VideoEditorPage {
 
   constructor(private opts: VideoEditorOptions) {
     this.bank = new SourceBank(opts.client);
+    this.preview = new Preview(() => this.bank, { step: (n) => this.stepFrames(n) });
     this.media = new MediaList({
       add: (id) => this.addSourceAtPlayhead(id),
       files: () => this.media.picker.click(),
@@ -105,7 +108,7 @@ export class VideoEditorPage {
       top,
       h("div", { class: "video-body" },
         h("div", { class: "video-media", ariaLabel: "Media" }, this.media.el),
-        h("div", { class: "video-preview", ariaLabel: "Preview" }),
+        h("div", { class: "video-preview", ariaLabel: "Preview" }, this.preview.el),
         h("div", { class: "video-inspector", ariaLabel: "Inspector" }, this.inspector.el),
         this.timelineBox),
       h("div", { class: "editor-status" }, this.message));
@@ -150,8 +153,27 @@ export class VideoEditorPage {
       seek: (t: number) => page.seek(t),
       /** The page can decode that source (straight or through its copy). */
       decodes: (id: string) => page.bank.has(id),
-      still: async (): Promise<void> => {}, // the still preview comes with step 3's preview task
-      pixel: (_x: number, _y: number): [number, number, number, number] | null => null,
+      /** SourceBank.picture: the size of what it gives and a few of its pixels (null: nothing). */
+      picture: async (id: string, time: number, height: number) => {
+        const got = await page.bank.picture(id, time, height);
+        if (!got) return null;
+        const c = new OffscreenCanvas(got.width, got.height);
+        const ctx = c.getContext("2d")!;
+        ctx.drawImage(got.image, 0, 0);
+        const data = ctx.getImageData(0, 0, got.width, got.height).data;
+        const samples: number[] = [];
+        for (let k = 0; k < 64; k++) {
+          const x = Math.floor((((k % 8) + 0.5) * got.width) / 8);
+          const y = Math.floor(((Math.floor(k / 8) + 0.5) * got.height) / 8);
+          const i = (y * got.width + x) * 4;
+          samples.push(data[i], data[i + 1], data[i + 2]);
+        }
+        return { width: got.width, height: got.height, samples };
+      },
+      /** Resolves once the still preview has drawn (or dropped) everything asked of it. */
+      still: (): Promise<void> => page.preview.idle(),
+      /** The preview's pixel at fractions 0…1 of the frame's width / height (null: none shown). */
+      pixel: (fx: number, fy: number): [number, number, number, number] | null => page.preview.pixel(fx, fy),
     };
   }
 
@@ -179,6 +201,7 @@ export class VideoEditorPage {
   private leaveSession(): void {
     this.session++;
     this.epoch++;
+    this.preview.clear(); // a still being made for the old project never paints
     this.freshBank();
     this.work = Promise.resolve();
     this.history = null;
@@ -464,8 +487,16 @@ export class VideoEditorPage {
     this.seek((frameNumber(p, this.playhead) + n) / outputFps(p));
   }
 
-  /** The shown project or the playhead changed (the still preview hooks in here). */
-  private viewChanged(): void {}
+  /** The shown project or the playhead changed: the still preview follows (no project: blank). */
+  private viewChanged(): void {
+    const p = this.shownProject();
+    if (!p || !this.active) {
+      this.preview.clear();
+      return;
+    }
+    this.preview.show(p, this.playhead);
+    this.preview.setTime(this.playhead, length(p));
+  }
 
   // ---------------------------------------------------------------- keys
   private onKey = (e: KeyboardEvent): void => {
