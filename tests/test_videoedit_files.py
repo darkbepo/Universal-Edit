@@ -137,3 +137,84 @@ def test_detect_umcvideo_family(tmp_path):
     ids = {t.id for t in targets_for([d])}
     assert not any(i.split(":")[0] in {"mp4", "png", "frames", "slideshow", "video"} for i in ids)
     assert "mp4" not in ids and "png" not in ids
+
+
+def test_size_round_trips(tmp_path):
+    from pathlib import Path
+
+    from umc.videoedit.project import Project, ProjectSettings, Source
+
+    (tmp_path / "v.mp4").write_bytes(b"")
+    src = Source("s1", Path(tmp_path / "v.mp4"), "video", 2.0, 320, 240, 25.0, True, size=1234)
+    project = Project(ProjectSettings(), (src,))
+    projectfile.save_project(project, tmp_path / "p.umcvideo")
+    loaded, missing = projectfile.load_project(tmp_path / "p.umcvideo")
+    assert missing == []
+    assert loaded.sources[0].size == 1234
+
+
+def test_old_file_without_size_loads(vmedia, tmp_path):
+    project, _ = new_project([vmedia / "red.mp4"])
+    path = tmp_path / "p.umcvideo"
+    projectfile.save_project(project, path)
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for entry in data["sources"]:
+        del entry["size"]
+    path.write_text(json.dumps(data), encoding="utf-8")
+    loaded, missing = projectfile.load_project(path)
+    assert missing == [] and loaded.sources[0].size == 0
+
+
+def test_loads_web_style_file(tmp_path):
+    from umc.videoedit.project import layout
+
+    (tmp_path / "v1.mp4").write_bytes(b"")
+    (tmp_path / "p1.png").write_bytes(b"")
+    data = {
+        "format": "umcvideo",
+        "version": 1,
+        "settings": {"resolution": "first", "width": 1920, "height": 1080, "fps": "first"},
+        "sources": [
+            {
+                "id": "v1",
+                "path": "v1.mp4",
+                "kind": "video",
+                "duration": 10,
+                "width": 1920,
+                "height": 1080,
+                "fps": 30,
+                "has_audio": True,
+                "size": 5,
+                "web_only": True,
+            },
+            {
+                "id": "p1",
+                "path": "p1.png",
+                "kind": "image",
+                "duration": 0,
+                "width": 800,
+                "height": 600,
+                "fps": 0,
+                "has_audio": False,
+                "size": 5,
+            },
+        ],
+        "main": [
+            {"type": "video", "id": "a", "source": "v1", "in_": 0, "out": 4, "web_only": True},
+            {"type": "picture", "id": "b", "source": "p1"},
+        ],
+        "text_rows": [[]],
+        "music_rows": [[]],
+    }
+    path = tmp_path / "p.umcvideo"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    loaded, missing = projectfile.load_project(path)
+    assert missing == []
+    spans = layout(loaded)
+    assert spans["a"].end - spans["a"].start == 4.0
+    assert loaded.sources[0].size == 5
+
+
+def test_probe_source_fills_size(vmedia):
+    src = probe_source(vmedia / "red.mp4", "s1")
+    assert src.size == (vmedia / "red.mp4").stat().st_size > 0

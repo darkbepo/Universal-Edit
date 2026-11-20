@@ -101,9 +101,11 @@ def _item_from_dict(data: dict[str, Any]) -> Any:
 
 def _find_source(entry: dict[str, Any], folder: Path) -> Path | None:
     path = Path(entry["path"])
+    if not path.is_absolute():  # a bare name (the website's files): next to the project
+        path = folder / path
     if path.exists():
         return path
-    rel = entry.get("relpath")
+    rel = entry.get("relpath") or path.name
     if rel:
         # "/" since the first release; "\\" from a Windows copy still reads anywhere
         candidate = (folder / rel.replace("\\", "/")).resolve()

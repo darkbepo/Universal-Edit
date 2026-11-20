@@ -25,6 +25,10 @@ def _cannot_open(path: Path) -> ConversionError:
 def probe_source(path: Path, source_id: str) -> Source:
     """Read a video, picture or audio file; raises ``ConversionError`` if it can't be used."""
     path = Path(path).absolute()
+    try:
+        size = path.stat().st_size
+    except OSError:
+        size = 0
     found = detect(path)
     family = found.family if found else None
     if family == MediaFamily.IMAGE:
@@ -33,7 +37,7 @@ def probe_source(path: Path, source_id: str) -> Source:
         except Exception as exc:
             log.warning("Couldn't read picture %s: %s", path, exc)
             raise _cannot_open(path) from exc
-        return Source(source_id, path, "image", 0.0, width, height, 0.0, False)
+        return Source(source_id, path, "image", 0.0, width, height, 0.0, False, size)
     if family not in (MediaFamily.VIDEO, MediaFamily.AUDIO):
         raise _cannot_open(path)
     try:
@@ -44,11 +48,13 @@ def probe_source(path: Path, source_id: str) -> Source:
     if family == MediaFamily.AUDIO or not info.has_video:
         if not info.has_audio:
             raise _cannot_open(path)
-        return Source(source_id, path, "audio", info.duration, 0, 0, 0.0, True)
+        return Source(source_id, path, "audio", info.duration, 0, 0, 0.0, True, size)
     width, height = info.width, info.height
     if info.rotation in (90, 270):
         width, height = height, width
-    return Source(source_id, path, "video", info.duration, width, height, info.fps, info.has_audio)
+    return Source(
+        source_id, path, "video", info.duration, width, height, info.fps, info.has_audio, size
+    )
 
 
 def new_project(paths: Sequence[Path]) -> tuple[Project, list[str]]:

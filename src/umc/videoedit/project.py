@@ -112,6 +112,7 @@ class Source:
     height: int
     fps: float
     has_audio: bool
+    size: int = 0  # bytes; 0 = unknown
 
     @property
     def key(self) -> str:
