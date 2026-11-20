@@ -88,6 +88,21 @@ FILES = [
         "</BODY></SAMI>\n",
     ),
     ("srt empty", "srt", ""),
+    (
+        "ass hidden events",
+        "ass",
+        "[Script Info]\nScriptType: v4.00+\n\n[Events]\n; made by hand\n"
+        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+        "; a note\nDialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,Kept\n"
+        "Dialogue: 0,bad,0:00:03.00,Default,,0,0,0,,Unreadable time\n"
+        "Picture: 0,0:00:04.00,0:00:05.00,Default,,0,0,0,,logo.png\n",
+    ),
+    (
+        "vtt notes between cues",
+        "vtt",
+        "WEBVTT\n\n00:01.000 --> 00:02.000\nOne\n\nNOTE after one\n\nNOTE\nsecond note\n\n"
+        "id2\n00:03.000 --> 00:04.000\nTwo\n\nNOTE at the end\n",
+    ),
 ]
 
 
@@ -138,6 +153,9 @@ BASE = (
 )
 
 
+NOTED = BASE[:1] + (C(2500, 4000, "Line a\nLine b", (("id", "x"), ("after", "NOTE n"))),)
+
+
 def edit_cases() -> list[dict]:
     cases: list[tuple[str, dict, object]] = [
         ("set_text", {"i": 0, "text": "new"}, lambda: edits.set_text(BASE, 0, "new")),
@@ -172,6 +190,8 @@ def edit_cases() -> list[dict]:
          lambda: edits.replace_all(BASE, r"(\w+) (\w+)", r"\2 \1", case=True, whole_word=False,
                                    regex=True)),
         ("cue_at", {"ms": 4600}, lambda: edits.cue_at(BASE, 4600)),
+        ("split", {"i": 1, "note": True}, lambda: edits.split(NOTED, 1)),
+        ("add", {"after": 1, "note": True}, lambda: edits.add(NOTED, 1)),
     ]  # fmt: skip
     out = []
     for op, args, run in cases:
@@ -203,6 +223,7 @@ def main() -> None:
     data = {
         "files": [file_case(*f) for f in FILES],
         "base": [cue_json(c) for c in BASE],
+        "noted": [cue_json(c) for c in NOTED],
         "edits": edit_cases(),
         "base_problems": [asdict(p) for p in checks.check(BASE, "srt")],
         "markup": [

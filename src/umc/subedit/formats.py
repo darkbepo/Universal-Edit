@@ -34,7 +34,9 @@ class Cue:
 class SubDoc:
     format: str
     cues: tuple[Cue, ...]
-    header: str = ""  # ASS / SSA up to the events' Format line, VTT's WEBVTT block, LRC tags
+    # ASS / SSA up to the events' Format line (plus every event line the editor doesn't show:
+    # "; notes", SSA Picture / Sound lines, unreadable Dialogue lines), VTT's WEBVTT block, LRC tags
+    header: str = ""
     footer: str = ""  # ASS / SSA sections after [Events]
     fields: tuple[str, ...] = ()  # ASS / SSA event field names
 
@@ -200,6 +202,11 @@ def _parse_vtt(text: str) -> SubDoc:
         if at is None:
             if not cues:  # NOTE / STYLE / REGION blocks before the first cue
                 header.append("\n".join(block))
+            else:  # a NOTE between cues stays after the cue before it
+                last = cues[-1]
+                notes = "\n\n".join(filter(None, (last.get("after"), "\n".join(block))))
+                kept = tuple(kv for kv in last.extra if kv[0] != "after") + (("after", notes),)
+                cues[-1] = replace(last, extra=kept)
             continue
         m = _ARROW.match(block[at])
         if not m:
@@ -225,6 +232,7 @@ def _parse_ass(text: str, fmt: str) -> SubDoc:
     head_end = events + 1
     i = events + 1
     cues: list[Cue] = []
+    other: list[str] = []  # event lines the editor doesn't show: written back as they were
     while i < len(lines):
         line = lines[i]
         stripped = line.strip()
@@ -232,10 +240,13 @@ def _parse_ass(text: str, fmt: str) -> SubDoc:
             break
         key, sep, rest = line.partition(":")
         name = key.strip()
+        cue = None
         if sep and name.lower() == "format" and not fields:
             fields = tuple(f.strip() for f in rest.split(","))
             head_end = i + 1
-        elif sep and name in ("Dialogue", "Comment") and fields:
+            i += 1
+            continue
+        if sep and name in ("Dialogue", "Comment") and fields:
             values = rest.lstrip(" ").split(",", len(fields) - 1)
             if len(values) == len(fields):
                 d = dict(zip(fields, values, strict=True))
@@ -247,11 +258,15 @@ def _parse_ass(text: str, fmt: str) -> SubDoc:
                         for f, v in zip(fields, values, strict=True)
                         if f not in ("Start", "End", "Text")
                     )
-                    cues.append(Cue(start, end, d.get("Text", "").replace("\\N", "\n"), extra))
+                    cue = Cue(start, end, d.get("Text", "").replace("\\N", "\n"), extra)
+        if cue is not None:
+            cues.append(cue)
+        elif stripped and fields:
+            other.append(line)
         i += 1
     if not fields:
         raise SubtitleError("The [Events] section has no Format line.")
-    header = "\n".join(lines[:head_end])
+    header = "\n".join(lines[:head_end] + other)
     footer = "\n".join(lines[i:]).strip("\n")
     return SubDoc(fmt, tuple(cues), header=header, footer=footer, fields=fields)
 
@@ -385,6 +400,8 @@ def _write_vtt(doc: SubDoc) -> str:
         settings = c.get("settings") if doc.format == "vtt" else ""
         line = f"{_hms(c.start, '.')} --> {_hms(c.end, '.')}" + (f" {settings}" if settings else "")
         out.append((f"{ident}\n" if ident else "") + f"{line}\n{text}\n")
+        if doc.format == "vtt" and c.get("after"):
+            out.append(c.get("after") + "\n")
     return "\n".join(out)
 
 
@@ -454,6 +471,16 @@ def save_formats(doc: SubDoc) -> tuple[str, ...]:
     return tuple(out)
 
 
+def _hidden_events(doc: SubDoc) -> bool:
+    """An ASS / SSA header holding event lines after its Format line ("; notes" …)."""
+    lines = [x.strip().lower() for x in doc.header.split("\n")]
+    if "[events]" not in lines:
+        return False
+    after = lines[lines.index("[events]") + 1 :]
+    at = next((i for i, x in enumerate(after) if x.startswith("format:")), None)
+    return at is not None and any(after[at + 1 :])
+
+
 def lost_parts(doc: SubDoc, fmt: str) -> list[str]:
     """What saving ``doc`` as ``fmt`` leaves out, in plain words (empty = nothing)."""
     if fmt == doc.format:
@@ -462,7 +489,7 @@ def lost_parts(doc: SubDoc, fmt: str) -> list[str]:
     src, dst = markup_kind(doc.format), markup_kind(fmt)
     if src == "ass" and dst != "ass":
         out.append("styles, positions and effects")
-        if any(c.get("kind") == "Comment" for c in doc.cues):
+        if any(c.get("kind") == "Comment" for c in doc.cues) or _hidden_events(doc):
             out.append("comment lines")
     if doc.format == "vtt" and (any(c.extra for c in doc.cues) or "\n" in doc.header):
         out.append("cue positions, names and notes")

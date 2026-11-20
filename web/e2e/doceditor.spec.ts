@@ -58,7 +58,7 @@ test("Edit: one editable document, a Markdown ZIP; not DOC, two documents or a m
     await add(files);
     await expect(page.locator(".queue li")).toHaveCount(files.length);
     await expect(editBtn(page), files.join(" + ")).toBeDisabled();
-    await expect(editBtn(page)).toHaveAttribute("title", "Add images, audio, code, one text document, or 3D models to edit them");
+    await expect(editBtn(page)).toHaveAttribute("title", "Add images, audio, code, subtitles, one text document, or 3D models to edit them");
   }
   // two text documents: the code editor opens both (the document editor takes one)
   await clear.click();

@@ -144,7 +144,12 @@
       "start": 3600000,
       "end": 3601000,
       "text": "<b>bold</b> <00:01:00.500>karaoke",
-      "extra": []
+      "extra": [
+       [
+        "after",
+        "NOTE late note"
+       ]
+      ]
      },
      {
       "start": 3000,
@@ -159,7 +164,7 @@
    },
    "write": {
     "srt": "1\n00:00:01,000 --> 00:00:02,000\nHi there\n\n2\n01:00:00,000 --> 01:00:01,000\n<b>bold</b> karaoke\n\n3\n00:00:03,000 --> 00:00:03,500\nfast fast fast fast fast fast\n",
-    "vtt": "WEBVTT - film\nKind: captions\n\nNOTE first note\n\nSTYLE\n::cue { color: red }\n\nintro\n00:00:01.000 --> 00:00:02.000 line:0 align:start\n<v Bob>Hi <c.loud>there</c></v>\n\n01:00:00.000 --> 01:00:01.000\n<b>bold</b> <00:01:00.500>karaoke\n\n00:00:03.000 --> 00:00:03.500\nfast fast fast fast fast fast\n",
+    "vtt": "WEBVTT - film\nKind: captions\n\nNOTE first note\n\nSTYLE\n::cue { color: red }\n\nintro\n00:00:01.000 --> 00:00:02.000 line:0 align:start\n<v Bob>Hi <c.loud>there</c></v>\n\n01:00:00.000 --> 01:00:01.000\n<b>bold</b> <00:01:00.500>karaoke\n\nNOTE late note\n\n00:00:03.000 --> 00:00:03.500\nfast fast fast fast fast fast\n",
     "ass": "[Script Info]\nScriptType: v4.00+\nPlayResX: 1920\nPlayResY: 1080\nWrapStyle: 0\nScaledBorderAndShadow: yes\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,Arial,64,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,3,1,2,40,40,50,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\nDialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,Hi there\nDialogue: 0,1:00:00.00,1:00:01.00,Default,,0,0,0,,{\\b1}bold{\\b0} karaoke\nDialogue: 0,0:00:03.00,0:00:03.50,Default,,0,0,0,,fast fast fast fast fast fast\n",
     "ssa": {
      "error": "Only SSA files can be saved as SSA; choose ASS instead."
@@ -632,6 +637,171 @@
     "lrc"
    ],
    "problems": []
+  },
+  {
+   "name": "ass hidden events",
+   "format": "ass",
+   "text": "[Script Info]\nScriptType: v4.00+\n\n[Events]\n; made by hand\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n; a note\nDialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,Kept\nDialogue: 0,bad,0:00:03.00,Default,,0,0,0,,Unreadable time\nPicture: 0,0:00:04.00,0:00:05.00,Default,,0,0,0,,logo.png\n",
+   "doc": {
+    "format": "ass",
+    "cues": [
+     {
+      "start": 1000,
+      "end": 2000,
+      "text": "Kept",
+      "extra": [
+       [
+        "kind",
+        "Dialogue"
+       ],
+       [
+        "Layer",
+        "0"
+       ],
+       [
+        "Style",
+        "Default"
+       ],
+       [
+        "Name",
+        ""
+       ],
+       [
+        "MarginL",
+        "0"
+       ],
+       [
+        "MarginR",
+        "0"
+       ],
+       [
+        "MarginV",
+        "0"
+       ],
+       [
+        "Effect",
+        ""
+       ]
+      ]
+     }
+    ],
+    "header": "[Script Info]\nScriptType: v4.00+\n\n[Events]\n; made by hand\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n; a note\nDialogue: 0,bad,0:00:03.00,Default,,0,0,0,,Unreadable time\nPicture: 0,0:00:04.00,0:00:05.00,Default,,0,0,0,,logo.png",
+    "footer": "",
+    "fields": [
+     "Layer",
+     "Start",
+     "End",
+     "Style",
+     "Name",
+     "MarginL",
+     "MarginR",
+     "MarginV",
+     "Effect",
+     "Text"
+    ]
+   },
+   "write": {
+    "srt": "1\n00:00:01,000 --> 00:00:02,000\nKept\n",
+    "vtt": "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nKept\n",
+    "ass": "[Script Info]\nScriptType: v4.00+\n\n[Events]\n; made by hand\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n; a note\nDialogue: 0,bad,0:00:03.00,Default,,0,0,0,,Unreadable time\nPicture: 0,0:00:04.00,0:00:05.00,Default,,0,0,0,,logo.png\nDialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,Kept\n",
+    "ssa": {
+     "error": "Only SSA files can be saved as SSA; choose ASS instead."
+    },
+    "lrc": "[00:01.00]Kept\n[00:02.00]\n"
+   },
+   "lost": {
+    "srt": [
+     "styles, positions and effects",
+     "comment lines"
+    ],
+    "vtt": [
+     "styles, positions and effects",
+     "comment lines"
+    ],
+    "ass": [],
+    "ssa": [],
+    "lrc": [
+     "styles, positions and effects",
+     "comment lines"
+    ]
+   },
+   "save_formats": [
+    "ass",
+    "srt",
+    "vtt",
+    "lrc"
+   ],
+   "problems": []
+  },
+  {
+   "name": "vtt notes between cues",
+   "format": "vtt",
+   "text": "WEBVTT\n\n00:01.000 --> 00:02.000\nOne\n\nNOTE after one\n\nNOTE\nsecond note\n\nid2\n00:03.000 --> 00:04.000\nTwo\n\nNOTE at the end\n",
+   "doc": {
+    "format": "vtt",
+    "cues": [
+     {
+      "start": 1000,
+      "end": 2000,
+      "text": "One",
+      "extra": [
+       [
+        "after",
+        "NOTE after one\n\nNOTE\nsecond note"
+       ]
+      ]
+     },
+     {
+      "start": 3000,
+      "end": 4000,
+      "text": "Two",
+      "extra": [
+       [
+        "id",
+        "id2"
+       ],
+       [
+        "after",
+        "NOTE at the end"
+       ]
+      ]
+     }
+    ],
+    "header": "WEBVTT",
+    "footer": "",
+    "fields": []
+   },
+   "write": {
+    "srt": "1\n00:00:01,000 --> 00:00:02,000\nOne\n\n2\n00:00:03,000 --> 00:00:04,000\nTwo\n",
+    "vtt": "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nOne\n\nNOTE after one\n\nNOTE\nsecond note\n\nid2\n00:00:03.000 --> 00:00:04.000\nTwo\n\nNOTE at the end\n",
+    "ass": "[Script Info]\nScriptType: v4.00+\nPlayResX: 1920\nPlayResY: 1080\nWrapStyle: 0\nScaledBorderAndShadow: yes\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,Arial,64,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,3,1,2,40,40,50,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\nDialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,One\nDialogue: 0,0:00:03.00,0:00:04.00,Default,,0,0,0,,Two\n",
+    "ssa": {
+     "error": "Only SSA files can be saved as SSA; choose ASS instead."
+    },
+    "lrc": "[00:01.00]One\n[00:02.00]\n[00:03.00]Two\n[00:04.00]\n"
+   },
+   "lost": {
+    "srt": [
+     "cue positions, names and notes"
+    ],
+    "vtt": [],
+    "ass": [
+     "cue positions, names and notes"
+    ],
+    "ssa": [
+     "cue positions, names and notes"
+    ],
+    "lrc": [
+     "cue positions, names and notes"
+    ]
+   },
+   "save_formats": [
+    "vtt",
+    "srt",
+    "ass",
+    "lrc"
+   ],
+   "problems": []
   }
  ],
  "base": [
@@ -667,6 +837,29 @@
    "end": 9000,
    "text": "Overlapping text that is quite a lot longer than forty two characters",
    "extra": []
+  }
+ ],
+ "noted": [
+  {
+   "start": 1000,
+   "end": 2000,
+   "text": "One two three four",
+   "extra": []
+  },
+  {
+   "start": 2500,
+   "end": 4000,
+   "text": "Line a\nLine b",
+   "extra": [
+    [
+     "id",
+     "x"
+    ],
+    [
+     "after",
+     "NOTE n"
+    ]
+   ]
   }
  ],
  "edits": [
@@ -1770,6 +1963,84 @@
    "result": [
     3
    ]
+  },
+  {
+   "op": "split",
+   "args": {
+    "i": 1,
+    "note": true
+   },
+   "result": {
+    "cues": [
+     {
+      "start": 1000,
+      "end": 2000,
+      "text": "One two three four",
+      "extra": []
+     },
+     {
+      "start": 2500,
+      "end": 3250,
+      "text": "Line a",
+      "extra": [
+       [
+        "id",
+        "x"
+       ]
+      ]
+     },
+     {
+      "start": 3250,
+      "end": 4000,
+      "text": "Line b",
+      "extra": [
+       [
+        "after",
+        "NOTE n"
+       ]
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "op": "add",
+   "args": {
+    "after": 1,
+    "note": true
+   },
+   "result": {
+    "cues": [
+     {
+      "start": 1000,
+      "end": 2000,
+      "text": "One two three four",
+      "extra": []
+     },
+     {
+      "start": 2500,
+      "end": 4000,
+      "text": "Line a\nLine b",
+      "extra": [
+       [
+        "id",
+        "x"
+       ],
+       [
+        "after",
+        "NOTE n"
+       ]
+      ]
+     },
+     {
+      "start": 4000,
+      "end": 6000,
+      "text": "",
+      "extra": []
+     }
+    ],
+    "value": 2
+   }
   }
  ],
  "base_problems": [

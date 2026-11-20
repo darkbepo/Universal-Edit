@@ -28,7 +28,10 @@ def open_bytes(data: bytes, ext: str, charset: str | None = None) -> Opened:
         raise SubtitleError("This file is too big for the subtitle editor (over 20 MB).")
     if charset:
         try:
-            text = data.decode(charset, errors="replace")
+            if charset.lower() in ("windows-1252", "iso-8859-1"):  # as browsers read both
+                text = textfile._decode_text(data, "windows-1252")
+            else:
+                text = data.decode(charset, errors="replace")
         except LookupError as exc:
             raise SubtitleError(f"Unknown encoding {charset}.") from exc
         text = text.removeprefix("﻿")

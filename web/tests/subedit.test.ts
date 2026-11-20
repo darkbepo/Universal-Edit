@@ -51,7 +51,8 @@ function run(op: string, cues: Cue[], a: Record<string, unknown>): unknown {
 describe("edit cases", () => {
   for (const c of cases.edits) {
     it(`${c.op} ${JSON.stringify(c.args)}`, () => {
-      const got = run(c.op, base(), c.args as Record<string, unknown>);
+      const start = (c.args as { note?: boolean }).note ? (cases.noted as J[]).map(fromJson) : base();
+      const got = run(c.op, start, c.args as Record<string, unknown>);
       const want = c.result as unknown;
       if (Array.isArray(want)) expect(got).toEqual(want);
       else if ("value" in (want as object)) expect({ cues: (got as [Cue[], number])[0], value: (got as [Cue[], number])[1] }).toEqual(want);

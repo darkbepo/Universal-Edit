@@ -87,6 +87,15 @@ test("in the text box Ctrl+Delete deletes a word, Alt+Delete in the list deletes
   expect((await cues(page)).map((c) => c.text)).toEqual([expect.not.stringContaining("Hello") as unknown as string]);
 });
 
+test("Split cuts at the caret, also when the button is clicked", async ({ page }) => {
+  await openInEditor(page, [file("film.srt", SRT)]);
+  const box = page.locator(".sub-text");
+  await box.click();
+  await box.evaluate((t: HTMLTextAreaElement) => t.setSelectionRange(2, 2));
+  await page.getByRole("button", { name: "Split", exact: true }).click();
+  expect((await cues(page)).slice(0, 2).map((c) => c.text)).toEqual(["He", "llo there"]);
+});
+
 test("find & replace, shift times and problem marks", async ({ page }) => {
   const text = SRT + "\r\n3\r\n00:00:03,500 --> 00:00:03,700\r\nOverlap and flash\r\n";
   await openInEditor(page, [file("film.srt", text)]);

@@ -9,6 +9,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
+import shutil
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
@@ -80,12 +81,29 @@ def _write(path: Path, data: bytes, fmt: str) -> tuple[Path, io.Opened]:
     try:
         with os.fdopen(fd, "wb") as f:
             f.write(data)
+        if path.exists():  # keep who may read it (mkstemp makes the file private)
+            shutil.copymode(path, tmp)
         os.replace(tmp, path)
     except OSError as exc:
         with contextlib.suppress(OSError):
             os.unlink(tmp)
         raise UserError(f"“{path.name}” couldn't be saved: {exc.strerror or exc}") from exc
     return path, io.open_bytes(data, fmt)
+
+
+def qt_pos(text: str, i: int) -> int:
+    """Python index → Qt cursor position (Qt counts UTF-16 units: an emoji is two)."""
+    return len(text[:i].encode("utf-16-le")) // 2
+
+
+def py_pos(text: str, q: int) -> int:
+    """Qt cursor position → Python index."""
+    n = 0
+    for i, ch in enumerate(text):
+        if n >= q:
+            return i
+        n += 2 if ord(ch) > 0xFFFF else 1
+    return len(text)
 
 
 class _Worker(QObject):
@@ -199,6 +217,7 @@ class SubtitleEditorPage(QWidget):
         self._next_job = 0
         self._loading_box = False
         self._row = -1  # the cue shown in the edit box
+        self._box_row = -1  # the cue whose text the box holds (its caret means something)
         self.actions: dict[str, Callable[[], object]] = {}
 
         self.model = CueModel(self)
@@ -320,6 +339,7 @@ class SubtitleEditorPage(QWidget):
         self.add_button = b("+ Add", "Add a subtitle after this one (Ctrl+Enter)", self.add_cue)
         self.delete_button = b("Delete", "Delete the chosen subtitles (Alt+Delete)", self.delete)
         self.split_button = b("Split", "Split at the cursor, or in the middle (Alt+S)", self.split)
+        self.split_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # keeps the text box's caret
         self.join_button = b("Join", "Join the chosen subtitles, or with the next (Alt+J)",
                              self.join)  # fmt: skip
         self.sort_button = b("Sort by time", "Put the subtitles in time order", self.sort)
@@ -570,9 +590,9 @@ class SubtitleEditorPage(QWidget):
 
     def reopen(self, charset: str | None) -> None:
         """Read the file again with ``charset`` (None: detect). Edits are lost (asked first)."""
-        if self.path is None or self.busy or not self._discard_ok():
+        if self.source is None or self.busy or not self._discard_ok():
             return
-        path = self.path
+        path = self.source
         self._run({"kind": "open"}, lambda: _read(path, charset))
 
     def _discard_ok(self) -> bool:
@@ -701,15 +721,17 @@ class SubtitleEditorPage(QWidget):
         has = 0 <= self._row < len(cues)
         c = cues[self._row] if has else None
         text = c.text if c else ""
-        if self.text_box.toPlainText() != text:
+        same = self._box_row == self._row
+        if self.text_box.toPlainText() != text or not same:
             self._loading_box = True
-            cursor = self.text_box.textCursor()
-            pos = cursor.position()
+            pos = self.text_box.textCursor().position()
             self.text_box.setPlainText(text)
             cursor = self.text_box.textCursor()
-            cursor.setPosition(min(pos, len(text)))
+            end = qt_pos(text, len(text))
+            cursor.setPosition(min(pos, end) if same else end)  # another cue: caret at the end
             self.text_box.setTextCursor(cursor)
             self._loading_box = False
+        self._box_row = self._row
         self.text_box.setEnabled(has)
         for box, value in (
             (self.start_box, c.start if c else None),
@@ -808,7 +830,8 @@ class SubtitleEditorPage(QWidget):
     def split(self) -> None:
         if not 0 <= self._row < len(self.doc.cues):
             return
-        at = self.text_box.textCursor().position() if self.text_box.hasFocus() else None
+        # the caret counts even after a click on Split (the button takes no focus)
+        at = py_pos(self.doc.cues[self._row].text, self.text_box.textCursor().position())
         self._push(edits.split(self.doc.cues, self._row, at), "Split", row=self._row,
                    select=[self._row, self._row + 1])  # fmt: skip
 
@@ -906,7 +929,8 @@ class SubtitleEditorPage(QWidget):
         if not found:
             return False
         cur = self.text_box.textCursor()
-        at = (self._row, cur.selectionStart())  # the match shown now (if any) is skipped
+        here = self.text_box.toPlainText()
+        at = (self._row, py_pos(here, cur.selectionStart()))  # the match shown now is skipped
         if direction > 0:
             after = [m for m in found if (m[0], m[1]) > at]
             hit = after[0] if after else found[0]
@@ -915,9 +939,10 @@ class SubtitleEditorPage(QWidget):
             hit = before[-1] if before else found[-1]
         row, a, b = hit
         self.select_row(row)
+        text = self.doc.cues[row].text
         cursor = self.text_box.textCursor()
-        cursor.setPosition(a)
-        cursor.setPosition(b, cursor.MoveMode.KeepAnchor)
+        cursor.setPosition(qt_pos(text, a))
+        cursor.setPosition(qt_pos(text, b), cursor.MoveMode.KeepAnchor)
         self.text_box.setTextCursor(cursor)
         self.find_bar.count.setText(f"{found.index(hit) + 1} of {len(found)}")
         return True
@@ -926,22 +951,22 @@ class SubtitleEditorPage(QWidget):
         if not 0 <= self._row < len(self.doc.cues):
             return
         cur = self.text_box.textCursor()
+        text = self.doc.cues[self._row].text
+        start, end = py_pos(text, cur.selectionStart()), py_pos(text, cur.selectionEnd())
         o = self.find_bar.options()
         try:
             hit = search.replacement_at(
-                self.doc.cues[self._row].text, self.find_bar.query.text(),
-                self.find_bar.replacement.text(), cur.selectionStart(), **o,
+                text, self.find_bar.query.text(), self.find_bar.replacement.text(), start, **o,
             )  # fmt: skip
         except search.SearchError as exc:
             self.find_bar.count.setText(str(exc))
             return
-        if hit is not None and hit[1] == cur.selectionEnd():
+        if hit is not None and hit[1] == end:
             a, b, new = hit
-            text = self.doc.cues[self._row].text
-            self._push(edits.set_text(self.doc.cues, self._row, text[:a] + new + text[b:]),
-                       "Replace")  # fmt: skip
+            changed = text[:a] + new + text[b:]
+            self._push(edits.set_text(self.doc.cues, self._row, changed), "Replace")
             cursor = self.text_box.textCursor()
-            cursor.setPosition(a + len(new))
+            cursor.setPosition(qt_pos(changed, a + len(new)))
             self.text_box.setTextCursor(cursor)
         self.find(1)
         self._count_matches()
@@ -1012,7 +1037,11 @@ class SubtitleEditorPage(QWidget):
     def _saved(self, doc: SubDoc, fmt: str, path: Path, opened: io.Opened) -> None:
         note = " (as UTF-8)" if self._utf8_note else ""
         if fmt != doc.format:  # now editing the new file: its own markup and fields
+            later = self.history.doc
             self._load(path, opened)
+            if later != doc:  # typed on while it saved: those edits come along, unsaved
+                moved = formats.parse(formats.write(later, fmt), fmt)
+                self._push(moved.cues, "Edits made while saving")
             self.show_message(f"Saved “{path.name}”{note}. Now editing the .{fmt} file.")
             return
         self.opened = opened
@@ -1026,6 +1055,7 @@ class SubtitleEditorPage(QWidget):
         self.wait_idle()
         if not self._discard_ok():
             return False
+        self.history.mark_saved()  # "Don't save": not asked again (like the website)
         self.preview.pause()
         return True
 

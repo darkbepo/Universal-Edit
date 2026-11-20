@@ -269,3 +269,50 @@ def test_both_apps_have_the_same_shortcuts():
     web = Path(__file__).parents[1] / "web" / "src" / "ui" / "subtitleeditor" / "shortcuts.ts"
     web_ids = re.findall(r'\{ id: "(\w+)"', web.read_text(encoding="utf-8"))
     assert web_ids == [s.id for s in SHORTCUTS]
+
+
+def test_find_replace_and_split_after_an_emoji(qtbot, page, tmp_path):
+    """Qt counts an emoji as two positions; the model counts it as one."""
+    text = "1\n00:00:01,000 --> 00:00:03,000\n🎵 la la 🎵 big\n"
+    _open(qtbot, page, _srt(tmp_path, text))
+    page.find_bar.open(True)
+    page.find_bar.query.setText("big")
+    assert page.find(1) and page.text_box.textCursor().selectedText() == "big"
+    page.find_bar.replacement.setText("BIG")
+    page.replace_one()
+    assert page.doc.cues[0].text == "🎵 la la 🎵 BIG"
+    cursor = page.text_box.textCursor()
+    cursor.setPosition(len("🎵 la la 🎵".encode("utf-16-le")) // 2)
+    page.text_box.setTextCursor(cursor)
+    page.split_button.click()  # takes no focus: the caret still counts
+    assert [c.text for c in page.doc.cues] == ["🎵 la la 🎵", "BIG"]
+
+
+def test_save_keeps_permissions_and_edits_made_while_saving(qtbot, page, tmp_path):
+    import os
+    import sys
+
+    f = _srt(tmp_path)
+    if sys.platform != "win32":
+        os.chmod(f, 0o644)
+    _open(qtbot, page, f)
+    page._typed_time("start", "0.5")
+    assert _save(qtbot, page)
+    if sys.platform != "win32":
+        assert f.stat().st_mode & 0o777 == 0o644
+    out = tmp_path / "film.vtt"
+    page.save_paths = [out]
+    assert page.save_as()
+    page.text_box.setPlainText("typed while saving")  # before the save's result arrives
+    qtbot.waitUntil(lambda: not page.busy, timeout=10000)
+    assert page.doc.format == "vtt" and page.doc.cues[0].text == "typed while saving"
+    assert page.dirty and "typed" not in out.read_text()
+
+
+def test_reopen_works_for_sami_files(qtbot, page, tmp_path):
+    smi = tmp_path / "ko.smi"
+    smi.write_bytes("<SAMI><BODY><SYNC Start=1000><P>Привет\n</BODY>".encode("windows-1251"))
+    _open(qtbot, page, smi)
+    page.reopen("windows-1251")
+    qtbot.waitUntil(lambda: not page.busy, timeout=10000)
+    assert page.doc.cues[0].text == "Привет"

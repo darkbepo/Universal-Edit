@@ -19,7 +19,9 @@ export interface Cue {
 export interface SubDoc {
   format: string;
   cues: Cue[];
-  header: string; // ASS / SSA up to the events' Format line, VTT's WEBVTT block, LRC tags
+  // ASS / SSA up to the events' Format line (plus every event line the editor doesn't show:
+  // "; notes", SSA Picture / Sound lines, unreadable Dialogue lines), VTT's WEBVTT block, LRC tags
+  header: string;
   footer: string; // ASS / SSA sections after [Events]
   fields: string[]; // ASS / SSA event field names
 }
@@ -182,7 +184,12 @@ function parseVtt(text: string): SubDoc {
   for (const block of bl.slice(1)) {
     const at = firstIndex(block, (l) => l.includes("-->"));
     if (at === null) {
-      if (!cues.length) header.push(block.join("\n"));
+      if (!cues.length) header.push(block.join("\n")); // NOTE / STYLE / REGION before the first cue
+      else { // a NOTE between cues stays after the cue before it
+        const last = cues[cues.length - 1];
+        const notes = [extraGet(last, "after"), block.join("\n")].filter(Boolean).join("\n\n");
+        cues[cues.length - 1] = { ...last, extra: [...last.extra.filter(([k]) => k !== "after"), ["after", notes]] };
+      }
       continue;
     }
     const m = ARROW.exec(block[at]);
@@ -219,32 +226,39 @@ function parseAss(text: string, fmt: string): SubDoc {
   let headEnd = events + 1;
   let i = events + 1;
   const cues: Cue[] = [];
+  const other: string[] = []; // event lines the editor doesn't show: written back as they were
   for (; i < lines.length; i++) {
     const line = lines[i];
     const stripped = line.trim();
     if (stripped.startsWith("[") && stripped.endsWith("]")) break;
     const colon = line.indexOf(":");
-    if (colon < 0) continue;
-    const name = line.slice(0, colon).trim();
-    const rest = line.slice(colon + 1);
-    if (name.toLowerCase() === "format" && !fields.length) {
+    const name = colon < 0 ? "" : line.slice(0, colon).trim();
+    const rest = colon < 0 ? "" : line.slice(colon + 1);
+    if (colon >= 0 && name.toLowerCase() === "format" && !fields.length) {
       fields = rest.split(",").map((f) => f.trim());
       headEnd = i + 1;
-    } else if ((name === "Dialogue" || name === "Comment") && fields.length) {
-      const values = splitMax(rest.replace(/^ +/, ""), ",", fields.length - 1);
-      if (values.length !== fields.length) continue;
-      const d = new Map(fields.map((f, n) => [f, values[n]]));
-      const start = clockMs(d.get("Start") ?? ""), end = clockMs(d.get("End") ?? "");
-      if (start === null || end === null) continue;
-      const extra: Extra = [["kind", name]];
-      fields.forEach((f, n) => {
-        if (f !== "Start" && f !== "End" && f !== "Text") extra.push([f, values[n]]);
-      });
-      cues.push(cue(start, end, (d.get("Text") ?? "").replaceAll("\\N", "\n"), extra));
+      continue;
     }
+    let made: Cue | null = null;
+    if (colon >= 0 && (name === "Dialogue" || name === "Comment") && fields.length) {
+      const values = splitMax(rest.replace(/^ +/, ""), ",", fields.length - 1);
+      if (values.length === fields.length) {
+        const d = new Map(fields.map((f, n) => [f, values[n]]));
+        const start = clockMs(d.get("Start") ?? ""), end = clockMs(d.get("End") ?? "");
+        if (start !== null && end !== null) {
+          const extra: Extra = [["kind", name]];
+          fields.forEach((f, n) => {
+            if (f !== "Start" && f !== "End" && f !== "Text") extra.push([f, values[n]]);
+          });
+          made = cue(start, end, (d.get("Text") ?? "").replaceAll("\\N", "\n"), extra);
+        }
+      }
+    }
+    if (made) cues.push(made);
+    else if (stripped && fields.length) other.push(line);
   }
   if (!fields.length) throw new SubtitleError("The [Events] section has no Format line.");
-  const header = lines.slice(0, headEnd).join("\n");
+  const header = [...lines.slice(0, headEnd), ...other].join("\n");
   const footer = lines.slice(i).join("\n").replace(/^\n+|\n+$/g, "");
   return { format: fmt, cues, header, footer, fields };
 }
@@ -377,6 +391,7 @@ function writeVtt(doc: SubDoc): string {
     const settings = doc.format === "vtt" ? extraGet(c, "settings") : "";
     const line = `${hms(c.start, ".")} --> ${hms(c.end, ".")}` + (settings ? ` ${settings}` : "");
     out.push((ident ? `${ident}\n` : "") + `${line}\n${text}\n`);
+    if (doc.format === "vtt" && extraGet(c, "after")) out.push(extraGet(c, "after") + "\n");
   }
   return out.join("\n");
 }
@@ -439,6 +454,16 @@ export function saveFormats(doc: SubDoc): string[] {
 
 const hasMatch = (re: RegExp, text: string) => new RegExp(re.source).test(text);
 
+/** An ASS / SSA header holding event lines after its Format line ("; notes" …). */
+function hiddenEvents(doc: SubDoc): boolean {
+  const lines = doc.header.split("\n").map((x) => x.trim().toLowerCase());
+  const ev = lines.indexOf("[events]");
+  if (ev < 0) return false;
+  const after = lines.slice(ev + 1);
+  const at = after.findIndex((x) => x.startsWith("format:"));
+  return at >= 0 && after.slice(at + 1).some(Boolean);
+}
+
 /** What saving `doc` as `fmt` leaves out, in plain words (empty = nothing). */
 export function lostParts(doc: SubDoc, fmt: string): string[] {
   if (fmt === doc.format) return [];
@@ -446,7 +471,7 @@ export function lostParts(doc: SubDoc, fmt: string): string[] {
   const src = markupKind(doc.format), dst = markupKind(fmt);
   if (src === "ass" && dst !== "ass") {
     out.push("styles, positions and effects");
-    if (doc.cues.some(isComment)) out.push("comment lines");
+    if (doc.cues.some(isComment) || hiddenEvents(doc)) out.push("comment lines");
   }
   if (doc.format === "vtt" && (doc.cues.some((c) => c.extra.length) || doc.header.includes("\n"))) {
     out.push("cue positions, names and notes");

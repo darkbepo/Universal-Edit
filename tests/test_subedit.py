@@ -100,8 +100,8 @@ def _run(op: str, cues: tuple[Cue, ...], a: dict):
 
 @pytest.mark.parametrize("case", CASES["edits"], ids=lambda c: c["op"])
 def test_edit_cases(case: dict) -> None:
-    base = tuple(from_json(c) for c in CASES["base"])
-    got = _run(case["op"], base, case["args"])
+    cues = CASES["noted"] if case["args"].get("note") else CASES["base"]
+    got = _run(case["op"], tuple(from_json(c) for c in cues), case["args"])
     want = case["result"]
     if isinstance(want, list):
         assert got == want

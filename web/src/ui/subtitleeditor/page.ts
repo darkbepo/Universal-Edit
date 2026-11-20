@@ -13,8 +13,8 @@ import { SUBTITLE_EXTS, VIDEO_EXTS } from "../../core/detect";
 import type { InputFile } from "../../core/types";
 import { check, type Problem } from "../../subedit/checks";
 import * as edits from "../../subedit/edits";
-import { clock, convertMarkup, extraGet, lostParts, plainText, saveFormats, SubtitleError, WRITE_FORMATS, type Cue, type SubDoc } from "../../subedit/formats";
-import { History } from "../../subedit/history";
+import { clock, convertMarkup, extraGet, lostParts, parse, plainText, saveFormats, SubtitleError, write as writeText, WRITE_FORMATS, type Cue, type SubDoc } from "../../subedit/formats";
+import { History, sameDoc } from "../../subedit/history";
 import { CHARSETS, newDocument, openBytes, toBytes, type Opened } from "../../subedit/io";
 import { backLabel } from "../back";
 import { SHORTCUTS, keyName, showKey } from "./shortcuts";
@@ -93,6 +93,7 @@ export class SubtitleEditorPage {
   private raf = 0;
   private checkTimer: ReturnType<typeof setTimeout> | undefined;
   private anchor = -1; // Shift+click range start
+  private boxRow = -1; // the cue whose text the box holds (its caret means something)
 
   private readonly title = el("span", "sub-title");
   private readonly message = el("div", "msg");
@@ -229,6 +230,7 @@ export class SubtitleEditorPage {
     const row = el("div", "sub-panel-row");
     this.deleteBtn = btn("Delete", "Delete the chosen subtitles (Alt+Delete)", () => this.remove());
     this.splitBtn = btn("Split", "Split at the cursor, or in the middle (Alt+S)", () => this.split());
+    this.splitBtn.addEventListener("mousedown", (e) => e.preventDefault()); // keeps the text box's caret
     this.joinBtn = btn("Join", "Join the chosen subtitles, or with the next (Alt+J)", () => this.join());
     this.sortBtn = btn("Sort by time", "Put the subtitles in time order", () => this.sort());
     this.setStartBtn = btn("⇤", "Start = the video's position (Ctrl+[)", () => this.setFromVideo("start"));
@@ -728,11 +730,13 @@ export class SubtitleEditorPage {
     const has = this.hasRow();
     const c = has ? this.doc.cues[this.row] : null;
     const text = c?.text ?? "";
-    if (this.textBox.value !== text) {
-      const pos = this.textBox.selectionStart;
+    const same = this.boxRow === this.row;
+    if (this.textBox.value !== text || !same) {
+      const pos = same ? Math.min(this.textBox.selectionStart, text.length) : text.length; // another cue: caret at the end
       this.textBox.value = text;
-      this.textBox.setSelectionRange(Math.min(pos, text.length), Math.min(pos, text.length));
+      this.textBox.setSelectionRange(pos, pos);
     }
+    this.boxRow = this.row;
     this.textBox.disabled = !has;
     const values: [HTMLInputElement, number | null][] = [[this.startBox, c?.start ?? null], [this.endBox, c?.end ?? null], [this.lengthBox, c ? c.end - c.start : null]];
     for (const [box, v] of values) {
@@ -822,7 +826,7 @@ export class SubtitleEditorPage {
 
   split(): void {
     if (!this.hasRow()) return;
-    const at = document.activeElement === this.textBox ? this.textBox.selectionStart : null;
+    const at = this.textBox.selectionStart; // the caret counts even after a click on Split
     this.push(edits.split(this.doc.cues, this.row, at), "Split", null, this.row, [this.row, this.row + 1]);
   }
 
@@ -1025,8 +1029,10 @@ export class SubtitleEditorPage {
       const reopened = openBytes(saved.data, fmt);
       if (fmt !== doc.format) {
         const handle = this.handle;
+        const later = this.doc;
         this.load(name, reopened, saved.data); // now editing the new file: its own markup and fields
         this.handle = handle;
+        if (!sameDoc(later, doc)) this.push(parse(writeText(later, fmt), fmt).cues, "Edits made while saving"); // typed on while it saved
         this.showMessage(`Saved “${name}”${note}. Now editing the .${fmt} file.`);
       } else {
         this.opened = reopened;

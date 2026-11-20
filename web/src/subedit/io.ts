@@ -5,6 +5,7 @@
 
 import * as textfile from "../codeedit/textfile";
 import { parse, SubtitleError, write, type SubDoc } from "./formats";
+import { sameDoc } from "./history";
 
 export { CHARSETS } from "../converters/subtitles";
 export const MAX_OPEN_BYTES = 20 * 1024 * 1024;
@@ -44,9 +45,6 @@ export interface Saved {
   utf8: boolean; // written as UTF-8 although the file was something else
 }
 
-function sameDoc(a: SubDoc, b: SubDoc): boolean {
-  return a === b || JSON.stringify(a) === JSON.stringify(b);
-}
 
 /** The bytes for `doc` saved as `fmt` (see io.py). */
 export function toBytes(opened: Opened, doc: SubDoc, fmt: string): Saved {

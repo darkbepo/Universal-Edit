@@ -6,6 +6,7 @@ import { cue, extraGet, type Cue } from "./formats";
 
 export const NEW_CUE_MS = 2000; // length of an added cue when there is room
 export const MIN_SPLIT_MS = 1; // each half of a split keeps at least this
+const OWN = ["id", "after"]; // a cue's own VTT id and following note: never copied to a new cue
 
 const round = (x: number) => Math.floor(x + 0.5);
 const swap = (cues: Cue[], i: number, c: Cue) => [...cues.slice(0, i), c, ...cues.slice(i + 1)];
@@ -35,7 +36,8 @@ export const setLength = (cues: Cue[], i: number, length: number) => setTimes(cu
 export function shift(cues: Cue[], delta: number, indices: Iterable<number> | null = null): Cue[] {
   const chosen = new Set(indices ?? cues.keys());
   if (!chosen.size) return cues;
-  const earliest = Math.min(...[...chosen].map((i) => cues[i].start));
+  let earliest = Infinity; // a loop: Math.min(...100 000 values) is too many arguments for Safari
+  for (const i of chosen) earliest = Math.min(earliest, cues[i].start);
   delta = Math.max(delta, -earliest);
   if (delta === 0) return cues;
   return cues.map((c, i) => (chosen.has(i) ? { ...c, start: c.start + delta, end: c.end + delta } : c));
@@ -59,7 +61,7 @@ export function add(cues: Cue[], after: number, length = NEW_CUE_MS): [Cue[], nu
   const start = prev ? prev.end : 0;
   let end = start + length;
   if (nxt && start < nxt.start && nxt.start < end && nxt.start - start >= Math.floor(length / 2)) end = nxt.start;
-  let extra = prev ? prev.extra.filter(([k]) => k !== "id") : [];
+  let extra = prev ? prev.extra.filter(([k]) => !OWN.includes(k)) : [];
   if (extra.length && extraGet({ ...cue(0, 0, ""), extra }, "kind") === "Comment") {
     extra = extra.map(([k, v]) => (k === "kind" ? ["kind", "Dialogue"] : [k, v]));
   }
@@ -99,7 +101,8 @@ export function split(cues: Cue[], i: number, at: number | null = null): Cue[] {
   const span = c.end - c.start;
   let cut = c.start + round(span * share);
   if (span >= 2 * MIN_SPLIT_MS) cut = Math.min(Math.max(cut, c.start + MIN_SPLIT_MS), c.end - MIN_SPLIT_MS);
-  const a = { ...c, end: cut, text: first };
+  // the first half keeps the VTT id, the second the note that followed the cue
+  const a = { ...c, end: cut, text: first, extra: c.extra.filter(([k]) => k !== "after") };
   const b = cue(cut, c.end, second, c.extra.filter(([k]) => k !== "id"));
   return [...cues.slice(0, i), a, b, ...cues.slice(i + 1)];
 }
@@ -110,12 +113,12 @@ export function join(cues: Cue[], indices: Iterable<number>): [Cue[], number] {
   if (chosen.length < 2) return [cues, chosen.length ? chosen[0] : -1];
   const parts = chosen.map((i) => cues[i]);
   const text = parts.map((p) => pyStrip(p.text)).filter(Boolean).join("\n");
-  const joined = {
-    ...parts[0],
-    start: Math.min(...parts.map((p) => p.start)),
-    end: Math.max(...parts.map((p) => p.end)),
-    text,
-  };
+  let start = Infinity, end = -Infinity;
+  for (const p of parts) {
+    start = Math.min(start, p.start);
+    end = Math.max(end, p.end);
+  }
+  const joined = { ...parts[0], start, end, text };
   const drop = new Set(chosen.slice(1));
   const out = cues.filter((_, n) => !drop.has(n));
   out[chosen[0]] = joined;

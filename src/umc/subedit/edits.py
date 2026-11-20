@@ -13,6 +13,7 @@ from umc.subedit.formats import Cue
 Cues = tuple[Cue, ...]
 NEW_CUE_MS = 2000  # length of an added cue when there is room
 MIN_SPLIT_MS = 1  # each half of a split keeps at least this
+_OWN = ("id", "after")  # a cue's own VTT id and following note: never copied to a new cue
 
 
 def _round(x: float) -> int:
@@ -85,7 +86,7 @@ def add(cues: Cues, after: int, length: int = NEW_CUE_MS) -> tuple[Cues, int]:
     end = start + length
     if nxt and start < nxt.start < end and nxt.start - start >= length // 2:
         end = nxt.start
-    extra = tuple(kv for kv in prev.extra if kv[0] != "id") if prev else ()
+    extra = tuple(kv for kv in prev.extra if kv[0] not in _OWN) if prev else ()
     if extra and dict(extra).get("kind") == "Comment":
         extra = tuple(kv if kv[0] != "kind" else ("kind", "Dialogue") for kv in extra)
     cue = Cue(start, end, "", extra)
@@ -126,9 +127,9 @@ def split(cues: Cues, i: int, at: int | None = None) -> Cues:
     cut = c.start + _round(span * share)
     if span >= 2 * MIN_SPLIT_MS:
         cut = min(max(cut, c.start + MIN_SPLIT_MS), c.end - MIN_SPLIT_MS)
-    extra2 = tuple(kv for kv in c.extra if kv[0] != "id")
-    a = replace(c, end=cut, text=first)
-    b = Cue(cut, c.end, second, extra2)
+    # the first half keeps the VTT id, the second the note that followed the cue
+    a = replace(c, end=cut, text=first, extra=tuple(kv for kv in c.extra if kv[0] != "after"))
+    b = Cue(cut, c.end, second, tuple(kv for kv in c.extra if kv[0] != "id"))
     return cues[:i] + (a, b) + cues[i + 1 :]
 
 
