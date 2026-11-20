@@ -132,11 +132,12 @@ export function drawFrame(ctx: Ctx2D, f: Frame, pictureOf: (l: Layer) => Picture
   }
 }
 
-/** Text boxes on top of a drawn frame; `scale` = drawn height / output height (font size,
- *  outline and padding are in output pixels). */
+/** Text boxes on top of a drawn frame. `textAt` already gives font size and x / y at the drawn
+ *  size; `scale` = drawn height / output height applies only to the outline width and the box
+ *  padding (those are in output pixels). */
 export function drawText(ctx: Ctx2D, boxes: TextBox[], scale: number): void {
   for (const b of boxes) {
-    const px = b.fontPx * scale;
+    const px = b.fontPx;
     const step = Math.round(px * LINE_HEIGHT);
     const top = lineTop(b.row, b.y, b.lines.length, step);
     const x = b.x;

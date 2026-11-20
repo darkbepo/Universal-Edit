@@ -278,8 +278,8 @@ describe("drawText", () => {
     const fills = ctx.of("fillText");
     expect(fills).toHaveLength(2);
     expect(fills.every((c) => c.align === "center" && c.baseline === "top")).toBe(true);
-    expect(fills[0].font).toBe('25px "Arial", "DejaVu Sans"');
-    const step = Math.round(25 * LINE_HEIGHT);
+    expect(fills[0].font).toBe('50px "Arial", "DejaVu Sans"');
+    const step = Math.round(50 * LINE_HEIGHT);
     expect(fills[0].args).toEqual(["Hello", 320, 340 - 2 * step]);
     expect(fills[1].args).toEqual(["World!", 320, 340 - step]);
     const strokes = ctx.of("strokeText");
@@ -307,7 +307,7 @@ describe("drawText", () => {
     expect(rects).toHaveLength(2);
     expect(rects[0].fill).toBe("#ff0000");
     expect(rects[0].alpha).toBeCloseTo(0.4);
-    const step = Math.round(25 * LINE_HEIGHT);
+    const step = Math.round(50 * LINE_HEIGHT);
     // "Hello" is 50 wide (fake measureText), centred on 320, padded by 4 · 0.5
     expect(rects[0].args).toEqual([320 - 25 - 2, 340 - 2 * step - 2, 50 + 4, step + 4]);
     const ops = ctx.ops();
