@@ -22,7 +22,7 @@ SHORTCUTS: tuple[Shortcut, ...] = (
     Shortcut("undo", ("Ctrl+Z",), "Undo", "Editing"),
     Shortcut("redo", ("Ctrl+Y", "Ctrl+Shift+Z"), "Redo", "Editing"),
     Shortcut("add", ("Ctrl+Return", "Ctrl+Enter"), "Add a subtitle after this one", "Editing"),
-    Shortcut("delete", ("Ctrl+Delete",), "Delete the chosen subtitles", "Editing"),
+    Shortcut("delete", ("Alt+Delete",), "Delete the chosen subtitles", "Editing"),
     Shortcut("split", ("Alt+S",), "Split at the cursor (or in the middle)", "Editing"),
     Shortcut("join", ("Alt+J",), "Join the chosen subtitles (or with the next)", "Editing"),
     Shortcut("prev", ("Alt+Up",), "Previous subtitle", "Editing"),

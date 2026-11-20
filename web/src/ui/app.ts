@@ -65,6 +65,7 @@ export function mountApp(root: HTMLElement): void {
   let audio: import("./audioeditor/page").AudioEditorPage | null = null;
   let docEditor: import("./doceditor/page").DocEditorPage | null = null;
   let codeEditor: import("./codeeditor/page").CodeEditorPage | null = null;
+  let subEditor: import("./subtitleeditor/page").SubtitleEditorPage | null = null;
   let editing = false;
   // Three columns (badge + theme | logo + name | Convert/Edit): the outer two are equally wide, so the
   // name stays centred on the page.
@@ -228,7 +229,7 @@ export function mountApp(root: HTMLElement): void {
   const appMain = root.querySelector("main.app") as HTMLElement;
   // A lone .zip is a document when it is a Markdown ZIP the website saved (checked once per file).
   const markdownZips = new WeakMap<InputFile, boolean>();
-  type EditKind = "image" | "model" | "audio" | "document" | "code";
+  type EditKind = "image" | "model" | "audio" | "document" | "code" | "subtitle";
   // files the code editor opens (the language table's extensions; "" = text with none)
   const CODE_EDITABLE_EXTS = new Set(["", ...codeLanguages.languages.flatMap((l) => l.exts)]);
   /** Every editor that can open the files, the one Edit opens first (the desktop's
@@ -238,6 +239,12 @@ export function mountApp(root: HTMLElement): void {
     if (files.every((f) => f.family === "image")) return ["image"];
     if (files.every((f) => f.family === "model")) return ["model"];
     if (files.every((f) => f.family === "audio")) return ["audio"];
+    // one subtitle file, maybe with the video it belongs to (desktop: MainWindow._subtitle_files)
+    const subs = files.filter((f) => f.family === "subtitle");
+    const videos = files.filter((f) => f.family === "video");
+    if (subs.length === 1 && videos.length <= 1 && subs.length + videos.length === files.length) {
+      return files.length === 1 && CODE_EDITABLE_EXTS.has(subs[0].ext) ? ["subtitle", "code"] : ["subtitle"];
+    }
     if (files.length === 1) {
       const f = files[0];
       if (f.ext === "txt" || f.ext === "md") return ["document", "code"];
@@ -269,7 +276,7 @@ export function mountApp(root: HTMLElement): void {
     editMore.hidden = editChoices().length < 2;
     editMenu.hidden = true;
     const kind = editKind();
-    editMode.title = kind === "code" ? "Open the files in the code editor" : kind === "document" ? "Open the document in the document editor" : kind === "model" ? "Open the 3D models in the 3D viewer" : kind === "image" ? "Open the images in the image editor (each image becomes a layer)" : kind === "audio" ? "Open the sound in the audio editor (several files are joined)" : "Add images, audio, code, one text document, or 3D models to edit them";
+    editMode.title = kind === "subtitle" ? "Open the subtitles in the subtitle editor (with the video, if added)" : kind === "code" ? "Open the files in the code editor" : kind === "document" ? "Open the document in the document editor" : kind === "model" ? "Open the 3D models in the 3D viewer" : kind === "image" ? "Open the images in the image editor (each image becomes a layer)" : kind === "audio" ? "Open the sound in the audio editor (several files are joined)" : "Add images, audio, code, subtitles, one text document, or 3D models to edit them";
   }
   const canEdit = () => editKind() !== null;
   function showConverter() {
@@ -284,6 +291,7 @@ export function mountApp(root: HTMLElement): void {
     audio?.hide();
     docEditor?.hide();
     codeEditor?.hide();
+    subEditor?.hide();
     appMain.hidden = false;
     bar.hidden = false;
     orbit.setActive(!files.length); // back on screen: the badges move again
@@ -317,6 +325,7 @@ export function mountApp(root: HTMLElement): void {
       if (docEditor && !docEditor.el.hidden && !docEditor.maybeLeave()) return;
       if (audio && !audio.el.hidden && !audio.maybeLeave()) return;
       if (codeEditor && !codeEditor.el.hidden && !codeEditor.maybeLeave()) return;
+      if (subEditor && !subEditor.el.hidden && !subEditor.maybeLeave()) return;
       showConverter();
     }
     setMode("properties");
@@ -348,6 +357,22 @@ export function mountApp(root: HTMLElement): void {
       return null;
     }
   }
+  let subEditorP: Promise<import("./subtitleeditor/page").SubtitleEditorPage> | null = null;
+  const ensureSubEditor = () => (subEditorP ??= import("./subtitleeditor/page").then(({ mountSubtitleEditor }) =>
+    (subEditor = mountSubtitleEditor(root, { onBack: showConverter }))).catch((e) => {
+    subEditorP = null; // try again next time
+    throw e;
+  }));
+  async function loadSubEditor(): Promise<import("./subtitleeditor/page").SubtitleEditorPage | null> {
+    try {
+      return await ensureSubEditor();
+    } catch (e) {
+      console.error("Couldn't load the subtitle editor", e);
+      note.textContent = "Couldn't load the subtitle editor. Check the internet connection and try again.";
+      note.hidden = false;
+      return null;
+    }
+  }
   const ensureEditor = () => (editorP ??= import("./editor/page").then(({ mountEditor }) =>
     (editor = mountEditor(root, { client, onBack: showConverter }))));
   let opening = false; // an editor tile is being opened (New picture window, code loading)
@@ -366,6 +391,23 @@ export function mountApp(root: HTMLElement): void {
   async function enterEdit(choice?: EditKind) {
     if (editing || busy || opening || !canEdit()) return;
     const kind = choice && editChoices().includes(choice) ? choice : editKind();
+    if (kind === "subtitle") {
+      opening = true;
+      editMode.disabled = true;
+      try {
+        const page = await loadSubEditor();
+        if (!page) return;
+        if (await page.open(files)) showPage(page);
+        else {
+          note.textContent = page.lastError();
+          note.hidden = false;
+        }
+      } finally {
+        opening = false;
+        editMode.disabled = !canEdit();
+      }
+      return;
+    }
     if (kind === "code") {
       opening = true;
       editMode.disabled = true;
@@ -477,6 +519,13 @@ export function mountApp(root: HTMLElement): void {
         showPage(d);
         return;
       }
+      if (id === "subtitle") {
+        const page = await loadSubEditor();
+        if (!page) return;
+        page.openEmpty();
+        showPage(page);
+        return;
+      }
       if (id === "code") {
         const c = await loadCodeEditor();
         if (!c) return;
@@ -501,7 +550,7 @@ export function mountApp(root: HTMLElement): void {
     }
   }
   editMode.addEventListener("click", () => void enterEdit());
-  const labels: Partial<Record<EditKind, string>> = { code: "Edit as code", document: "Edit as document" };
+  const labels: Partial<Record<EditKind, string>> = { code: "Edit as code", document: "Edit as document", subtitle: "Edit as subtitles" };
   editMore.addEventListener("click", (e) => {
     e.stopPropagation();
     if (!editMenu.hidden) {
@@ -539,6 +588,7 @@ export function mountApp(root: HTMLElement): void {
     if (editing && editor && !editor.el.hidden && !editor.maybeLeave()) return;
     if (editing && audio && !audio.el.hidden && !audio.maybeLeave()) return;
     if (editing && docEditor && !docEditor.el.hidden && !docEditor.maybeLeave()) return;
+    if (editing && subEditor && !subEditor.el.hidden && !subEditor.maybeLeave()) return;
     showConverter();
   });
 

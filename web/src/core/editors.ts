@@ -19,7 +19,7 @@ export const EDITORS: EditorInfo[] = [
   { id: "model", title: "3D viewer", blurb: "Look at and measure 3D models", icon: "cube", available: true },
   { id: "vector", title: "Vector editor", blurb: "Edit shapes and paths in SVG drawings", icon: "vector", available: false },
   { id: "font", title: "Font editor", blurb: "Change letters, spacing and font names", icon: "font", available: false },
-  { id: "subtitle", title: "Subtitle editor", blurb: "Fix subtitle text and timing", icon: "subtitle", available: false },
+  { id: "subtitle", title: "Subtitle editor", blurb: "Fix subtitle text and timing", icon: "subtitle", available: true },
   { id: "data", title: "Data editor", blurb: "Edit CSV, JSON, XML and spreadsheets", icon: "table", available: false },
 ];
 

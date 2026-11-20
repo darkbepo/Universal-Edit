@@ -151,6 +151,19 @@ class _TimeBox(QLineEdit):
         super().keyPressEvent(e)
 
 
+class _CueText(QPlainTextEdit):
+    """The subtitle's text. Undo / redo are the page's (one history for everything), so the
+    box lets those keys through to the page's shortcuts instead of taking them itself."""
+
+    def event(self, e) -> bool:
+        if e.type() == QEvent.Type.ShortcutOverride and (
+            e.matches(QKeySequence.StandardKey.Undo) or e.matches(QKeySequence.StandardKey.Redo)
+        ):
+            e.ignore()
+            return True
+        return super().event(e)
+
+
 class ShortcutsWindow(QDialog):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -305,7 +318,7 @@ class SubtitleEditorPage(QWidget):
             return btn
 
         self.add_button = b("+ Add", "Add a subtitle after this one (Ctrl+Enter)", self.add_cue)
-        self.delete_button = b("Delete", "Delete the chosen subtitles (Ctrl+Delete)", self.delete)
+        self.delete_button = b("Delete", "Delete the chosen subtitles (Alt+Delete)", self.delete)
         self.split_button = b("Split", "Split at the cursor, or in the middle (Alt+S)", self.split)
         self.join_button = b("Join", "Join the chosen subtitles, or with the next (Alt+J)",
                              self.join)  # fmt: skip
@@ -329,7 +342,7 @@ class SubtitleEditorPage(QWidget):
         row.addWidget(QLabel("Length", objectName="Muted"))
         row.addWidget(self.length_box)
         lay.addLayout(row)
-        self.text_box = QPlainTextEdit()
+        self.text_box = _CueText()
         self.text_box.setObjectName("SubtitleText")
         self.text_box.setAccessibleName("Subtitle text")
         self.text_box.setPlaceholderText("The subtitle's text (Enter starts a new line)")

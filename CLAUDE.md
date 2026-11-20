@@ -338,6 +338,8 @@ src/umc/
                          #   WaveView (ruler, lanes, selection), Player (QAudioSink, pulls int16)
     codeeditor/          # code editor (add-on "code"): CodeEditorPage (tabs, open/save on a
                          #   QThread, status bar), CodeView, ChunkedHighlighter, FindBar, shortcuts
+    subtitleeditor/      # subtitle editor (add-on "subtitle"): SubtitleEditorPage (table, edit box,
+                         #   open/save on a QThread), CueModel, VideoPreview, FindBar, dialogs
     launcher.py          # AppController: converter windows + the viewer; single_instance.py
     quick_convert.py     # the right-click Quick Convert window (queue, format picker)
   editor3d/              # 3D viewer model — mesh.py (load + measurements), camera.py (orbit); no Qt
@@ -345,6 +347,8 @@ src/umc/
                          #   history, address line), waveform.py, preview.py; no Qt
   audioedit/             # audio editor model (numpy, no Qt) — document.py (AudioDoc, splice
                          #   undo), ops.py, peaks.py (waveform columns), wav.py, io.py (open/save)
+  subedit/               # subtitle editor model (no Qt) — formats.py (Cue, SubDoc, parse /
+                         #   write, markup), edits.py, checks.py, history.py, io.py (bytes ↔ doc)
   codeedit/              # code editor model (no Qt) — languages.py (language table → web
                          #   languages.json), textfile.py (byte-exact read / write), lexing.py
                          #   (Pygments, line by line), editing.py (indent / comments), search.py
@@ -1280,8 +1284,23 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
        text, layers (groups); saves SVG, exports PDF / PNG through the vector converter.
     2. Font editor (`font`): font names / metadata, letter spacing (side bearings, kerning
        pairs), glyph preview; fontTools on the desktop, HarfBuzz / own tables on the web.
-    3. Subtitle editor (`subtitle`): a list of cues (text, start / end) next to the video,
-       shift / stretch timing, split / join cues; saves through the subtitle converter.
+    3. ✅ Subtitle editor (`subtitle`, both apps; spec
+       `docs/superpowers/specs/2026-11-20-subtitle-editor-design.md`). Model `subedit/` ↔
+       `web/src/subedit/` (line-by-line ports; shared cases `tests/fixtures/subedit_cases.json`,
+       `python scripts/make_subedit_cases.py` on purpose only): own SRT / VTT / ASS / SSA / LRC
+       readers + writers, SMI read only (no converter round trip). A cue's text keeps the file's
+       markup; writing another format converts i / b / u / s only. ASS keeps header, footer and
+       every event field (`Cue.extra`); LRC has no ends (next start, or a blank stamp; last +4 s).
+       `io.to_bytes` = the raw bytes when untouched, else `codeedit.textfile.encode`; a file
+       reopened with a charset (the converter's `CHARSETS`) saves UTF-8 in both apps (no legacy
+       encoder in browsers). `History.push(…, merge)`: typing in one cue = one step (key
+       `text:<row>`, ended by choosing another row). Edit: one subtitle file (▾ also offers the
+       code editor), or one subtitle + one video (the video becomes the preview). Desktop add-on
+       "subtitle" (`gui/subtitleeditor/`: QTableView + `CueModel`, preview = QGraphicsVideoItem +
+       a text item — QVideoWidget is a native window on some systems and would hide the overlay);
+       self-test step. Web `ui/subtitleeditor/page.ts`: virtual list (only visible `.sub-row`s,
+       `ROW_PX`), `<video>` + `.sub-caption`, `window.__subeditor` with `?e2e` (`showAt(ms)`
+       because headless Chromium may not decode the clip); e2e `e2e/subtitleeditor.spec.ts`.
     4. Data editor (`data`): CSV / TSV / JSON / XML / YAML / XLSX as an editable table (add /
        remove rows and columns, sort, find), saved back through the data converter.
     The hub's tiles scroll in a short window (`EditorHub.scroll`); at 1280 × 800 all ten fit

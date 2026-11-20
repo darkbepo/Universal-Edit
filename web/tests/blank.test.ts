@@ -17,7 +17,7 @@ describe("new picture", () => {
 });
 
 describe("editor tiles", () => {
-  it("the ready editors, in the owner's order (video, vector, font, subtitle, data: Coming soon)", () => {
-    expect(EDITORS.filter((e) => e.available).map((e) => e.id)).toEqual(["image", "audio", "document", "code", "model"]);
+  it("the ready editors, in the owner's order (video, vector, font, data: Coming soon)", () => {
+    expect(EDITORS.filter((e) => e.available).map((e) => e.id)).toEqual(["image", "audio", "document", "code", "model", "subtitle"]);
   });
 });

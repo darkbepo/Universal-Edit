@@ -242,3 +242,30 @@ def test_video_preview_shows_the_cue_and_takes_times(qtbot, page, tmp_path, medi
     page.preview.close_video()
     assert not page.preview.has_video and page.preview.isHidden()
     assert not page.set_start_button.isEnabled()
+
+
+def test_keys_in_the_text_box(qtbot, page, tmp_path):
+    """Ctrl+Z there is the page's undo; Ctrl+Delete deletes a word, never the subtitle."""
+    from PySide6.QtCore import Qt
+
+    _open(qtbot, page, _srt(tmp_path))
+    page.text_box.setFocus()
+    qtbot.keyClick(page.text_box, Qt.Key.Key_End, Qt.KeyboardModifier.ControlModifier)
+    qtbot.keyClicks(page.text_box, "!!")
+    qtbot.keyClick(page.text_box, Qt.Key.Key_Z, Qt.KeyboardModifier.ControlModifier)
+    assert page.doc.cues[0].text == "Hello there" and page.text_box.toPlainText() == "Hello there"
+    qtbot.keyClick(page.text_box, Qt.Key.Key_Home, Qt.KeyboardModifier.ControlModifier)
+    qtbot.keyClick(page.text_box, Qt.Key.Key_Delete, Qt.KeyboardModifier.ControlModifier)
+    assert len(page.doc.cues) == 3 and page.doc.cues[0].text.strip() == "there"
+    qtbot.keyClick(page.table, Qt.Key.Key_Delete, Qt.KeyboardModifier.AltModifier)
+    assert len(page.doc.cues) == 2
+
+
+def test_both_apps_have_the_same_shortcuts():
+    import re
+
+    from umc.gui.subtitleeditor.shortcuts import SHORTCUTS
+
+    web = Path(__file__).parents[1] / "web" / "src" / "ui" / "subtitleeditor" / "shortcuts.ts"
+    web_ids = re.findall(r'\{ id: "(\w+)"', web.read_text(encoding="utf-8"))
+    assert web_ids == [s.id for s in SHORTCUTS]

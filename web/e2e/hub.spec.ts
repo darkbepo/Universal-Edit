@@ -14,11 +14,11 @@ test("tiles: in the owner's order; the ready editors open, the others say Coming
   const tiles = page.locator(".editor-tile");
   expect(await tiles.evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.editor))).toEqual(
     ["image", "video", "audio", "document", "code", "model", "vector", "font", "subtitle", "data"]);
-  for (const id of ["image", "audio", "document", "code", "model"]) {
+  for (const id of ["image", "audio", "document", "code", "model", "subtitle"]) {
     await expect(page.locator(`.editor-tile[data-editor=${id}]`)).toBeEnabled();
     await expect(page.locator(`.editor-tile[data-editor=${id}]`)).not.toContainText("Coming soon");
   }
-  for (const id of ["video", "vector", "font", "subtitle", "data"]) {
+  for (const id of ["video", "vector", "font", "data"]) {
     const soon = page.locator(`.editor-tile[data-editor=${id}]`);
     await expect(soon).toBeDisabled();
     await expect(soon).toContainText("Coming soon");
