@@ -16,6 +16,7 @@ import { DENOISE_TARGET, MAX_SAMPLES, OPEN_TARGET, SPEED_TARGET, TOO_LONG } from
 import * as noise from "../../audioedit/noise";
 import * as spectrum from "../../audioedit/spectrum";
 import * as record from "../../audioedit/record";
+import * as tracks from "../../audioedit/tracks";
 import * as speed from "../../audioedit/speed";
 import { MUSIC_TAGS_TARGET } from "../../converters/musictags";
 import { defaults, type Values } from "../../core/options";
@@ -100,6 +101,12 @@ export class AudioEditorPage {
   busy = false;
   private rec: Recording | null = null; // set while recording
   private converting = false; // a stopped take is being resampled
+  tracks: tracks.Track[] = []; // doc = tracks[activeTrack].doc
+  activeTrack = 0;
+  private tracksRev = 0; // bumped by every track change (add, remove, volume, mute …)
+  private tracksSavedRev = 0;
+  private tracksEl = h("div", { class: "audio-tracks", hidden: true });
+  private trackFile = h("input", { type: "file", accept: "audio/*", hidden: true });
   recordRoom: number | null = null; // tests: a smaller limit for the take, in frames
   private recordLevel = h("meter", { class: "audio-record-level", title: "Recording level", hidden: true });
   private summary: peaks.Peaks | null = null;
@@ -182,9 +189,15 @@ export class AudioEditorPage {
     this.host.append(this.canvas);
     this.el = h("div", { class: "editor audio-editor", hidden: true },
       top,
-      h("div", { class: "audio-body" }, tools, h("div", { class: "audio-view" }, this.host, this.placeholder), this.scroll),
+      h("div", { class: "audio-body" }, tools, this.tracksEl, h("div", { class: "audio-view" }, this.host, this.placeholder), this.scroll),
+      this.trackFile,
       h("div", { class: "editor-status" }, this.selectionLabel, this.message, this.cancelButton, this.infoLabel));
     this.cancelButton.addEventListener("click", () => this.cancelChange());
+    this.trackFile.addEventListener("change", () => {
+      const file = this.trackFile.files?.[0];
+      this.trackFile.value = "";
+      if (file) void this.addTrackFile(file);
+    });
     this.buildTimes();
 
     let saved = NaN;
@@ -251,7 +264,183 @@ export class AudioEditorPage {
   }
 
   get dirty(): boolean {
-    return !!this.doc?.dirty;
+    return !!this.doc?.dirty || this.tracks.some((t) => t.doc.dirty) || this.tracksRev !== this.tracksSavedRev;
+  }
+
+  /** Play and save the mix: two or more tracks, or one with a volume / pan / mute / solo. */
+  get mixing(): boolean {
+    return this.tracks.length > 1 || this.tracks.some(tracks.changed);
+  }
+
+  /** Frames that play / save: the mix's, or the sound's. */
+  length(): number {
+    return this.mixing ? tracks.length(this.tracks) : this.doc?.frames ?? 0;
+  }
+
+  private usedSamples(): number {
+    return this.tracks.length ? tracks.totalSamples(this.tracks) : (this.doc ? this.doc.channels * this.doc.frames : 0);
+  }
+
+  // ---------------------------------------------------------------- tracks
+  private renderTracks(): void {
+    const el = this.tracksEl;
+    el.hidden = !this.doc;
+    el.replaceChildren();
+    if (!this.doc) return;
+    const off = this.busy;
+    const add = (label: string, title: string, fn: () => void) => {
+      const b = h("button", { class: "btn small", type: "button", title, textContent: label, disabled: off });
+      b.dataset.busyOff = "";
+      b.addEventListener("click", fn);
+      return b;
+    };
+    el.append(h("div", { class: "audio-tracks-head" }, h("span", { class: "muted" }, "Tracks"),
+      add("+ Empty track", "A silent track to Record or Paste into", () => this.addEmptyTrack()),
+      add("+ Track from a file…", "Add a sound to mix with the others", () => this.trackFile.click())));
+    this.tracks.forEach((t, i) => {
+      const toggle = (text: string, title: string, on: boolean, fn: (on: boolean) => void) => {
+        const b = h("button", { class: "btn small audio-track-toggle", type: "button", title, textContent: text, ariaLabel: title });
+        b.setAttribute("aria-pressed", String(on));
+        b.addEventListener("click", () => {
+          const now = b.getAttribute("aria-pressed") !== "true";
+          b.setAttribute("aria-pressed", String(now));
+          fn(now);
+        });
+        return b;
+      };
+      const name = h("button", { class: "btn small audio-track-name", type: "button", title: "Edit this track", textContent: t.name, disabled: off && i !== this.activeTrack });
+      name.setAttribute("aria-pressed", String(i === this.activeTrack));
+      if (i !== this.activeTrack) name.dataset.busyOff = "";
+      name.addEventListener("click", () => this.selectTrack(i));
+      const gainLabel = h("span", { class: "muted audio-track-value", textContent: gainText(t.gainDb) });
+      const gain = h("input", { type: "range", min: String(tracks.MIN_GAIN_DB), max: String(tracks.MAX_GAIN_DB), step: "1", value: String(t.gainDb), ariaLabel: `${t.name} volume`, title: "Volume" });
+      gain.addEventListener("input", () => {
+        gainLabel.textContent = gainText(Number(gain.value));
+        this.setTrack(t, "gainDb", Number(gain.value));
+      });
+      const panLabel = h("span", { class: "muted audio-track-value", textContent: panText(t.pan) });
+      const pan = h("input", { type: "range", min: "-100", max: "100", step: "1", value: String(Math.round(t.pan * 100)), ariaLabel: `${t.name} left / right`, title: "Left / right (double-click: centre)" });
+      const onPan = () => {
+        panLabel.textContent = panText(Number(pan.value) / 100);
+        this.setTrack(t, "pan", Number(pan.value) / 100);
+      };
+      pan.addEventListener("input", onPan);
+      pan.addEventListener("dblclick", () => {
+        pan.value = "0";
+        onPan();
+      });
+      const remove = h("button", { class: "btn small audio-track-toggle", type: "button", title: `Remove ${t.name}`, ariaLabel: `Remove ${t.name}`, textContent: "×", disabled: off });
+      remove.dataset.busyOff = "";
+      remove.addEventListener("click", () => this.removeTrack(i));
+      el.append(h("div", { class: "audio-track" }, name,
+        toggle("M", `Mute ${t.name}`, t.mute, (on) => this.setTrack(t, "mute", on)),
+        toggle("S", `Solo ${t.name} (hear only the soloed tracks)`, t.solo, (on) => this.setTrack(t, "solo", on)),
+        h("label", { class: "audio-track-slider" }, gain, gainLabel),
+        h("label", { class: "audio-track-slider" }, pan, panLabel), remove));
+    });
+  }
+
+  private setTrack<K extends "gainDb" | "pan" | "mute" | "solo">(t: tracks.Track, key: K, value: tracks.Track[K]): void {
+    if (t[key] === value) return;
+    t[key] = value;
+    this.tracksRev++; // heard from the next Play
+    this.update();
+  }
+
+  private setTracks(list: tracks.Track[], active: number): void {
+    this.tracks = list;
+    this.activeTrack = active;
+    this.tracksRev++;
+  }
+
+  /** Edit track `i` (its own selection and undo). */
+  selectTrack(i: number): boolean {
+    if (this.busy || i < 0 || i >= this.tracks.length) return false;
+    this.showTrack(i);
+    return true;
+  }
+
+  private showTrack(i: number): void {
+    const doc = this.tracks[i].doc;
+    if (doc !== this.doc) {
+      this.stop();
+      this.doc = doc;
+      this.summary = null;
+      this.spectroKey = "";
+      this.spectro = [];
+      this.playHead = null;
+      this.fit();
+    }
+    this.activeTrack = i;
+    this.renderTracks();
+    this.update();
+  }
+
+  private addTrack(doc: AudioDoc, name: string): void {
+    this.setTracks([...this.tracks, tracks.track(doc, name)], this.activeTrack);
+    this.showTrack(this.tracks.length - 1);
+  }
+
+  /** A silent track (no frames) to Record or Paste into. */
+  addEmptyTrack(): boolean {
+    if (this.busy || !this.doc) return false;
+    const rate = this.tracks[0].doc.rate;
+    const channels = tracks.outChannels(this.tracks);
+    this.addTrack(new AudioDoc(rate, Array.from({ length: channels }, () => new Float32Array(0))), tracks.nextName(this.tracks));
+    this.showMessage("New empty track: press “● Record” or paste sound into it.");
+    return true;
+  }
+
+  /** Read `file` (at the tracks' sample rate) into a new track. False if it failed. */
+  async addTrackFile(file: File): Promise<boolean> {
+    if (this.busy || !this.doc) return false;
+    this.stop();
+    this.busy = true; // first: nothing else may start while the file is checked
+    const rate = this.tracks[0].doc.rate;
+    this.showMessage(`Adding “${file.name}”…`);
+    this.update();
+    try {
+      const { detect } = await import("../../core/detect");
+      const input = await detect(file);
+      if (input?.family !== "audio") {
+        this.showMessage("Only audio files can be added as a track.", true);
+        return false;
+      }
+      const [out] = await this.opts.client.run(OPEN_TARGET, [input], { rate }, (p) => this.showMessage(`Adding the track… ${Math.round(p * 100)} %`));
+      const part = readWav(out.data);
+      if (this.usedSamples() + part.samples.length * ops.frames(part.samples) > MAX_SAMPLES) throw new Error(TRACK_NO_ROOM);
+      this.busy = false;
+      this.addTrack(new AudioDoc(part.rate, part.samples), file.name.replace(/\.[^.]+$/, ""));
+      this.showMessage("");
+      return true;
+    } catch (e) {
+      if (!(e instanceof JobCancelled)) {
+        console.error(e);
+        this.showMessage(e instanceof Error && e.message ? e.message : `Couldn't add “${file.name}”.`, true);
+      }
+      return false;
+    } finally {
+      this.busy = false;
+      this.renderTracks();
+      this.update();
+    }
+  }
+
+  removeTrack(i: number): boolean {
+    if (this.busy || i < 0 || i >= this.tracks.length) return false;
+    const t = this.tracks[i];
+    if (t.doc.frames && !window.confirm(`Remove “${t.name}”? Its sound is lost.`)) return false;
+    this.stop();
+    if (this.tracks.length === 1) {
+      this.openEmpty();
+      this.tracksSavedRev = this.tracksRev; // nothing left to save
+      return true;
+    }
+    const rest = this.tracks.filter((_, j) => j !== i);
+    const active = Math.min(this.activeTrack - (i < this.activeTrack ? 1 : 0), rest.length - 1);
+    this.setTracks(rest, active);
+    this.showTrack(active);
+    return true;
   }
 
   maybeLeave(): boolean {
@@ -334,7 +523,12 @@ export class AudioEditorPage {
   }
 
   private setDocument(doc: AudioDoc | null, sources: string[]): void {
-    if (doc !== this.doc) this.saveTarget = null;
+    if (doc !== this.doc) {
+      this.saveTarget = null;
+      const name = sources.length === 1 ? sources[0].replace(/\.[^.]+$/, "") : "Track 1";
+      this.setTracks(doc ? [tracks.track(doc, name)] : [], 0);
+      this.tracksSavedRev = this.tracksRev;
+    }
     this.doc = doc;
     this.sources = sources;
     this.summary = null;
@@ -345,6 +539,7 @@ export class AudioEditorPage {
     this.placeholder.hidden = !!doc;
     this.host.hidden = !doc;
     this.fit();
+    this.renderTracks();
   }
 
   // ---------------------------------------------------------------- view
@@ -641,7 +836,7 @@ export class AudioEditorPage {
     const { mode, value } = choice;
     if (speed.isIdentity(mode, value)) return false;
     const grows = (speed.newSeconds(mode, value, seconds, doc.rate) - seconds) * doc.rate * doc.channels;
-    if (doc.channels * doc.frames + grows > MAX_SAMPLES) {
+    if (this.usedSamples() + grows > MAX_SAMPLES) {
       this.showMessage(TOO_LONG_RESULT, true);
       return false;
     }
@@ -760,8 +955,9 @@ export class AudioEditorPage {
       return;
     }
     const [a, b] = doc.selection;
+    const n = this.length();
     if (b > a) this.play(a, b);
-    else this.play(a < doc.frames ? a : 0, doc.frames);
+    else this.play(a < n ? a : 0, n);
   }
 
   play(start: number, end: number): void {
@@ -770,8 +966,10 @@ export class AudioEditorPage {
     if (!doc || end <= start) return;
     try {
       this.ctx ??= new AudioContext();
-      const buf = this.ctx.createBuffer(doc.channels, end - start, doc.rate);
-      doc.samples.forEach((ch, c) => buf.copyToChannel(ch.subarray(start, end) as Float32Array<ArrayBuffer>, c));
+      // two or more tracks: the audible ones mixed, just the part being played
+      const part = this.mixing ? tracks.mix(this.tracks, start, end) : doc.samples.map((ch) => ch.subarray(start, end));
+      const buf = this.ctx.createBuffer(part.length, end - start, doc.rate);
+      part.forEach((ch, c) => buf.copyToChannel(ch as Float32Array<ArrayBuffer>, c));
       const src = this.ctx.createBufferSource();
       src.buffer = buf;
       if (!this.gain) {
@@ -867,7 +1065,8 @@ export class AudioEditorPage {
       const channels = doc ? doc.channels : record.NEW_CHANNELS;
       const rate = ctx.sampleRate;
       const [a, b] = doc ? doc.selection : [0, 0];
-      let room = record.room(MAX_SAMPLES, doc?.frames ?? 0, doc?.channels ?? 0, b - a, channels);
+      const others = this.usedSamples() - (doc ? doc.frames * doc.channels : 0); // the other tracks share the limit
+      let room = record.room(MAX_SAMPLES - others, doc?.frames ?? 0, doc?.channels ?? 0, b - a, channels);
       if (doc && doc.rate !== rate) room = Math.floor((room * rate) / doc.rate);
       if (this.recordRoom !== null) room = Math.min(room, this.recordRoom);
       if (room <= 0) throw new Error(record.NO_ROOM);
@@ -999,7 +1198,7 @@ export class AudioEditorPage {
 
   async saveAs(): Promise<void> {
     const doc = this.doc;
-    if (!doc || this.busy || !doc.frames) return;
+    if (!doc || this.busy || !this.length()) return;
     this.stop();
     const first = this.sources[0] ?? "sound.wav";
     const ext = first.split(".").pop()?.toLowerCase() ?? "wav";
@@ -1032,12 +1231,16 @@ export class AudioEditorPage {
     const doc = this.doc as AudioDoc;
     const save = this.saveTarget!;
     const state = doc.state;
+    const states = this.tracks.map((t) => [t.doc, t.doc.state] as const);
+    const rev = this.tracksRev;
     const fileName = `${save.name}.${save.format}`;
+    const samples = this.mixing ? tracks.mix(this.tracks) : doc.samples;
+    const loud = this.mixing ? tracks.peakDb(samples) : -Infinity;
     this.busy = true;
     this.update();
-    this.showMessage(`Saving “${fileName}”…`);
+    this.showMessage(this.mixing ? `Saving the mix of ${this.tracks.length} tracks as “${fileName}”…` : `Saving “${fileName}”…`);
     try {
-      const wav = writeWav(doc.rate, doc.samples.map((ch) => ch.map((v) => Math.max(-1, Math.min(1, v)))), 32);
+      const wav = writeWav(doc.rate, samples.map((ch) => ch.map((v) => Math.max(-1, Math.min(1, v)))), 32);
       const conv = converterById("audio-file");
       const input: InputFile = { file: new File([wav as BlobPart], `${save.name}.wav`, { type: "audio/wav" }), name: `${save.name}.wav`, ext: "wav", family: "audio" };
       const target = conv.targets([input]).find((t) => t.id === save.format);
@@ -1056,7 +1259,10 @@ export class AudioEditorPage {
         setTimeout(() => URL.revokeObjectURL(url), 60_000);
       }
       doc.markSavedAt(state);
-      this.showMessage(`Saved “${fileName}”.`);
+      for (const [d, s] of states) d.markSavedAt(s);
+      if (this.tracksRev === rev) this.tracksSavedRev = rev;
+      if (loud > 0) this.showMessage(`Saved “${fileName}”. ${tracks.LOUD.replace("{db}", `+${loud.toFixed(1)} dB`)}`, true);
+      else this.showMessage(`Saved “${fileName}”.`);
     } catch (e) {
       console.error(e);
       this.showMessage(e instanceof Error && e.message ? `Couldn't save: ${e.message}` : "Couldn't save the sound.", true);
@@ -1102,15 +1308,18 @@ export class AudioEditorPage {
     const ready = !!doc && !this.busy;
     const sel = ready && doc!.hasSelection;
     const has = ready && doc!.frames > 0;
+    const playable = ready && this.length() > 0;
     const enabled: Record<string, boolean> = {
       cut: sel, copy: sel, paste: ready && !!this.clipboard, delete: sel, trim: sel, silence: sel,
       fade_in: sel, fade_out: sel, amplify: has, normalize: has, reverse: has, speed: has, learn_noise: sel, reduce_noise: has && !!this.noiseProfile(),
       zoom_in: ready, zoom_out: ready, zoom_sel: sel, fit: ready, spectrogram: !!doc,
-      home: has, end: has, play: has, stop: this.playing, record: !!this.rec || !this.busy,
+      home: playable, end: playable, play: playable, stop: this.playing, record: !!this.rec || !this.busy,
       undo: ready && doc!.canUndo(), redo: ready && doc!.canRedo(),
-      save: has, save_as: has, open: !this.busy, back: true,
+      save: playable, save_as: playable, open: !this.busy, back: true,
     };
     for (const [key, b] of this.buttons) b.disabled = !enabled[key];
+    // switching / adding / removing tracks waits while busy; mixing settings don't
+    for (const b of this.tracksEl.querySelectorAll<HTMLButtonElement>("[data-busy-off]")) b.disabled = this.busy;
     this.buttons.get("play")!.textContent = this.player && !this.player.paused ? "❚❚ Pause" : "▶ Play";
     this.buttons.get("record")!.textContent = this.rec ? "■ Stop recording" : "● Record";
     this.buttons.get("undo")!.title = ready && doc!.canUndo() ? `Undo ${doc!.undoLabel()} (Ctrl+Z)` : "Undo (Ctrl+Z)";
@@ -1133,7 +1342,7 @@ export class AudioEditorPage {
       this.shownTimes.set(key, text);
     }
     const layout = doc.channels === 1 ? "Mono" : doc.channels === 2 ? "Stereo" : `${doc.channels} channels`;
-    this.infoLabel.textContent = `${doc.rate / 1000} kHz · ${layout} · ${ops.formatTime(doc.duration)}${doc.dirty ? " · Unsaved changes" : ""}`;
+    this.infoLabel.textContent = `${doc.rate / 1000} kHz · ${layout} · ${ops.formatTime(doc.duration)}${this.tracks.length > 1 ? ` · mix of ${this.tracks.length} tracks: ${t(this.length())}` : ""}${this.dirty ? " · Unsaved changes" : ""}`;
     this.title.textContent = this.sources.length ? this.sources[0] + (this.sources.length > 1 ? ` + ${this.sources.length - 1} more` : "") : "";
     this.requestDraw();
   }
@@ -1582,3 +1791,8 @@ function resampleLinear(x: Float32Array[], from: number, to: number): Float32Arr
     return out;
   });
 }
+
+const TRACK_NO_ROOM = "There isn't room for another track: the tracks together would be longer than the audio editor allows.";
+
+const gainText = (db: number) => (db === 0 ? "0 dB" : `${db > 0 ? "+" : ""}${db} dB`);
+const panText = (pan: number) => (Math.abs(pan) < 0.005 ? "Centre" : `${pan < 0 ? "L" : "R"} ${Math.round(Math.abs(pan) * 100)}`);

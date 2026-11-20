@@ -7,7 +7,9 @@ from __future__ import annotations
 import logging
 import threading
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 from PySide6.QtCore import QEventLoop, QObject, QSettings, Qt, QThread, Signal, Slot
@@ -34,6 +36,7 @@ from PySide6.QtWidgets import (
 )
 
 from umc.audioedit import noise, ops, record, speed
+from umc.audioedit import tracks as tr
 from umc.audioedit.document import AudioDoc
 from umc.audioedit.io import (
     BITRATES,
@@ -41,6 +44,7 @@ from umc.audioedit.io import (
     MAX_SAMPLES,
     SAVE_FORMATS,
     change_speed,
+    decode,
     open_audio,
     resample,
     save_audio,
@@ -51,6 +55,7 @@ from umc.core.errors import ConversionCancelled, ConversionError
 from umc.gui.audioeditor.player import DEFAULT_VOLUME, Player
 from umc.gui.audioeditor.recorder import Recorder
 from umc.gui.audioeditor.time_box import TimeBox
+from umc.gui.audioeditor.tracks_panel import TracksPanel
 from umc.gui.audioeditor.wave_view import WaveView
 from umc.gui.widgets.flow_layout import FlowLayout
 
@@ -97,6 +102,12 @@ TOOL_GROUPS = (
         ("fit", "Fit", "Show the whole sound (Ctrl+F)"),
         ("spectrogram", "Spectrogram", "Show how loud each pitch is, instead of the waveform"),
     ),
+)
+
+
+TRACK_NO_ROOM = (
+    "There isn't room for another track: the tracks together would be longer than the audio "
+    "editor allows."
 )
 
 
@@ -299,7 +310,14 @@ class AudioEditorPage(QWidget):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.setObjectName("AudioEditorPage")
-        self.doc: AudioDoc | None = None
+        self.doc: AudioDoc | None = None  # the track being edited (tracks[active_track].doc)
+        self.tracks: list[tr.Track] = []
+        self.active_track = 0
+        self._tracks_rev = 0  # bumped by every track change (add, remove, volume, mute …)
+        self._tracks_saved_rev = 0
+        self._open_as_track = False  # the file being opened becomes a new track
+        self._saving_state: list[tuple[AudioDoc, int]] = []
+        self._save_peak = -float("inf")
         self.sources: list[Path] = []
         self.clipboard: np.ndarray | None = None
         self.opening = False
@@ -318,6 +336,7 @@ class AudioEditorPage(QWidget):
         self._save_target: tuple[Path, str] | None = None
         self._bitrate = DEFAULT_BITRATE
         self._saving_rev = -1
+        self._saving_tracks_rev = -1
         self._last_save_ok = False
         self._leaving = False
         self._play_end = 0
@@ -339,6 +358,14 @@ class AudioEditorPage(QWidget):
         root.setSpacing(0)
         root.addWidget(self._build_top_bar())
         root.addWidget(self._build_tools())
+        self.tracks_panel = TracksPanel()
+        self.tracks_panel.selected.connect(self.select_track)
+        self.tracks_panel.changed.connect(self._on_tracks_changed)
+        self.tracks_panel.remove_requested.connect(self.remove_track)
+        self.tracks_panel.add_empty.connect(self.add_empty_track)
+        self.tracks_panel.add_file.connect(self.choose_track_file)
+        self.tracks_panel.hide()
+        root.addWidget(self.tracks_panel)
 
         self.view = WaveView()
         self.view.set_spectrogram(self.edit_buttons["spectrogram"].isChecked())
@@ -530,6 +557,30 @@ class AudioEditorPage(QWidget):
     def recording(self) -> bool:
         return self.take is not None
 
+    @property
+    def dirty(self) -> bool:
+        """Unsaved changes in any track, or in the tracks themselves."""
+        if any(t.doc.dirty for t in self.tracks):
+            return True
+        return self._tracks_rev != self._tracks_saved_rev or (
+            self.doc is not None and self.doc.dirty
+        )
+
+    @property
+    def mixing(self) -> bool:
+        """Play and save the mix: two or more tracks, or one with a volume / pan / mute / solo."""
+        return len(self.tracks) > 1 or any(tr.changed(t) for t in self.tracks)
+
+    def _length(self) -> int:
+        """Frames that play / save: the mix's, or the sound's."""
+        if self.mixing:
+            return tr.length(self.tracks)
+        return self.doc.frames if self.doc is not None else 0
+
+    def _used_samples(self) -> int:
+        return tr.total_samples(self.tracks) if self.tracks else (
+            self.doc.samples.size if self.doc is not None else 0)  # fmt: skip
+
     def show_message(self, text: str, error: bool = False) -> None:
         self.message.setObjectName("Error" if error else "Muted")
         self.message.style().unpolish(self.message)
@@ -567,8 +618,9 @@ class AudioEditorPage(QWidget):
         }
         for key, btn in self.edit_buttons.items():
             btn.setEnabled(bool(enabled[key]))
+        length = self._length()
         for btn in (self.home_button, self.end_button, self.play_button):
-            btn.setEnabled(ready and doc.frames > 0)
+            btn.setEnabled(ready and length > 0)
         self.stop_button.setEnabled(self.player.active)
         self.record_button.setEnabled(self.recording or not self.busy)
         self.record_button.setText("■ Stop recording" if self.recording else "● Record")
@@ -578,8 +630,10 @@ class AudioEditorPage(QWidget):
         self.redo_button.setEnabled(ready and doc.can_redo())
         self.undo_button.setToolTip(f"Undo {doc.undo_label()} (Ctrl+Z)" if ready else "Undo")
         self.redo_button.setToolTip(f"Redo {doc.redo_label()} (Ctrl+Y)" if ready else "Redo")
-        self.save_button.setEnabled(ready and doc.frames > 0)
-        self.save_as_button.setEnabled(ready and doc.frames > 0)
+        self.save_button.setEnabled(ready and length > 0)
+        self.save_as_button.setEnabled(ready and length > 0)
+        self.tracks_panel.setVisible(doc is not None)
+        self.tracks_panel.set_enabled(not self.busy)
         self.open_button.setEnabled(not self.busy)
         self.times.setVisible(doc is not None)
         for box in self.time_boxes.values():
@@ -594,7 +648,9 @@ class AudioEditorPage(QWidget):
             self.time_boxes[key].show_time(t(frames / doc.rate))
         layout = {1: "Mono", 2: "Stereo"}.get(doc.channels, f"{doc.channels} channels")
         info = f"{doc.rate / 1000:g} kHz · {layout} · {t(doc.duration)}"
-        if doc.dirty:
+        if len(self.tracks) > 1:
+            info += f" · mix of {len(self.tracks)} tracks: {t(length / doc.rate)}"
+        if self.dirty:
             info += " · Unsaved changes"
         self.info_label.setText(info)
         names = [p.name for p in self.sources]
@@ -698,7 +754,7 @@ class AudioEditorPage(QWidget):
         if speed.is_identity(mode, value):
             return False
         grows = (speed.new_seconds(mode, value, seconds, doc.rate) - seconds) * doc.rate
-        if doc.samples.size + grows * doc.channels > MAX_SAMPLES:
+        if self._used_samples() + grows * doc.channels > MAX_SAMPLES:
             self.show_message(TOO_LONG_RESULT, error=True)
             return False
         rate = doc.rate
@@ -854,17 +910,24 @@ class AudioEditorPage(QWidget):
             self._update_state()
             return
         a, b = self.doc.selection
+        n = self._length()
         if b > a:
             self._play(a, b)
         else:
-            self._play(a if a < self.doc.frames else 0, self.doc.frames)
+            self._play(a if a < n else 0, n)
 
     def play_from(self, frame: int) -> None:
         if self.doc is not None:
-            self._play(frame, self.doc.frames)
+            self._play(frame, self._length())
 
     def _play(self, start: int, end: int) -> None:
-        why = self.player.play(self.doc, start, end)
+        if self.mixing:  # mixed bit by bit as the player reads it (settings as they are now)
+            snapshot = [replace(t) for t in self.tracks]
+            samples = tr.LazyMix(snapshot, end)
+            mixed = SimpleNamespace(rate=self.doc.rate, channels=samples.shape[0], samples=samples)
+            why = self.player.play(mixed, start, end)
+        else:
+            why = self.player.play(self.doc, start, end)
         if why:
             self.show_message(why, error=True)
         self.view.playing = self.player.active
@@ -897,7 +960,8 @@ class AudioEditorPage(QWidget):
         a, b = doc.selection if doc is not None else (0, 0)
         frames = doc.frames if doc is not None else 0
         width = doc.channels if doc is not None else 0
-        room = record.room(MAX_SAMPLES, frames, width, b - a, self.recorder.channels)
+        others = self._used_samples() - frames * width  # the other tracks share the limit
+        room = record.room(MAX_SAMPLES - others, frames, width, b - a, self.recorder.channels)
         if doc is not None and doc.rate != self.recorder.rate:  # the take is resampled after
             room = room * self.recorder.rate // doc.rate
         if room <= 0:
@@ -1023,6 +1087,7 @@ class AudioEditorPage(QWidget):
         if self.opening:
             self._opened(result, self._open_request)
         elif self.saving:
+            self._save_peak = result if isinstance(result, float) else -float("inf")
             self._saved(*self._save_request)
         elif self.changing:
             self._changed_part(result)
@@ -1043,7 +1108,7 @@ class AudioEditorPage(QWidget):
         worker.deleteLater()
         thread.deleteLater()
         if self.opening:
-            self.opening = False
+            self.opening = self._open_as_track = False
             self.opened.emit()
         if self.saving:
             self.saving = False
@@ -1067,6 +1132,7 @@ class AudioEditorPage(QWidget):
         if not self.busy:
             self.stop()
             self.doc, self.sources, self._save_target = None, [], None
+            self._set_tracks([], 0)
             self.view.set_document(None)
             self._show_placeholder(EMPTY_TEXT)
             self.show_message("")
@@ -1092,13 +1158,125 @@ class AudioEditorPage(QWidget):
         return True
 
     def _opened(self, doc: AudioDoc, paths: list[Path]) -> None:
+        if self._open_as_track:
+            self._track_opened(doc, paths)
+            return
         self.doc, self.sources, self._save_target = doc, paths, None
+        name = paths[0].stem if len(paths) == 1 else "Track 1"
+        self._set_tracks([tr.Track(doc, name)], 0)
+        self._tracks_saved_rev = self._tracks_rev
         self.center.setCurrentIndex(0)
         self.view.set_document(doc)
         self.show_message("")
         self.view.setFocus()
 
+    # ------------------------------------------------------------ tracks
+    def _set_tracks(self, tracks: list[tr.Track], active: int) -> None:
+        self.tracks, self.active_track = tracks, active
+        self._tracks_rev += 1
+        self.tracks_panel.set_tracks(tracks, active)
+
+    def _on_tracks_changed(self) -> None:
+        """A volume / pan / mute / solo changed (allowed while busy; heard from the next Play)."""
+        self._tracks_rev += 1
+        self._update_state()
+
+    def select_track(self, i: int) -> bool:
+        """Edit track ``i`` (its own selection and undo)."""
+        if self.busy or not 0 <= i < len(self.tracks):
+            self.tracks_panel.set_tracks(self.tracks, self.active_track)
+            self.tracks_panel.set_enabled(not self.busy)
+            return False
+        self._show_track(i)
+        return True
+
+    def _show_track(self, i: int) -> None:
+        if i != self.active_track or self.doc is not self.tracks[i].doc:
+            self.stop()
+            self.active_track = i
+            self.doc = self.tracks[i].doc
+            self.view.set_document(self.doc)
+        self.tracks_panel.set_tracks(self.tracks, i)
+        self._update_state()  # also the strip's enabled state
+
+    def _add_track(self, doc: AudioDoc, name: str) -> None:
+        self._set_tracks([*self.tracks, tr.Track(doc, name)], self.active_track)
+        self._show_track(len(self.tracks) - 1)  # also right after a file job (still busy)
+
+    def add_empty_track(self) -> bool:
+        """A silent track (no frames) to Record or Paste into."""
+        if self.busy or self.doc is None:
+            return False
+        rate, channels = self.tracks[0].doc.rate, tr.out_channels(self.tracks)
+        empty = AudioDoc(rate, np.zeros((channels, 0), np.float32))
+        self._add_track(empty, tr.next_name(self.tracks))
+        self.show_message("New empty track: press “● Record” or paste sound into it.")
+        return True
+
+    def choose_track_file(self) -> None:
+        if self.busy or self.doc is None:
+            return
+        exts = " ".join(f"*.{e}" for e in sorted(AUDIO_EXTS))
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Add a track", str(self._folder()), f"Audio ({exts});;All files (*)"
+        )
+        if path:
+            self.add_track_file(Path(path))
+
+    def add_track_file(self, path: Path) -> bool:
+        """Read ``path`` (at the tracks' sample rate) on a worker thread into a new track."""
+        if self.busy or self.doc is None:
+            return False
+        self.stop()
+        path = Path(path)
+        rate = self.tracks[0].doc.rate
+        self.opening = self._open_as_track = True
+        self._cancel = cancel = threading.Event()
+        self.show_message(f"Adding “{path.name}”…")
+        self._update_state()
+        self._open_request = [path]
+
+        def job(progress) -> AudioDoc:
+            got, x = decode(path, rate, None, cancel, lambda f: progress(f, "Adding the track…"))
+            return AudioDoc(got, x)
+
+        self._start(job, f"Couldn't add “{path.name}”. See the log for details.")
+        return True
+
+    def _track_opened(self, doc: AudioDoc, paths: list[Path]) -> None:
+        if self._used_samples() + doc.samples.size > MAX_SAMPLES:
+            self.show_message(TRACK_NO_ROOM, error=True)
+            return
+        self._add_track(doc, paths[0].stem if paths else tr.next_name(self.tracks))
+        self.show_message("")
+
+    def confirm(self, text: str) -> bool:
+        """Yes / No question (tests replace it)."""
+        answer = QMessageBox.question(self, "Audio editor", text)
+        return answer == QMessageBox.StandardButton.Yes
+
+    def remove_track(self, i: int) -> bool:
+        if self.busy or not 0 <= i < len(self.tracks):
+            return False
+        t = self.tracks[i]
+        if t.doc.frames and not self.confirm(f"Remove “{t.name}”? Its sound is lost."):
+            return False
+        if len(self.tracks) == 1:
+            self.open_empty()
+            self._tracks_saved_rev = self._tracks_rev  # nothing left to save
+            return True
+        self.stop()
+        rest = [x for j, x in enumerate(self.tracks) if j != i]
+        active = self.active_track - (1 if i < self.active_track else 0)
+        active = min(active, len(rest) - 1)
+        self._set_tracks(rest, active)
+        self._show_track(active)
+        return True
+
     def _open_failed(self, message: str) -> None:
+        if self._open_as_track:
+            self.show_message(message, error=bool(message))
+            return
         self._show_placeholder(EMPTY_TEXT if self.doc is None else "")
         if self.doc is not None:
             self.center.setCurrentIndex(0)
@@ -1155,7 +1333,7 @@ class AudioEditorPage(QWidget):
 
     def save_as(self) -> bool:
         """Ask for a file name and format and start saving. False if the user cancelled."""
-        if self.doc is None or self.busy or self.doc.frames == 0:
+        if self.doc is None or self.busy or self._length() == 0:
             return False
         default = self._default_path()
         ids = [e for e, _ in SAVE_FORMATS]
@@ -1185,6 +1363,22 @@ class AudioEditorPage(QWidget):
         self.saving = True
         self._last_save_ok = False
         self._saving_rev = doc.revision
+        self._saving_state = [(t.doc, t.doc.revision) for t in self.tracks]
+        self._saving_tracks_rev = self._tracks_rev
+        if self.mixing:  # mixed on the worker thread from a copy of the settings
+            snapshot = [replace(t) for t in self.tracks]
+            tags = self.tracks[0].doc.tags
+
+            def job(progress):
+                mixed = AudioDoc(doc.rate, tr.mix(snapshot))
+                mixed.tags = tags
+                save_audio(mixed, path, fmt, kbps, lambda pct, _m: progress(pct / 100, "Saving…"))
+                return tr.peak_db(mixed.samples)
+
+            self.show_message(f"Saving the mix of {len(snapshot)} tracks as “{path.name}”…")
+            self._save_request = (path, fmt)
+            self._start(job, f"Couldn't save “{path.name}”. See the log for details.")
+            return
         self._update_state()
         self.show_message(f"Saving “{path.name}”…")
         self._save_request = (path, fmt)
@@ -1200,7 +1394,17 @@ class AudioEditorPage(QWidget):
         self._last_save_ok = True
         if self.doc is not None and self.doc.revision == self._saving_rev:
             self.doc.mark_saved()
-        self.show_message(f"Saved “{path.name}”.")
+        for doc, rev in self._saving_state:
+            if doc.revision == rev:
+                doc.mark_saved()
+        if self._tracks_rev == self._saving_tracks_rev:
+            self._tracks_saved_rev = self._tracks_rev
+        if self._save_peak > 0:
+            peak = tr.LOUD.format(db=f"+{self._save_peak:.1f} dB")
+            self.show_message(f"Saved “{path.name}”. {peak}", error=True)
+        else:
+            self.show_message(f"Saved “{path.name}”.")
+        self._save_peak = -float("inf")
 
     # ------------------------------------------------------------ leaving
     def _ask_save_changes(self) -> str:
@@ -1240,14 +1444,14 @@ class AudioEditorPage(QWidget):
             if self.changing:
                 self._cancel.set()
                 self._wait(self.change_done)
-            if self.doc is None or not self.doc.dirty:
+            if self.doc is None or not self.dirty:
                 return True
             answer = self._ask_save_changes()
             if answer == "discard":
                 return True
             if answer == "save" and self.save():
                 self._wait(self.save_done)
-                return self._last_save_ok and not self.doc.dirty
+                return self._last_save_ok and not self.dirty
             return False
         finally:
             self._leaving = False

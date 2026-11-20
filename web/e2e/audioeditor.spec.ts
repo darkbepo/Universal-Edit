@@ -328,6 +328,67 @@ test("recording in an empty editor makes a new sound", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
 });
 
+type TrackHook = { tracks: { name: string; doc: { frames: number; channels: number; rate: number } }[]; activeTrack: number; mixing: boolean; dirty: boolean };
+const trackInfo = (page: Page) => page.evaluate(() => {
+  const a = window.__audio as unknown as TrackHook;
+  return { names: a.tracks.map((t) => t.name), active: a.activeTrack, mixing: a.mixing, dirty: a.dirty, channels: a.tracks.map((t) => t.doc.channels), rate: a.tracks.map((t) => t.doc.rate) };
+});
+
+test("tracks: add a file as a track, switch, set volume / pan, save the mix", async ({ page }) => {
+  await openEditor(page, [fx("tone.wav")]);
+  await expect(page.locator(".audio-tracks")).toBeVisible();
+  expect(await trackInfo(page)).toMatchObject({ names: ["tone"], mixing: false, dirty: false });
+  await page.locator(".audio-editor input[type=file][accept='audio/*']").setInputFiles(fx("beep.mp3"));
+  await expect.poll(async () => (await trackInfo(page)).names, { timeout: 60_000 }).toEqual(["tone", "beep"]);
+  let t = await trackInfo(page);
+  expect(t).toMatchObject({ active: 1, mixing: true, dirty: true, channels: [2, 1] });
+  expect(t.rate[1]).toBe(t.rate[0]); // read at the first track's rate
+  await expect(page.locator(".audio-info")).toContainText("mix of 2 tracks");
+  // edits go to the selected track only
+  await page.evaluate(() => window.__audio!.doc!.setSelection(0, 4410));
+  await page.evaluate(() => window.__audio!.update());
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await page.locator(".audio-track-name", { hasText: "tone" }).click();
+  t = await trackInfo(page);
+  expect(t.active).toBe(0);
+  await expect(page.getByRole("button", { name: "Undo", exact: true })).toBeDisabled();
+  // mixing settings
+  await page.getByLabel("beep volume").fill("-6");
+  await page.getByLabel("beep left / right").fill("-100");
+  await expect(page.locator(".audio-track").nth(1)).toContainText("-6 dB");
+  await expect(page.locator(".audio-track").nth(1)).toContainText("L 100");
+  await page.getByRole("button", { name: "Mute tone" }).click();
+  await expect(page.getByRole("button", { name: "Mute tone" })).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: "Mute tone" }).click();
+  // save the mix as WAV
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByLabel("Format").selectOption("wav");
+  const download = page.waitForEvent("download", { timeout: 120_000 });
+  await page.locator("dialog.save").getByRole("button", { name: "Save", exact: true }).click();
+  const bytes = readFileSync(await (await download).path());
+  expect(String.fromCharCode(...bytes.subarray(0, 4))).toBe("RIFF");
+  await expect(page.locator(".audio-editor .msg")).toContainText("Saved “tone edited.wav”");
+  expect((await trackInfo(page)).dirty).toBe(false);
+  // remove a track (asks first: it has sound)
+  page.once("dialog", (d) => void d.accept());
+  await page.getByRole("button", { name: "Remove beep" }).click();
+  expect(await trackInfo(page)).toMatchObject({ names: ["tone"], mixing: false });
+});
+
+test("tracks: an empty track to record into", async ({ page }) => {
+  await openEditor(page, [fx("tone.wav")]);
+  await page.getByRole("button", { name: "+ Empty track" }).click();
+  expect(await trackInfo(page)).toMatchObject({ names: ["tone", "Track 2"], active: 1 });
+  expect((await rec(page)).frames).toBe(0);
+  await page.getByRole("button", { name: "● Record" }).click();
+  await expect.poll(async () => (await rec(page)).recording).toBe(true);
+  await page.waitForTimeout(700);
+  await page.getByRole("button", { name: "■ Stop recording" }).click();
+  await expect(page.getByRole("button", { name: "● Record" })).toBeVisible();
+  expect((await rec(page)).frames).toBeGreaterThan(10_000);
+  expect(await page.evaluate(() => (window.__audio as unknown as TrackHook).tracks[0].doc.frames)).toBeGreaterThan(100_000); // the first track untouched
+});
+
 test("the audio tile opens an empty editor; Edit is off for audio mixed with images", async ({ page }) => {
   await page.goto("./?e2e");
   await page.locator(".editor-tile[data-editor=audio]").click();
@@ -341,7 +402,7 @@ test("the audio tile opens an empty editor; Edit is off for audio mixed with ima
 
 test("the volume slider sets the playback volume and is remembered", async ({ page }) => {
   await openEditor(page, [fx("tone.wav")]);
-  const slider = page.getByRole("slider", { name: "Volume" });
+  const slider = page.getByRole("slider", { name: "Volume", exact: true });
   await expect(slider).toHaveValue("70");
   await slider.fill("0"); // silent while it plays
   await expect(page.locator(".audio-volume-value")).toHaveText("0 %");
@@ -356,7 +417,7 @@ test("the volume slider sets the playback volume and is remembered", async ({ pa
   await page.reload();
   await page.locator('input[type="file"]').first().setInputFiles([fx("tone.wav")]);
   await page.getByRole("button", { name: "Edit", exact: true }).click();
-  await expect(page.getByRole("slider", { name: "Volume" })).toHaveValue("35");
+  await expect(page.getByRole("slider", { name: "Volume", exact: true })).toHaveValue("35");
   expect(await page.evaluate(() => window.__audio!.volume)).toBeCloseTo(0.35);
 });
 

@@ -605,3 +605,120 @@ def test_last_chunk_filling_the_take_pastes_it_once(window, qtbot, media, monkey
     page.stop_recording()
     assert doc.frames == frames + 1000 and not page.recording
     doc.mark_saved()
+
+
+def test_tracks_add_switch_mix_and_save(window, qtbot, media, mono, tmp_path, monkeypatch):
+    import numpy as np
+    from PySide6.QtWidgets import QFileDialog
+
+    from umc.audioedit import tracks as tr
+    from umc.audioedit.io import open_audio
+
+    page = open_in_editor(window, qtbot, [media / "tone.wav"])
+    first = page.doc
+    assert page.tracks_panel.isVisible() and len(page.tracks) == 1 and not page.mixing
+    assert page.tracks[0].name == "tone" and not page.dirty
+    # a file as a second track: read at the first track's rate, keeps its own channels
+    with qtbot.waitSignal(page.opened, timeout=20000):
+        assert page.add_track_file(mono)
+    assert len(page.tracks) == 2 and page.active_track == 1 and page.mixing
+    second = page.doc
+    assert second is not first and second.rate == first.rate and second.channels == 1
+    assert page.tracks[1].name == "beep" and page.dirty  # a new track is a change
+    assert len(page.tracks_panel.row_widgets) == 2
+    # edits go to the selected track only, with its own undo
+    second.set_selection(0, second.rate // 4)
+    assert page.run("delete")
+    assert first.can_undo() is False and second.can_undo()
+    assert page.select_track(0) and page.doc is first and page.view.doc is first
+    assert page.undo_button.isEnabled() is False
+    # mixing settings from the strip
+    row = page.tracks_panel.row_widgets[1]
+    row["gain"].setValue(-6)
+    row["pan"].setValue(-100)
+    assert page.tracks[1].gain_db == -6.0 and page.tracks[1].pan == -1.0
+    assert row["gain_label"].text() == "-6 dB" and row["pan_label"].text() == "L 100"
+    assert page._length() == max(first.frames, second.frames)
+    assert "mix of 2 tracks" in page.info_label.text()
+    # Save writes the mix
+    dest = tmp_path / "mix"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(dest), "WAV (*.wav)"))
+    with qtbot.waitSignal(page.save_done, timeout=20000):
+        assert page.save_as()
+    assert not page.dirty and "Saved “mix.wav”" in page.message.text()
+    saved = open_audio([tmp_path / "mix.wav"])
+    want = tr.mix(page.tracks)
+    assert saved.samples.shape == want.shape
+    assert np.max(np.abs(saved.samples - want)) < 1e-4
+    # mute is a change too; solo the first track and only it is heard
+    page.tracks_panel.row_widgets[0]["solo"].click()
+    assert page.dirty and tr.audible(page.tracks) == [page.tracks[0]]
+    page._tracks_saved_rev = page._tracks_rev  # no "save changes?" when the window closes
+
+
+def test_empty_track_is_recorded_into_and_tracks_are_removed(window, qtbot, media, monkeypatch):
+    fake = FakeRecorder()
+    monkeypatch.setattr("umc.gui.audioeditor.audio_editor_page.Recorder", fake)
+    page = open_in_editor(window, qtbot, [media / "tone.wav"])
+    first = page.doc
+    assert page.add_empty_track()
+    doc = page.doc
+    assert doc.frames == 0 and doc.rate == first.rate and page.tracks[1].name == "Track 2"
+    assert page.start_recording()
+    fake.feed(0.5)
+    page.stop_recording()
+    assert doc.frames == first.rate // 2 and doc.undo_label() == "Record"
+    # removing a track with sound asks first
+    asked = []
+    monkeypatch.setattr(page, "confirm", lambda text: asked.append(text) or False)
+    assert not page.remove_track(1) and len(page.tracks) == 2
+    monkeypatch.setattr(page, "confirm", lambda text: asked.append(text) or True)
+    assert page.remove_track(1)
+    assert len(asked) == 2 and "Track 2" in asked[0]
+    assert page.tracks == [page.tracks[0]] and page.doc is first and page.active_track == 0
+    assert page.remove_track(0)  # the last one: back to the empty editor
+    assert page.doc is None and page.tracks == [] and page.tracks_panel.isHidden()
+
+
+def test_a_track_that_does_not_fit_is_refused(window, qtbot, media, mono, monkeypatch):
+    from umc.gui.audioeditor import audio_editor_page as mod
+
+    page = open_in_editor(window, qtbot, [media / "tone.wav"])
+    monkeypatch.setattr(mod, "MAX_SAMPLES", page.doc.samples.size + 10)
+    with qtbot.waitSignal(page.opened, timeout=20000):
+        assert page.add_track_file(mono)
+    assert len(page.tracks) == 1 and page.message.text() == mod.TRACK_NO_ROOM
+
+
+def test_mix_saves_with_an_empty_track_selected_and_one_track_settings_count(
+    window, qtbot, media, tmp_path, monkeypatch
+):
+    import numpy as np
+    from PySide6.QtWidgets import QFileDialog
+
+    from umc.audioedit.io import open_audio
+
+    page = open_in_editor(window, qtbot, [media / "tone.wav"])
+    first = page.doc
+    # one track at −24 dB: the setting is used (not only shown)
+    page.tracks_panel.row_widgets[0]["gain"].setValue(-24)
+    assert page.mixing
+    dest = tmp_path / "quiet"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(dest), "WAV (*.wav)"))
+    with qtbot.waitSignal(page.save_done, timeout=20000):
+        assert page.save_as()
+    quiet = open_audio([tmp_path / "quiet.wav"]).samples
+    assert np.max(np.abs(quiet)) < np.max(np.abs(first.samples)) * 0.07
+    # an empty track selected: Save still saves the mix
+    assert page.add_empty_track() and page.doc.frames == 0
+    assert page.save_button.isEnabled()
+    dest2 = tmp_path / "mix"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(dest2), "WAV (*.wav)"))
+    with qtbot.waitSignal(page.save_done, timeout=20000):
+        assert page.save_as()
+    assert (tmp_path / "mix.wav").is_file() and not page.dirty
+    # picking a track while busy keeps the strip disabled
+    page.saving = True
+    assert not page.select_track(0)
+    assert not page.tracks_panel.row_widgets[0]["name"].isEnabled()
+    page.saving = False

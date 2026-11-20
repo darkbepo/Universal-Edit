@@ -1059,7 +1059,19 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       noise / gain processing) → an AudioWorklet from a Blob URL (`RECORDER_WORKLET`) at the
       sound's rate when the browser allows (Firefox doesn't: then OfflineAudioContext resamples).
       Leaving keeps the take. e2e uses Chromium's fake microphone (`playwright.config.ts` flags).
-      Not yet: several tracks / mixing.
+      Tracks (both apps; spec `docs/superpowers/specs/2026-11-20-audio-tracks-design.md`):
+      `audioedit/tracks.py` ↔ `tracks.ts` (`Track` = its own AudioDoc + gain dB / pan / mute /
+      solo; `mix` sums the audible tracks in float32 exactly like numpy — products rounded with
+      `Math.fround` — so `tests/fixtures/audio_mix_cases.json` (`scripts/make_mix_cases.py`)
+      matches bit for bit). The page keeps `doc` = the selected track, so every edit / undo /
+      recording works on it unchanged; Play and Save use the mix when there are 2+ tracks
+      (desktop `Player.play(…, origin=)` plays a mix of just that part). All tracks share the
+      first one's rate (files added later are decoded at it) and one `MAX_SAMPLES`. Track
+      settings aren't undo steps. Desktop strip `gui/audioeditor/tracks_panel.py`; web
+      `.audio-tracks` (`.audio-track-name`, labels "<name> volume" / "<name> left / right",
+      "Mute <name>", "Remove <name>"). pytest-qt closes the window before fixtures clean up:
+      a test must not leave unsaved tracks (`_tracks_saved_rev = _tracks_rev`).
+      Not yet: moving a track in time, saving the tracks separately (project file).
    14. Properties mode (both apps), step 1 = read-only "About this file" — spec
       `docs/superpowers/specs/2026-11-12-properties-design.md`. Model `properties/` (desktop, no
       Qt) ↔ `web/src/properties/`: each app reads a file with its own engines into the same plain

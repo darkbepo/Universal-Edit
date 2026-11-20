@@ -15,9 +15,10 @@ export const audioEditOpenConverter: Converter = {
   family: "audio",
   options: [],
   targets: () => [],
-  async run(files, _target, _o, ctx) {
+  async run(files, _target, o, ctx) {
     const { getFFmpeg } = await import("../engines/ffmpeg");
     const { wavFormat } = await import("../audioedit/wav");
+    const rate = Number((o as Record<string, unknown>).rate) || 0; // a new track: the tracks' rate
     const ff = await getFFmpeg((m) => ctx.progress(0, m));
     const out: OutputFile[] = [];
     let fmt: { rate: number; channels: number } | null = null;
@@ -31,7 +32,10 @@ export const audioEditOpenConverter: Converter = {
         if (!info.hasAudio) throw new ConversionError(`“${f.name}” has no sound.`);
         const args = ["-i", path, "-vn", "-sn", "-dn", "-map", "0:a:0", "-c:a", "pcm_f32le"];
         if (fmt) args.push("-ar", String(fmt.rate), "-ac", String(fmt.channels));
-        else args.push("-af", "aformat=channel_layouts=mono|stereo");
+        else {
+          if (rate) args.push("-ar", String(rate));
+          args.push("-af", "aformat=channel_layouts=mono|stereo");
+        }
         await ff.run([...args, "-f", "wav", "/edit.wav"], info.duration, (p) => ctx.progress((i + p) / files.length, msg), `Couldn't read the sound in “${f.name}”.`);
         const data = await ff.readAndDelete("/edit.wav");
         total += data.length / 4;

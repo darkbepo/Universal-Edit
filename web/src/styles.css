@@ -624,7 +624,16 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 /* audio editor (ui/audioeditor/page.ts) */
 .audio-body { display: flex; flex-direction: column; min-height: 0; padding: 8px 12px 4px; gap: 6px; }
 .audio-tools { display: flex; flex-wrap: wrap; gap: 6px 14px; }
-.audio-tools .btn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.audio-tools .btn[aria-pressed="true"], .audio-tracks .btn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.audio-tracks { display: flex; flex-direction: column; gap: 4px; padding: 6px 12px 0; }
+.audio-tracks-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.audio-tracks-head > .muted { margin-right: auto; }
+.audio-track { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.audio-track-name { min-width: 90px; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.audio-track-toggle { min-width: 30px; padding-inline: 6px; }
+.audio-track-slider { display: inline-flex; align-items: center; gap: 4px; }
+.audio-track-slider input[type="range"] { width: 100px; }
+.audio-track-value { min-width: 48px; font-size: 12px; }
 .audio-record-level { width: 70px; height: 8px; align-self: center; }
 .audio-group { display: flex; flex-wrap: wrap; gap: 4px; }
 .audio-volume-box { display: flex; align-items: center; gap: 6px; margin-left: 8px; }
@@ -647,7 +656,7 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 .audio-time:focus { border-color: var(--accent); outline: none; }
 .audio-time.invalid { border-color: var(--danger); }
 @media (max-width: 560px) { .audio-selection { gap: 6px; } .audio-time { width: 8.5ch; padding: 2px 4px; } }
-@media (max-width: 700px) { .audio-editor .editor-status { flex-wrap: wrap; } }
+@media (max-width: 700px) { .audio-editor .editor-status { flex-wrap: wrap; } .audio-info { white-space: normal; } .audio-track-slider { order: 1; } }
 @media (max-width: 900px) {
   /* the image editor's one-column rows don't fit here: the sound view takes what is left */
   .audio-editor { grid-template-rows: auto minmax(0, 1fr) auto; }
