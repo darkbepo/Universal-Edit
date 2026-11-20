@@ -69,6 +69,24 @@ describe("stretch", () => {
     });
   }
 
+  for (const speed of [2, 4]) {
+    for (const first of [500, 1000, 1500]) {
+      it(`joins a short first window (${first} samples) to the next at ${speed}×`, () => {
+        const next = 4800;
+        const whole = sine(437, ((first + next) * speed) / RATE + 0.01);
+        const take = Math.round(first * speed);
+        const a = stretch([whole.subarray(0, take)], speed, first)[0];
+        const b = stretch([whole.subarray(take, take + Math.round(next * speed))], speed, next)[0];
+        let inner = 0;
+        for (const p of [a, b]) for (let i = 1; i < p.length; i++) inner = Math.max(inner, Math.abs(p[i] - p[i - 1]));
+        // a clean sine at this speed steps by at most ~ 2π·437·speed/48000·0.5
+        const clean = ((2 * Math.PI * 437 * speed) / RATE) * 0.5;
+        const seam = Math.abs(b[0] - a[first - 1]);
+        expect(seam).toBeLessThan(Math.max(inner, clean) * 1.5);
+      });
+    }
+  }
+
   it("treats a speed that isn't a positive number as 1", () => {
     const input = sine(300, 0.1);
     for (const speed of [0, -2, Number.NaN, Number.POSITIVE_INFINITY]) {

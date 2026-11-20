@@ -85,7 +85,9 @@ export function stretch(input: Float32Array[], speed: number, frames?: number): 
   if (!Number.isFinite(speed) || speed <= 0) speed = 1;
   const total = Math.max(0, Math.round(frames ?? length / speed));
   if (speed === 1) return input.map((a) => fitted(a, total));
-  if (length < FRAME) return input.map((a) => resample(a, total));
+  // Inputs shorter than a frame, and outputs of one frame or less (they wouldn't end on the input's
+  // last sample), are resampled: both ends are kept, the pitch moves for at most one frame (40 ms).
+  if (length < FRAME || total <= FRAME) return input.map((a) => resample(a, total));
   const out = input.map(() => new Float32Array(total));
   if (total === 0) return out;
 

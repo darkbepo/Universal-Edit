@@ -209,7 +209,7 @@ export function frameAt(p: Project, t: number, size?: [number, number]): Frame {
   const d = snap(tr.duration, fps);
   // FFmpeg's window [start, start + d] in whole frames, which can reach a frame past the first clip
   // a transition that snaps to 0 frames (only in a project that wasn't normalized) is none
-  const inTransition = i > 0 && tr.kind !== "none" && d > 0 && t <=Math.max(span(i - 1).end, start + d);
+  const inTransition = i > 0 && tr.kind !== "none" && d > 0 && t <= Math.max(span(i - 1).end, start + d);
   if (!inTransition) {
     frame.layers.push({ layer: layerOf(item, t - span(i).start, fps), weight: 1, clipX: null, offsetX: 0 });
     return frame;
