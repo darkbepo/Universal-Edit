@@ -19,7 +19,7 @@ import {
 import { changeLabel, targetOf } from "../../videoedit/schemas";
 import { nextSourceId, projectFrom } from "../../videoedit/start";
 import { JobCancelled, type ConversionClient } from "../../worker/client";
-import { backLabel } from "../back";
+import { backLabel, isPhone } from "../back";
 import { loadBundledFonts } from "./fonts";
 import { exportValues, exportWindow, type EncodersFor } from "./exportdialog";
 import { Inspector } from "./inspector";
@@ -33,7 +33,7 @@ import { Scanner } from "./scanner";
 import { SoundStore } from "./sound";
 import { Abandoned, SourceBank } from "./sources";
 import { TimelineView } from "./timeline";
-import { frameNumber } from "./timelinemath";
+import { DESKTOP, PHONE, frameNumber } from "./timelinemath";
 
 const h = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> & { class?: string } = {}, ...children: (Node | string)[]) => {
   const el = document.createElement(tag);
@@ -107,6 +107,13 @@ export class VideoEditorPage {
   private error = "";
   private buttons = new Map<string, HTMLButtonElement>();
   private timelineBox = h("div", { class: "video-timeline" });
+  /** The media list and the inspector: side columns, on phones bottom sheets (one open at a time). */
+  private mediaBox = h("div", { class: "video-media", ariaLabel: "Media" });
+  private inspectorBox = h("div", { class: "video-inspector", ariaLabel: "Inspector" });
+  /** The phone toolbar row's sheet buttons. */
+  private sheetButtons = new Map<"media" | "inspector", HTMLButtonElement>();
+  private openSheet: "media" | "inspector" | null = null;
+  private phone = false;
   private timeline: TimelineView;
   private inspector: Inspector;
   private bank: SourceBank;
@@ -205,6 +212,7 @@ export class VideoEditorPage {
       btn("undo", "Undo", "Undo (Ctrl+Z)", () => this.undo()),
       btn("redo", "Redo", "Redo (Ctrl+Y)", () => this.redo()),
       h("div", { class: "top-tools" },
+        btn("add_files", "Add files", "Add videos, pictures or music to the project", () => this.media.picker.click(), "btn small phone-only"),
         h("span", { class: "spacer" }),
         btn("save", "Save project", "Save the project (Ctrl+S)", () => void this.save()),
         btn("save_as", "Save project as…", "Save the project under a new name (Ctrl+Shift+S)", () => void this.saveAs())),
@@ -213,14 +221,57 @@ export class VideoEditorPage {
     this.el = h("div", { class: "editor video-editor", hidden: true },
       top,
       h("div", { class: "video-body" },
-        h("div", { class: "video-media", ariaLabel: "Media" }, this.media.el),
+        this.mediaBox,
         h("div", { class: "video-preview", ariaLabel: "Preview" }, this.preview.el),
-        h("div", { class: "video-inspector", ariaLabel: "Inspector" }, this.inspector.el),
+        this.inspectorBox,
+        this.phoneBar(),
         this.timelineBox),
       h("div", { class: "editor-status ve-status" }, this.message, this.exportBar, this.exportCancel));
+    this.mediaBox.append(this.sheetHead("media", "Media"), this.media.el);
+    this.inspectorBox.append(this.sheetHead("inspector", "Settings"), this.inspector.el);
+    if (typeof matchMedia === "function") matchMedia("(max-width: 560px)").addEventListener("change", () => this.layoutChanged());
+    this.layoutChanged();
     this.exportCancel.addEventListener("click", () => this.opts.client.cancel());
     this.message.setAttribute("role", "status"); // progress and results are announced
     if (this.e2e) (window as unknown as { __videoeditor: unknown }).__videoeditor = this.hook();
+  }
+
+  // ---------------------------------------------------------------- phones
+  /** "Media" / "Settings" under the preview on phones: each opens its sheet (again closes it). */
+  private phoneBar(): HTMLElement {
+    const bar = h("div", { class: "ve-phone-bar" });
+    for (const [key, label, title] of [["media", "Media", "The project's files"], ["inspector", "Settings", "Settings of the selected item"]] as const) {
+      const b = h("button", { class: "btn small", type: "button", title }, label);
+      b.setAttribute("aria-pressed", "false");
+      b.addEventListener("click", () => this.showSheet(this.openSheet === key ? null : key));
+      this.sheetButtons.set(key, b);
+      bar.append(b);
+    }
+    return bar;
+  }
+
+  private sheetHead(key: "media" | "inspector", title: string): HTMLElement {
+    const close = h("button", { class: "link ve-sheet-close", type: "button", title: `Close ${title}`, ariaLabel: `Close ${title}` }, "×");
+    close.addEventListener("click", () => this.showSheet(null));
+    return h("div", { class: `ve-sheet-head ${key}` }, h("span", { class: "ve-sheet-title" }, title), close);
+  }
+
+  /** Open one sheet (phones only; null closes it). */
+  private showSheet(which: "media" | "inspector" | null): void {
+    this.openSheet = this.phone ? which : null;
+    this.mediaBox.classList.toggle("open", this.openSheet === "media");
+    this.inspectorBox.classList.toggle("open", this.openSheet === "inspector");
+    for (const [key, b] of this.sheetButtons) b.setAttribute("aria-pressed", String(this.openSheet === key));
+  }
+
+  /** The window crossed 560 px: sheets and the timeline's sizes follow; leaving phone width
+   *  closes the sheets (the panels go back into the grid). */
+  private layoutChanged(): void {
+    this.phone = isPhone();
+    this.mediaBox.classList.toggle("sheet", this.phone);
+    this.inspectorBox.classList.toggle("sheet", this.phone);
+    this.timeline.setMetrics(this.phone ? PHONE : DESKTOP);
+    this.showSheet(this.phone ? this.openSheet : null);
   }
 
   /** The e2e hook (grows with the later steps). */
@@ -348,6 +399,7 @@ export class VideoEditorPage {
     window.removeEventListener("beforeunload", this.onUnload);
     this.active = false;
     this.el.hidden = true;
+    this.showSheet(null);
     this.leaveSession(); // leaving drops the project, its decoders and a batch still opening
     this.render();
   }
@@ -989,8 +1041,10 @@ export class VideoEditorPage {
 
   private select(id: string | null): void {
     this.flushPending();
+    const changed = id !== this.selected;
     this.selected = id;
     this.render();
+    if (changed && id !== null && this.phone) this.showSheet("inspector"); // phones: its settings come up
   }
 
   // ---------------------------------------------------------------- playhead
@@ -1081,6 +1135,11 @@ export class VideoEditorPage {
   // ---------------------------------------------------------------- keys
   private onKey = (e: KeyboardEvent): void => {
     if (!this.active || e.defaultPrevented) return;
+    if (e.key === "Escape" && this.openSheet && !document.querySelector("dialog[open]")) {
+      e.preventDefault();
+      this.showSheet(null);
+      return;
+    }
     const t = e.target as HTMLElement | null;
     const inField = !!t && (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName));
     const id = actionFor(e, inField);

@@ -1,14 +1,15 @@
 // The timeline (port of gui/videoedit/timeline.py's painting and events): a canvas that paints the
 // project and forwards pointer events to the maths in timelinemath.ts. Mouse and touch alike
-// (pointer events with pointer capture); the page gets edits, seeks, selections and drops.
+// (pointer events with pointer capture); the page gets edits, seeks, selections and drops. Two
+// fingers pinch to zoom and drag to scroll (pinchView / panView), dropping a clip drag they interrupt.
 import { layout, type Project, type Source, type Span, type TextItem } from "../../videoedit/project";
 import { addRow } from "../../videoedit/edits";
 import { SOURCE_MIME } from "./media";
 import { WAVE_H, thumbSlots, waveBars } from "./playmath";
 import {
-  DESKTOP, ZOOM_STEP, addRowRect, boundaryX, dragMoved, dragResult, ghost, hitTest, rowAt, rows, rulerTicks,
-  selectionFor, spanRect, tFor, totalHeight, wheel, xFor, zoom, DEFAULT_PPS, follow as followScroll,
-  type Drag, type Rect, type Row, type View,
+  DESKTOP, ZOOM_STEP, addRowRect, boundaryX, dragMoved, dragResult, ghost, hitTest, panView, pinchView, rowAt, rows,
+  rulerTicks, selectionFor, spanRect, tFor, totalHeight, wheel, xFor, zoom, DEFAULT_PPS, follow as followScroll,
+  type Drag, type Metrics, type Rect, type Row, type View,
 } from "./timelinemath";
 
 export interface TimelineEvents {
@@ -18,7 +19,7 @@ export interface TimelineEvents {
   drop(sourceId: string, t: number, kind: Row["kind"], row: number): void;
 }
 
-const M = DESKTOP;
+
 const TOKENS = ["bg", "surface", "surface-alt", "border", "text", "muted", "accent", "accent-soft", "clip-video", "clip-picture", "clip-audio", "clip-text", "playhead"] as const;
 type Palette = Record<(typeof TOKENS)[number], string>;
 
@@ -62,6 +63,17 @@ export class TimelineView {
   private seeking = false;
   /** The pointer of the gesture in progress (captured), if any. */
   private pointer: number | null = null;
+  /** Sizes: DESKTOP, or PHONE (bigger rows and handles; the page switches). */
+  private m: Metrics = DESKTOP;
+  /** The project's end (s), for two-finger panning. */
+  private end = 0;
+  /** Touch pointers down, in client coordinates. */
+  private touches = new Map<number, { x: number; y: number }>();
+  /** Two fingers down: where they started (canvas x of their centre, client y) and the view then. */
+  private pinch: { dist: number; cx: number; cy: number; view: View } | null = null;
+  /** Touch: what the finger picked, chosen when it lifts (undefined: nothing) — so a finger that
+   *  becomes half of a pinch selects nothing (on phones a selection opens the inspector sheet). */
+  private pendingChoice: string | null | undefined = undefined;
 
   constructor(private on: TimelineEvents) {
     const c = document.createElement("canvas");
@@ -72,7 +84,10 @@ export class TimelineView {
     c.addEventListener("pointerdown", (e) => this.pointerDown(e));
     c.addEventListener("pointermove", (e) => this.pointerMove(e));
     c.addEventListener("pointerup", (e) => this.pointerUp(e));
-    c.addEventListener("pointercancel", () => this.cancel());
+    c.addEventListener("pointercancel", (e) => {
+      this.liftTouch(e);
+      this.cancel();
+    });
     c.addEventListener("lostpointercapture", () => this.cancel());
     c.addEventListener("wheel", (e) => this.onWheel(e), { passive: false });
     c.addEventListener("dragover", (e) => {
@@ -94,8 +109,10 @@ export class TimelineView {
     this.endGesture();
     this.project = p;
     this.spans = p ? layout(p) : new Map();
-    this.rowList = p ? rows(p, M) : [];
+    this.rowList = p ? rows(p, this.m) : [];
     this.items = new Map();
+    this.end = 0;
+    for (const s of this.spans.values()) this.end = Math.max(this.end, s.end);
     this.sourceById = new Map(p ? p.sources.map((src) => [src.id, src]) : []);
     if (p) {
       for (const m of p.main) this.items.set(m.id, m);
@@ -140,20 +157,45 @@ export class TimelineView {
     this.draw();
   }
 
-  /** Drop a drag or ruler seek in progress (no edit, no more seeks) and release the pointer. */
+  /** Phone or desktop sizes (drops a gesture in progress). */
+  setMetrics(m: Metrics): void {
+    if (m === this.m) return;
+    this.endGesture();
+    this.m = m;
+    this.rowList = this.project ? rows(this.project, m) : [];
+    this.resize();
+  }
+
+  /** Drop a drag, ruler seek or pinch in progress (no edit, no more seeks) and release the pointer. */
   endGesture(): void {
     this.drag = null;
     this.seeking = false;
+    this.pinch = null;
+    this.pendingChoice = undefined;
+    for (const id of this.touches.keys()) this.release(id);
+    this.touches.clear();
     if (this.pointer !== null) {
       const id = this.pointer;
       this.pointer = null;
-      try {
-        if (this.el.hasPointerCapture?.(id)) this.el.releasePointerCapture(id);
-      } catch {
-        // the pointer is already gone
-      }
+      this.release(id);
     }
     this.draw();
+  }
+
+  private release(id: number): void {
+    try {
+      if (this.el.hasPointerCapture?.(id)) this.el.releasePointerCapture(id);
+    } catch {
+      // the pointer is already gone
+    }
+  }
+
+  private capture(id: number): void {
+    try {
+      this.el.setPointerCapture?.(id);
+    } catch {
+      // not an active pointer (a synthetic event): the canvas still gets its own events
+    }
   }
 
   /** `follow` (playing): the view pages along when the playhead leaves it (timeline.set_playhead). */
@@ -178,7 +220,11 @@ export class TimelineView {
   }
 
   view(): View {
-    return { pps: this.pps, scroll: this.scroll, width: this.width, playhead: this.playhead, m: M };
+    const box = this.el.parentElement;
+    return {
+      pps: this.pps, scroll: this.scroll, width: this.width, playhead: this.playhead, m: this.m,
+      top: box?.scrollTop ?? 0, height: box?.clientHeight ?? 0, content: this.el.offsetHeight, length: this.end,
+    };
   }
 
   /** Row geometry (tests). */
@@ -205,7 +251,7 @@ export class TimelineView {
 
   private resize(): void {
     const c = this.el;
-    const h = this.project ? totalHeight(this.rowList) : M.ruler;
+    const h = this.project ? totalHeight(this.rowList) : this.m.ruler;
     c.style.height = `${h}px`;
     this.width = c.clientWidth;
     const dpr = window.devicePixelRatio || 1;
@@ -237,25 +283,34 @@ export class TimelineView {
 
   private pointerDown(e: PointerEvent): void {
     if (e.button !== 0 || !this.project) return;
+    if (e.pointerType === "touch") {
+      this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (this.touches.size >= 2) {
+        this.capture(e.pointerId);
+        if (this.touches.size === 2) this.startPinch(); // a third finger changes nothing
+        return;
+      }
+    }
     const p = this.project;
     const { x, y } = this.pos(e);
     for (const kind of ["text", "music"] as const) {
-      if (this.inside(addRowRect(this.rowList, kind, M), x, y)) {
+      if (this.inside(addRowRect(this.rowList, kind, this.m), x, y)) {
         this.on.edit(addRow(p, kind), "Add row");
         return;
       }
     }
-    this.el.setPointerCapture?.(e.pointerId);
+    this.capture(e.pointerId);
     this.pointer = e.pointerId;
-    if (y < M.ruler) {
+    if (y < this.m.ruler) {
       this.seeking = true;
       this.on.seek(Math.max(0, tFor(this.view(), x)));
       return;
     }
     const hit = hitTest(this.view(), p, this.spans, this.rowList, x, y);
-    this.choose(selectionFor(hit));
+    if (e.pointerType === "touch") this.pendingChoice = selectionFor(hit);
+    else this.choose(selectionFor(hit));
     if (hit === null) {
-      if (x >= M.header) this.on.seek(Math.max(0, tFor(this.view(), x)));
+      if (x >= this.m.header) this.on.seek(Math.max(0, tFor(this.view(), x)));
       return;
     }
     if (hit.part === "transition" || this.project !== p) return;
@@ -264,6 +319,15 @@ export class TimelineView {
 
   private pointerMove(e: PointerEvent): void {
     if (!this.project) return;
+    const finger = this.touches.get(e.pointerId);
+    if (finger) {
+      finger.x = e.clientX;
+      finger.y = e.clientY;
+    }
+    if (this.pinch) {
+      if (finger && this.touches.size >= 2) this.movePinch();
+      return;
+    }
     const { x, y } = this.pos(e);
     if (this.seeking) {
       this.on.seek(Math.max(0, tFor(this.view(), x)));
@@ -284,10 +348,14 @@ export class TimelineView {
 
   private pointerUp(e: PointerEvent): void {
     if (e.button !== 0) return;
+    if (this.liftTouch(e)) return;
     if (e.pointerId === this.pointer) this.pointer = null;
     this.seeking = false;
     const d = this.drag;
     this.drag = null;
+    const picked = this.pendingChoice;
+    this.pendingChoice = undefined;
+    if (picked !== undefined) this.choose(picked);
     this.draw();
     if (!d || !d.moved || !this.project) return;
     const { x, y } = this.pos(e);
@@ -298,8 +366,46 @@ export class TimelineView {
     if (result) this.on.edit(result.project, result.label);
   }
 
+  /** A second finger: whatever the first one started (drag, seek) is dropped, no edit. */
+  private startPinch(): void {
+    this.drag = null;
+    this.seeking = false;
+    this.pendingChoice = undefined;
+    this.pointer = null; // the first finger's capture stays: its moves feed the pinch
+    const [a, b] = [...this.touches.values()];
+    const r = this.el.getBoundingClientRect();
+    this.pinch = { dist: Math.hypot(b.x - a.x, b.y - a.y), cx: (a.x + b.x) / 2 - r.left, cy: (a.y + b.y) / 2, view: this.view() };
+    this.draw();
+  }
+
+  private movePinch(): void {
+    const start = this.pinch!;
+    const [a, b] = [...this.touches.values()];
+    const r = this.el.getBoundingClientRect();
+    const cx = (a.x + b.x) / 2 - r.left;
+    const cy = (a.y + b.y) / 2;
+    const zoomed = pinchView(this.view(), start.dist, Math.hypot(b.x - a.x, b.y - a.y), start.cx, start.view);
+    const v = panView({ ...zoomed, top: start.view.top }, cx - start.cx, cy - start.cy);
+    this.pps = v.pps;
+    this.scroll = v.scroll;
+    const box = this.el.parentElement;
+    if (box && v.top !== undefined) box.scrollTop = v.top;
+    this.draw();
+  }
+
+  /** A finger lifted (or cancelled). True while a pinch had it: that gesture makes no edit, and
+   *  the finger left behind does nothing until every finger is up. */
+  private liftTouch(e: PointerEvent): boolean {
+    if (!this.touches.delete(e.pointerId)) return false;
+    if (!this.pinch) return false;
+    // `pinch` stays until the last finger is up, so the one left can't start a drag
+    if (this.touches.size === 0) this.pinch = null;
+    return true;
+  }
+
   private cancel(): void {
     this.pointer = null;
+    this.pendingChoice = undefined;
     this.seeking = false;
     if (this.drag) {
       this.drag = null;
@@ -360,7 +466,7 @@ export class TimelineView {
     });
     ctx.save();
     ctx.beginPath();
-    ctx.rect(M.header, 0, W - M.header, H);
+    ctx.rect(this.m.header, 0, W - this.m.header, H);
     ctx.clip();
     this.paintRuler(ctx, pal, font);
     this.paintItems(ctx, pal, font, p);
@@ -378,15 +484,15 @@ export class TimelineView {
 
   private paintRuler(ctx: CanvasRenderingContext2D, pal: Palette, font: string): void {
     ctx.fillStyle = pal.bg;
-    ctx.fillRect(M.header, 0, this.width, M.ruler);
+    ctx.fillRect(this.m.header, 0, this.width, this.m.ruler);
     ctx.font = `10px ${font}`;
     ctx.textBaseline = "alphabetic";
     ctx.lineWidth = 1;
     for (const tick of rulerTicks(this.view())) {
       ctx.strokeStyle = pal.border;
       ctx.beginPath();
-      ctx.moveTo(tick.x + 0.5, M.ruler - 8);
-      ctx.lineTo(tick.x + 0.5, M.ruler);
+      ctx.moveTo(tick.x + 0.5, this.m.ruler - 8);
+      ctx.lineTo(tick.x + 0.5, this.m.ruler);
       ctx.stroke();
       ctx.fillStyle = pal.muted;
       ctx.fillText(tick.label, tick.x + 3, 12);
@@ -397,7 +503,7 @@ export class TimelineView {
     const v = this.view();
     for (const [id, span] of this.spans) {
       const rect = spanRect(v, this.rowList, span);
-      if (rect.x + rect.w < M.header || rect.x > this.width) continue; // off screen
+      if (rect.x + rect.w < this.m.header || rect.x > this.width) continue; // off screen
       this.paintClip(ctx, pal, font, this.items.get(id)!, rect, id === this.selected);
     }
     const mainY = this.rowList.find((r) => r.kind === "main")!.y;
@@ -405,7 +511,7 @@ export class TimelineView {
       const bx = boundaryX(v, p, this.spans, i);
       if (bx === null) return;
       const sel = this.selected === `tr:${m.id}`;
-      const r = { x: bx - M.handle / 2, y: mainY + 2, w: M.handle, h: M.handleH - 4 };
+      const r = { x: bx - this.m.handle / 2, y: mainY + 2, w: this.m.handle, h: this.m.handleH - 4 };
       ctx.fillStyle = m.transition_in.kind !== "none" || sel ? pal.accent : pal.surface;
       ctx.strokeStyle = sel ? pal.accent : pal.border;
       ctx.lineWidth = 1;
@@ -448,7 +554,7 @@ export class TimelineView {
     if (images?.length && item.type !== "audio") {
       const first = images[0];
       const aspect = first.width / Math.max(1, first.height);
-      for (const slot of thumbSlots(rect, aspect, images.length, M.header, this.width)) {
+      for (const slot of thumbSlots(rect, aspect, images.length, this.m.header, this.width)) {
         ctx.drawImage(images[slot.index], slot.rect.x, slot.rect.y, slot.rect.w, slot.rect.h);
       }
     }
@@ -458,7 +564,7 @@ export class TimelineView {
       const wave = { x: rect.x, y: rect.y + rect.h - waveH, w: rect.w, h: waveH };
       const mid = Math.round(wave.y + wave.h / 2);
       ctx.fillStyle = "rgba(255,255,255,0.67)";
-      for (const bar of waveBars(wave, peaks, clip.in_, clip.out, src.duration, M.header, this.width)) {
+      for (const bar of waveBars(wave, peaks, clip.in_, clip.out, src.duration, this.m.header, this.width)) {
         ctx.fillRect(bar.x, mid - bar.half, 1, bar.half * 2 + 1);
       }
     }
@@ -490,17 +596,17 @@ export class TimelineView {
 
   private paintHeader(ctx: CanvasRenderingContext2D, pal: Palette, font: string, p: Project, H: number): void {
     ctx.fillStyle = pal.bg;
-    ctx.fillRect(0, 0, M.header, H);
+    ctx.fillRect(0, 0, this.m.header, H);
     ctx.font = `11px ${font}`;
     ctx.textBaseline = "middle";
     const counts: Record<string, number> = { text: p.text_rows.length, main: 1, music: p.music_rows.length };
     for (const r of this.rowList) {
       const name = { text: "Text", main: "Video", music: "Music" }[r.kind];
       ctx.fillStyle = pal.muted;
-      ctx.fillText(counts[r.kind] > 1 ? `${name} ${r.row + 1}` : name, 8, r.y + r.h / 2, M.header - 32);
+      ctx.fillText(counts[r.kind] > 1 ? `${name} ${r.row + 1}` : name, 8, r.y + r.h / 2, this.m.header - 32);
     }
     for (const kind of ["text", "music"] as const) {
-      const r = addRowRect(this.rowList, kind, M);
+      const r = addRowRect(this.rowList, kind, this.m);
       ctx.fillStyle = pal.surface;
       ctx.strokeStyle = pal.border;
       ctx.lineWidth = 1;

@@ -975,3 +975,26 @@ body.no-select { user-select: none; -webkit-user-select: none; }
   .ve-screen { flex: none; width: 100%; aspect-ratio: 16 / 9; }
   .video-preview { order: 1; } .video-timeline { order: 2; } .video-media { order: 3; border-right: 0; } .video-inspector { order: 4; border-left: 0; }
 }
+/* phones: preview (16:9, full width) + transport, the Media / Settings row, the timeline taking
+   the rest; the media list and the inspector are bottom sheets, one at a time (page.ts adds
+   .sheet below 560 px and .open to the one shown) */
+.video-editor .phone-only, .ve-phone-bar, .ve-sheet-head { display: none; }
+@media (max-width: 560px) {
+  .video-editor .editor-top .phone-only { display: inline-block; }
+  .video-body { grid-template-rows: auto auto minmax(0, 1fr); }
+  .ve-phone-bar { display: flex; order: 2; gap: 6px; padding: 6px 8px; border-top: 1px solid var(--border); background: var(--surface); }
+  .ve-phone-bar .btn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+  .video-timeline { order: 3; }
+  .video-media.sheet, .video-inspector.sheet {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; max-height: 58%; overflow: auto;
+    padding: 0 12px 12px; border: 0; border-top: 1px solid var(--border); border-radius: 12px 12px 0 0;
+    box-shadow: 0 -10px 28px rgba(0, 0, 0, .18);
+  }
+  .video-media.sheet:not(.open), .video-inspector.sheet:not(.open) { display: none; }
+  .sheet .ve-sheet-head {
+    display: flex; align-items: center; position: sticky; top: 0; z-index: 1; margin: 0 -12px 8px; padding: 6px 6px 6px 12px;
+    background: var(--surface-alt); border-bottom: 1px solid var(--border);
+  }
+  .ve-sheet-title { flex: 1; font-weight: 600; }
+  .ve-sheet-close { font-size: 22px; line-height: 1; min-width: 44px; min-height: 36px; justify-content: center; }
+}

@@ -227,6 +227,60 @@ describe("zoom and scroll", () => {
   });
 });
 
+describe("touch: pinch and two-finger pan", () => {
+  const base = (over: Partial<tl.View> = {}): tl.View => ({ pps: 80, scroll: 2, width: 1000, playhead: 0, m: M, ...over });
+
+  it("doubles the zoom for twice the distance and keeps the time under the centre", () => {
+    const start = base();
+    const before = tl.tFor(start, 400);
+    const v = tl.pinchView(start, 100, 200, 400, start);
+    expect(v.pps).toBe(160);
+    expect(tl.tFor(v, 400)).toBeCloseTo(before, 9);
+    expect(v.width).toBe(1000);
+  });
+
+  it("works from the gesture's start, not the last step", () => {
+    const start = base();
+    const mid = tl.pinchView(start, 100, 150, 400, start);
+    expect(tl.pinchView(mid, 100, 200, 400, start).pps).toBe(160);
+  });
+
+  it("clamps the zoom at the limits", () => {
+    const start = base();
+    expect(tl.pinchView(start, 10, 1000, 400, start).pps).toBe(tl.MAX_PPS);
+    expect(tl.pinchView(start, 1000, 1, 400, start).pps).toBe(tl.MIN_PPS);
+    expect(tl.pinchView(start, 0, 50, 400, start).pps).toBe(80); // no start distance: no zoom
+    expect(tl.pinchView(start, 1000, 10, 900, start).scroll).toBeGreaterThanOrEqual(0);
+  });
+
+  it("pans time and rows, clamped at 0 and the end", () => {
+    const v = base({ top: 20, height: 100, content: 300, length: 20 });
+    const moved = tl.panView(v, -80, -30); // fingers left / up: later time, lower rows
+    expect(moved.scroll).toBeCloseTo(3, 9);
+    expect(moved.top).toBe(50);
+    expect(tl.panView(v, 1000, 1000)).toMatchObject({ scroll: 0, top: 0 });
+    const end = tl.panView(v, -100000, -100000);
+    expect(end.top).toBe(200); // content - height
+    expect(end.scroll).toBeCloseTo(20 - (1000 - M.header) / 80, 9); // the end at the right edge
+  });
+
+  it("never jumps back when already past the end", () => {
+    const v = base({ scroll: 30, length: 20 });
+    expect(tl.panView(v, -80, 0).scroll).toBe(30);
+    expect(tl.panView(v, 80, 0).scroll).toBeCloseTo(29, 9);
+    expect(tl.panView(base(), 0, -50).top ?? 0).toBe(0); // nothing to scroll down to
+  });
+
+  it("phones get bigger handles and taller rows", () => {
+    expect(tl.TOUCH_HANDLE_PX).toBe(24);
+    expect(tl.PHONE_ROW_PX).toBeGreaterThanOrEqual(44);
+    expect(tl.PHONE.edge * 2).toBeGreaterThanOrEqual(tl.TOUCH_HANDLE_PX);
+    expect(tl.PHONE.handle).toBeGreaterThanOrEqual(tl.TOUCH_HANDLE_PX);
+    expect(tl.PHONE.handleH).toBeGreaterThanOrEqual(tl.TOUCH_HANDLE_PX);
+    expect(Math.min(tl.PHONE.textH, tl.PHONE.mainH, tl.PHONE.musicH)).toBeGreaterThanOrEqual(tl.PHONE_ROW_PX);
+  });
+});
+
 describe("ruler and time text", () => {
   it("steps by seconds, then tenths", () => {
     const a = tl.rulerTicks(setup(newProject()).v);

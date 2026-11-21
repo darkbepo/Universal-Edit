@@ -263,6 +263,122 @@ test("reorder by dragging", async ({ page }) => {
   expect(await ve(page, "history.undoLabel")).toBe("Move clip");
 });
 
+// ---------------------------------------------------------------- phones
+/** Touch pointer events on the timeline canvas (headless Chromium has no real fingers). */
+const touch = (page: Page, type: string, id: number, x: number, y: number) =>
+  timeline(page).evaluate((c, a) => {
+    c.dispatchEvent(new PointerEvent(a.type, {
+      pointerId: a.id, pointerType: "touch", isPrimary: a.id === 11, clientX: a.x, clientY: a.y,
+      button: a.type === "pointermove" ? -1 : 0, buttons: a.type === "pointerup" ? 0 : 1, bubbles: true, cancelable: true,
+    }));
+  }, { type, id, x, y });
+
+test("375 px: preview, transport, timeline; Media and Settings sheets", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto("./?e2e");
+  await openEditor(page, [fx("clip.mp4"), fx("img0.png")]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await expect(page.locator(".editor-top .top-tools").getByRole("button", { name: "Add files", exact: true })).toBeVisible();
+  const screen = (await page.locator(".ve-screen").boundingBox())!;
+  const transport = (await page.locator(".ve-transport").boundingBox())!;
+  const tl = (await page.locator(".video-timeline").boundingBox())!;
+  expect(Math.abs(screen.width - 375)).toBeLessThanOrEqual(2);
+  expect(Math.abs(screen.height - (screen.width * 9) / 16)).toBeLessThanOrEqual(2);
+  expect(transport.y).toBeGreaterThanOrEqual(screen.y + screen.height - 1);
+  expect(tl.y).toBeGreaterThanOrEqual(transport.y + transport.height - 1);
+  expect(tl.y + tl.height).toBeGreaterThan(600); // it takes the rest of the window
+  expect(await ve(page, "view().m.mainH")).toBeGreaterThanOrEqual(44);
+  const media = page.locator(".video-media");
+  const inspector = page.locator(".video-inspector");
+  const mediaBtn = page.locator(".ve-phone-bar").getByRole("button", { name: "Media", exact: true });
+  const settingsBtn = page.locator(".ve-phone-bar").getByRole("button", { name: "Settings", exact: true });
+  await expect(media).toBeHidden();
+  await expect(inspector).toBeHidden();
+  await mediaBtn.click();
+  await expect(page.locator(".video-media.sheet")).toBeVisible();
+  await expect(inspector).toBeHidden();
+  await expect(mediaBtn).toHaveAttribute("aria-pressed", "true");
+  await settingsBtn.click();
+  await expect(page.locator(".video-inspector.sheet")).toBeVisible();
+  await expect(media).toBeHidden();
+  await expect(mediaBtn).toHaveAttribute("aria-pressed", "false");
+  await expect(settingsBtn).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("Escape");
+  await expect(inspector).toBeHidden();
+  await expect(settingsBtn).toHaveAttribute("aria-pressed", "false");
+  // selecting an item brings its settings up; the sheet's × closes it
+  const [a] = await mainIds(page);
+  await ve(page, `select("${a}")`);
+  await expect(inspector).toBeVisible();
+  await page.getByRole("button", { name: "Close Settings" }).click();
+  await expect(inspector).toBeHidden();
+  await mediaBtn.click();
+  await expect(media).toBeVisible();
+  // wider than a phone: the three columns, no sheet; narrow again: nothing left open
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(page.locator(".video-media.sheet, .video-inspector.sheet")).toHaveCount(0);
+  await expect(page.locator(".ve-phone-bar")).toBeHidden();
+  await expect(media).toBeVisible();
+  await expect(inspector).toBeVisible();
+  const [m, p, i] = await Promise.all([media, page.locator(".video-preview"), inspector].map((l) => l.boundingBox()));
+  expect(m!.x + m!.width).toBeLessThanOrEqual(p!.x + 1);
+  expect(p!.x + p!.width).toBeLessThanOrEqual(i!.x + 1);
+  expect(Math.abs(m!.y - i!.y)).toBeLessThanOrEqual(1);
+  expect(await ve(page, "view().m.mainH")).toBe(64);
+  await page.setViewportSize({ width: 375, height: 812 });
+  await expect(media).toBeHidden();
+  await expect(inspector).toBeHidden();
+});
+
+test("375 px: a pinch zooms and never moves the clip under the finger", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto("./?e2e");
+  await openEditor(page, [fx("clip.mp4"), fx("img0.png")]);
+  const [a] = await mainIds(page);
+  const s = await spans(page);
+  const before = await steps(page);
+  const pps = await ve<number>(page, "view().pps");
+  const from = await at(page, (s[a].start + s[a].end) / 2);
+  await touch(page, "pointerdown", 11, from.x, from.y);
+  await touch(page, "pointermove", 11, from.x + 20, from.y); // a clip drag has started
+  await touch(page, "pointerdown", 12, from.x + 60, from.y);
+  for (let k = 1; k <= 4; k++) {
+    await touch(page, "pointermove", 11, from.x + 20 - k * 10, from.y);
+    await touch(page, "pointermove", 12, from.x + 60 + k * 10, from.y);
+  }
+  await touch(page, "pointerup", 12, from.x + 100, from.y);
+  await touch(page, "pointermove", 11, from.x + 120, from.y); // the finger left behind does nothing
+  await touch(page, "pointerup", 11, from.x + 120, from.y);
+  expect(await ve<number>(page, "view().pps")).toBeGreaterThan(pps * 1.5);
+  expect(await steps(page)).toBe(before);
+  expect(await spans(page)).toEqual(s);
+  expect(await ve(page, "selected")).toBeNull(); // half of a pinch selects nothing
+  await expect(page.locator(".video-inspector")).toBeHidden();
+});
+
+test("375 px: one finger still drags a clip and a tap selects it", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto("./?e2e");
+  await openEditor(page, [fx("clip.mp4"), fx("img0.png")]);
+  const [a, b] = await mainIds(page);
+  const s = await spans(page);
+  const from = await at(page, (s[a].start + s[a].end) / 2);
+  const past = await at(page, (s[b].start + s[b].end) / 2 + 0.5);
+  await touch(page, "pointerdown", 11, from.x, from.y);
+  for (let k = 1; k <= 5; k++) await touch(page, "pointermove", 11, from.x + ((past.x - from.x) * k) / 5, from.y);
+  await touch(page, "pointerup", 11, past.x, from.y);
+  await expect.poll(() => mainIds(page)).toEqual([b, a]);
+  expect(await ve(page, "history.undoLabel")).toBe("Move clip");
+  await page.keyboard.press("Escape"); // the drag selected the clip: its sheet came up
+  await expect(page.locator(".video-inspector")).toBeHidden();
+  const s2 = await spans(page);
+  const tap = await at(page, (s2[b].start + s2[b].end) / 2);
+  await touch(page, "pointerdown", 11, tap.x, tap.y);
+  await touch(page, "pointerup", 11, tap.x, tap.y);
+  expect(await ve(page, "selected")).toBe(b);
+  await expect(page.locator(".video-inspector")).toBeVisible();
+});
+
 test("inspector is one undo step", async ({ page }) => {
   await page.goto("./?e2e");
   await openEditor(page, [fx("clip.mp4"), fx("img0.png")]);

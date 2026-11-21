@@ -15,10 +15,19 @@ export const FOLLOW_LEAD = 0.05;
 
 export interface Metrics { header: number; ruler: number; textH: number; mainH: number; musicH: number; edge: number; handle: number; handleH: number }
 export const DESKTOP: Metrics = { header: 80, ruler: 24, textH: 28, mainH: 64, musicH: 40, edge: 6, handle: 12, handleH: 20 };
+/** Phones: a finger needs ≥ 24 px to grab an edge or a transition, and taller rows. */
+export const TOUCH_HANDLE_PX = 24;
+export const PHONE_ROW_PX = 48;
+export const PHONE: Metrics = {
+  header: 64, ruler: 28, textH: PHONE_ROW_PX, mainH: 72, musicH: PHONE_ROW_PX,
+  edge: TOUCH_HANDLE_PX / 2, handle: TOUCH_HANDLE_PX, handleH: TOUCH_HANDLE_PX,
+};
 
 export interface Rect { x: number; y: number; w: number; h: number }
 export interface Row { kind: "text" | "main" | "music"; row: number; y: number; h: number }
-export interface View { pps: number; scroll: number; width: number; playhead: number; m: Metrics }
+/** `top` / `height` / `content`: the rows' vertical scroll, visible and total height (px);
+ *  `length`: the project's length (s). Only two-finger panning reads them. */
+export interface View { pps: number; scroll: number; width: number; playhead: number; m: Metrics; top?: number; height?: number; content?: number; length?: number }
 export type Part = "body" | "left" | "right" | "transition";
 export interface Hit { itemId: string; part: Part }
 export interface Drag { id: string; part: Part; span: Span; ox: number; oy: number; x: number; y: number; moved: boolean; alt: boolean }
@@ -230,6 +239,30 @@ export function wheel(v: View, deltaY: number, ctrl: boolean, x: number): { pps:
   if (ctrl) return zoom(v, deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP, x);
   const shift = ((deltaY / 120) * 60) / v.pps;
   return { pps: v.pps, scroll: Math.max(0, v.scroll + shift) };
+}
+
+/** Pinch: `startView`'s zoom scaled by `distance / startDistance` (clamped like `zoom`), the time
+ *  that was under `centreX` at the start kept under it. The rest comes from `view`. */
+export function pinchView(view: View, startDistance: number, distance: number, centreX: number, startView: View): View {
+  if (!(startDistance > 0) || !(distance > 0)) return { ...view, pps: startView.pps, scroll: startView.scroll };
+  const z = zoom(startView, distance / startDistance, centreX);
+  return { ...view, ...z };
+}
+
+/** Two-finger drag by (dx, dy) px: the picture follows the fingers. Time stops at 0 and where the
+ *  project's end reaches the right edge (a view already past it isn't pulled back); rows stop at
+ *  the top and the bottom, like the scrollbars. */
+export function panView(view: View, dx: number, dy: number): View {
+  let scroll = Math.max(0, view.scroll - dx / view.pps);
+  if (dx < 0 && view.length !== undefined) {
+    const span = Math.max(0, (view.width - view.m.header) / view.pps);
+    scroll = Math.min(scroll, Math.max(view.scroll, view.length - span, 0));
+  }
+  const top0 = view.top ?? 0;
+  const maxTop = Math.max(0, (view.content ?? 0) - (view.height ?? 0));
+  let top = Math.max(0, top0 - dy);
+  if (dy < 0) top = Math.min(top, Math.max(top0, maxTop));
+  return { ...view, scroll, top };
 }
 
 /** New scroll for playback: the view pages when the playhead leaves it. */
