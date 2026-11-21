@@ -1000,10 +1000,9 @@
  "burstMs": 650,
  "clear": 0.45,
  "stretch": 1.8,
- "lifeMin": 8.0,
- "lifeSpan": 8.0,
- "gapMin": 1.0,
- "gapSpan": 2.0,
+ "period": 14.0,
+ "lifeMin": 9.0,
+ "lifeSpan": 4.0,
  "fade": 1.6,
  "golden": 0.6180339887498949
 }

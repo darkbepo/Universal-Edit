@@ -14,12 +14,12 @@ const frac = (x: number) => x - Math.floor(x);
 /** [badge index, life 0…1] of `slot` at orbit time `tau`: core/orbit.py ``slot_badge``. */
 export function slotBadge(slot: number, tau: number): [number, number] {
   const life = data.lifeMin + data.lifeSpan * frac(slot * data.golden);
-  const period = life + data.gapMin + data.gapSpan * frac(slot * data.golden * 2);
-  const u = tau + frac(slot * data.golden * 3) * period;
-  const k = Math.floor(u / period);
-  const t = u - k * period;
+  const u = tau + frac(slot * data.golden * 3) * data.period;
+  const k = Math.floor(u / data.period);
+  const t = u - k * data.period;
   const shown = t < life ? Math.min(Math.max(Math.min(t / data.fade, (life - t) / data.fade), 0), 1) : 0;
-  return [(slot + k * SLOTS) % data.badges.length, shown];
+  const n = data.badges.length;
+  return [(((slot + k * SLOTS) % n) + n) % n, shown];
 }
 
 const rad = (deg: number) => (deg * Math.PI) / 180;
@@ -27,7 +27,7 @@ const rad = (deg: number) => (deg * Math.PI) / 180;
 export const speed = (pull: number) => 1 + data.pullSpeed * pull;
 
 /** Where each badge is at orbit time ``tau`` (seconds): core/orbit.py ``layout``, line by line. */
-export function layout(tau: number, width: number, height: number, textW: number, textH: number, pull = 0, burst = 0): Spot[] {
+export function layout(tau: number, width: number, height: number, textW: number, textH: number, pull = 0, burst = 0, still = false): Spot[] {
   const sx = Math.max(width / 2 - data.pad, 1);
   const sy = Math.max(height / 2 - data.pad, 1);
   const out = 1 + data.burstOut * (1 - (1 - burst) ** 2);
@@ -50,7 +50,8 @@ export function layout(tau: number, width: number, height: number, textW: number
       const hw = Math.max(textW / 2, 1), hh = Math.max(textH / 2, 1);
       const d = Math.max(Math.abs(px) / hw, Math.abs(py) / hh); // the text's box, corners too
       const nearText = Math.min(Math.max((d - 1) / data.clear, 0), 1);
-      const [badge, life] = slotBadge(slot++, tau);
+      const [badge, life] = still ? [slot, 1] : slotBadge(slot, tau); // still: first badges, fully shown
+      slot++;
       const alpha = (0.5 + 0.25 * (depth + 1)) * nearText * fade * life;
       const scale = (0.82 + 0.18 * depth) * (0.85 + 0.15 * life); // grows a little as it appears
       spots.push({ x: px, y: py, scale, alpha, z: depth, badge });
@@ -200,7 +201,7 @@ export class Orbit {
       this.dpr = dpr;
       this.badges.clear();
     }
-    const spots = layout(this.tau, w, h, tw, th, this.pull, burst);
+    const spots = layout(this.tau, w, h, tw, th, this.pull, burst, this.still.matches);
     spots.sort((a, b) => a.z - b.z); // far side first
     for (const s of spots) {
       if (s.alpha <= 0.01) continue;

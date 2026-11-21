@@ -114,12 +114,14 @@ RINGS: list[Ring] = [
 ]
 SLOTS = sum(r.count for r in RINGS)
 
-# Living badges: each slot shows a badge for LIFE_MIN…+LIFE_SPAN s (fading in and out over
-# FADE s), stays empty for GAP_MIN…+GAP_SPAN s, then shows the next one: slot i's k-th badge is
-# BADGES[(i + k * SLOTS) % len(BADGES)], so every type takes its turn. All from ``tau`` (no
-# randomness), so both apps draw the same; the spread comes from golden-ratio steps per slot.
-LIFE_MIN, LIFE_SPAN = 8.0, 8.0
-GAP_MIN, GAP_SPAN = 1.0, 2.0
+# Living badges: every slot runs on the same PERIOD; it shows a badge for LIFE_MIN…+LIFE_SPAN s
+# of it (fading in and out over FADE s), stays empty for the rest, then shows the next one:
+# slot i's k-th badge is BADGES[(i + k * SLOTS) % len(BADGES)], so every type takes its turn.
+# One shared period keeps any two slots at most one turn apart, so no type is ever on screen
+# twice (that would need two slots 48 apart). All from ``tau`` (no randomness), so both apps
+# draw the same; the spread comes from golden-ratio steps per slot.
+PERIOD = 14.0
+LIFE_MIN, LIFE_SPAN = 9.0, 4.0
 FADE = 1.6
 GOLDEN = 0.6180339887498949
 
@@ -149,12 +151,11 @@ def _frac(x: float) -> float:
 
 
 def slot_badge(slot: int, tau: float) -> tuple[int, float]:
-    """(badge index, life 0…1) of ``slot`` at orbit time ``tau``."""
+    """(badge index, life 0…1) of ``slot`` at orbit time ``tau`` (≥ 0)."""
     life = LIFE_MIN + LIFE_SPAN * _frac(slot * GOLDEN)
-    period = life + GAP_MIN + GAP_SPAN * _frac(slot * GOLDEN * 2)
-    u = tau + _frac(slot * GOLDEN * 3) * period
-    k = math.floor(u / period)
-    t = u - k * period
+    u = tau + _frac(slot * GOLDEN * 3) * PERIOD
+    k = math.floor(u / PERIOD)
+    t = u - k * PERIOD
     shown = min(max(min(t / FADE, (life - t) / FADE), 0.0), 1.0) if t < life else 0.0
     return (slot + k * SLOTS) % len(BADGES), shown
 
@@ -171,9 +172,11 @@ def layout(
     text_h: float,
     pull: float = 0.0,
     burst: float = 0.0,
+    still: bool = False,
 ) -> list[Spot]:
     """Where each of the SLOTS badges is at orbit time ``tau`` (seconds) in a box of
-    ``width`` × ``height`` px, around text ``text_w`` × ``text_h`` px; ``badge`` says which."""
+    ``width`` × ``height`` px, around text ``text_w`` × ``text_h`` px; ``badge`` says which.
+    ``still`` (motion reduced): every slot shows its first badge fully, none half-faded."""
     sx = max(width / 2 - PAD, 1.0)
     sy = max(height / 2 - PAD, 1.0)
     out = 1 + BURST_OUT * (1 - (1 - burst) ** 2)
@@ -199,7 +202,7 @@ def layout(
                 abs(px) / hw, abs(py) / hh
             )  # the text's box, corners too (tipped rings cross them)
             near_text = min(max((d - 1) / CLEAR, 0.0), 1.0)
-            badge, life = slot_badge(slot, tau)
+            badge, life = (slot, 1.0) if still else slot_badge(slot, tau)
             slot += 1
             alpha = (0.5 + 0.25 * (depth + 1)) * near_text * fade * life
             scale = (0.82 + 0.18 * depth) * (0.85 + 0.15 * life)  # grows a little as it appears
@@ -219,10 +222,9 @@ def export() -> dict:
         "burstMs": BURST_MS,
         "clear": CLEAR,
         "stretch": STRETCH,
+        "period": PERIOD,
         "lifeMin": LIFE_MIN,
         "lifeSpan": LIFE_SPAN,
-        "gapMin": GAP_MIN,
-        "gapSpan": GAP_SPAN,
         "fade": FADE,
         "golden": GOLDEN,
     }
@@ -236,6 +238,7 @@ CASE_ARGS = [
     (5, 1640, 570, 330, 110, 0, 1),
     (0, 300, 220, 240, 90, 0, 0),
     (431.3, 1640, 570, 330, 110, 0, 0),  # far along: other badges in the slots
+    (431.3, 1640, 570, 330, 110, 0, 0, True),  # motion reduced
 ]
 
 

@@ -165,7 +165,7 @@ class Orbit(QObject):
             g = t.geometry()
             tw = max(tw, 2 * max(abs(g.left() - cx), abs(g.right() + 1 - cx)))
             th = max(th, 2 * max(abs(g.top() - cy), abs(g.bottom() + 1 - cy)))
-        return model.layout(self.tau, w, h, tw, th, self.pull, self.burst())
+        return model.layout(self.tau, w, h, tw, th, self.pull, self.burst(), self.still)
 
     def paint(self, p: QPainter) -> None:
         if not self.active:

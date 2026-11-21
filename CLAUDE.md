@@ -1172,7 +1172,9 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       dimmed to 62 %) on six tilted rings around the empty drop zone's text (two tipped nearly
       upright so badges also travel up and down; they're 0.56 the size to stay inside), smaller /
       fainter on the far side, faded near the text's box. "Living" (owner, Nov 2026): 48 slots,
-      each fades a badge in, keeps it 8–16 s, fades it out, rests 1–3 s and shows the next —
+      each fades a badge in, keeps it 9–13 s of a shared 14 s `PERIOD` (one period for all, so
+      no type is ever on screen twice), then shows the next — reduced motion = the first 48,
+      fully shown (`still`) —
       `slot_badge` / `slotBadge`, worked out from `tau` (no randomness), so all 187 `BADGES` (every
       extension in `core/detect.py`, common ones first; `test_every_file_type_has_a_badge`) take
       turns. A new extension needs a badge, then `python -m umc.core.orbit > web/src/ui/orbit.json`

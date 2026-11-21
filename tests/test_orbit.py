@@ -60,10 +60,23 @@ def test_badges_come_and_go_and_all_take_turns():
         seen |= set(shown)
     assert seen == set(range(len(orbit.BADGES)))  # every type appears within ten minutes
     # one slot over time: fades in, stays, fades out, gap, then the next badge
-    lives = [orbit.slot_badge(5, t / 10) for t in range(0, 600)]
+    lives = [orbit.slot_badge(5, t / 10) for t in range(0, 600)]  # a minute
     assert {b for b, _ in lives} >= {5, 5 + orbit.SLOTS}
     assert any(life == 0 for _, life in lives) and any(life == 1 for _, life in lives)
     assert any(0 < life < 1 for _, life in lives)
+
+
+def test_no_file_type_is_ever_on_screen_twice():
+    for step in range(0, 7200):  # an hour
+        shown = [s.badge for s in orbit.layout(step * 0.5, 1640, 570, 330, 110) if s.alpha > 0]
+        assert len(shown) == len(set(shown)), step * 0.5
+
+
+def test_reduced_motion_shows_whole_badges():
+    spots = orbit.layout(0, 1640, 570, 330, 110, still=True)
+    assert [s.badge for s in spots] == list(range(orbit.SLOTS))
+    far = [s for s in spots if abs(s.x) > 600]  # away from the text: nothing fades them
+    assert far and all(s.scale == pytest.approx(0.82 + 0.18 * s.z) for s in far)
 
 
 def test_some_rings_move_up_and_down():
