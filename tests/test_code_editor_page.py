@@ -410,3 +410,19 @@ def test_saving_keeps_who_may_read_the_file(qtbot, page, tmp_path):
     assert page.save_as()
     qtbot.waitUntil(lambda: not page.busy, timeout=10000)
     assert new.stat().st_mode & 0o777 == 0o666 & ~current_umask()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows read-only files")
+def test_a_failed_save_over_a_read_only_file_leaves_nothing_behind(qtbot, page, tmp_path):
+    import stat
+
+    f = tmp_path / "locked.css"
+    f.write_bytes(b"a {}\n")
+    os.chmod(f, stat.S_IREAD)
+    try:
+        _open(qtbot, page, f)
+        _type(page, "b {}\n")
+        _save(qtbot, page)
+        assert sorted(p.name for p in tmp_path.iterdir()) == ["locked.css"]
+    finally:
+        os.chmod(f, stat.S_IREAD | stat.S_IWRITE)

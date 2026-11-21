@@ -37,3 +37,35 @@ def test_umask_is_read_without_changing_it():
         assert os.umask(0o027) == 0o027  # still what was set
     finally:
         os.umask(before)
+
+
+def test_umask_from_a_probe_file_where_there_is_no_proc(tmp_path, monkeypatch):
+    """macOS / BSD: the kernel applies the umask to a probe file in the target folder."""
+    import pathlib
+
+    real = pathlib.Path.read_text
+
+    def no_proc(self, *a, **k):
+        if str(self) == "/proc/self/status":
+            raise OSError("no /proc")
+        return real(self, *a, **k)
+
+    monkeypatch.setattr(pathlib.Path, "read_text", no_proc)
+    before = os.umask(0o077)
+    try:
+        # the probe can't show the run bits, which a new file (0666) never gets anyway
+        assert 0o666 & ~current_umask(tmp_path) == 0o600
+        assert 0o666 & ~current_umask() == 0o600  # unknown: stays private
+    finally:
+        os.umask(before)
+    assert list(tmp_path.iterdir()) == []  # the probe is gone
+
+
+def test_special_bits_are_not_copied(tmp_path):
+    target = tmp_path / "a.txt"
+    target.write_text("x")
+    os.chmod(target, 0o4755)
+    fd, tmp = tempfile.mkstemp(dir=tmp_path)
+    os.close(fd)
+    match_mode(tmp, target)
+    assert os.stat(tmp).st_mode & 0o7777 == 0o755

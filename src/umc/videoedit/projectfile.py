@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from umc.core.errors import ConversionError
+from umc.core.filemode import match_mode
 from umc.videoedit.project import (
     AudioClip,
     PictureClip,
@@ -80,6 +81,7 @@ def save_project(project: Project, path: Path) -> None:
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             fh.write(text)
+        match_mode(tmp, path)  # mkstemp's file is private: keep who may read it
         os.replace(tmp, path)
     except BaseException:
         Path(tmp).unlink(missing_ok=True)

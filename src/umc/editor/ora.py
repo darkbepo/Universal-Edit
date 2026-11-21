@@ -13,6 +13,7 @@ from pathlib import Path
 from PIL import Image
 
 from umc.core.errors import ConversionError
+from umc.core.filemode import match_mode
 from umc.editor.document import Document, check_size
 from umc.editor.layer import Layer
 
@@ -174,6 +175,7 @@ def write_ora(doc: Document, path: Path) -> None:
                 z.writestr(name, data)
             z.writestr("mergedimage.png", _png(merged))
             z.writestr("Thumbnails/thumbnail.png", _png(thumb))
+        match_mode(tmp, path)  # mkstemp's file is private: keep who may read it
         os.replace(tmp, path)
     except BaseException:
         Path(tmp).unlink(missing_ok=True)

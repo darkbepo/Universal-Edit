@@ -7,13 +7,13 @@ Files over ``EDIT_LIMIT`` stay read-only (the viewer shows only their beginning)
 
 from __future__ import annotations
 
-import contextlib
 import os
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
 from umc.codeedit import textfile
+from umc.core.filemode import match_mode
 
 EDIT_LIMIT = 5_000_000  # bytes: bigger text files are shown read-only
 
@@ -70,8 +70,7 @@ def save(opened: Opened, text: str) -> Opened:
     try:
         with os.fdopen(fd, "wb") as f:
             f.write(data)
-        with contextlib.suppress(OSError):
-            os.chmod(tmp, path.stat().st_mode & 0o7777)
+        match_mode(tmp, path)  # mkstemp's file is private: keep who may read it
         os.replace(tmp, path)
     except OSError as exc:
         Path(tmp).unlink(missing_ok=True)
