@@ -11,6 +11,7 @@ import { DIRECT_AUDIO, DIRECT_PICTURE, DIRECT_VIDEO, needsCopy, sourceProblem } 
 import type { Source } from "../../videoedit/project";
 import { JobCancelled, type ConversionClient } from "../../worker/client";
 import type { Picture } from "./draw";
+import type { Decoded, Decoder } from "./sound";
 
 type MB = typeof import("mediabunny");
 type InputT = import("mediabunny").Input;
@@ -52,6 +53,7 @@ interface Entry {
   video?: VideoTrack | null;
   sinks?: Map<number, Sink>;
   bitmap?: ImageBitmap;
+  file: File;
 }
 
 /** Thrown by `open` once the bank was abandoned (the page was left): nothing was kept. */
@@ -138,11 +140,11 @@ export class SourceBank {
     this.forget(id);
     if (kind === "image") {
       source = sourceFromProbe(id, file.name, file.size, "image", { duration: 0, width: bitmap!.width, height: bitmap!.height, fps: 0, hasAudio: false });
-      this.entries.set(id, { kind: "image", bitmap: bitmap! });
+      this.entries.set(id, { kind: "image", bitmap: bitmap!, file: used });
     } else {
       const m = media!;
       source = sourceFromProbe(id, file.name, file.size, m.kind, m.probe);
-      this.entries.set(id, { kind: m.kind, input: m.input, video: m.video, sinks: new Map() });
+      this.entries.set(id, { kind: m.kind, input: m.input, video: m.video, sinks: new Map(), file: used });
     }
     return { source, file: used, copy, note: copy ? COPY_NOTE : null };
   }
@@ -196,6 +198,10 @@ export class SourceBank {
       const mb = await this.mediabunny();
       sink = new mb.CanvasSink(e.video, { height: h, fit: "contain" });
       e.sinks.set(h, sink);
+      if (e.sinks.size > 2) e.sinks.delete(e.sinks.keys().next().value!);
+    } else if (e.sinks.size > 1 && [...e.sinks.keys()].pop() !== h) {
+      e.sinks.delete(h); // re-using a height makes it the newest
+      e.sinks.set(h, sink);
     }
     try {
       const first = await e.video.getFirstTimestamp();
@@ -204,6 +210,41 @@ export class SourceBank {
       return { image: got.canvas, width: got.canvas.width, height: got.canvas.height };
     } catch {
       return null; // disposed meanwhile (forgotten / left), or a broken frame
+    }
+  }
+
+  /** The decodable file of a source (the copy when one was made). */
+  file(id: string): File | null {
+    return this.entries.get(id)?.file ?? null;
+  }
+
+  /** A source's sound as decoded pieces between two source times; ends quietly when the source is gone. */
+  readonly audio: Decoder = (id, from, to) => this.samples(id, from, to);
+
+  async *samples(id: string, from: number, to: number): AsyncGenerator<Decoded> {
+    const input = this.entries.get(id)?.input;
+    if (!input) return;
+    try {
+      const track = await input.getPrimaryAudioTrack();
+      if (!track) return;
+      const mb = await this.mediabunny();
+      const sink = new mb.AudioSampleSink(track);
+      for await (const sample of sink.samples(from, to)) {
+        try {
+          const channels: Float32Array[] = [];
+          for (let c = 0; c < sample.numberOfChannels; c++) {
+            const arr = new Float32Array(sample.numberOfFrames);
+            sample.copyTo(arr, { planeIndex: c, format: "f32-planar" });
+            channels.push(arr);
+          }
+          yield { timestamp: sample.timestamp, rate: sample.sampleRate, channels };
+        } finally {
+          sample.close();
+        }
+      }
+    } catch (e) {
+      if (!this.entries.has(id)) return; // disposed meanwhile (forgotten / left)
+      throw e;
     }
   }
 
