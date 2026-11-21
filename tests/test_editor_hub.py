@@ -283,16 +283,40 @@ def test_document_tile_stays_put_when_the_page_refuses(window, monkeypatch):
     assert window.stack.currentIndex() == 0 and not window.edit_mode.isChecked()
 
 
+def _dejavu_family() -> str:
+    """DejaVu Sans, the wide face Linux falls back to (no Segoe UI there)."""
+    from PySide6.QtGui import QFontDatabase
+
+    from umc.converters.subtitles import fonts_dir
+
+    fonts = fonts_dir()
+    if fonts is None:
+        pytest.skip("bundled font not fetched (scripts/fetch_font.py)")
+    families = QFontDatabase.applicationFontFamilies(
+        QFontDatabase.addApplicationFont(str(fonts / "DejaVuSans.ttf"))
+    )
+    if not families:
+        pytest.skip("DejaVu Sans could not be loaded")
+    return families[0]
+
+
+@pytest.mark.parametrize("font", ["system", "dejavu"])
 @pytest.mark.parametrize("width", [1100, 1280, 1440, 1920])
-def test_coming_soon_badges_are_never_cut_off(qtbot, window, width):
+def test_coming_soon_badges_are_never_cut_off(qtbot, window, width, font):
     """At five tiles a row the title and badge were too wide together: the badge was clipped
-    ("Coming soo"). Now the badge keeps its size and the title wraps."""
+    ("Coming soo"). Now the badge keeps its size and shortens to "Soon" when the title needs
+    the room — also with Linux's wider fallback font, and when the font or stylesheet changes
+    without the tile changing size (1280 px is the fixture's own width: on Linux the title
+    was squeezed there)."""
+    from PySide6.QtGui import QFont
     from PySide6.QtWidgets import QApplication
 
     from umc.gui import theme
 
     app = QApplication.instance()
-    before = app.styleSheet()
+    before, before_font = app.styleSheet(), app.font()
+    if font == "dejavu":
+        app.setFont(QFont(_dejavu_family()))
     app.setStyleSheet(theme.stylesheet())  # its padding is what made the badge too wide
     try:
         window.resize(width, 900)
@@ -300,14 +324,19 @@ def test_coming_soon_badges_are_never_cut_off(qtbot, window, width):
         for _ in range(5):
             QApplication.processEvents()
         for tile in window.hub.tiles.values():
+            if tile.badge.isVisible() or not tile.info.available:
+                assert tile.title.width() >= tile.title.sizeHint().width(), (width, tile.info.id)
             if tile.badge.isVisible():
                 assert tile.badge.width() >= tile.badge.sizeHint().width(), (width, tile.info.id)
-                assert tile.title.width() >= tile.title.sizeHint().width(), (width, tile.info.id)
                 if not tile.info.available:
                     assert tile.badge.text() in ("Coming soon", "Soon")
         window.resize(1920, 900)
         for _ in range(5):
             QApplication.processEvents()
-        assert window.hub.tiles["vector"].badge.text() == "Coming soon"  # wide: the whole text
+        vector = window.hub.tiles["vector"]
+        room = vector.text_room() - vector.title.sizeHint().width() - vector._head.spacing()
+        if vector.badge_width("Coming soon") <= room:  # the font leaves room for all of it
+            assert vector.badge.isVisible() and vector.badge.text() == "Coming soon"
     finally:
         app.setStyleSheet(before)
+        app.setFont(before_font)

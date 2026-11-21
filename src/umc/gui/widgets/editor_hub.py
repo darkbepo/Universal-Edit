@@ -5,7 +5,7 @@ Tiles come from ``core.editors.EDITORS``; editors that aren't ready are greyed o
 
 from __future__ import annotations
 
-from PySide6.QtCore import QRect, QSize, Qt, Signal
+from PySide6.QtCore import QEvent, QRect, QSize, Qt, Signal
 from PySide6.QtWidgets import (
     QButtonGroup,
     QComboBox,
@@ -166,7 +166,9 @@ class EditorTile(QPushButton):
         self.badge = QLabel(label, objectName="TileBadge")
         # Never clipped: the badge keeps its size, and a tile too tight for the title and
         # "Coming soon" side by side shows "Soon" (it showed "Coming soo"; a wrapped title
-        # pushed the description out of the fixed-height tile).
+        # pushed the description out of the fixed-height tile). With a font so wide that not
+        # even "Soon" fits, the badge goes (the tile is still greyed, dashed and says so in
+        # its tooltip) rather than squeezing the title.
         self.badge.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self._head = head
         head.addWidget(self.badge)
@@ -184,15 +186,34 @@ class EditorTile(QPushButton):
         super().resizeEvent(e)
         self._fit_badge()
 
+    def event(self, e) -> bool:
+        # The title / badge size hints change with the font or stylesheet while the tile keeps
+        # its size (no resizeEvent): their new hints arrive here as a layout request.
+        if e.type() in (QEvent.Type.LayoutRequest, QEvent.Type.FontChange, QEvent.Type.StyleChange):
+            self._fit_badge()
+        return super().event(e)
+
+    def text_room(self) -> int:
+        """Width the title row gets: the tile minus its margins, the icon and the gap."""
+        m = self.layout().contentsMargins()
+        return self.width() - m.left() - m.right() - ICON_BOX - self.layout().spacing()
+
+    def badge_width(self, text: str) -> int:
+        """The badge's width showing ``text`` (its padding and border included)."""
+        flags = Qt.TextFlag.TextSingleLine
+        fm = self.badge.fontMetrics()
+        padding = self.badge.sizeHint().width() - fm.size(flags, self.badge.text()).width()
+        return fm.size(flags, text).width() + padding
+
     def _fit_badge(self) -> None:
         if self.info.available:
             return
-        m = self.layout().contentsMargins()
-        room = self.width() - m.left() - m.right() - ICON_BOX - self.layout().spacing()
-        self.badge.setText(COMING_SOON)
-        need = self.title.sizeHint().width() + self._head.spacing() + self.badge.sizeHint().width()
-        if need > room:
-            self.badge.setText(SOON_SHORT)
+        room = self.text_room() - self.title.sizeHint().width() - self._head.spacing()
+        text = next((t for t in (COMING_SOON, SOON_SHORT) if self.badge_width(t) <= room), None)
+        if text is not None and self.badge.text() != text:
+            self.badge.setText(text)
+        if self.badge.isHidden() != (text is None):
+            self.badge.setVisible(text is not None)
 
     @property
     def needs_install(self) -> bool:
@@ -201,7 +222,7 @@ class EditorTile(QPushButton):
 
     def refresh_install_state(self) -> None:
         if not self.info.available:
-            self.badge.setVisible(True)
+            self._fit_badge()
             return
         self.badge.setVisible(self.needs_install)
         if self.needs_install:
