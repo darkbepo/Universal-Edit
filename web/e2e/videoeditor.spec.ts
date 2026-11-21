@@ -84,7 +84,7 @@ test("media list shows each source", async ({ page }) => {
   await openEditor(page, MIXED());
   await expect(rows(page)).toHaveCount(3);
   await expect(rows(page).nth(0)).toContainText("clip.mp4");
-  await expect(rows(page).nth(0)).toContainText("0:02.00");
+  await expect(rows(page).nth(0)).toContainText(/0:02\.0\d/); // an FFmpeg build may make the sound a few ms longer
   await expect(rows(page).nth(1)).toContainText("Picture");
   await expect(rows(page).nth(2)).toContainText(/Music · 0:0\d\.\d\d/);
   expect(await ve(page, "project().main.length")).toBe(2);
@@ -412,7 +412,7 @@ test("the preview shows the frame under the playhead", async ({ page }) => {
   expect(near(await pixel(page), RED, VIDEO_TOL)).toBe(true);
   await ve(page, "seek(1.5)");
   expect(near(await pixel(page), BLUE)).toBe(true);
-  await expect(page.locator(".ve-time")).toHaveText("0:01.50 / 0:04.00");
+  await expect(page.locator(".ve-time")).toHaveText(/^0:01\.50 \/ 0:04\.0\d$/);
   // the screen is SCREEN_BG in both themes
   expect(await page.locator(".ve-screen").evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgb(11, 12, 15)");
   await expect(page.getByRole("button", { name: "▶" })).toBeDisabled();
@@ -432,7 +432,7 @@ test("scrubbing", async ({ page }) => {
   await page.mouse.up();
   expect(await ve<number>(page, "playhead")).toBeCloseTo(1.5, 1);
   expect(near(await pixel(page), BLUE)).toBe(true);
-  await expect(page.locator(".ve-time")).toHaveText("0:01.50 / 0:04.00");
+  await expect(page.locator(".ve-time")).toHaveText(/^0:01\.50 \/ 0:04\.0\d$/);
 });
 
 test("text shows in the preview", async ({ page }) => {
@@ -493,7 +493,9 @@ test("past the end shows the background", async ({ page }) => {
   expect(near(await pixel(page), RED, VIDEO_TOL)).toBe(true);
   await timeline(page).focus();
   await page.keyboard.press("End");
-  expect(await ve<number>(page, "playhead")).toBeCloseTo(4, 5);
+  const end = await ve<number>(page, "playhead"); // the clip's real end (some FFmpeg builds add a few ms of sound)
+  expect(end).toBeGreaterThanOrEqual(4);
+  expect(end).toBeLessThan(4.1);
   expect(near(await pixel(page), [0, 0, 0], 4)).toBe(true);
 });
 
