@@ -1196,7 +1196,7 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       `QtAudio` enums — compare with those, not `QAudio`). Export in groups of 16 for long projects.
       Convert | Edit when a video is added; start-screen tile; desktop add-on "video"; self-test step
       "video editor". Website: ✅ (steps below).
-      Not yet: picture-in-picture, keyframes, the website editor.
+      Not yet: picture-in-picture, keyframes.
       Website: step 1 model ✅ — `web/src/videoedit/` ports, shared `tests/fixtures/videoedit_cases.json` (`python scripts/make_videoedit_cases.py`, on purpose only), `Source.size`.
       Website: step 2 maths ✅ — compose / textlayout / mix / tempo / limits in web/src/videoedit/ (no DOM); FFmpeg reference colours in videoedit_cases.json (grade, transition, fade, text).
       Website: step 3 page ✅ — (then behind a ?video-editor / ?e2e gate, removed in step 6): ui/videoeditor/ (page, timeline + DOM-free timelinemath, media, inspector on SettingsForm, preview + stillqueue, draw.ts, sources.ts = Mediabunny + canDecode, else hidden converter "video-edit-source"), .umcvideo = family "project", locate window (videoedit/locate.ts + match.ts); e2e/videoeditor.spec.ts, hook window.__videoeditor. `timelinemath.wheel` takes DOM deltaY as is; `drawText` scales only outline / box padding (textAt is already at drawn size).
