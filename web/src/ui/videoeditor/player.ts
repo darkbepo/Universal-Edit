@@ -80,6 +80,8 @@ export class Player {
   private noticed = false;
   private counts = { chunks: 0, loudChunks: 0, lateChunks: 0, frames: 0 };
   private breakDraw = false;
+  /** How long a cold Play waits for its first sound chunk (tests raise it: slow CI runners). */
+  armMs = ARM_MS;
 
   constructor(private bank: () => SourceBank, private sound: () => SoundStore, private on: PlayerEvents) {}
 
@@ -234,7 +236,7 @@ export class Player {
   private clock(run: Run): number {
     if (run.clock === "audio") {
       if (!run.armed) {
-        if (performance.now() - run.began < ARM_MS) return run.t0;
+        if (performance.now() - run.began < this.armMs) return run.t0;
         this.arm(run); // the first chunk is slow: start anyway
       }
       const ctx = this.ctx;

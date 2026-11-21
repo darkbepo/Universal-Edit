@@ -247,6 +247,8 @@ export class VideoEditorPage {
       holds: (id: string) => page.timeline.holds(id),
       /** The next frame drawn while playing throws (as a broken frame would). */
       breakNextDraw: () => page.player.breakNextDraw(),
+      /** How long a cold Play waits for its first sound chunk before the clock starts anyway. */
+      setArmMs: (ms: number) => (page.player.armMs = ms),
       /** Play as if there were no sound device. */
       forceWallClock: () => page.player.forceWallClock(),
     };

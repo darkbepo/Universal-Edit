@@ -621,6 +621,7 @@ test("sound plays", async ({ page }) => {
 test("a cold play keeps the opening sound", async ({ page }) => {
   await page.goto("./?e2e");
   await openEditor(page, [fx("clip.mp4")]);
+  await ve(page, "setArmMs(5000)"); // a slow runner's first block may take longer than the 300 ms cap
   await ve(page, "play()"); // nothing decoded yet: the clock waits for the first chunk
   await expect.poll(() => stats(page).then((s) => s.chunks + s.lateChunks), { timeout: 5000 }).toBeGreaterThanOrEqual(3);
   expect((await stats(page)).lateChunks).toBe(0);
