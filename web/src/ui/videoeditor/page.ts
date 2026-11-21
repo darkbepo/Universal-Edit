@@ -2,7 +2,7 @@
 // preview, inspector, timeline and a status line. Sources are opened on the page (sources.ts) and
 // played by player.ts; Export… renders in the conversion worker (converters/videoedit.ts), straight
 // into the file the browser's save window gave, else as a download. Loaded on demand from
-// ui/app.ts, only behind the test gate.
+// ui/app.ts (the start tile and Edit, for every visitor).
 import { canonicalExt, PROJECT_EXTS } from "../../core/detect";
 import type { Values } from "../../core/options";
 import { ConversionError, type InputFile } from "../../core/types";
@@ -113,6 +113,8 @@ export class VideoEditorPage {
   /** The phone toolbar row's sheet buttons. */
   private sheetButtons = new Map<"media" | "inspector", HTMLButtonElement>();
   private openSheet: "media" | "inspector" | null = null;
+  /** Where focus goes back to when the open sheet is closed by Esc or ×. */
+  private sheetOpener: HTMLElement | null = null;
   private phone = false;
   private timeline: TimelineView;
   private inspector: Inspector;
@@ -227,6 +229,7 @@ export class VideoEditorPage {
         this.phoneBar(),
         this.timelineBox),
       h("div", { class: "editor-status ve-status" }, this.message, this.exportBar, this.exportCancel));
+    for (const box of [this.mediaBox, this.inspectorBox]) box.tabIndex = -1; // a sheet takes focus when it opens
     this.mediaBox.append(this.sheetHead("media", "Media"), this.media.el);
     this.inspectorBox.append(this.sheetHead("inspector", "Settings"), this.inspector.el);
     if (typeof matchMedia === "function") matchMedia("(max-width: 560px)").addEventListener("change", () => this.layoutChanged());
@@ -243,7 +246,7 @@ export class VideoEditorPage {
     for (const [key, label, title] of [["media", "Media", "The project's files"], ["inspector", "Settings", "Settings of the selected item"]] as const) {
       const b = h("button", { class: "btn small", type: "button", title }, label);
       b.setAttribute("aria-pressed", "false");
-      b.addEventListener("click", () => this.showSheet(this.openSheet === key ? null : key));
+      b.addEventListener("click", () => this.showSheet(this.openSheet === key ? null : key, b));
       this.sheetButtons.set(key, b);
       bar.append(b);
     }
@@ -252,16 +255,27 @@ export class VideoEditorPage {
 
   private sheetHead(key: "media" | "inspector", title: string): HTMLElement {
     const close = h("button", { class: "link ve-sheet-close", type: "button", title: `Close ${title}`, ariaLabel: `Close ${title}` }, "×");
-    close.addEventListener("click", () => this.showSheet(null));
+    close.addEventListener("click", () => this.showSheet(null, undefined, true));
     return h("div", { class: `ve-sheet-head ${key}` }, h("span", { class: "ve-sheet-title" }, title), close);
   }
 
-  /** Open one sheet (phones only; null closes it). */
-  private showSheet(which: "media" | "inspector" | null): void {
+  /** Open one sheet (phones only; null closes it). Opening moves focus into the sheet (the sheet
+   *  itself, so no field pops up the phone's keyboard); `restore` (Esc, ×) gives it back to
+   *  `opener`'s element: the button that opened it, or the timeline for a selection. */
+  private showSheet(which: "media" | "inspector" | null, opener?: HTMLElement, restore = false): void {
+    const before = this.openSheet;
     this.openSheet = this.phone ? which : null;
     this.mediaBox.classList.toggle("open", this.openSheet === "media");
     this.inspectorBox.classList.toggle("open", this.openSheet === "inspector");
     for (const [key, b] of this.sheetButtons) b.setAttribute("aria-pressed", String(this.openSheet === key));
+    if (this.openSheet && this.openSheet !== before) {
+      if (opener) this.sheetOpener = opener;
+      (this.openSheet === "media" ? this.mediaBox : this.inspectorBox).focus({ preventScroll: true });
+    } else if (!this.openSheet) {
+      const back = this.sheetOpener;
+      this.sheetOpener = null;
+      if (restore && before && back?.isConnected) back.focus({ preventScroll: true });
+    }
   }
 
   /** The window crossed 560 px: sheets and the timeline's sizes follow; leaving phone width
@@ -1044,7 +1058,7 @@ export class VideoEditorPage {
     const changed = id !== this.selected;
     this.selected = id;
     this.render();
-    if (changed && id !== null && this.phone) this.showSheet("inspector"); // phones: its settings come up
+    if (changed && id !== null && this.phone) this.showSheet("inspector", this.timeline.el); // phones: its settings come up
   }
 
   // ---------------------------------------------------------------- playhead
@@ -1137,7 +1151,7 @@ export class VideoEditorPage {
     if (!this.active || e.defaultPrevented) return;
     if (e.key === "Escape" && this.openSheet && !document.querySelector("dialog[open]")) {
       e.preventDefault();
-      this.showSheet(null);
+      this.showSheet(null, undefined, true);
       return;
     }
     const t = e.target as HTMLElement | null;

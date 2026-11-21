@@ -909,7 +909,7 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       Next: basic editing for 3D printing (plan in the session handoff / owner's go-ahead).
    9. ✅ Start screen = hub (both apps; order and the four "Coming soon" tiles: roadmap 16): editor tiles under the empty drop zone, listed in
       `core/editors.py` / `web/src/core/editors.ts` (same order and text; `available` False =
-      greyed "Coming soon"; the website's video tile is, `WEB_LATER`); tests/test_editor_hub.py
+      greyed "Coming soon"); tests/test_editor_hub.py
       checks both lists. Rows (owner, Nov 2026): as many tiles as fit (≥ `MIN_TILE_W` 260 px),
       spread evenly so none is alone (`hub_rows` / `hubRows`, cases `hub_rows_cases.json`), rows
       centred, tiles stretched to fill the width (desktop `_RowsLayout`, hub vertical policy
@@ -1195,13 +1195,14 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       pipes; sound through Qt Multimedia (`gui/videoedit/qt_audio_out.py`: PySide6 6.12 returns
       `QtAudio` enums — compare with those, not `QAudio`). Export in groups of 16 for long projects.
       Convert | Edit when a video is added; start-screen tile; desktop add-on "video"; self-test step
-      "video editor". Website: still "Coming soon" (`core/editors.WEB_LATER`).
+      "video editor". Website: ✅ (steps below).
       Not yet: picture-in-picture, keyframes, the website editor.
       Website: step 1 model ✅ — `web/src/videoedit/` ports, shared `tests/fixtures/videoedit_cases.json` (`python scripts/make_videoedit_cases.py`, on purpose only), `Source.size`.
       Website: step 2 maths ✅ — compose / textlayout / mix / tempo / limits in web/src/videoedit/ (no DOM); FFmpeg reference colours in videoedit_cases.json (grade, transition, fade, text).
-      Website: step 3 page ✅ — behind ?video-editor / ?e2e (core/editors.ts videoEditorGate; the tile only with ?video-editor): ui/videoeditor/ (page, timeline + DOM-free timelinemath, media, inspector on SettingsForm, preview + stillqueue, draw.ts, sources.ts = Mediabunny + canDecode, else hidden converter "video-edit-source"), .umcvideo = family "project", locate window (videoedit/locate.ts + match.ts); e2e/videoeditor.spec.ts, hook window.__videoeditor. `timelinemath.wheel` takes DOM deltaY as is; `drawText` scales only outline / box padding (textAt is already at drawn size).
+      Website: step 3 page ✅ — (then behind a ?video-editor / ?e2e gate, removed in step 6): ui/videoeditor/ (page, timeline + DOM-free timelinemath, media, inspector on SettingsForm, preview + stillqueue, draw.ts, sources.ts = Mediabunny + canDecode, else hidden converter "video-edit-source"), .umcvideo = family "project", locate window (videoedit/locate.ts + match.ts); e2e/videoeditor.spec.ts, hook window.__videoeditor. `timelinemath.wheel` takes DOM deltaY as is; `drawText` scales only outline / box padding (textAt is already at drawn size).
       Website: step 4 playback ✅ — player.ts (AudioContext clock, else wall clock + NO_SOUND; 0.5 s chunks mixed 1 s ahead through mix.ts + one Limiter), sound.ts (4 s 48 kHz blocks, worker-safe, reused by export), framestream.ts, scanner.ts (thumbnails / waveforms keyed by source id); volume = the audio editor's `umc-audio-volume`.
       Website: step 5 export ✅ — videoedit/export.ts (options, exportSize = desktop cases, codec choice), ui/videoeditor/exporter.ts (FrameReader, OffscreenCanvas + draw.ts, SoundStore 1 s chunks → Mediabunny), hidden converter "video-edit-export" (StreamTarget on a picked FileSystemFileHandle, else BufferTarget; GIF = WebM then gifConverter); exportdialog.ts.
+      Website: step 6 ✅ — phones (sheets, pinch / two-finger pan in timelinemath), gate removed (tile + Edit for everyone), cross-app .umcvideo test.
    17. Code editor (both apps; owner, Nov 2026: "quick edits, Notepad++ in spirit") — spec
       `docs/superpowers/specs/2026-11-14-code-editor-design.md`, one plan per step.
       1. ✅ Accept code files (plan `docs/superpowers/plans/2026-11-14-code-editor-step1-detection.md`):

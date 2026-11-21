@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { canonicalExt, familyOfExt, sniff } from "../src/core/detect";
-import { videoEditorGate, videoTileGate } from "../src/core/editors";
 import { defaults, parsePageGroups, parsePageRange, parseTime, visible } from "../src/core/options";
 import { CONVERTERS, targetsFor } from "../src/core/registry";
 import type { InputFile } from "../src/core/types";
@@ -36,14 +35,8 @@ describe("detect", () => {
     expect(familyOfExt("docx")).toBe("document");
     expect(familyOfExt("zzz")).toBeNull();
   });
-  it("knows project files and the video editor's gate", () => {
+  it("knows project files", () => {
     expect(familyOfExt("umcvideo")).toBe("project");
-    expect(videoEditorGate("?e2e")).toBe(true);
-    expect(videoEditorGate("?a=1&video-editor")).toBe(true);
-    expect(videoEditorGate("?video-editors")).toBe(false);
-    expect(videoEditorGate("")).toBe(false);
-    expect(videoTileGate("?e2e")).toBe(false);
-    expect(videoTileGate("?e2e&video-editor")).toBe(true);
   });
   it("sniffs magic bytes", () => {
     const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);

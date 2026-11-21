@@ -32,7 +32,7 @@ EDITORS: tuple[EditorInfo, ...] = (
 COMING_SOON = "Coming soon"
 
 # Editors the website doesn't have yet: its tile stays "Coming soon" (available false there).
-WEB_LATER: frozenset[str] = frozenset({"video"})
+WEB_LATER: frozenset[str] = frozenset()
 
 # Start-screen tile rows (owner, Nov 2026): as many tiles per row as fit, spread evenly over the
 # rows so no tile is left alone, each row centred; the tiles stretch to fill the width.

@@ -12,7 +12,7 @@ export interface EditorInfo {
 
 export const EDITORS: EditorInfo[] = [
   { id: "image", title: "Image editor", blurb: "Paint, layers, retouch and effects", icon: "photo", available: true },
-  { id: "video", title: "Video editor", blurb: "Trim, join and mix clips", icon: "movie", available: false },
+  { id: "video", title: "Video editor", blurb: "Trim, join and mix clips", icon: "movie", available: true },
   { id: "audio", title: "Audio editor", blurb: "Cut, fade and clean up sound", icon: "music", available: true },
   { id: "document", title: "Document editor", blurb: "Write and format documents", icon: "document", available: true },
   { id: "code", title: "Code editor", blurb: "Quick edits to code and text files", icon: "code", available: true },
@@ -22,11 +22,6 @@ export const EDITORS: EditorInfo[] = [
   { id: "subtitle", title: "Subtitle editor", blurb: "Fix subtitle text and timing", icon: "subtitle", available: true },
   { id: "data", title: "Data editor", blurb: "Edit CSV, JSON, XML and spreadsheets", icon: "table", available: false },
 ];
-
-/** The website's video editor is reachable only with ?e2e or ?video-editor until it is finished. */
-export const videoEditorGate = (search: string) => /[?&](e2e|video-editor)(=|&|$)/.test(search);
-/** The start-screen tile opens it only with ?video-editor (?e2e alone keeps "Coming soon"). */
-export const videoTileGate = (search: string) => /[?&]video-editor(=|&|$)/.test(search);
 
 export const COMING_SOON = "Coming soon";
 

@@ -11,7 +11,6 @@ import { MAX_FILE_BYTES, WEB_EDITABLE_DOCUMENT_EXTS } from "../doceditor/types";
 import codeLanguages from "../codeedit/languages.json";
 import { ConversionClient, JobCancelled } from "../worker/client";
 import { editorHub, newPictureDialog } from "./hub";
-import { videoEditorGate, videoTileGate } from "../core/editors";
 import { groupIcon, icon } from "./icons";
 import { Orbit } from "./orbit";
 import { PropertiesPane } from "./properties";
@@ -101,7 +100,7 @@ export function mountApp(root: HTMLElement): void {
   const filesHint = h("div", { class: "hint" }, "Drag to reorder · × removes");
   const filesCard = h("section", { class: "card queue-card", hidden: true, ariaLabel: "Queue" },
     h("div", { class: "files-head" }, filesLabel, clearBtn), queue.el, filesHint);
-  const hub = editorHub((id) => void openEditor(id), (id) => (id === "video" && videoTileGate(location.search) ? true : undefined)); // editor tiles, only while no files are added
+  const hub = editorHub((id) => void openEditor(id)); // editor tiles, only while no files are added
   const left = h("div", { class: "left" }, drop, hub, note, resultsCard, filesCard);
 
   // ---------------------------------------------------------------- right: Convert to | Settings
@@ -251,10 +250,8 @@ export function mountApp(root: HTMLElement): void {
     if (subs.length === 1 && videos.length <= 1 && subs.length + videos.length === files.length) {
       return files.length === 1 && CODE_EDITABLE_EXTS.has(subs[0].ext) ? ["subtitle", "code"] : ["subtitle"];
     }
-    if (videoEditorGate(location.search)) {
-      if (files.length === 1 && files[0].family === "project") return ["video"];
-      if (files.some((f) => f.family === "video") && files.every((f) => f.family === "video" || f.family === "image" || f.family === "audio")) return ["video"];
-    }
+    if (files.length === 1 && files[0].family === "project") return ["video"];
+    if (files.some((f) => f.family === "video") && files.every((f) => f.family === "video" || f.family === "image" || f.family === "audio")) return ["video"];
     if (files.length === 1) {
       const f = files[0];
       if (f.ext === "txt" || f.ext === "md") return ["document", "code"];

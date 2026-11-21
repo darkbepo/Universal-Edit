@@ -42,7 +42,7 @@ only the formats they can become, grouped into cards. Each file gets its own pro
 <tr>
 <td><b>Image editor</b> — layers, selections of any shape, adjustments, filters, editable
 text and shapes, clone stamp, content-aware fill and one-click background removal.</td>
-<td><b>Video editor</b> <i>(desktop; website coming soon)</i> — cut, split and join clips, add
+<td><b>Video editor</b> <i>(desktop and website)</i> — cut, split and join clips, add
 pictures, music, titles and transitions, preview with sound, export to MP4, WebM, GIF and more.</td>
 </tr>
 <tr>
@@ -267,13 +267,15 @@ screen to begin with an empty one.
 
 | Feature | Desktop app | Website |
 |---|:---:|:---:|
-| **Video editor**: cut, split, trim, reorder, join · pictures · music rows · text titles · transitions (crossfade, fade through black, wipes, slides) · speed, volume, fades, rotate / flip / crop, brightness / contrast / saturation · preview with sound · export to MP4, MKV, WebM, MOV, AVI or GIF · project files (.umcvideo) | ✅ | coming later |
+| **Video editor**: cut, split, trim, reorder, join · pictures · music rows · text titles · transitions (crossfade, fade through black, wipes, slides) · speed, volume, fades, rotate / flip / crop, brightness / contrast / saturation · preview with sound · export to MP4, MKV, WebM, MOV, AVI or GIF · project files (.umcvideo) | ✅ | ✅ ¹ |
 | **Audio editor** (laid out like a simple Audacity): several files joined end to end · waveform per channel with a time ruler, zoom and scroll · spectrogram view (how loud each pitch is) · play / pause / stop with a volume slider (clicking marks without moving playback; middle-click plays from there; the view follows playback until you scroll away) · cut, copy, paste, delete, trim to the selection, silence, fade in / out, amplify (dB), normalize (−1 dB), reverse · change the speed (like a record player), the tempo (same pitch) or the pitch (same length) · reduce background noise (learn it from a part with only noise first) · record from the microphone at the cursor (or over the selection) · several tracks mixed together (volume, left / right, mute, solo per track; drag any track along its timeline strip or type its start time; duplicate, rename, mute or solo from its ⋯ / right-click menu; Save writes the mix) · right-click the waveform for the selection's actions, or to play / paste from that spot · type the selection's exact start, end or length · undo / redo · save as MP3, M4A, WAV, FLAC, OGG, OPUS, AIFF, WMA or AC-3 · keeps the song's title, artist, album, track, year, genre and cover when saving as MP3 / M4A / FLAC / OGG / Opus (joined songs keep what they share) | ✅ (≈ 45 min of stereo at most) | ✅ (≈ 15 min of stereo at most; no cover in OGG / Opus) |
 | **Document editor**: one DOCX, ODT, RTF, DOC, Markdown, TXT or HTML file · headings, fonts, colours, highlight, lists, tables, pictures, links, page breaks · find & replace · undo · save back or as PDF and every document format | ✅ | ✅ (DOC needs the desktop app) |
 | **3D viewer**: STL, OBJ, 3MF, PLY, GLB, OFF, STEP, IGES · rotate / pan / zoom, front / top / side / 3D views, shaded / edges / wireframe, print-bed grid · size in mm, triangles, parts, watertight check, volume | ✅ | ✅ (no OFF) |
 | **Code editor** (quick edits, Notepad++ style): a tab per file · colours for 40+ languages, line numbers, matching brackets · find & replace (match case, whole word, patterns) · Tab / Shift+Tab on lines, comment / uncomment (Ctrl+/), auto-indent, go to line, word wrap, zoom · status bar with line / column, language, encoding (UTF-8, UTF-16, Windows-1252, BOM) and line endings · saves byte for byte (an untouched file stays identical), asks before overwriting a file another program changed · JSON / YAML / XML mistakes underlined with a plain-language note (click it to jump there) · Tidy lays out JSON / XML neatly (one undo step) · Preview: Markdown beside the code, HTML in your browser | ✅ | ✅ (New = Alt+N, close tab = Alt+W, next / previous tab = Alt+PageDown / PageUp: the browser keeps Ctrl+N / W / Tab; Save downloads, or "Save to a file…" on Chrome / Edge; the HTML and Markdown preview shows beside the code, or instead of it on phones) |
 | **Subtitle editor**: SRT, VTT, ASS, SSA, LRC (and SAMI, read only) · a table of every subtitle with its start, end and length · edit the text and times (type them, or take them from the video) · add, delete, split, join, sort by time · shift all or the chosen subtitles · sync: give two subtitles their right times and everything in between is stretched (fixes drift) · find & replace · marks subtitles that overlap, flash by, are too fast to read or have long lines · show a video beside it with the subtitle over the picture · open again with another encoding (Cyrillic, Greek, Japanese …) · undo / redo · saves back byte for byte when untouched (ASS styles and VTT settings kept) or as another format, naming what that format can't keep | ✅ | ✅ (New = Alt+N: the browser keeps Ctrl+N; Save downloads, or "Save to a file…" on Chrome / Edge; videos the browser can't play — AVI, WMV … — show no picture; saved in another encoding as UTF-8) |
-| **Start screen tiles** (as many per row as fit, in even rows filling the width; big icon on the left): open the image editor (new picture: size presets, white / transparent / black), the video editor, the audio editor, the document editor (a new "Untitled" document), the code editor (a new "Untitled" file), the 3D viewer or the subtitle editor without a file; vector, font and data editors are shown as "Coming soon" | ✅ | ✅ (video editor: "Coming soon") |
+| **Start screen tiles** (as many per row as fit, in even rows filling the width; big icon on the left): open the image editor (new picture: size presets, white / transparent / black), the video editor, the audio editor, the document editor (a new "Untitled" document), the code editor (a new "Untitled" file), the 3D viewer or the subtitle editor without a file; vector, font and data editors are shown as "Coming soon" | ✅ | ✅ |
+
+¹ In the browser: MP4 / WebM / MKV / MOV / GIF export (no AVI), files the browser can't read directly under 1 GB, pictures under 16,000 px a side, downloads under 2 GB without Chrome / Edge; the desktop app is much faster.
 
 </details>
 
@@ -329,7 +331,7 @@ LibreOffice or Calibre.
 
 The website needs nothing installed and works on Windows, Mac, Linux and phones. The **Windows
 desktop app** is for the heavy stuff: old Office formats (DOC, XLS, PPT, ODS, ODP), very large
-files, much faster video, the video editor and the "Open with" viewer.
+files, much faster video and the "Open with" viewer.
 
 1. Open the [Releases page](https://github.com/darkbepo/Universal-Edit/releases) and download
    the setup file from the newest release.

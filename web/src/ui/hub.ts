@@ -15,9 +15,8 @@ const h = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLEle
 
 /** "Or start in an editor" + one tile per editor; editors not ready are greyed out. */
 /** `enabled` may override a tile's availability (undefined = keep the list's). */
-export function editorHub(onChoose: (id: string) => void, enabled?: (id: string) => boolean | undefined): HTMLElement {
-  const tiles = EDITORS.map((info) => {
-    const e = { ...info, available: enabled?.(info.id) ?? info.available };
+export function editorHub(onChoose: (id: string) => void): HTMLElement {
+  const tiles = EDITORS.map((e) => {
     const b = h("button", {
       class: "editor-tile", type: "button", disabled: !e.available,
       title: e.available ? `Open the ${e.title.toLowerCase()} without a file` : `The ${e.title.toLowerCase()} is coming soon`,

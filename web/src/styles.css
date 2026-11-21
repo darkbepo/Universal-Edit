@@ -991,6 +991,7 @@ body.no-select { user-select: none; -webkit-user-select: none; }
     box-shadow: 0 -10px 28px rgba(0, 0, 0, .18);
   }
   .video-media.sheet:not(.open), .video-inspector.sheet:not(.open) { display: none; }
+  .video-media.sheet:focus, .video-inspector.sheet:focus { outline: none; } /* focused on opening (page.ts) */
   .sheet .ve-sheet-head {
     display: flex; align-items: center; position: sticky; top: 0; z-index: 1; margin: 0 -12px 8px; padding: 6px 6px 6px 12px;
     background: var(--surface-alt); border-bottom: 1px solid var(--border);

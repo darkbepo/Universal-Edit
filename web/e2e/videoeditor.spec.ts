@@ -1,4 +1,4 @@
-// The website's video editor (behind ?e2e / ?video-editor): the gate, the Edit switch, the tile,
+// The website's video editor: the Edit switch and the tile (for everyone; old ?video-editor links still work),
 // opening sources (straight, or through the FFmpeg copy), the media list, the timeline and the still preview.
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
@@ -23,32 +23,43 @@ test("Edit opens a video + picture + music set", async ({ page }) => {
   await expect(page.locator(".pill[data-target]").first()).toBeVisible();
 });
 
-test("without the gate nothing changes", async ({ page }) => {
+test("open to everyone: Edit and the tile work on a plain URL", async ({ page }) => {
   await page.goto("./");
   await addFiles(page, MIXED());
   await expect(page.locator(".queue li")).toHaveCount(3);
-  await expect(edit(page)).toBeDisabled();
+  await expect(edit(page)).toBeEnabled();
+  await expect(edit(page)).toHaveAttribute("title", "Open the files in the video editor");
+  await edit(page).click();
+  await expect(page.locator(".video-editor")).toBeVisible();
+  await page.getByRole("button", { name: "← Back to Convert" }).click();
+  await expect(page.locator(".video-editor")).toBeHidden();
   await page.getByRole("button", { name: "Clear" }).click();
   await page.locator(`input[type="file"]`).first().setInputFiles({ name: "p.umcvideo", mimeType: "application/json", buffer: Buffer.from("{}") });
   await expect(page.locator(".queue li")).toHaveCount(1);
-  await expect(edit(page)).toBeDisabled();
+  await expect(edit(page)).toBeEnabled();
+  await page.goto("./");
+  const tile = page.locator(".editor-tile[data-editor=video]");
+  await expect(tile).toBeEnabled();
+  await expect(tile).not.toContainText("Coming soon");
+  await tile.click();
+  await expect(page.locator(".video-editor")).toBeVisible();
+  await expect(page.locator(".video-timeline")).toBeVisible();
 });
 
-test("the tile opens an empty project with ?video-editor only", async ({ page }) => {
-  await page.goto("./?e2e&video-editor");
+test("an old ?video-editor link still works", async ({ page }) => {
+  await page.goto("./?video-editor");
   const tile = page.locator(".editor-tile[data-editor=video]");
   await expect(tile).toBeEnabled();
   await tile.click();
   await expect(page.locator(".video-editor")).toBeVisible();
-  await expect(page.locator(".video-timeline")).toBeVisible();
-  await page.goto("./?e2e");
-  await expect(page.locator(".editor-tile[data-editor=video]")).toBeDisabled();
-  await expect(page.locator(".editor-tile[data-editor=video]")).toContainText("Coming soon");
+  await page.getByRole("button", { name: "← Back to Convert" }).click();
+  await addFiles(page, MIXED());
+  await expect(edit(page)).toBeEnabled();
 });
 
 test("375 px: no sideways scroll, short Back, Save project on the second row", async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
-  await page.goto("./?e2e&video-editor");
+  await page.goto("./?e2e");
   await page.locator(".editor-tile[data-editor=video]").click();
   await expect(page.locator(".video-editor")).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
@@ -298,20 +309,25 @@ test("375 px: preview, transport, timeline; Media and Settings sheets", async ({
   await expect(page.locator(".video-media.sheet")).toBeVisible();
   await expect(inspector).toBeHidden();
   await expect(mediaBtn).toHaveAttribute("aria-pressed", "true");
+  await expect(media).toBeFocused(); // focus moves into the open sheet
   await settingsBtn.click();
   await expect(page.locator(".video-inspector.sheet")).toBeVisible();
+  await expect(inspector).toBeFocused();
   await expect(media).toBeHidden();
   await expect(mediaBtn).toHaveAttribute("aria-pressed", "false");
   await expect(settingsBtn).toHaveAttribute("aria-pressed", "true");
   await page.keyboard.press("Escape");
   await expect(inspector).toBeHidden();
   await expect(settingsBtn).toHaveAttribute("aria-pressed", "false");
+  await expect(settingsBtn).toBeFocused(); // back to the button that opened it
   // selecting an item brings its settings up; the sheet's × closes it
   const [a] = await mainIds(page);
   await ve(page, `select("${a}")`);
   await expect(inspector).toBeVisible();
+  await expect(inspector).toBeFocused();
   await page.getByRole("button", { name: "Close Settings" }).click();
   await expect(inspector).toBeHidden();
+  await expect(page.locator("canvas.ve-timeline")).toBeFocused(); // opened by a selection: back to the timeline
   await mediaBtn.click();
   await expect(media).toBeVisible();
   // wider than a phone: the three columns, no sheet; narrow again: nothing left open
