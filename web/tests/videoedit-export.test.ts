@@ -4,9 +4,9 @@ import cases from "../../tests/fixtures/videoedit_cases.json";
 import { defaults } from "../src/core/options";
 import {
   EXPORT_OPTIONS, availableCodecs, chooseCodecs, evenSize, exportEstimate, exportName, exportSize, frameCount,
-  gifSize, type Encoders,
+  gifSize, hasSound, jobFor, type Encoders,
 } from "../src/videoedit/export";
-import type { Project } from "../src/videoedit/project";
+import { outputFps, type Project } from "../src/videoedit/project";
 
 const NO_SOUND = "Export with sound needs Chrome or Edge — export without sound, or use the desktop app.";
 const enc = (video: string[], audio: string[]): Encoders => ({
@@ -73,7 +73,80 @@ describe("chooseCodecs", () => {
     expect(await chooseCodecs(vals({ container: "gif" }), true, enc(["vp9", "vp8"], []))).toEqual({ video: "vp9", audio: null });
   });
   it("availableCodecs", async () => {
-    expect(await availableCodecs(enc(["avc", "av1"], []))).toEqual(["auto", "h264", "av1"]);
+    expect(await availableCodecs(enc(["avc", "av1"], []), "mp4")).toEqual(["auto", "h264", "av1"]);
+  });
+  it("availableCodecs leaves H.264 / H.265 out of WebM", async () => {
+    expect(await availableCodecs(enc(["avc", "vp9", "av1", "hevc"], []), "webm")).toEqual(["auto", "vp9", "av1"]);
+  });
+  it("WebM can't hold H.264 / H.265", async () => {
+    const all = enc(["avc", "vp9", "av1", "hevc"], ["opus"]);
+    expect(await chooseCodecs(vals({ container: "webm", video_codec: "h264" }), true, all))
+      .toEqual({ problem: "WebM can't hold H.264 — choose VP9 or AV1, or another format." });
+    expect(await chooseCodecs(vals({ container: "webm", video_codec: "h265" }), true, all))
+      .toEqual({ problem: "WebM can't hold H.265 / HEVC — choose VP9 or AV1, or another format." });
+    expect(await chooseCodecs(vals({ container: "webm", video_codec: "vp9" }), true, all)).toEqual({ video: "vp9", audio: "opus" });
+  });
+});
+
+describe("jobFor", () => {
+  const odd = { ...first, settings: { ...first.settings, resolution: "custom", width: 1921, height: 1081 } } as Project;
+  const codecs = { video: "avc", audio: "aac" as const };
+  it("maps the export values", () => {
+    const j = jobFor(first, vals({ resolution: "720p", audio_bitrate: 128 }), codecs, true);
+    expect(j.size).toEqual(evenSize(exportSize(first, "720p")));
+    expect(j.fps).toBe(outputFps(first));
+    expect(j.video).toEqual({ codec: "avc", bitrate: "high" });
+    expect(j.audio).toEqual({ codec: "aac", bitrate: 128000 });
+    expect(j.container).toBe("mp4");
+    expect(j.inMemory).toBe(true);
+    expect(j.project).toBe(first);
+  });
+  it("an odd project size is even", () => {
+    const [w, h] = jobFor(odd, vals({}), codecs, false).size;
+    expect(w % 2).toBe(0);
+    expect(h % 2).toBe(0);
+  });
+  it("a bitrate wins over the quality", () => {
+    const j = jobFor(first, vals({ video_bitrate: 5000, quality: "low", container: "mkv" }), codecs, false);
+    expect(j.video).toEqual({ codec: "avc", bitrate: 5_000_000 });
+    expect(j.container).toBe("mkv");
+    expect(j.inMemory).toBe(false);
+  });
+  it("no audio codec = no audio track", () => {
+    expect(jobFor(first, vals({}), { video: "avc", audio: null }, true).audio).toBeNull();
+  });
+  it("GIF: WebM, gifSize, gif_fps, very high, no audio", () => {
+    const j = jobFor(first, vals({ container: "gif", gif_fps: 12, gif_width: 321 }), { video: "vp9", audio: "opus" }, true);
+    expect(j).toMatchObject({ container: "webm", size: gifSize(first, 321), fps: 12, video: { codec: "vp9", bitrate: "very-high" }, audio: null });
+  });
+});
+
+describe("export converter", () => {
+  it("is registered, hidden, and formats m:ss", async () => {
+    const { EXPORT_TARGET, clock } = await import("../src/converters/videoedit");
+    const { converterById, targetsFor } = await import("../src/core/registry");
+    expect(converterById(EXPORT_TARGET.converterId).id).toBe("video-edit-export");
+    expect(converterById("video-edit-export").targets([])).toEqual([]);
+    expect(targetsFor([{ file: new File([], "a.umcvideo"), name: "a.umcvideo", ext: "umcvideo", family: "project" }]).targets
+      .some((t) => t.converterId === "video-edit-export")).toBe(false);
+    expect([clock(0), clock(5.4), clock(65), clock(600.9)]).toEqual(["0:00", "0:05", "1:05", "10:00"]);
+  });
+});
+
+describe("hasSound", () => {
+  const src = (id: string, kind: "video" | "image" | "audio", has_audio: boolean) =>
+    ({ id, path: id, kind, duration: 5, width: 640, height: 360, fps: 30, has_audio, size: 1 });
+  const base = { ...first, sources: [src("v", "video", true), src("p", "image", false), src("m", "audio", true)], main: [], text_rows: [], music_rows: [] } as unknown as Project;
+  const clip = (mute: boolean) => ({ type: "video", id: "c", source: "v", in_: 0, out: 2, speed: 1, volume: 100, mute });
+  it("pictures + text only have none", () => {
+    expect(hasSound({ ...base, main: [{ type: "picture", id: "x", source: "p", duration: 3 }] } as unknown as Project)).toBe(false);
+  });
+  it("a video with sound has, unless muted", () => {
+    expect(hasSound({ ...base, main: [clip(false)] } as unknown as Project)).toBe(true);
+    expect(hasSound({ ...base, main: [clip(true)] } as unknown as Project)).toBe(false);
+  });
+  it("music has", () => {
+    expect(hasSound({ ...base, music_rows: [[{ type: "audio", id: "a", source: "m" }]] } as unknown as Project)).toBe(true);
   });
 });
 

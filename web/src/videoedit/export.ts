@@ -4,6 +4,7 @@
 import { opt, type OptionSpec, type Values } from "../core/options";
 import { WEBCODECS_LABELS, type WebCodec } from "../engines/webcodecs";
 import { estimateBytes, type Quality } from "./limits";
+import type { ExportJob, ExportQuality } from "../ui/videoeditor/exporter";
 import { length, outputFps, outputSize, type Project } from "./project";
 
 const isGif = (v: Values): boolean => v.container === "gif";
@@ -83,6 +84,7 @@ export type Encoders = {
 
 const NO_AUDIO_ENCODER = "Export with sound needs Chrome or Edge — export without sound, or use the desktop app.";
 const CHOICE_TO_ENCODER: Record<string, VideoEncoder> = { h264: "avc", vp9: "vp9", av1: "av1", h265: "hevc" };
+const WEBM_CHOICES = ["auto", "vp9", "av1"]; // WebM holds VP8 / VP9 / AV1 only
 const ENCODER_TO_CHOICE: Record<string, WebCodec> = { avc: "h264", vp9: "vp9", av1: "av1", hevc: "h265" };
 
 async function firstEncodable(enc: Encoders, order: VideoEncoder[]): Promise<VideoEncoder | null> {
@@ -103,6 +105,10 @@ export async function chooseCodecs(
     return video ? { video, audio: null } : { problem: "This browser or device can't encode video. Use the desktop app." };
   }
   const choice = String(values.video_codec ?? "auto");
+  if (container === "webm" && !WEBM_CHOICES.includes(choice)) {
+    const label = WEBCODECS_LABELS[(choice as WebCodec)]?.replace(/ \(.*\)/, "") ?? choice;
+    return { problem: `WebM can't hold ${label} — choose VP9 or AV1, or another format.` };
+  }
   let video: VideoEncoder | null;
   if (choice === "auto") {
     video = await firstEncodable(enc, container === "webm" ? ["vp9", "av1", "vp8"] : ["avc", "hevc", "vp9", "av1"]);
@@ -118,11 +124,48 @@ export async function chooseCodecs(
   return { problem: NO_AUDIO_ENCODER };
 }
 
-/** The `video_codec` choices to show: "auto" first, then those the browser can encode. */
-export async function availableCodecs(enc: Encoders): Promise<string[]> {
+/** The `video_codec` choices to show: "auto" first, then those the browser can encode and the
+ *  container can hold (WebM: VP9 / AV1 only). */
+export async function availableCodecs(enc: Encoders, container: string): Promise<string[]> {
   const out = ["auto"];
-  for (const choice of ["h264", "vp9", "av1", "h265"]) if (await enc.video(CHOICE_TO_ENCODER[choice])) out.push(choice);
+  for (const choice of ["h264", "vp9", "av1", "h265"]) {
+    if (container === "webm" && !WEBM_CHOICES.includes(choice)) continue;
+    if (await enc.video(CHOICE_TO_ENCODER[choice])) out.push(choice);
+  }
   return out;
+}
+
+/** Whether the project makes any sound: a video clip with sound that isn't muted, or music. */
+export function hasSound(p: Project): boolean {
+  const withAudio = new Set(p.sources.filter((s) => s.has_audio).map((s) => s.id));
+  if (p.main.some((it) => it.type === "video" && !it.mute && withAudio.has(it.source))) return true;
+  return p.music_rows.some((row) => row.length > 0);
+}
+
+/** The exporter's job for these export values (`codecs` from chooseCodecs). GIF = a WebM at the
+ *  GIF's size and fps, very high quality, no sound (the GIF is made from it afterwards). */
+export function jobFor(
+  p: Project, values: Values, codecs: { video: string; audio: "aac" | "opus" | null }, inMemory: boolean,
+): ExportJob {
+  if (isGif(values)) {
+    return {
+      project: p, size: gifSize(p, Number(values.gif_width ?? 480)), fps: Number(values.gif_fps ?? 15),
+      video: { codec: codecs.video, bitrate: "very-high" }, audio: null, container: "webm", inMemory,
+    };
+  }
+  const kbps = Number(values.video_bitrate ?? 0);
+  const container = String(values.container ?? "mp4") as ExportJob["container"];
+  return {
+    project: p,
+    size: evenSize(exportSize(p, String(values.resolution ?? "project"))),
+    fps: outputFps(p),
+    video: { codec: codecs.video, bitrate: kbps > 0 ? kbps * 1000 : (String(values.quality ?? "high") as ExportQuality) },
+    audio: codecs.audio && !values.remove_audio
+      ? { codec: codecs.audio, bitrate: Number(values.audio_bitrate ?? 192) * 1000 }
+      : null,
+    container,
+    inMemory,
+  };
 }
 
 /** About how many bytes the export will be. GIF is a rough guess (half a bit per pixel). */
