@@ -73,7 +73,11 @@ export class Scanner {
         } catch {
           // a source that can't be read just shows no thumbnails / waveform
         }
-        if (this.alive(s.id, mine)) this.on.done?.(s.id);
+        if (this.alive(s.id, mine)) {
+          // a scan that found nothing isn't kept: a later `want` (after some change) tries again
+          if (!mine.thumbs && !mine.wave) this.results.delete(s.id);
+          this.on.done?.(s.id);
+        }
       }
     } finally {
       this.running = false;

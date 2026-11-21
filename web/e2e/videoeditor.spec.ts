@@ -1053,6 +1053,18 @@ test("a relinked source is scanned again", async ({ page }, info) => {
   expect(got.waves.s3).toBeGreaterThan(0);
 });
 
+test("a source given another file drops its old scan and is scanned again", async ({ page }) => {
+  needsRed();
+  await page.goto("./?e2e");
+  await openEditor(page, [fx("clip.mp4")]);
+  await expect.poll(async () => (await scanned(page)).scans.s1).toBe(1);
+  await ve(page, `rescan("s1")`);
+  await expect.poll(async () => (await scanned(page)).scans.s1).toBe(2);
+  const got = await scanned(page);
+  expect(got.thumbs.s1).toBeGreaterThan(0);
+  expect(got.waves.s1).toBeGreaterThan(0);
+});
+
 test("leaving stops the scan", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(String(e)));
@@ -1061,6 +1073,8 @@ test("leaving stops the scan", async ({ page }) => {
   await openEditor(page, MIXED());
   await page.getByRole("button", { name: "← Back to Convert" }).click();
   await expect(page.locator(".video-editor")).toBeHidden();
+  const after = await scanned(page);
   await page.waitForTimeout(1500);
+  expect(await scanned(page)).toEqual(after);
   expect(errors).toEqual([]);
 });

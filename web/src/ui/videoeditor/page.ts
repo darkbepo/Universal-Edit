@@ -235,6 +235,11 @@ export class VideoEditorPage {
       stats: () => page.player.stats(),
       /** What the scanner found: pictures and wave buckets per source, finished scans per source. */
       scanned: () => ({ thumbs: { ...page.found.thumbs }, waves: { ...page.found.waves }, scans: { ...page.found.scans } }),
+      /** The source got another file in this bank: drop its scan and ask for it again. */
+      rescan: (id: string) => {
+        page.dropScan(id);
+        page.render(false);
+      },
       /** Play as if there were no sound device. */
       forceWallClock: () => page.player.forceWallClock(),
     };
@@ -296,14 +301,19 @@ export class VideoEditorPage {
     });
   }
 
+  /** A source id got another file: its scanned pictures go (timeline first, then the scanner). */
+  private dropScan(id: string): void {
+    this.timeline.forgetSource(id);
+    this.scanner.forget(id);
+    delete this.found.thumbs[id];
+    delete this.found.waves[id];
+  }
+
   /** A source's decoders and scanned pictures go (relink / remove). */
   private forgetSource(id: string): void {
     this.bank.forget(id);
     this.sound.forget(id);
-    this.timeline.forgetSource(id); // before the scanner closes its bitmaps
-    this.scanner.forget(id);
-    delete this.found.thumbs[id];
-    delete this.found.waves[id];
+    this.dropScan(id);
   }
 
   private freshBank(): void {
@@ -451,6 +461,7 @@ export class VideoEditorPage {
           if (mine !== this.session) return true;
           if (opened.source.kind === s.kind && keepsDuration(s, opened.source)) {
             fixed = relink(fixed, s.id, relinked(s, opened.source));
+            this.dropScan(s.id); // the id has a new file: its old thumbnails / wave go
             if (opened.note) this.notes = new Map(this.notes).set(s.id, opened.note);
             continue;
           }
