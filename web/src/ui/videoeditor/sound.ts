@@ -1,7 +1,7 @@
 // The preview mixer's sound: decoded sources kept as 4 s blocks of 48 kHz stereo, so `lookup` (the
 // mixer's `AudioLookup`) is synchronous. No DOM and no AudioBuffer (the export worker uses it too);
 // the decoder is injected, so this file never touches Mediabunny.
-import { toStereo48k } from "../../videoedit/resample";
+import { resample, toStereo48k } from "../../videoedit/resample";
 import { SAMPLE_RATE, type AudioLookup } from "../../videoedit/mix";
 
 export const BLOCK_SECONDS = 4;
@@ -34,6 +34,8 @@ export class SoundStore {
   private generation = new Map<string, number>();
   /** How many pending `ensure` calls need each block (those are never evicted). */
   private needed = new Map<string, number>();
+  /** Blocks whose decode threw: silent until the source is forgotten (else retried every chunk). */
+  private failed = new Set<string>();
   private tick = 0;
   private gone = false;
   private budget: number;
@@ -83,21 +85,47 @@ export class SoundStore {
     return p;
   }
 
+  /** Pieces are copied at the source's own rate (the first piece's) into one block-long buffer,
+   *  then the whole block is resampled once: resampling each piece on its own rounded every
+   *  piece's length and start apart and left 1-sample gaps. A failed block is remembered (logged
+   *  once, silent, not decoded again) until the source is forgotten. */
   private async decodeBlock(id: string, k: number): Promise<void> {
     const gen = this.gen(id);
-    const base = k * BLOCK_FRAMES;
-    const data = [new Float32Array(BLOCK_FRAMES), new Float32Array(BLOCK_FRAMES)];
-    for await (const piece of this.decode(id, k * BLOCK_SECONDS, (k + 1) * BLOCK_SECONDS)) {
+    const kk = key(id, k);
+    if (this.failed.has(kk)) return;
+    let rate = 0;
+    let src: Float32Array[] = [];
+    try {
+      for await (const piece of this.decode(id, k * BLOCK_SECONDS, (k + 1) * BLOCK_SECONDS)) {
+        if (this.gone || this.gen(id) !== gen) return;
+        if (!(piece.rate > 0) || !piece.channels.length) continue;
+        if (!rate) {
+          rate = piece.rate;
+          const n = Math.round(rate * BLOCK_SECONDS);
+          src = [new Float32Array(n), new Float32Array(n)];
+        }
+        const left = piece.channels[0];
+        const right = piece.channels[1] ?? left; // mono fills both sides
+        const chs = piece.rate === rate ? [left, right] : [resample(left, piece.rate, rate), resample(right, piece.rate, rate)];
+        const at = Math.round((piece.timestamp - k * BLOCK_SECONDS) * rate);
+        const from = Math.max(0, -at);
+        const to = Math.min(chs[0].length, src[0].length - at);
+        if (to <= from) continue;
+        for (let c = 0; c < 2; c++) src[c].set(chs[c].subarray(from, to), at + from);
+      }
+    } catch (e) {
       if (this.gone || this.gen(id) !== gen) return;
-      const st = toStereo48k(piece.channels, piece.rate);
-      const at = Math.round(piece.timestamp * SAMPLE_RATE) - base;
-      const from = Math.max(0, -at);
-      const to = Math.min(st[0].length, BLOCK_FRAMES - at);
-      if (to <= from) continue;
-      for (let c = 0; c < 2; c++) data[c].set(st[c].subarray(from, to), at + from);
+      this.failed.add(kk);
+      console.error("Sound couldn't be decoded", e); // that part stays silent
+      return;
     }
     if (this.gone || this.gen(id) !== gen) return;
-    this.blocks.set(key(id, k), { data, used: ++this.tick });
+    const data = [new Float32Array(BLOCK_FRAMES), new Float32Array(BLOCK_FRAMES)];
+    if (rate) {
+      const st = toStereo48k(src, rate);
+      for (let c = 0; c < 2; c++) data[c].set(st[c].subarray(0, BLOCK_FRAMES));
+    }
+    this.blocks.set(kk, { data, used: ++this.tick });
     this.evict();
   }
 
@@ -144,11 +172,13 @@ export class SoundStore {
     const prefix = `${sourceId}#`;
     for (const kk of [...this.blocks.keys()]) if (kk.startsWith(prefix)) this.blocks.delete(kk);
     for (const kk of [...this.inflight.keys()]) if (kk.startsWith(prefix)) this.inflight.delete(kk);
+    for (const kk of [...this.failed]) if (kk.startsWith(prefix)) this.failed.delete(kk);
   }
 
   dispose(): void {
     this.gone = true;
     this.blocks.clear();
     this.inflight.clear();
+    this.failed.clear();
   }
 }

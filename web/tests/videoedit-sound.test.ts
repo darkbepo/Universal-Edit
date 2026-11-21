@@ -97,3 +97,80 @@ describe("SoundStore", () => {
     expect(s.lookup("a", 0, 10)).toBeNull();
   });
 });
+
+/** `size`-frame pieces at `rate` covering [from, to) from the piece holding `from`; `value(i)` at source frame i. */
+function pieces(rate: number, size: number, value: (i: number) => number, seconds = 20): Decoder {
+  return async function* (_id, from, to) {
+    const end = Math.min(to, seconds) * rate;
+    for (let p = Math.floor((from * rate) / size); p * size < end; p++) {
+      const ch = new Float32Array(size);
+      for (let i = 0; i < size; i++) ch[i] = value(p * size + i);
+      yield { timestamp: (p * size) / rate, rate, channels: [ch] } satisfies Decoded;
+    }
+  };
+}
+
+describe("SoundStore blocks from small pieces", () => {
+  const BLOCK = BLOCK_SECONDS * 48000;
+  for (const [rate, size] of [[22050, 1024], [44100, 4096]] as const) {
+    it(`leaves no gap with ${size}-frame pieces at ${rate} Hz`, async () => {
+      const s = new SoundStore(pieces(rate, size, () => 1));
+      await s.ensure([{ sourceId: "a", from: 0, to: 8 }]);
+      for (const k of [0, 1]) {
+        const got = s.lookup("a", k * BLOCK_SECONDS, BLOCK)!;
+        for (const ch of got) expect(ch.findIndex((v) => Math.abs(v - 1) > 1e-6)).toBe(-1);
+      }
+    });
+
+    it(`keeps a ramp monotone with ${size}-frame pieces at ${rate} Hz`, async () => {
+      const s = new SoundStore(pieces(rate, size, (i) => i / 1e6));
+      await s.ensure([{ sourceId: "a", from: 4, to: 8 }]);
+      const got = s.lookup("a", 4, BLOCK)![0];
+      let bad = -1;
+      for (let i = 1; i < got.length && bad < 0; i++) if (got[i] < got[i - 1]) bad = i;
+      expect(bad).toBe(-1);
+      expect(got[0]).toBeCloseTo((4 * rate) / 1e6, 5);
+    });
+  }
+
+  it("mixes stereo and mono pieces into both channels", async () => {
+    const s = new SoundStore(async function* () {
+      yield { timestamp: 0, rate: 48000, channels: [new Float32Array(1000).fill(0.5), new Float32Array(1000).fill(-0.5)] };
+      yield { timestamp: 1000 / 48000, rate: 48000, channels: [new Float32Array(1000).fill(0.25)] };
+    });
+    await s.ensure([{ sourceId: "a", from: 0, to: 1 }]);
+    const [l, r] = s.lookup("a", 0, 2000)!;
+    expect([l[0], r[0], l[1500], r[1500]]).toEqual([0.5, -0.5, 0.25, 0.25]);
+  });
+
+  it("a decoder that throws leaves nothing pending, isn't retried, and works again after forget", async () => {
+    let calls = 0;
+    let fail = true;
+    const errors = console.error;
+    const logged: unknown[] = [];
+    console.error = (...a: unknown[]) => void logged.push(a);
+    try {
+      const good = ramp(48000);
+      const s = new SoundStore(async function* (id, from, to) {
+        calls++;
+        if (fail) throw new Error("broken");
+        yield* good(id, from, to);
+      });
+      await s.ensure([{ sourceId: "a", from: 0, to: 1 }]).catch(() => undefined);
+      const inner = s as unknown as { inflight: Map<string, unknown>; needed: Map<string, unknown> };
+      expect(inner.inflight.size).toBe(0);
+      expect(inner.needed.size).toBe(0);
+      expect(s.lookup("a", 0, 10)).toBeNull();
+      await s.ensure([{ sourceId: "a", from: 0, to: 1 }]).catch(() => undefined);
+      expect(calls).toBe(1); // a failed block isn't decoded again every chunk
+      expect(logged).toHaveLength(1);
+      fail = false;
+      s.forget("a");
+      await s.ensure([{ sourceId: "a", from: 0, to: 1 }]);
+      expect(calls).toBe(2);
+      expect(s.lookup("a", 0, 10)).not.toBeNull();
+    } finally {
+      console.error = errors;
+    }
+  });
+});

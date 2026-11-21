@@ -9,10 +9,11 @@ export function toStereo48k(chs: Float32Array[], rate: number): Float32Array[] {
   return [resample(left, rate), right === left ? resample(left, rate) : resample(right, rate)];
 }
 
-function resample(src: Float32Array, rate: number): Float32Array {
+/** `src` at `from` Hz → `to` Hz (round(n · to / from) frames), linear interpolation. */
+export function resample(src: Float32Array, from: number, to = SAMPLE_RATE): Float32Array {
   const n = src.length;
-  const out = new Float32Array(Math.round((n * SAMPLE_RATE) / rate));
-  const step = rate / SAMPLE_RATE;
+  const out = new Float32Array(Math.round((n * to) / from));
+  const step = from / to;
   for (let i = 0; i < out.length; i++) {
     const pos = i * step;
     const i0 = Math.min(n - 1, Math.floor(pos));
