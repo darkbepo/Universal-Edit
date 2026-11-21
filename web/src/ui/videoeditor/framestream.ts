@@ -18,6 +18,8 @@ export class FrameStream<T> {
   private reading = false;
   private finished = false; // iterator ended or threw: stop reading until a reopen
   private closed = false;
+  private started = false; // open() has been tried at least once
+  private ended = false; // the iterator ran out normally
   private readPos = 0;
   private wanted = 0;
 
@@ -30,7 +32,8 @@ export class FrameStream<T> {
     if (this.closed) return null;
     this.wanted = t;
     const behind = this.shown !== null && t < this.shown.timestamp - BEHIND;
-    if (this.iterator === null || behind || t > this.readPos + AHEAD_JUMP) this.reopen(t);
+    const jump = !this.ended && t > this.readPos + AHEAD_JUMP;
+    if (!this.started || behind || jump) this.reopen(t);
 
     // Promote the newest buffered frame at or before t; drop older ones.
     let k = 0;
@@ -71,6 +74,8 @@ export class FrameStream<T> {
     this.shown = null;
     this.reading = false;
     this.finished = false;
+    this.ended = false;
+    this.started = true;
     this.readPos = t;
     try {
       this.iterator = this.open(t);
@@ -101,6 +106,7 @@ export class FrameStream<T> {
         this.reading = false;
         if (r.done) {
           this.finished = true;
+          this.ended = true;
           return;
         }
         this.buffer.push(r.value);

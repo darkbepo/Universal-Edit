@@ -111,4 +111,101 @@ describe("FrameStream", () => {
     await settle();
     expect(s.at(1)).toBeCloseTo(0.3);
   });
+
+  it("does not retry every call when open throws", async () => {
+    let opened = 0;
+    const s = new FrameStream<number>(() => {
+      opened++;
+      throw new Error("no decoder");
+    });
+    for (let i = 0; i < 5; i++) {
+      expect(() => s.at(0.1 * i)).not.toThrow();
+      await settle();
+    }
+    expect(opened).toBe(1);
+    s.at(10);
+    expect(opened).toBe(2);
+  });
+
+  it("keeps the last frame far past the end of a finished stream", async () => {
+    const f = fake({ end: 0.3 });
+    const s = new FrameStream(f.open);
+    s.at(0);
+    await settle();
+    expect(s.at(1)).toBeCloseTo(0.3);
+    await settle();
+    expect(s.at(5)).toBeCloseTo(0.3);
+    expect(f.log.opened).toEqual([0]);
+  });
+
+  describe("with a manually resolved next()", () => {
+    function deferred() {
+      const pending: ((r: IteratorResult<Timed<number>>) => void)[] = [];
+      let inFlight = 0;
+      let maxInFlight = 0;
+      let returned = 0;
+      const open = (): AsyncIterator<Timed<number>> => ({
+        next() {
+          inFlight++;
+          maxInFlight = Math.max(maxInFlight, inFlight);
+          return new Promise((res) =>
+            pending.push((r) => {
+              inFlight--;
+              res(r);
+            }),
+          );
+        },
+        async return() {
+          returned++;
+          return { done: true, value: undefined };
+        },
+      });
+      const frame = (ts: number): IteratorResult<Timed<number>> => ({
+        done: false,
+        value: { timestamp: ts, duration: 0.1, value: ts },
+      });
+      return { open, pending, frame, stats: () => ({ maxInFlight, returned }) };
+    }
+
+    it("has one next() in flight at a time", async () => {
+      const d = deferred();
+      const s = new FrameStream(d.open);
+      s.at(0);
+      s.at(0);
+      s.at(0.05);
+      await settle();
+      expect(d.pending.length).toBe(1);
+      d.pending[0](d.frame(0));
+      await settle();
+      expect(d.stats().maxInFlight).toBe(1);
+    });
+
+    it("drops a slow result from the old iterator after a reopen", async () => {
+      const d = deferred();
+      const s = new FrameStream(d.open);
+      s.at(0);
+      await settle();
+      s.at(5);
+      await settle();
+      expect(d.pending.length).toBe(2);
+      d.pending[0](d.frame(0));
+      await settle();
+      expect(s.at(5.05)).toBeNull();
+      d.pending[1](d.frame(5));
+      await settle();
+      expect(s.at(5.05)).toBeCloseTo(5);
+    });
+
+    it("drops a result arriving after close", async () => {
+      const d = deferred();
+      const s = new FrameStream(d.open);
+      s.at(0);
+      await settle();
+      s.close();
+      d.pending[0](d.frame(0));
+      await settle();
+      expect(s.at(0.05)).toBeNull();
+      expect(d.pending.length).toBe(1);
+    });
+  });
 });
