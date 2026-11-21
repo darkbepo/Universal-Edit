@@ -21,7 +21,7 @@ def test_cases_match_the_shared_file():
     cases = json.loads((ROOT / "tests/fixtures/orbit_cases.json").read_text(encoding="utf-8"))
     for case in cases:
         got = orbit.layout(*case["args"])
-        assert len(got) == len(orbit.BADGES)
+        assert len(got) == orbit.SLOTS
         for s, want in zip(got, case["spots"], strict=True):
             for key, value in want.items():
                 assert getattr(s, key) == pytest.approx(value, abs=1e-9), (case["args"], key)
@@ -31,14 +31,49 @@ def test_every_badge_has_an_icon_in_both_sets():
     from umc.gui.icon_data import ICONS
 
     web = (ROOT / "web/src/ui/icon_data.ts").read_text(encoding="utf-8")
-    assert sum(r.count for r in orbit.RINGS) == len(orbit.BADGES)
+    assert orbit.SLOTS == 48
     for icon, _label, _colour in orbit.BADGES:
         assert icon in ICONS and f'"{icon}":' in web
 
 
+def test_every_file_type_has_a_badge():
+    """A new extension in core/detect.py needs a badge in orbit.BADGES (then regenerate
+    web/src/ui/orbit.json and the cases: see the module's docstring)."""
+    from umc.core import detect
+
+    labels = [label for _icon, label, _colour in orbit.BADGES]
+    assert len(labels) == len(set(labels))
+    families = [n for n in dir(detect) if n.endswith("_EXTS") and not n.startswith("_")]
+    known = set()
+    for name in families:
+        if name not in ("TEXT_DOCUMENT_EXTS", "PRESENTATION_EXTS", "SPREADSHEET_EXTS"):
+            known |= {e.upper() for e in getattr(detect, name)}
+    known -= {e.upper() for e in getattr(detect, "PROJECT_EXTS", ())}  # our own project files
+    assert known <= set(labels), sorted(known - set(labels))
+
+
+def test_badges_come_and_go_and_all_take_turns():
+    seen: set[int] = set()
+    for step in range(0, 1200):
+        spots = orbit.layout(step * 0.5, 1640, 570, 330, 110)
+        shown = [s.badge for s in spots if s.alpha > 0]
+        seen |= set(shown)
+    assert seen == set(range(len(orbit.BADGES)))  # every type appears within ten minutes
+    # one slot over time: fades in, stays, fades out, gap, then the next badge
+    lives = [orbit.slot_badge(5, t / 10) for t in range(0, 600)]
+    assert {b for b, _ in lives} >= {5, 5 + orbit.SLOTS}
+    assert any(life == 0 for _, life in lives) and any(life == 1 for _, life in lives)
+    assert any(0 < life < 1 for _, life in lives)
+
+
+def test_some_rings_move_up_and_down():
+    upright = [r for r in orbit.RINGS if abs(r.roll) > 45]
+    assert len(upright) == 2
+
+
 def test_badges_stay_inside_and_clear_of_the_text():
     w, h, tw, th = 1200, 500, 320, 110
-    for t in range(0, 80):
+    for t in range(0, 400):
         for s in orbit.layout(t * 0.5, w, h, tw, th):
             assert abs(s.x) <= w / 2 - orbit.PAD + 1 and abs(s.y) <= h / 2
             if abs(s.x) < tw / 2 and abs(s.y) < th / 2:

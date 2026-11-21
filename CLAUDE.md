@@ -1168,9 +1168,15 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       `apply` renames — never over another file — and sets mtime keeping atime), card
       `gui/properties/file_form.py` under every file's details card; the panel renames on the GUI
       thread (refused while a details save runs) and `file_renamed` swaps the queue entry.
-   15. Orbiting drop-zone badges (both apps): 14 file-type badges (icon + type, own colour,
-      dimmed to 62 %) on three tilted rings around the empty drop zone's text, smaller / fainter
-      on the far side, faded near the text. Dragging a file over pulls them in and speeds them up;
+   15. Orbiting drop-zone badges (both apps): file-type badges (icon + type, own colour,
+      dimmed to 62 %) on six tilted rings around the empty drop zone's text (two tipped nearly
+      upright so badges also travel up and down; they're 0.56 the size to stay inside), smaller /
+      fainter on the far side, faded near the text's box. "Living" (owner, Nov 2026): 48 slots,
+      each fades a badge in, keeps it 8–16 s, fades it out, rests 1–3 s and shows the next —
+      `slot_badge` / `slotBadge`, worked out from `tau` (no randomness), so all 187 `BADGES` (every
+      extension in `core/detect.py`, common ones first; `test_every_file_type_has_a_badge`) take
+      turns. A new extension needs a badge, then `python -m umc.core.orbit > web/src/ui/orbit.json`
+      and `python -m umc.core.orbit --cases > tests/fixtures/orbit_cases.json`. Dragging a file over pulls them in and speeds them up;
       a drop on the empty page bursts them outward, then adds the files. Model `core/orbit.py`
       (`layout`, Qt-free) → `web/src/ui/orbit.json` (`python -m umc.core.orbit`), port
       `web/src/ui/orbit.ts` (canvas behind the text, `requestAnimationFrame`); desktop

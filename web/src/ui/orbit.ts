@@ -6,7 +6,21 @@
 import data from "./orbit.json";
 import { ICONS } from "./icon_data";
 
-export interface Spot { x: number; y: number; scale: number; alpha: number; z: number }
+export interface Spot { x: number; y: number; scale: number; alpha: number; z: number; badge: number }
+
+export const SLOTS = data.rings.reduce((n, r) => n + r.count, 0);
+const frac = (x: number) => x - Math.floor(x);
+
+/** [badge index, life 0…1] of `slot` at orbit time `tau`: core/orbit.py ``slot_badge``. */
+export function slotBadge(slot: number, tau: number): [number, number] {
+  const life = data.lifeMin + data.lifeSpan * frac(slot * data.golden);
+  const period = life + data.gapMin + data.gapSpan * frac(slot * data.golden * 2);
+  const u = tau + frac(slot * data.golden * 3) * period;
+  const k = Math.floor(u / period);
+  const t = u - k * period;
+  const shown = t < life ? Math.min(Math.max(Math.min(t / data.fade, (life - t) / data.fade), 0), 1) : 0;
+  return [(slot + k * SLOTS) % data.badges.length, shown];
+}
 
 const rad = (deg: number) => (deg * Math.PI) / 180;
 
@@ -20,6 +34,7 @@ export function layout(tau: number, width: number, height: number, textW: number
   const fade = (1 - burst) ** 2;
   const shrink = 1 - data.pullIn * pull;
   const spots: Spot[] = [];
+  let slot = 0;
   for (const ring of data.rings) {
     const tilt = rad(ring.tilt), roll = rad(ring.roll);
     for (let k = 0; k < ring.count; k++) {
@@ -33,10 +48,12 @@ export function layout(tau: number, width: number, height: number, textW: number
       const depth = Math.sin(a);
       const px = x * sx, py = y * sy * data.stretch;
       const hw = Math.max(textW / 2, 1), hh = Math.max(textH / 2, 1);
-      const d = Math.hypot(px / hw, py / hh);
+      const d = Math.max(Math.abs(px) / hw, Math.abs(py) / hh); // the text's box, corners too
       const nearText = Math.min(Math.max((d - 1) / data.clear, 0), 1);
-      const alpha = (0.5 + 0.25 * (depth + 1)) * nearText * fade;
-      spots.push({ x: px, y: py, scale: 0.82 + 0.18 * depth, alpha, z: depth });
+      const [badge, life] = slotBadge(slot++, tau);
+      const alpha = (0.5 + 0.25 * (depth + 1)) * nearText * fade * life;
+      const scale = (0.82 + 0.18 * depth) * (0.85 + 0.15 * life); // grows a little as it appears
+      spots.push({ x: px, y: py, scale, alpha, z: depth, badge });
     }
   }
   return spots;
@@ -82,7 +99,9 @@ async function renderBadge(icon: string, label: string, colour: string, dpr: num
 
 export class Orbit {
   readonly canvas = document.createElement("canvas");
-  private badges: HTMLCanvasElement[] = [];
+  private badges = new Map<number, HTMLCanvasElement>(); // drawn when first shown
+  private pending = new Set<number>();
+  private dpr = 0;
   private tau = 0;
   private pull = 0;
   private pullTarget = 0;
@@ -96,11 +115,6 @@ export class Orbit {
     this.canvas.className = "orbit";
     this.canvas.setAttribute("aria-hidden", "true");
     host.prepend(this.canvas);
-    const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 3));
-    void Promise.all(data.badges.map(([icon, label, colour]) => renderBadge(icon, label, colour, dpr))).then((b) => {
-      this.badges = b;
-      this.kick();
-    });
     new ResizeObserver(() => this.kick()).observe(host);
     document.addEventListener("visibilitychange", () => this.kick());
     this.still.addEventListener?.("change", () => this.kick());
@@ -150,10 +164,6 @@ export class Orbit {
     const moving = this.moving;
     this.canvas.dataset.moving = String(moving);
     if (!this.active) return;
-    if (!this.badges.length) {
-      if (moving) this.frame = requestAnimationFrame((t) => this.step(t)); // still drawing them
-      return;
-    }
     const dt = Math.min((now - this.last) / 1000, 0.05);
     this.last = now;
     if (moving) {
@@ -186,15 +196,35 @@ export class Orbit {
       tw = Math.max(tw, 2 * Math.max(Math.abs(r.left - box.left - w / 2), Math.abs(r.right - box.left - w / 2)));
       th = Math.max(th, 2 * Math.max(Math.abs(r.top - box.top - h / 2), Math.abs(r.bottom - box.top - h / 2)));
     }
-    const spots = layout(this.tau, w, h, tw, th, this.pull, burst).map((s, i) => ({ ...s, i }));
+    if (dpr !== this.dpr) {
+      this.dpr = dpr;
+      this.badges.clear();
+    }
+    const spots = layout(this.tau, w, h, tw, th, this.pull, burst);
     spots.sort((a, b) => a.z - b.z); // far side first
     for (const s of spots) {
-      const img = this.badges[s.i];
-      if (!img || s.alpha <= 0.01) continue;
+      if (s.alpha <= 0.01) continue;
+      const img = this.badges.get(s.badge);
+      if (!img) {
+        this.request(s.badge, dpr);
+        continue;
+      }
       const bw = (img.width / dpr) * s.scale, bh = (img.height / dpr) * s.scale;
       g.globalAlpha = s.alpha * DIM;
       g.drawImage(img, w / 2 + s.x - bw / 2, h / 2 + s.y - bh / 2, bw, bh);
     }
     g.globalAlpha = 1;
+  }
+
+  /** Draw badge `index` once; the frame after it's ready shows it (also when standing still). */
+  private request(index: number, dpr: number): void {
+    if (this.pending.has(index)) return;
+    this.pending.add(index);
+    const [icon, label, colour] = data.badges[index];
+    void renderBadge(icon, label, colour, dpr).then((c) => {
+      this.pending.delete(index);
+      if (dpr === this.dpr) this.badges.set(index, c);
+      this.kick();
+    });
   }
 }

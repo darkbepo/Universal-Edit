@@ -11,6 +11,7 @@ describe("orbit layout", () => {
       expect(got.length).toBe(c.spots.length);
       got.forEach((s, i) => {
         for (const k of ["x", "y", "scale", "alpha", "z"] as const) expect(s[k]).toBeCloseTo(c.spots[i][k], 9);
+        expect(s.badge).toBe(c.spots[i].badge);
       });
     });
   }

@@ -78,7 +78,7 @@ class Orbit(QObject):
         self.burst_start: float | None = None
         self.active = True
         self.still = reduce_motion()
-        self._badges: list[QPixmap] = []
+        self._badges: dict[int, QPixmap] = {}  # drawn when first shown
         self._dpr = 0.0
         self._clock = QElapsedTimer()
         self._clock.start()
@@ -144,12 +144,16 @@ class Orbit(QObject):
         return min((self._now() - self.burst_start) * 1000 / model.BURST_MS, 1.0)
 
     # ------------------------------------------------------------------ drawing
-    def _ensure_badges(self) -> None:
+    def _badge(self, index: int) -> QPixmap:
         dpr = self.widget.devicePixelRatioF()
-        if self._badges and dpr == self._dpr:
-            return
-        self._dpr = dpr
-        self._badges = [render_badge(i, label, c, dpr) for i, label, c in model.BADGES]
+        if dpr != self._dpr:
+            self._dpr = dpr
+            self._badges.clear()
+        pm = self._badges.get(index)
+        if pm is None:
+            icon, label, colour = model.BADGES[index]
+            pm = self._badges[index] = render_badge(icon, label, colour, dpr)
+        return pm
 
     def spots(self) -> list[model.Spot]:
         w, h = self.widget.width(), self.widget.height()
@@ -166,15 +170,13 @@ class Orbit(QObject):
     def paint(self, p: QPainter) -> None:
         if not self.active:
             return
-        self._ensure_badges()
         w, h = self.widget.width(), self.widget.height()
         p.save()
         p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-        order = sorted(enumerate(self.spots()), key=lambda e: e[1].z)  # far side first
-        for i, s in order:
+        for s in sorted(self.spots(), key=lambda e: e.z):  # far side first
             if s.alpha <= 0.01:
                 continue
-            pm = self._badges[i]
+            pm = self._badge(s.badge)
             bw = pm.width() / pm.devicePixelRatio() * s.scale
             bh = pm.height() / pm.devicePixelRatio() * s.scale
             p.setOpacity(s.alpha * DIM)
