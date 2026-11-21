@@ -48,6 +48,7 @@ const isProjectFile = (f: File) => PROJECT_EXTS.has(canonicalExt(f.name));
 const baseName = (path: string): string => path.split(/[\\/]/).pop() ?? path;
 
 export const DISCARD_QUESTION = "Discard unsaved changes to this video project?";
+export const CANCEL_EXPORT_QUESTION = "Cancel the export and leave?";
 
 interface FileHandle {
   name?: string;
@@ -145,8 +146,10 @@ export class VideoEditorPage {
   private exporting = false;
   /** The export window's values for this visit (not stored). */
   private exportChoices: Values = {};
-  private exportBar = h("progress", { class: "ve-export-progress", max: 1, value: 0, hidden: true });
-  private exportCancel = h("button", { class: "btn small", type: "button", hidden: true }, "Cancel");
+  private exportBar = h("progress", { class: "ve-export-progress", max: 1, value: 0, hidden: true, ariaLabel: "Export progress" });
+  private exportCancel = h("button", { class: "btn small", type: "button", hidden: true, title: "Cancel the export" }, "Cancel");
+  /** Only with ?e2e: the hooks, and keeping the last export for `inspectExport`. */
+  private readonly e2e = location.search.includes("e2e");
   /** e2e: the next export writes into this OPFS file instead of asking for one. */
   private opfsNext: string | null = null;
   /** e2e: the last export's bytes (the download, or the written file). */
@@ -216,7 +219,8 @@ export class VideoEditorPage {
         this.timelineBox),
       h("div", { class: "editor-status ve-status" }, this.message, this.exportBar, this.exportCancel));
     this.exportCancel.addEventListener("click", () => this.opts.client.cancel());
-    if (location.search.includes("e2e")) (window as unknown as { __videoeditor: unknown }).__videoeditor = this.hook();
+    this.message.setAttribute("role", "status"); // progress and results are announced
+    if (this.e2e) (window as unknown as { __videoeditor: unknown }).__videoeditor = this.hook();
   }
 
   /** The e2e hook (grows with the later steps). */
@@ -420,7 +424,7 @@ export class VideoEditorPage {
 
   /** Closing / reloading the tab with unsaved changes asks first (like the other editors). */
   private readonly onUnload = (e: BeforeUnloadEvent): void => {
-    if (this.active && this.unsaved) {
+    if (this.active && (this.unsaved || this.exporting)) {
       e.preventDefault();
       e.returnValue = "";
     }
@@ -428,6 +432,10 @@ export class VideoEditorPage {
 
   /** False when the visitor wants to keep an unsaved project (the audio editor's question). */
   maybeLeave(): boolean {
+    if (this.exporting) {
+      if (!window.confirm(CANCEL_EXPORT_QUESTION)) return false; // No: the export goes on
+      this.opts.client.cancel();
+    }
     this.flushPending();
     if (!this.history?.dirty) return true;
     return window.confirm(DISCARD_QUESTION);
@@ -682,8 +690,14 @@ export class VideoEditorPage {
     if (container !== "gif" && this.opfsNext !== null) {
       const name = this.opfsNext;
       this.opfsNext = null;
-      const root = await navigator.storage.getDirectory();
-      file = { handle: await root.getFileHandle(name, { create: true }), fallback: () => root.removeEntry(name) };
+      try {
+        const root = await navigator.storage.getDirectory();
+        file = { handle: await root.getFileHandle(name, { create: true }), fallback: () => root.removeEntry(name) };
+      } catch (err) {
+        console.error("The OPFS file couldn't be made", err);
+        this.showMessage("The export couldn't be finished. Try again, or use the desktop app.", true);
+        return;
+      }
     } else if (container !== "gif" && !values && typeof picker === "function") {
       try {
         const handle = await picker.call(window, { suggestedName: exportName(project, container), types: [EXPORT_TYPES[container]] });
@@ -711,6 +725,7 @@ export class VideoEditorPage {
     this.exportCancel.hidden = false;
     this.showMessage("Starting the export…");
     this.render(false);
+    let inWorker = true; // the worker's errors are already plain words; the page's own aren't
     try {
       const out = await this.opts.client.run(EXPORT_TARGET, files, {
         project: projectToJson(project),
@@ -722,23 +737,25 @@ export class VideoEditorPage {
         this.exportBar.value = fraction;
         this.showMessage(message);
       });
+      inWorker = false;
       let name: string;
       if (out.length) {
         const blob = new Blob([out[0].data as BlobPart], { type: out[0].type });
         name = out[0].name;
-        this.lastExport = blob;
+        if (this.e2e) this.lastExport = blob; // never kept otherwise: it can be up to 2 GB
         download(blob, name);
       } else {
         name = file!.handle.name;
-        this.lastExport = await file!.handle.getFile().catch(() => null);
+        if (this.e2e) this.lastExport = await file!.handle.getFile().catch(() => null);
       }
       this.showMessage(`Exported “${name}”.`);
     } catch (e) {
       if (file) await removeFile(file);
       if (e instanceof JobCancelled) this.showMessage("Export cancelled.");
       else {
-        if (!(e instanceof Error)) console.error("The export failed", e);
-        this.showMessage(e instanceof Error ? e.message : "The export failed.", true);
+        console.error("The export failed", e, (e as { details?: string } | null)?.details ?? "");
+        const plain = inWorker && e instanceof Error && e.message;
+        this.showMessage(plain || "The export couldn't be finished. Try again, or use the desktop app.", true);
       }
     } finally {
       this.exporting = false;

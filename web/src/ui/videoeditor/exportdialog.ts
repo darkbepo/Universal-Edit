@@ -73,11 +73,13 @@ export function exportWindow(
   return new Promise((resolve) => {
     const form = new SettingsForm(() => void changed(), "vex");
     const estimate = h("div", { class: "ve-export-estimate" });
+    estimate.setAttribute("aria-live", "polite");
     const problem = h("div", { class: "ve-export-problem", hidden: true });
+    problem.setAttribute("role", "alert");
     const ok = h("button", { class: "primary small", type: "button", disabled: true }, "Export");
     const cancel = h("button", { class: "btn", type: "button" }, "Cancel");
     const dlg = h("dialog", { class: "editor-dialog video-export" },
-      h("h2", {}, "Export video"),
+      h("h2", { id: "ve-export-title" }, "Export video"),
       form.el,
       estimate,
       problem,
@@ -87,11 +89,11 @@ export function exportWindow(
         h("a", { href: DESKTOP_URL, target: "_blank", rel: "noopener" }, "Windows desktop app"),
         " uses your whole processor and exports video much faster."),
       h("div", { class: "row" }, h("div", { class: "spacer" }), cancel, ok));
-    const projectSize = evenSize(exportSize(p, "project"));
+    const probeSize: [number, number] = [1280, 720]; // as engines/webcodecs.ts asks; the chosen size is checked below
     const lists = new Map<string, string[]>(); // container → codecs (webm differs from the rest)
     const codecsFor = async (container: string): Promise<string[]> => {
       const key = container === "webm" ? "webm" : "other";
-      if (!lists.has(key)) lists.set(key, await availableCodecs(o.encoders(projectSize), key === "webm" ? "webm" : "mp4"));
+      if (!lists.has(key)) lists.set(key, await availableCodecs(o.encoders(probeSize), key === "webm" ? "webm" : "mp4"));
       return lists.get(key)!;
     };
     let container = "";
@@ -133,6 +135,7 @@ export function exportWindow(
       finish(null);
     });
     dlg.addEventListener("keydown", (e) => e.stopPropagation()); // the editor's shortcuts stay out
+    dlg.setAttribute("aria-labelledby", "ve-export-title");
     document.body.append(dlg);
     dlg.showModal();
     void build(exportValues(start)).then(() => changed()).then(() => ok.focus());

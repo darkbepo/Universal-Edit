@@ -1177,6 +1177,24 @@ test("export WebM at 480p", async ({ page }) => {
   expect(["vp9", "av1"]).toContain(got.codec);
 });
 
+test("an odd project size exports at the even size below it", async ({ page }) => {
+  test.setTimeout(120_000);
+  needsRed();
+  await page.goto("./?e2e");
+  await openEditor(page, [fx("red.mp4")]);
+  await ve(page, "select(null)"); // the inspector shows the project's settings
+  await page.locator("#ve-resolution").selectOption({ label: "Custom" });
+  await page.locator("#ve-width").fill("321");
+  await page.locator("#ve-width").press("Tab");
+  await page.locator("#ve-height").fill("181");
+  await page.locator("#ve-height").press("Tab");
+  await expect.poll(() => ve(page, "project().settings")).toMatchObject({ resolution: "custom", width: 321, height: 181 });
+  await exportNow(page, {});
+  await expect(exportStatus(page)).toHaveText("Exported “red edit.mp4”.");
+  const got = await inspectExport(page);
+  expect([got.width, got.height]).toEqual([320, 180]);
+});
+
 test("a crossfade's middle frame mixes both clips in the export", async ({ page }) => {
   test.setTimeout(120_000);
   needsRed();
@@ -1272,13 +1290,27 @@ test("cancel stops the export and leaves no file", async ({ page }) => {
   needsNoisy();
   await page.goto("./?e2e");
   await openEditor(page, [fx("noisy.mp4")]);
+  const [clip] = await mainIds(page);
+  await ve(page, `select("${clip}")`); // so Delete would remove it
   await ve(page, `useOpfsHandle("long.mp4")`);
   await page.evaluate("void window.__videoeditor.exportNow({ resolution: '1080p' })");
   await expect(exportStatus(page)).toContainText(/Exporting… 0:0[1-9]/, { timeout: 90_000 });
-  // the timeline is read-only meanwhile
+  // the project is read-only meanwhile
+  expect(await ve(page, "selected")).toBe(clip);
   await page.keyboard.press("Delete");
   await page.keyboard.press("s");
+  expect(await mainIds(page)).toEqual([clip]);
   expect(await ve(page, "history.steps")).toBe(0);
+  // leaving asks first; No keeps exporting
+  let asked = "";
+  page.once("dialog", (d) => {
+    asked = d.message();
+    void d.dismiss();
+  });
+  await page.getByRole("button", { name: "← Back to Convert" }).click();
+  expect(asked).toBe("Cancel the export and leave?");
+  await expect(page.locator(".video-editor")).toBeVisible();
+  expect(await ve(page, "exporting")).toBe(true);
   await page.locator(".video-editor .ve-status").getByRole("button", { name: "Cancel" }).click();
   await expect(exportStatus(page)).toHaveText("Export cancelled.");
   await expect.poll(() => opfsSize(page, "long.mp4")).toBeLessThanOrEqual(0);
@@ -1323,7 +1355,7 @@ test("the dialog hides codecs the browser can't encode", async ({ page }) => {
     const out: string[] = [];
     for (const [k, codec] of Object.entries(probe)) {
       try {
-        if ((await VideoEncoder.isConfigSupported({ codec, width: 64, height: 36, bitrate: 1e6 })).supported) out.push(k);
+        if ((await VideoEncoder.isConfigSupported({ codec, width: 1280, height: 720, bitrate: 1e6 })).supported) out.push(k);
       } catch { /* not this one */ }
     }
     return out;
