@@ -222,6 +222,10 @@ h1 { font-size: 15px; font-weight: 650; margin: 0; letter-spacing: -0.005em; whi
 .editor-tile:disabled { cursor: default; background: var(--surface-alt); border-style: dashed; color: var(--muted); }
 .editor-tile:disabled .tile-icon { background: var(--surface); color: var(--border-strong); }
 .editor-tile .tile-title { font-weight: 600; font-size: 14px; }
+/* the badge keeps its whole text on one line; a tight tile wraps the title instead */
+.editor-tile .tile-head { align-items: flex-start; }
+.editor-tile .tile-title { min-width: 0; }
+.editor-tile .badge-pill { flex: none; white-space: nowrap; font-size: 11px; padding: 0 7px; line-height: 18px; }
 .editor-tile .tile-blurb { font-size: 13px; color: var(--muted); line-height: 1.35; }
 .new-picture .bg-choice { gap: 8px 16px; margin: 0; flex-wrap: wrap; justify-content: flex-start; }
 .new-picture .bg-choice .check { flex: 0 0 auto; margin: 0; } /* not the dialog's indented checkbox row */

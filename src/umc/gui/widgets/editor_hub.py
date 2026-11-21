@@ -126,6 +126,9 @@ class _TilesScroll(QScrollArea):
             self.updateGeometry()  # a new width can mean another number of rows (its height)
 
 
+SOON_SHORT = "Soon"
+
+
 class EditorTile(QPushButton):
     """A big icon on the left; title, description and a badge ("Coming soon" when not available,
     "Install" for an add-on not downloaded yet) on the right."""
@@ -159,7 +162,13 @@ class EditorTile(QPushButton):
         self.title = QLabel(info.title, objectName="EditorTileTitle")
         head.addWidget(self.title)
         head.addStretch(1)
-        self.badge = QLabel(COMING_SOON if not info.available else "Install", objectName="Badge")
+        label = COMING_SOON if not info.available else "Install"
+        self.badge = QLabel(label, objectName="TileBadge")
+        # Never clipped: the badge keeps its size, and a tile too tight for the title and
+        # "Coming soon" side by side shows "Soon" (it showed "Coming soo"; a wrapped title
+        # pushed the description out of the fixed-height tile).
+        self.badge.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self._head = head
         head.addWidget(self.badge)
         text.addLayout(head)
         self.blurb = QLabel(info.blurb, objectName="Muted")
@@ -170,6 +179,20 @@ class EditorTile(QPushButton):
             w.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)  # clicks: the button
         self.refresh_install_state()
         self.retint()
+
+    def resizeEvent(self, e) -> None:  # noqa: N802
+        super().resizeEvent(e)
+        self._fit_badge()
+
+    def _fit_badge(self) -> None:
+        if self.info.available:
+            return
+        m = self.layout().contentsMargins()
+        room = self.width() - m.left() - m.right() - ICON_BOX - self.layout().spacing()
+        self.badge.setText(COMING_SOON)
+        need = self.title.sizeHint().width() + self._head.spacing() + self.badge.sizeHint().width()
+        if need > room:
+            self.badge.setText(SOON_SHORT)
 
     @property
     def needs_install(self) -> bool:

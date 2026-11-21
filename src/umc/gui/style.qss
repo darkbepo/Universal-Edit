@@ -223,6 +223,15 @@ QLabel#Badge {
     font-size: 12px;
     font-weight: 600;
 }
+QLabel#TileBadge {
+    border: 1px solid @accent_soft;
+    background: @accent_soft;
+    color: @accent;
+    border-radius: 8px;
+    padding: 0px 7px;
+    font-size: 11px;
+    font-weight: 600;
+}
 QLabel#Count {
     color: @muted;
     font-size: 12px;

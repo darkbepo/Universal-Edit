@@ -134,3 +134,20 @@ test("pressing Convert while a tile's editor is still loading doesn't let a seco
   await page.waitForTimeout(500); // the audio editor would load by now
   await expect(page.locator(".audio-canvas")).toHaveCount(0); // never even mounted
 });
+
+test("Coming soon labels stay whole on one line at every width", async ({ page }) => {
+  for (const width of [1100, 1280, 1440, 1920]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("./");
+    const pills = page.locator(".editor-tile .badge-pill");
+    expect(await pills.count()).toBeGreaterThan(0);
+    for (const pill of await pills.all()) {
+      const box = await pill.evaluate((el) => {
+        const r = el.getBoundingClientRect(), t = el.closest(".editor-tile")!.getBoundingClientRect();
+        return { oneLine: r.height <= 22, inside: r.right <= t.right + 0.5, whole: el.scrollWidth <= el.clientWidth };
+      });
+      expect(box, `${width}px`).toEqual({ oneLine: true, inside: true, whole: true });
+    }
+  }
+});
+

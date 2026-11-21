@@ -281,3 +281,33 @@ def test_document_tile_stays_put_when_the_page_refuses(window, monkeypatch):
     monkeypatch.setattr(DocEditorPage, "open_empty", lambda self: False)
     assert window.open_editor("document") is False
     assert window.stack.currentIndex() == 0 and not window.edit_mode.isChecked()
+
+
+@pytest.mark.parametrize("width", [1100, 1280, 1440, 1920])
+def test_coming_soon_badges_are_never_cut_off(qtbot, window, width):
+    """At five tiles a row the title and badge were too wide together: the badge was clipped
+    ("Coming soo"). Now the badge keeps its size and the title wraps."""
+    from PySide6.QtWidgets import QApplication
+
+    from umc.gui import theme
+
+    app = QApplication.instance()
+    before = app.styleSheet()
+    app.setStyleSheet(theme.stylesheet())  # its padding is what made the badge too wide
+    try:
+        window.resize(width, 900)
+        qtbot.waitUntil(lambda: window.hub.tiles["vector"].width() > 0, timeout=3000)
+        for _ in range(5):
+            QApplication.processEvents()
+        for tile in window.hub.tiles.values():
+            if tile.badge.isVisible():
+                assert tile.badge.width() >= tile.badge.sizeHint().width(), (width, tile.info.id)
+                assert tile.title.width() >= tile.title.sizeHint().width(), (width, tile.info.id)
+                if not tile.info.available:
+                    assert tile.badge.text() in ("Coming soon", "Soon")
+        window.resize(1920, 900)
+        for _ in range(5):
+            QApplication.processEvents()
+        assert window.hub.tiles["vector"].badge.text() == "Coming soon"  # wide: the whole text
+    finally:
+        app.setStyleSheet(before)
