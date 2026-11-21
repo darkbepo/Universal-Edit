@@ -263,7 +263,8 @@ export async function exportProject(
       await videoSource.add(t, 1 / fps);
       const videoDone = (i + 1) / fps;
       for (const id of [...pictures.keys()]) {
-        if ((lastUse.get(id) ?? 0) > videoDone + 1e-9) continue; // a later frame still shows it
+        // a later frame still shows it (a transition draws its outgoing side up to one frame past its end)
+        if ((lastUse.get(id) ?? 0) + 1 / fps > videoDone + 1e-9) continue;
         pictures.delete(id);
         bank.forget(id); // its bitmap is closed
       }
