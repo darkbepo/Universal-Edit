@@ -189,7 +189,12 @@ class EditorTile(QPushButton):
     def event(self, e) -> bool:
         # The title / badge size hints change with the font or stylesheet while the tile keeps
         # its size (no resizeEvent): their new hints arrive here as a layout request.
-        if e.type() in (QEvent.Type.LayoutRequest, QEvent.Type.FontChange, QEvent.Type.StyleChange):
+        # (events during __init__ arrive before the title / badge exist)
+        if hasattr(self, "badge") and e.type() in (
+            QEvent.Type.LayoutRequest,
+            QEvent.Type.FontChange,
+            QEvent.Type.StyleChange,
+        ):
             self._fit_badge()
         return super().event(e)
 
