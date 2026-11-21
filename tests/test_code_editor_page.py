@@ -391,3 +391,22 @@ def test_every_shortcut_has_an_action_and_no_clash(page):
     for s in SHORTCUTS:
         if s.bound:
             assert s.id in page.actions, s.id
+
+
+@pytest.mark.skipif(os.name == "nt", reason="no POSIX permission bits")
+def test_saving_keeps_who_may_read_the_file(qtbot, page, tmp_path):
+    """The save goes through a private temp file; the result must not stay private."""
+    from umc.core.filemode import current_umask
+
+    f = tmp_path / "shared.css"
+    f.write_bytes(b"a {}\n")
+    os.chmod(f, 0o644)
+    _open(qtbot, page, f)
+    _type(page, "b {}\n")
+    assert _save(qtbot, page)
+    assert f.stat().st_mode & 0o777 == 0o644
+    new = tmp_path / "new.css"
+    page.choose_save_path = lambda suggested: new
+    assert page.save_as()
+    qtbot.waitUntil(lambda: not page.busy, timeout=10000)
+    assert new.stat().st_mode & 0o777 == 0o666 & ~current_umask()

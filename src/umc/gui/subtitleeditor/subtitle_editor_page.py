@@ -9,7 +9,6 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
-import shutil
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
@@ -41,6 +40,7 @@ from PySide6.QtWidgets import (
 from umc.codeedit import search
 from umc.converters.subtitles import CHARSETS
 from umc.core.detect import SUBTITLE_EXTS, VIDEO_EXTS
+from umc.core.filemode import match_mode
 from umc.gui import theme
 from umc.gui.subtitleeditor.cue_model import CueModel
 from umc.gui.subtitleeditor.dialogs import ShiftDialog, SyncDialog, parse_ms
@@ -81,8 +81,7 @@ def _write(path: Path, data: bytes, fmt: str) -> tuple[Path, io.Opened]:
     try:
         with os.fdopen(fd, "wb") as f:
             f.write(data)
-        if path.exists():  # keep who may read it (mkstemp makes the file private)
-            shutil.copymode(path, tmp)
+        match_mode(tmp, path)  # mkstemp's file is private: keep who may read it
         os.replace(tmp, path)
     except OSError as exc:
         with contextlib.suppress(OSError):

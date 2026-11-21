@@ -40,6 +40,7 @@ from umc.codeedit.check import CHECKED, Problem, check
 from umc.codeedit.languages import LANGUAGES, language_for
 from umc.codeedit.textfile import Encoding, Newline, TextFile, decode, encode
 from umc.codeedit.tidy import TIDY, TidyError, tidy
+from umc.core.filemode import match_mode
 from umc.gui import theme
 from umc.gui.codeeditor.code_view import CodeView, raw_text
 from umc.gui.codeeditor.find_bar import FindBar
@@ -114,6 +115,7 @@ def _write(path: Path, data: bytes) -> tuple[Path, TextFile, tuple[int, int] | N
         try:
             with os.fdopen(fd, "wb") as fh:
                 fh.write(data)
+            match_mode(tmp, path)  # mkstemp's file is private: keep who may read it
             os.replace(tmp, path)
         except BaseException:
             Path(tmp).unlink(missing_ok=True)

@@ -299,7 +299,13 @@ def test_save_keeps_permissions_and_edits_made_while_saving(qtbot, page, tmp_pat
     page._typed_time("start", "0.5")
     assert _save(qtbot, page)
     if sys.platform != "win32":
+        from umc.core.filemode import current_umask
+
         assert f.stat().st_mode & 0o777 == 0o644
+        new = tmp_path / "copy.srt"
+        page.save_paths = [new]
+        assert _save(qtbot, page, as_=True)
+        assert new.stat().st_mode & 0o777 == 0o666 & ~current_umask()
     out = tmp_path / "film.vtt"
     page.save_paths = [out]
     assert page.save_as()

@@ -450,6 +450,8 @@ Key rules:
 - External tools (ffmpeg, soffice, pandoc) are located through `tools/` helpers that check the
   bundled path first, then `PATH`, and raise a clear, user-facing error if missing.
 - Never overwrite an existing output file silently — auto-suffix (`name (1).ext`) or ask.
+- Saving through `tempfile.mkstemp` + `os.replace` makes the file private (0600): call
+  `core/filemode.match_mode(tmp, target)` first (keeps the old file's mode, or the usual one).
 - Keep references to the worker and its QThread until `QThread.finished` (not the worker's
   `done` signal) — releasing the Python wrapper earlier crashes while `run()` unwinds.
 - On Windows every subprocess uses `CREATE_NO_WINDOW` (handled in `tools/process.py`).
