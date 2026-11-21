@@ -1,5 +1,5 @@
 ; Universal Edit — Windows installer (Inno Setup 6). Built by .github/workflows/build-windows.yml:
-;   iscc /DAppVersion=1.0.2 /DSourceDir=..\dist\UniversalEdit /DOutputDir=..\installer packaging\installer.iss
+;   iscc /DAppVersion=1.1.0 /DSourceDir=..\dist\UniversalEdit /DOutputDir=..\installer packaging\installer.iss
 ; Installs for the current user only (no administrator rights), into
 ; %LOCALAPPDATA%\Programs\Universal Edit. The right-click "Convert" entry and "Open with" are
 ; written by the app itself (UniversalEdit.exe --register …, tools/shell_integration.py), so the

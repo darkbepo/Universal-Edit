@@ -1,3 +1,3 @@
 """Universal Edit (Python package ``umc``, the app's original short name)."""
 
-__version__ = "1.0.2"
+__version__ = "1.1.0"
