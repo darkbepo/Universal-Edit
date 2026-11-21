@@ -28,7 +28,7 @@ export function thumbTimes(s: Source, count: number): number[] {
 
 /** Where Play starts: the play head, or the beginning when it sits at the end. */
 export function startTime(playhead: number, total: number): number {
-  return playhead >= total - END_SLACK * 2 ? 0 : playhead;
+  return playhead < total - END_SLACK ? playhead : 0;
 }
 
 /** A stretch of one source (source seconds) the mixer asked for. */
@@ -100,7 +100,7 @@ export class PeakAccumulator {
   add(mono: Float32Array): void {
     const last = this.buckets - 1;
     for (let i = 0; i < mono.length; i++) {
-      const b = Math.min(last, Math.floor(((this.seen + i) * this.buckets) / this.expected));
+      const b = Math.min(last, Math.floor(((this.seen + i) * this.buckets) / Math.max(1, this.expected)));
       const v = Math.abs(mono[i]);
       if (v > this.peaks[b]) this.peaks[b] = v;
     }

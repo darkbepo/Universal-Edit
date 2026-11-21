@@ -37,6 +37,7 @@ describe("counts and times", () => {
   it("startTime restarts at the end", () => {
     expect(startTime(3.99, 4)).toBe(0);
     expect(startTime(1, 4)).toBe(1);
+    expect(startTime(3.97, 4)).toBe(3.97);
   });
 });
 
@@ -97,6 +98,13 @@ describe("PeakAccumulator", () => {
     a.add(Float32Array.from([0.3, 0, 0, 0.5, 0]));
     const r = a.result()!;
     expect(Array.from(r).map((x) => Math.round(x * 10) / 10)).toEqual([0.9, 0.3, 0, 0.5]);
+  });
+  it("an expected length of 0 gives no NaN", () => {
+    const a = new PeakAccumulator(4, 0);
+    a.add(Float32Array.from([0.5, 0.2]));
+    const r = a.result()!;
+    expect(Array.from(r).every((x) => !Number.isNaN(x))).toBe(true);
+    expect(Math.max(...r)).toBeCloseTo(0.5, 6);
   });
   it("is null when nothing was added", () => {
     expect(new PeakAccumulator(4, 8).result()).toBeNull();
