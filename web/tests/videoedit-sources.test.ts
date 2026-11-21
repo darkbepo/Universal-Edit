@@ -20,6 +20,15 @@ describe("kindOf", () => {
   ])("%s → %s", (ext, kind) => expect(kindOf(ext)).toBe(kind));
 });
 
+describe("a bank without a worker client (the export worker)", () => {
+  it("refuses a file that needs a copy", async () => {
+    const bank = new SourceBank(null);
+    await expect(bank.open(new File([new Uint8Array(100)], "clip.avi"), "s1", () => {})).rejects.toThrow("clip.avi can't be read here.");
+    expect(bank.has("s1")).toBe(false);
+    bank.abandon(); // no client to cancel: must not throw
+  });
+});
+
 describe("abandoning the bank (leaving the page)", () => {
   /** A stand-in for the shared worker client: one copy job we finish or fail by hand. */
   const fakeClient = () => {

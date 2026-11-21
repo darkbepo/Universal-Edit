@@ -72,7 +72,8 @@ export class SourceBank {
   /** A copy of this bank's is running in the (shared) worker right now. */
   private copying = false;
 
-  constructor(private client: ConversionClient) {}
+  /** `client` null (the export worker): a file that needs a copy is refused. */
+  constructor(private client: ConversionClient | null) {}
 
   private mediabunny(): Promise<MB> {
     return (this.mb ??= import("mediabunny"));
@@ -104,10 +105,12 @@ export class SourceBank {
     let used = file;
     if (copy) {
       media?.input.dispose();
+      const client = this.client;
+      if (!client) throw new ConversionError(`${file.name} can't be read here.`);
       const input: InputFile = { file, name: file.name, ext, family: kind === "audio" ? "audio" : kind === "image" ? "image" : "video" };
       let out: { name: string; data: Uint8Array; type?: string }[];
       try {
-        out = await this.client.run(SOURCE_TARGET, [input], { kind }, (f, msg) => {
+        out = await client.run(SOURCE_TARGET, [input], { kind }, (f, msg) => {
           // The first message means the worker runs this job (the client is shared and runs one
           // job at a time): only then may cancel() stop it, as it stops whatever is running.
           this.copying = true;
@@ -305,7 +308,7 @@ export class SourceBank {
 
   private cancelCopy(): void {
     this.copying = false;
-    this.client.cancel();
+    this.client?.cancel();
   }
 
   /** After each wait inside `open`: once abandoned, free what was decoded and stop. */
