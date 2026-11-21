@@ -1122,3 +1122,219 @@ test("leaving stops the scan", async ({ page }) => {
   expect(await scanned(page)).toEqual(after);
   expect(errors).toEqual([]);
 });
+
+// ---------------------------------------------------------------- export
+const exportButton = (page: Page) => page.getByRole("button", { name: "Export…" });
+const exportDialog = (page: Page) => page.locator("dialog.video-export");
+const dialogExport = (page: Page) => exportDialog(page).getByRole("button", { name: "Export", exact: true });
+const exportStatus = (page: Page) => page.locator(".video-editor .ve-status .msg");
+const EXPORTED = /^Exported “.+”\.$/;
+interface Inspected { duration: number; width: number; height: number; hasAudio: boolean; codec: string | null; colour: number[] | null }
+type ExportHook = { inspectExport(): Promise<Inspected & { colourAt(t: number): Promise<number[]> }>; exportNow(v: unknown): Promise<void> };
+/** The last export as Mediabunny reads it on the page (`at` ≥ 0: also its colour in the middle at that time). */
+const inspectExport = (page: Page, at = -1) => page.evaluate(async (t) => {
+  const i = await (window as unknown as { __videoeditor: ExportHook }).__videoeditor.inspectExport();
+  return { duration: i.duration, width: i.width, height: i.height, hasAudio: i.hasAudio, codec: i.codec, colour: t >= 0 ? await i.colourAt(t) : null };
+}, at) as Promise<Inspected>;
+/** Export with these values (the rest as the window would have them), skipping the window and the picker. */
+const exportNow = (page: Page, values: Record<string, unknown> = {}) =>
+  page.evaluate((v) => (window as unknown as { __videoeditor: ExportHook }).__videoeditor.exportNow(v), values);
+const opfsSize = (page: Page, name: string) => page.evaluate(async (n) => {
+  try {
+    const root = await navigator.storage.getDirectory();
+    return (await (await root.getFileHandle(n)).getFile()).size;
+  } catch {
+    return -1; // gone
+  }
+}, name);
+const needsNoisy = () => test.skip(!existsSync(fx("noisy.mp4")), "needs ffmpeg");
+
+test("export MP4 keeps length, size and sound", async ({ page }) => {
+  test.setTimeout(120_000);
+  needsTone();
+  await page.goto("./?e2e");
+  await openEditor(page, [fx("clip.mp4"), fx("tone.wav")]);
+  const len = await total(page);
+  await exportNow(page, { container: "mp4" });
+  await expect(exportStatus(page)).toHaveText("Exported “clip edit.mp4”.");
+  const got = await inspectExport(page);
+  expect(Math.abs(got.duration - len)).toBeLessThanOrEqual(1 / 30 + 1e-3);
+  expect([got.width, got.height]).toEqual([320, 240]);
+  expect(got.hasAudio).toBe(true);
+});
+
+test("export WebM at 480p", async ({ page }) => {
+  test.setTimeout(120_000);
+  needsRed();
+  await page.goto("./?e2e");
+  await openEditor(page, [fx("clip.mp4")]);
+  await exportNow(page, { container: "webm", resolution: "480p" });
+  await expect(exportStatus(page)).toHaveText("Exported “clip edit.webm”.");
+  const got = await inspectExport(page);
+  expect(got.height).toBe(480);
+  expect(got.width % 2).toBe(0);
+  expect(got.width).toBe(640);
+  expect(["vp9", "av1"]).toContain(got.codec);
+});
+
+test("a crossfade's middle frame mixes both clips in the export", async ({ page }) => {
+  test.setTimeout(120_000);
+  needsRed();
+  await page.goto("./?e2e");
+  await openEditor(page, RED_BLUE());
+  const [, b] = await mainIds(page);
+  const s = await spans(page);
+  const tab = await at(page, s[b].start, "main", 0, 10);
+  await page.mouse.click(tab.x, tab.y);
+  await page.locator("#ve-kind").selectOption({ label: "Crossfade" });
+  await expect.poll(() => ve(page, "history.undoLabel")).toBe("Change transition");
+  const s2 = await spans(page);
+  const fade = await ve<number>(page, "project().main[1].transition_in.duration");
+  await exportNow(page, {});
+  await expect(exportStatus(page)).toHaveText(EXPORTED);
+  const got = (await inspectExport(page, s2[b].start + fade / 2)).colour!;
+  const red = [223, 49, 30]; // red.mp4 as Chromium decodes it (see RED)
+  for (let c = 0; c < 3; c++) {
+    expect(got[c]).toBeGreaterThanOrEqual(Math.min(red[c], BLUE[c]) - 20);
+    expect(got[c]).toBeLessThanOrEqual(Math.max(red[c], BLUE[c]) + 20);
+  }
+  // neither clip alone
+  expect(got[0]).toBeGreaterThan(70);
+  expect(got[0]).toBeLessThan(190);
+  expect(got[2]).toBeGreaterThan(60);
+  expect(got[2]).toBeLessThan(180);
+});
+
+test("pictures and text only export without sound", async ({ page }) => {
+  test.setTimeout(120_000);
+  needsRed();
+  await page.goto("./?e2e");
+  await openEditor(page, RED_BLUE());
+  const [clip] = await mainIds(page);
+  await ve(page, `select("${clip}")`);
+  await page.keyboard.press("Delete"); // only the picture is left (red.mp4 stays a source)
+  await expect.poll(() => mainIds(page)).toHaveLength(1);
+  await page.getByRole("button", { name: "+ Text" }).click();
+  await expect.poll(() => ve(page, "history.undoLabel")).toBe("Add text");
+  await exportNow(page, {});
+  await expect(exportStatus(page)).toHaveText("Exported “red edit.mp4”.");
+  const got = await inspectExport(page);
+  expect(got.hasAudio).toBe(false);
+  expect(got.duration).toBeGreaterThan(2.9);
+});
+
+test("export GIF opens", async ({ page }, info) => {
+  test.setTimeout(180_000);
+  needsRed();
+  await page.goto("./?e2e");
+  await openEditor(page, [fx("red.mp4")]);
+  const [download] = await Promise.all([page.waitForEvent("download", { timeout: 170_000 }), exportNow(page, { container: "gif", gif_width: 160 })]);
+  expect(download.suggestedFilename()).toBe("red edit.gif");
+  const path = `${info.outputPath()}/out.gif`;
+  await download.saveAs(path);
+  const bytes = readFileSync(path);
+  expect(bytes.subarray(0, 6).toString("latin1")).toBe("GIF89a");
+  const width = await page.evaluate(async (b64) => {
+    const img = new Image();
+    img.src = `data:image/gif;base64,${b64}`;
+    await img.decode();
+    return img.naturalWidth;
+  }, bytes.toString("base64"));
+  expect(width).toBe(160);
+  await expect(exportStatus(page)).toHaveText("Exported “red edit.gif”.");
+});
+
+test("export straight to a file", async ({ page }) => {
+  test.setTimeout(120_000);
+  needsRed();
+  await page.goto("./?e2e");
+  await openEditor(page, RED_BLUE());
+  const len = await total(page);
+  await ve(page, `useOpfsHandle("straight.mp4")`);
+  await exportButton(page).click();
+  await expect(exportDialog(page)).toBeVisible();
+  await expect(exportDialog(page).locator("h2")).toHaveText("Export video");
+  await expect(exportDialog(page).locator(".ve-export-estimate")).toHaveText(/^About [\d.]+ (MB|GB)$/);
+  await expect(exportDialog(page).locator(".ve-export-limits")).toContainText("Browser limits:");
+  await expect(exportDialog(page).locator(".ve-export-slow")).toContainText("desktop app");
+  await expect(dialogExport(page)).toBeEnabled();
+  await dialogExport(page).click();
+  await expect(exportDialog(page)).toHaveCount(0);
+  await expect(exportStatus(page)).toHaveText("Exported “straight.mp4”.", { timeout: 90_000 });
+  expect(await opfsSize(page, "straight.mp4")).toBeGreaterThan(1000);
+  const got = await inspectExport(page);
+  expect(Math.abs(got.duration - len)).toBeLessThanOrEqual(1 / 30 + 1e-3);
+  expect([got.width, got.height]).toEqual([320, 180]);
+});
+
+test("cancel stops the export and leaves no file", async ({ page }) => {
+  test.setTimeout(240_000);
+  needsNoisy();
+  await page.goto("./?e2e");
+  await openEditor(page, [fx("noisy.mp4")]);
+  await ve(page, `useOpfsHandle("long.mp4")`);
+  await page.evaluate("void window.__videoeditor.exportNow({ resolution: '1080p' })");
+  await expect(exportStatus(page)).toContainText(/Exporting… 0:0[1-9]/, { timeout: 90_000 });
+  // the timeline is read-only meanwhile
+  await page.keyboard.press("Delete");
+  await page.keyboard.press("s");
+  expect(await ve(page, "history.steps")).toBe(0);
+  await page.locator(".video-editor .ve-status").getByRole("button", { name: "Cancel" }).click();
+  await expect(exportStatus(page)).toHaveText("Export cancelled.");
+  await expect.poll(() => opfsSize(page, "long.mp4")).toBeLessThanOrEqual(0);
+  await exportNow(page, {});
+  await expect(exportStatus(page)).toHaveText("Exported “noisy edit.mp4”.", { timeout: 150_000 });
+  expect((await inspectExport(page)).duration).toBeGreaterThan(9.9);
+});
+
+test("too big for a download shows the limit", async ({ page }) => {
+  needsRed();
+  await noSavePicker(page);
+  await page.goto("./?e2e");
+  await openEditor(page, RED_BLUE());
+  await ve(page, "setExportLimits({ downloadBytes: 1000 })");
+  await exportButton(page).click();
+  await expect(exportDialog(page).locator(".ve-export-problem")).toContainText("too big for this browser");
+  await expect(dialogExport(page)).toBeDisabled();
+  await exportDialog(page).getByRole("button", { name: "Cancel" }).click();
+  await expect(exportDialog(page)).toHaveCount(0);
+});
+
+test("missing files block export", async ({ page }, info) => {
+  needsTone();
+  await page.goto("./?e2e");
+  await openProjectFile(page, handProject(info.outputPath()));
+  await pickSeveral(page, [fx("clip.mp4")]);
+  await locate(page).getByRole("button", { name: "Open project" }).click();
+  await expect.poll(() => ve(page, "history.undoLabel")).toBe("Fix missing files");
+  await page.keyboard.press("Control+z"); // the project's own sources: two aren't found
+  await expect.poll(() => ve(page, "project().sources.length")).toBe(3);
+  await exportButton(page).click();
+  await expect(exportDialog(page).locator(".ve-export-problem")).toHaveText("Find the missing files first — Export needs every file.");
+  await expect(dialogExport(page)).toBeDisabled();
+});
+
+test("the dialog hides codecs the browser can't encode", async ({ page }) => {
+  needsRed();
+  await page.goto("./?e2e");
+  await openEditor(page, RED_BLUE());
+  const encodable = await page.evaluate(async () => {
+    const probe: Record<string, string> = { h264: "avc1.42001f", vp9: "vp09.00.10.08", av1: "av01.0.04M.08", h265: "hev1.1.6.L93.B0" };
+    const out: string[] = [];
+    for (const [k, codec] of Object.entries(probe)) {
+      try {
+        if ((await VideoEncoder.isConfigSupported({ codec, width: 64, height: 36, bitrate: 1e6 })).supported) out.push(k);
+      } catch { /* not this one */ }
+    }
+    return out;
+  });
+  await exportButton(page).click();
+  const labels = () => exportDialog(page).locator("#vex-video_codec option").allTextContents();
+  const LABELS: Record<string, string> = { "H.264": "h264", VP9: "vp9", AV1: "av1" };
+  const ids = (ls: string[]) => ls.filter((l) => l !== "Automatic").map((l) => LABELS[l] ?? (l.startsWith("H.265") ? "h265" : l));
+  await expect.poll(async () => (await labels()).length).toBeGreaterThan(0);
+  expect((await labels())[0]).toBe("Automatic");
+  for (const id of ids(await labels())) expect(encodable).toContain(id);
+  await exportDialog(page).locator("#vex-container").selectOption({ label: "WebM" });
+  await expect.poll(async () => ids(await labels()).filter((i) => i === "h264" || i === "h265")).toEqual([]);
+});

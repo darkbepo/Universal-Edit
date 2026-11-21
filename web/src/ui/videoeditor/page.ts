@@ -1,9 +1,13 @@
 // The website's video editor page (port of the desktop's gui/videoedit/): top bar, media list,
 // preview, inspector, timeline and a status line. Sources are opened on the page (sources.ts) and
-// played by player.ts; export arrives in a later step. Loaded on demand from
+// played by player.ts; Export… renders in the conversion worker (converters/videoedit.ts), straight
+// into the file the browser's save window gave, else as a download. Loaded on demand from
 // ui/app.ts, only behind the test gate.
 import { canonicalExt, PROJECT_EXTS } from "../../core/detect";
+import type { Values } from "../../core/options";
 import { ConversionError, type InputFile } from "../../core/types";
+import { EXPORT_TARGET } from "../../converters/videoedit";
+import { exportName } from "../../videoedit/export";
 import { addAt, addSources, addText, applyChanges, relink, remove, removeSource, split, update } from "../../videoedit/edits";
 import { History } from "../../videoedit/history";
 import { setLimitsForTests, type LIMITS } from "../../videoedit/limits";
@@ -14,9 +18,10 @@ import {
 } from "../../videoedit/project";
 import { changeLabel, targetOf } from "../../videoedit/schemas";
 import { nextSourceId, projectFrom } from "../../videoedit/start";
-import type { ConversionClient } from "../../worker/client";
+import { JobCancelled, type ConversionClient } from "../../worker/client";
 import { backLabel } from "../back";
 import { loadBundledFonts } from "./fonts";
+import { exportValues, exportWindow, type EncodersFor } from "./exportdialog";
 import { Inspector } from "./inspector";
 import { locateWindow } from "./locate";
 import { MediaList } from "./media";
@@ -47,6 +52,46 @@ export const DISCARD_QUESTION = "Discard unsaved changes to this video project?"
 interface FileHandle {
   name?: string;
   createWritable(): Promise<{ write(data: Blob): Promise<void>; close(): Promise<void> }>;
+}
+
+/** A file the export writes into (the save window's, or an OPFS file in the e2e tests). */
+interface ExportFile {
+  handle: FileSystemFileHandle;
+  /** Another way to remove it (OPFS: the folder's removeEntry) where `handle.remove` is missing. */
+  fallback?: () => Promise<void>;
+}
+
+const EXPORT_TYPES: Record<string, { description: string; accept: Record<string, string[]> }> = {
+  mp4: { description: "MP4 video", accept: { "video/mp4": [".mp4"] } },
+  webm: { description: "WebM video", accept: { "video/webm": [".webm"] } },
+  mkv: { description: "MKV video", accept: { "video/x-matroska": [".mkv"] } },
+  mov: { description: "MOV video", accept: { "video/quicktime": [".mov"] } },
+};
+
+function download(blob: Blob, name: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = h("a", { href: url, download: name });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+/** Remove a picked file after a cancel or an error (Chrome 110+ has FileSystemHandle.remove), trying
+ *  a few times: the worker that was writing it may not have let go yet. Never throws. */
+async function removeFile(file: ExportFile): Promise<void> {
+  const remove = (file.handle as unknown as { remove?: () => Promise<void> }).remove;
+  for (let tries = 0; tries < 5; tries++) {
+    try {
+      if (typeof remove === "function") await remove.call(file.handle);
+      else if (file.fallback) await file.fallback();
+      return;
+    } catch (e) {
+      if ((e as { name?: string } | null)?.name === "NotFoundError") return;
+      await new Promise((r) => setTimeout(r, 200));
+    }
+  }
+  await file.fallback?.().catch(() => undefined);
 }
 
 export interface VideoEditorOptions {
@@ -94,6 +139,18 @@ export class VideoEditorPage {
   /** The file "Save project as…" picked: "Save project" (Ctrl+S) writes there again. */
   private handle: FileHandle | null = null;
   private saving = false;
+  /** Batches of files being opened / added (Export waits until they're done). */
+  private opening = 0;
+  /** An export is running: the project is read-only, the status line shows its progress. */
+  private exporting = false;
+  /** The export window's values for this visit (not stored). */
+  private exportChoices: Values = {};
+  private exportBar = h("progress", { class: "ve-export-progress", max: 1, value: 0, hidden: true });
+  private exportCancel = h("button", { class: "btn small", type: "button", hidden: true }, "Cancel");
+  /** e2e: the next export writes into this OPFS file instead of asking for one. */
+  private opfsNext: string | null = null;
+  /** e2e: the last export's bytes (the download, or the written file). */
+  private lastExport: Blob | null = null;
 
   constructor(private opts: VideoEditorOptions) {
     this.bank = new SourceBank(opts.client);
@@ -148,7 +205,7 @@ export class VideoEditorPage {
         h("span", { class: "spacer" }),
         btn("save", "Save project", "Save the project (Ctrl+S)", () => void this.save()),
         btn("save_as", "Save project as…", "Save the project under a new name (Ctrl+Shift+S)", () => void this.saveAs())),
-      btn("export", "Export…", "Export comes soon", () => {}, "primary small"));
+      btn("export", "Export…", "Export the video (Ctrl+E)", () => void this.exportVideo(), "primary small"));
     for (const k of ["undo", "redo", "save", "save_as", "export"]) this.buttons.get(k)!.disabled = true;
     this.el = h("div", { class: "editor video-editor", hidden: true },
       top,
@@ -157,7 +214,8 @@ export class VideoEditorPage {
         h("div", { class: "video-preview", ariaLabel: "Preview" }, this.preview.el),
         h("div", { class: "video-inspector", ariaLabel: "Inspector" }, this.inspector.el),
         this.timelineBox),
-      h("div", { class: "editor-status" }, this.message));
+      h("div", { class: "editor-status ve-status" }, this.message, this.exportBar, this.exportCancel));
+    this.exportCancel.addEventListener("click", () => this.opts.client.cancel());
     if (location.search.includes("e2e")) (window as unknown as { __videoeditor: unknown }).__videoeditor = this.hook();
   }
 
@@ -251,6 +309,19 @@ export class VideoEditorPage {
       setArmMs: (ms: number) => (page.player.armMs = ms),
       /** Play as if there were no sound device. */
       forceWallClock: () => page.player.forceWallClock(),
+      /** Export with these values (the rest as the window has them) without the window: a
+       *  download, unless `useOpfsHandle` named a file. */
+      exportNow: (values: Values) => page.exportVideo(values),
+      /** The next export writes into this OPFS file instead of the save window's. */
+      useOpfsHandle: (name: string) => {
+        page.opfsNext = name;
+      },
+      setExportLimits: (l: Partial<typeof LIMITS> | null) => setLimitsForTests(l),
+      get exporting() {
+        return page.exporting;
+      },
+      /** The last export as Mediabunny reads it on the page. */
+      inspectExport: () => page.inspectExport(),
     };
   }
 
@@ -266,6 +337,7 @@ export class VideoEditorPage {
   }
 
   hide(): void {
+    if (this.exporting) this.opts.client.cancel(); // its picked file is removed as for Cancel
     this.timeline.endGesture(); // a drag or seek in progress lands nowhere
     this.flushPending();
     document.removeEventListener("keydown", this.onKey);
@@ -383,11 +455,25 @@ export class VideoEditorPage {
   }
 
   private queue(job: () => Promise<boolean>): Promise<boolean> {
+    if (this.locked()) return Promise.resolve(false);
     const epoch = this.epoch;
     const start = () => (epoch === this.epoch ? job() : Promise.resolve(true));
     const run = this.work.then(start, start);
     this.work = run.catch(() => undefined);
+    this.opening++;
+    this.render(false);
+    void this.work.then(() => {
+      this.opening--;
+      this.render(false);
+    });
     return run;
+  }
+
+  /** True (and says so) while an export runs: the project can't change meanwhile. */
+  private locked(): boolean {
+    if (!this.exporting) return false;
+    this.showMessage("Wait for the export to finish, or cancel it.", true);
+    return true;
   }
 
   private async openFiles(files: File[]): Promise<boolean> {
@@ -539,14 +625,7 @@ export class VideoEditorPage {
         const out = await handle.createWritable();
         await out.write(blob);
         await out.close();
-      } else {
-        const url = URL.createObjectURL(blob);
-        const a = h("a", { href: url, download: name });
-        document.body.append(a);
-        a.click();
-        a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 60_000);
-      }
+      } else download(blob, name);
     } catch (err) {
       console.error("Saving the project failed", err);
       this.showMessage(`Couldn't save “${name}”.`, true);
@@ -557,6 +636,145 @@ export class VideoEditorPage {
     if (hi === this.history && hi.project === project) hi.markSaved();
     this.showMessage(`Saved “${name}”.`);
     return true;
+  }
+
+  // ---------------------------------------------------------------- export
+  /** A project with something on the main row, nothing opening, no export running. */
+  private canExport(): boolean {
+    return !!this.history && this.history.project.main.length > 0 && this.opening === 0 && !this.exporting;
+  }
+
+  /** The browser's encoders, asked through Mediabunny (loaded on first use). */
+  private encoders(): EncodersFor {
+    const mb = import("mediabunny");
+    return ([width, height]) => ({
+      video: async (c) => (await mb).canEncodeVideo(c, { width, height }).catch(() => false),
+      audio: async (c) => (await mb).canEncodeAudio(c).catch(() => false),
+    });
+  }
+
+  /** The export window, then the save window (Chrome / Edge, not for GIF), then the export in the
+   *  worker. `values` (e2e) skips the export window and the save window. */
+  async exportVideo(values?: Values): Promise<void> {
+    this.flushPending();
+    const hi = this.history;
+    if (!hi || !this.canExport()) return;
+    this.stopPlayback();
+    const project = hi.project;
+    const missing = project.sources.some((s) => !this.bank.file(s.id));
+    const picker = (window as unknown as { showSaveFilePicker?: (o: object) => Promise<FileSystemFileHandle> }).showSaveFilePicker;
+    const streams = this.opfsNext !== null || typeof picker === "function";
+    let chosen: Values | null;
+    if (values) {
+      chosen = exportValues({ ...this.exportChoices, ...values });
+    } else {
+      chosen = await exportWindow(project, this.exportChoices, { missing, streams, encoders: this.encoders() });
+      if (!chosen) return;
+      this.exportChoices = chosen;
+    }
+    if (hi !== this.history || project !== hi.project || !this.canExport()) return; // changed meanwhile
+    if (missing) {
+      this.showMessage("Find the missing files first — Export needs every file.", true);
+      return;
+    }
+    const container = String(chosen.container);
+    let file: ExportFile | null = null;
+    if (container !== "gif" && this.opfsNext !== null) {
+      const name = this.opfsNext;
+      this.opfsNext = null;
+      const root = await navigator.storage.getDirectory();
+      file = { handle: await root.getFileHandle(name, { create: true }), fallback: () => root.removeEntry(name) };
+    } else if (container !== "gif" && !values && typeof picker === "function") {
+      try {
+        const handle = await picker.call(window, { suggestedName: exportName(project, container), types: [EXPORT_TYPES[container]] });
+        file = { handle };
+      } catch (err) {
+        if ((err as { name?: string } | null)?.name !== "AbortError") {
+          console.error("The save window couldn't be opened", err);
+          this.showMessage("The browser couldn't open its save window. Try again.", true);
+        }
+        return;
+      }
+      if (hi !== this.history || project !== hi.project || !this.canExport()) return;
+    }
+    await this.runExport(project, chosen, file);
+  }
+
+  private async runExport(project: Project, values: Values, file: ExportFile | null): Promise<void> {
+    const files: InputFile[] = project.sources.map((s) => {
+      const f = this.bank.file(s.id)!;
+      return { file: f, name: f.name, ext: canonicalExt(f.name), family: "video" };
+    });
+    this.exporting = true;
+    this.exportBar.value = 0;
+    this.exportBar.hidden = false;
+    this.exportCancel.hidden = false;
+    this.showMessage("Starting the export…");
+    this.render(false);
+    try {
+      const out = await this.opts.client.run(EXPORT_TARGET, files, {
+        project: projectToJson(project),
+        values,
+        handle: file?.handle ?? null,
+        ids: project.sources.map((s) => s.id),
+      } as unknown as Values, (fraction, message) => {
+        if (!this.exporting) return;
+        this.exportBar.value = fraction;
+        this.showMessage(message);
+      });
+      let name: string;
+      if (out.length) {
+        const blob = new Blob([out[0].data as BlobPart], { type: out[0].type });
+        name = out[0].name;
+        this.lastExport = blob;
+        download(blob, name);
+      } else {
+        name = file!.handle.name;
+        this.lastExport = await file!.handle.getFile().catch(() => null);
+      }
+      this.showMessage(`Exported “${name}”.`);
+    } catch (e) {
+      if (file) await removeFile(file);
+      if (e instanceof JobCancelled) this.showMessage("Export cancelled.");
+      else {
+        if (!(e instanceof Error)) console.error("The export failed", e);
+        this.showMessage(e instanceof Error ? e.message : "The export failed.", true);
+      }
+    } finally {
+      this.exporting = false;
+      this.exportBar.hidden = true;
+      this.exportCancel.hidden = true;
+      this.render(false);
+    }
+  }
+
+  /** e2e: the last export as Mediabunny reads it (`colourAt` = the middle pixel at a time). */
+  private async inspectExport() {
+    const blob = this.lastExport;
+    if (!blob) return null;
+    const mb = await import("mediabunny");
+    const input = new mb.Input({ source: new mb.BlobSource(blob), formats: mb.ALL_FORMATS });
+    const video = await input.getPrimaryVideoTrack();
+    const audio = await input.getPrimaryAudioTrack();
+    return {
+      duration: video ? await video.computeDuration() : 0,
+      audioDuration: audio ? await audio.computeDuration() : 0,
+      width: video?.displayWidth ?? 0,
+      height: video?.displayHeight ?? 0,
+      hasAudio: audio !== null,
+      codec: video?.codec ?? null,
+      audioCodec: audio?.codec ?? null,
+      colourAt: async (t: number): Promise<[number, number, number] | null> => {
+        if (!video) return null;
+        const got = await new mb.CanvasSink(video).getCanvas(t);
+        if (!got) return null;
+        const c = new OffscreenCanvas(got.canvas.width, got.canvas.height);
+        const ctx = c.getContext("2d")!;
+        ctx.drawImage(got.canvas, 0, 0);
+        const d = ctx.getImageData(Math.floor(c.width / 2), Math.floor(c.height / 2), 1, 1).data;
+        return [d[0], d[1], d[2]];
+      },
+    };
   }
 
   private async addToProject(files: File[]): Promise<boolean> {
@@ -611,7 +829,7 @@ export class VideoEditorPage {
   /** One undo step from `fn` (an inspector edit still being made goes in first); an edit the
    *  project refuses is shown in the status line. Returns the new item's id, if any. */
   private apply(fn: (p: Project) => Project | [Project, string], label: string): string | null {
-    if (!this.history) return null;
+    if (!this.history || this.locked()) return null;
     this.flushPending();
     let got: Project | [Project, string];
     try {
@@ -642,6 +860,10 @@ export class VideoEditorPage {
   private inspectorChanged(changes: Record<string, unknown>): void {
     const hi = this.history;
     if (!hi) return;
+    if (this.locked()) {
+      this.inspector.show(hi.project, this.selected); // the fields go back
+      return;
+    }
     const base = hi.project;
     const id = this.inspector.selectionId;
     if (!Object.keys(changes).length) {
@@ -667,6 +889,7 @@ export class VideoEditorPage {
    *  that goes in first, as its own step). */
   private timelineEdit(project: Project, label: string): void {
     if (!this.history) return;
+    if (this.locked()) return this.render();
     this.flushPending();
     this.showMessage("");
     this.history.push(project, label);
@@ -727,6 +950,7 @@ export class VideoEditorPage {
   }
 
   private undo(): void {
+    if (this.locked()) return;
     this.flushPending();
     if (!this.history?.canUndo) return;
     this.history.undo();
@@ -734,6 +958,7 @@ export class VideoEditorPage {
   }
 
   private redo(): void {
+    if (this.locked()) return;
     this.flushPending();
     if (!this.history?.canRedo) return;
     this.history.redo();
@@ -775,7 +1000,7 @@ export class VideoEditorPage {
     }
     this.flushPending();
     const p = this.shownProject();
-    if (!p || !this.active || length(p) <= 0) return;
+    if (!p || !this.active || this.exporting || length(p) <= 0) return;
     const size = this.preview.playSize(p);
     if (!size) return; // the preview isn't laid out
     this.player.play(p, startTime(this.playhead, length(p)), size);
@@ -865,7 +1090,7 @@ export class VideoEditorPage {
       case "play": return this.togglePlay();
       case "loop": return this.preview.toggleLoop();
       case "export":
-        return; // export comes with a later step
+        return void this.exportVideo();
     }
   }
 
@@ -895,8 +1120,10 @@ export class VideoEditorPage {
     const redo = this.buttons.get("redo")!;
     this.buttons.get("save")!.disabled = !hi;
     this.buttons.get("save_as")!.disabled = !hi;
-    undo.disabled = !hi?.canUndo;
-    redo.disabled = !hi?.canRedo;
+    this.buttons.get("export")!.disabled = !this.canExport();
+    undo.disabled = !hi?.canUndo || this.exporting;
+    redo.disabled = !hi?.canRedo || this.exporting;
+    this.el.querySelector<HTMLElement>(".video-body")!.inert = this.exporting;
     undo.title = hi?.canUndo ? `Undo ${hi.undoLabel} (Ctrl+Z)` : "Undo (Ctrl+Z)";
     redo.title = hi?.canRedo ? `Redo ${hi.redoLabel} (Ctrl+Y)` : "Redo (Ctrl+Y)";
     this.viewChanged();

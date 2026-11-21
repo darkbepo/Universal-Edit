@@ -90,7 +90,7 @@ export const videoEditExportConverter: Converter = {
         const file = guarded(await opts.handle.createWritable());
         try {
           const job = ex.jobFor(p, values, chosen, false);
-          await exportProject(job, bank, new mb.StreamTarget(file.stream), progress, controller.signal);
+          await exportProject(job, bank, new mb.StreamTarget(file.stream, { chunked: true }), progress, controller.signal);
           await file.commit();
         } catch (e) {
           await file.discard();

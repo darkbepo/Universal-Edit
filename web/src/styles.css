@@ -954,6 +954,18 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 .ve-locate-row { display: contents; }
 .ve-locate-name, .ve-locate-status { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ve-locate-status { color: var(--muted); }
+/* the "Export video" window, and its progress in the status line */
+.video-export { width: min(520px, 94vw); max-height: 92vh; overflow: auto; }
+.video-export .form { grid-template-columns: 130px minmax(0, 1fr); gap: 8px 10px; }
+.video-export .form > * { min-width: 0; }
+.ve-export-estimate { margin: 12px 0 4px; font-weight: 600; }
+.ve-export-problem { margin: 6px 0; color: var(--danger); font-size: 13px; }
+.video-export .ve-export-slow { margin: 10px 0 0; }
+.ve-status { align-items: center; }
+.ve-export-progress { width: 140px; flex: none; }
+@media (max-width: 560px) {
+  .video-export .form { grid-template-columns: minmax(0, 1fr); }
+}
 @media (max-width: 560px) {
   .ve-locate-list { grid-template-columns: minmax(0, 1fr) auto; }
   .ve-locate-status { grid-column: 1 / -1; }
