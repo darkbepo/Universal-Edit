@@ -3,7 +3,8 @@
     python scripts/readme/make_samples.py OUT_DIR
 
 Writes pictures (painted landscapes), a Word letter, a stereo song, a 3D model (torus knot),
-a short video with its subtitles, a little web page's CSS and a PDF. Everything is drawn from code, so it is free to show.
+a short video with its subtitles, a little web page's CSS and a PDF. Everything is drawn
+from code, so it is free to show.
 """
 
 from __future__ import annotations
