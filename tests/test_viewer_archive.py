@@ -442,33 +442,36 @@ def test_wrong_7z_password_asks_again(tree_src, tmp_path):
 
 @pytest.mark.parametrize("ext", ["zip", "tar.gz"])
 def test_rewrite_keeps_links_modes_and_empty_folders(tmp_path, ext):
-    import os
+    import io
     import stat
     import tarfile
     import zipfile
 
+    # entries are written with explicit modes: Windows files have no executable bit or links
     a = tmp_path / f"x.{ext}"
-    script = tmp_path / "run.sh"
-    script.write_text("#!/bin/sh\n")
-    script.chmod(0o755)
-    other = tmp_path / "other.txt"
-    other.write_text("o")
+    script, other = b"#!/bin/sh\n", b"o"
     if ext == "zip":
         with zipfile.ZipFile(a, "w") as z:
-            z.write(script, "run.sh")
-            z.write(other, "other.txt")
+            run = zipfile.ZipInfo("run.sh")
+            run.external_attr = 0o100755 << 16
+            z.writestr(run, script)
+            z.writestr("other.txt", other)
             link = zipfile.ZipInfo("ln")
             link.external_attr = 0o120777 << 16
             z.writestr(link, "run.sh")
             z.writestr(zipfile.ZipInfo("empty/"), "")
     else:
-        os.symlink("run.sh", tmp_path / "ln")
-        (tmp_path / "empty").mkdir()
+
+        def member(name: str, kind: bytes, mode: int, data: bytes = b"", target: str = ""):
+            m = tarfile.TarInfo(name)
+            m.type, m.mode, m.size, m.linkname = kind, mode, len(data), target
+            return m, (io.BytesIO(data) if data else None)
+
         with tarfile.open(a, "w:gz") as t:
-            t.add(script, "run.sh")
-            t.add(other, "other.txt")
-            t.add(tmp_path / "ln", "ln")
-            t.add(tmp_path / "empty", "empty")
+            t.addfile(*member("run.sh", tarfile.REGTYPE, 0o755, script))
+            t.addfile(*member("other.txt", tarfile.REGTYPE, 0o644, other))
+            t.addfile(*member("ln", tarfile.SYMTYPE, 0o777, target="run.sh"))
+            t.addfile(*member("empty", tarfile.DIRTYPE, 0o755))
     engine.rewrite(a, ext, "", [], ["other.txt"], NOP, _cancel())
     if ext == "zip":
         with zipfile.ZipFile(a) as z:
