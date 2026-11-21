@@ -523,6 +523,8 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
   so the app finds its add-on downloads.
 - The Windows build is produced by `.github/workflows/build-windows.yml` (Actions → "Build Windows
   executable" → Run workflow, or push a `v*` tag); download the zip from the run's artifacts.
+- Windows pytest runs only in that build (no Windows CI on push): run it by hand before a `v*`
+  tag — v1.1.0 shipped Linux-only because a test assumed Unix file modes (fixed in 1.1.1).
 
 ## Licensing (decided: personal use / free & open source)
 
