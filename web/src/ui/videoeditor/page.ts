@@ -7,7 +7,7 @@ import { canonicalExt, PROJECT_EXTS } from "../../core/detect";
 import type { Values } from "../../core/options";
 import { ConversionError, type InputFile } from "../../core/types";
 import { EXPORT_TARGET } from "../../converters/videoedit";
-import { exportName } from "../../videoedit/export";
+import { exportName, usedSourceIds } from "../../videoedit/export";
 import { addAt, addSources, addText, applyChanges, relink, remove, removeSource, split, update } from "../../videoedit/edits";
 import { History } from "../../videoedit/history";
 import { setLimitsForTests, type LIMITS } from "../../videoedit/limits";
@@ -669,7 +669,8 @@ export class VideoEditorPage {
     if (!hi || !this.canExport()) return;
     this.stopPlayback();
     const project = hi.project;
-    const missing = project.sources.some((s) => !this.bank.file(s.id));
+    // only what the timeline uses has to be found (and is sent to the worker)
+    const missing = usedSourceIds(project).some((id) => !this.bank.file(id));
     const picker = (window as unknown as { showSaveFilePicker?: (o: object) => Promise<FileSystemFileHandle> }).showSaveFilePicker;
     const streams = this.opfsNext !== null || typeof picker === "function";
     let chosen: Values | null;
@@ -715,8 +716,9 @@ export class VideoEditorPage {
   }
 
   private async runExport(project: Project, values: Values, file: ExportFile | null): Promise<void> {
-    const files: InputFile[] = project.sources.map((s) => {
-      const f = this.bank.file(s.id)!;
+    const ids = usedSourceIds(project);
+    const files: InputFile[] = ids.map((id) => {
+      const f = this.bank.file(id)!;
       return { file: f, name: f.name, ext: canonicalExt(f.name), family: "video" };
     });
     this.exporting = true;
@@ -731,7 +733,7 @@ export class VideoEditorPage {
         project: projectToJson(project),
         values,
         handle: file?.handle ?? null,
-        ids: project.sources.map((s) => s.id),
+        ids,
       } as unknown as Values, (fraction, message) => {
         if (!this.exporting) return;
         this.exportBar.value = fraction;
@@ -740,8 +742,11 @@ export class VideoEditorPage {
       inWorker = false;
       let name: string;
       if (out.length) {
-        const blob = new Blob([out[0].data as BlobPart], { type: out[0].type });
-        name = out[0].name;
+        // the worker's bytes were transferred, not copied; the Blob takes them and the array is
+        // dropped right away (nothing else refers to it), so only one copy stays on the page
+        const result = out.pop()!;
+        const blob = new Blob([result.data as BlobPart], { type: result.type });
+        name = result.name;
         if (this.e2e) this.lastExport = blob; // never kept otherwise: it can be up to 2 GB
         download(blob, name);
       } else {

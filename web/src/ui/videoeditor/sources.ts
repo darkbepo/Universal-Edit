@@ -18,6 +18,8 @@ type MB = typeof import("mediabunny");
 type InputT = import("mediabunny").Input;
 type VideoTrack = import("mediabunny").InputVideoTrack;
 type Sink = import("mediabunny").CanvasSink;
+/** A picture's upright width / height → the size to keep it at. */
+export type DecodeSize = (width: number, height: number) => [number, number];
 
 export const COPY_NOTE = "Converted for this browser — the desktop app reads it directly.";
 
@@ -79,8 +81,33 @@ export class SourceBank {
     return (this.mb ??= import("mediabunny"));
   }
 
-  /** Probe (and if needed copy) one file. Throws ConversionError with a message for the page. */
-  async open(file: File, id: string, onProgress: (f: number, msg: string) => void): Promise<Opened> {
+  /** Pictures registered by `openLater`, opened on first use (the export worker). */
+  private later = new Map<string, { file: File; decode: DecodeSize }>();
+  private waiting = new Map<string, Promise<unknown>>();
+
+  /** Open this picture only when it is first asked for, decoded at `decode`'s size (the export
+   *  worker: unused pictures never take memory, used ones not more than the export needs). */
+  openLater(file: File, id: string, decode: DecodeSize): void {
+    this.later.set(id, { file, decode });
+  }
+
+  /** Open a source registered with `openLater` (once, however many ask). Throws what `open` throws. */
+  private async ready(id: string): Promise<void> {
+    if (this.entries.has(id)) return;
+    const l = this.later.get(id);
+    if (!l) return;
+    let w = this.waiting.get(id);
+    if (!w) {
+      w = this.open(l.file, id, () => undefined, l.decode);
+      this.waiting.set(id, w);
+      void w.then(() => this.waiting.delete(id), () => this.waiting.delete(id));
+    }
+    await w;
+  }
+
+  /** Probe (and if needed copy) one file. Throws ConversionError with a message for the page.
+   *  `decode` (export only): the size to keep a picture at, from its upright size. */
+  async open(file: File, id: string, onProgress: (f: number, msg: string) => void, decode?: DecodeSize): Promise<Opened> {
     if (this.gone) throw new Abandoned();
     const ext = canonicalExt(file.name);
     const kind = kindOf(ext);
@@ -141,6 +168,8 @@ export class SourceBank {
       this.check(bitmap, media);
     }
     let source: Source;
+    if (kind === "image" && decode) bitmap = await this.scaled(bitmap!, decode);
+    this.check(bitmap, media);
     this.forget(id);
     if (kind === "image") {
       source = sourceFromProbe(id, file.name, file.size, "image", { duration: 0, width: bitmap!.width, height: bitmap!.height, fps: 0, hasAudio: false });
@@ -151,6 +180,21 @@ export class SourceBank {
       this.entries.set(id, { kind: m.kind, input: m.input, video: m.video, sinks: new Map(), file: used });
     }
     return { source, file: used, copy, note: copy ? COPY_NOTE : null };
+  }
+
+  /** `bitmap` at `decode`'s size (the full one is closed); as it is when that isn't smaller. The
+   *  upright bitmap is resized, so a turned photo keeps its aspect. */
+  private async scaled(bitmap: ImageBitmap, decode: DecodeSize): Promise<ImageBitmap> {
+    const [w, h] = decode(bitmap.width, bitmap.height);
+    if (w >= bitmap.width && h >= bitmap.height) return bitmap;
+    let small: ImageBitmap;
+    try {
+      small = await createImageBitmap(bitmap, { resizeWidth: w, resizeHeight: h, resizeQuality: "high" });
+    } catch {
+      return bitmap; // keep the full size rather than nothing
+    }
+    bitmap.close();
+    return small;
   }
 
   private async bitmap(file: Blob): Promise<ImageBitmap | null> {
@@ -192,6 +236,7 @@ export class SourceBank {
 
   /** A video's frame at or before `time`, `height` px high (upright); a picture's bitmap. */
   async picture(id: string, time: number, height: number): Promise<Picture | null> {
+    await this.ready(id);
     const e = this.entries.get(id);
     if (!e) return null;
     if (e.bitmap) return { image: e.bitmap, width: e.bitmap.width, height: e.bitmap.height };
@@ -291,6 +336,7 @@ export class SourceBank {
 
   /** Leaving the page. */
   dispose(): void {
+    this.later.clear();
     for (const id of [...this.entries.keys()]) this.forget(id);
   }
 

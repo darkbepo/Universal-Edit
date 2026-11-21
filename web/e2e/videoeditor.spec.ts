@@ -1129,12 +1129,12 @@ const exportDialog = (page: Page) => page.locator("dialog.video-export");
 const dialogExport = (page: Page) => exportDialog(page).getByRole("button", { name: "Export", exact: true });
 const exportStatus = (page: Page) => page.locator(".video-editor .ve-status .msg");
 const EXPORTED = /^Exported “.+”\.$/;
-interface Inspected { duration: number; width: number; height: number; hasAudio: boolean; codec: string | null; colour: number[] | null }
+interface Inspected { duration: number; audioDuration: number; width: number; height: number; hasAudio: boolean; codec: string | null; colour: number[] | null }
 type ExportHook = { inspectExport(): Promise<Inspected & { colourAt(t: number): Promise<number[]> }>; exportNow(v: unknown): Promise<void> };
 /** The last export as Mediabunny reads it on the page (`at` ≥ 0: also its colour in the middle at that time). */
 const inspectExport = (page: Page, at = -1) => page.evaluate(async (t) => {
   const i = await (window as unknown as { __videoeditor: ExportHook }).__videoeditor.inspectExport();
-  return { duration: i.duration, width: i.width, height: i.height, hasAudio: i.hasAudio, codec: i.codec, colour: t >= 0 ? await i.colourAt(t) : null };
+  return { duration: i.duration, audioDuration: i.audioDuration, width: i.width, height: i.height, hasAudio: i.hasAudio, codec: i.codec, colour: t >= 0 ? await i.colourAt(t) : null };
 }, at) as Promise<Inspected>;
 /** Export with these values (the rest as the window would have them), skipping the window and the picker. */
 const exportNow = (page: Page, values: Record<string, unknown> = {}) =>
@@ -1161,6 +1161,7 @@ test("export MP4 keeps length, size and sound", async ({ page }) => {
   expect(Math.abs(got.duration - len)).toBeLessThanOrEqual(1 / 30 + 1e-3);
   expect([got.width, got.height]).toEqual([320, 240]);
   expect(got.hasAudio).toBe(true);
+  expect(Math.abs(got.audioDuration - got.duration)).toBeLessThan(0.05); // AAC / Opus priming allowed
 });
 
 test("export WebM at 480p", async ({ page }) => {

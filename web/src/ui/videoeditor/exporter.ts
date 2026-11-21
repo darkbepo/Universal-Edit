@@ -5,7 +5,7 @@
 // Frames are read with a blocking FrameReader (one per video item), not playback's FrameStream:
 // export waits for every frame instead of showing the last one it had.
 import { frameAt, type Layer } from "../../videoedit/compose";
-import { frameCount } from "../../videoedit/export";
+import { frameCount, pictureLastUse } from "../../videoedit/export";
 import { Limiter, SAMPLE_RATE, mixWindow } from "../../videoedit/mix";
 import { length, outputSize, type Project } from "../../videoedit/project";
 import { textAt } from "../../videoedit/textlayout";
@@ -127,8 +127,6 @@ export interface ExportJob {
   /** bitrate in bits/s; null = no audio track. */
   audio: { codec: "aac" | "opus"; bitrate: number } | null;
   container: "mp4" | "webm" | "mkv" | "mov";
-  /** true with a BufferTarget (MP4 / MOV moov written up front), false with a StreamTarget. */
-  inMemory: boolean;
 }
 
 type MB = typeof import("mediabunny");
@@ -141,7 +139,9 @@ const exportSurfaces: Surfaces = {
 };
 
 function outputFormat(mb: MB, job: ExportJob): import("mediabunny").OutputFormat {
-  const fastStart = job.inMemory ? ("in-memory" as const) : false;
+  // never "in-memory": that keeps every chunk until finalize, then writes them again (2× the file);
+  // a BufferTarget and a StreamTarget can both be written anywhere, so the index goes at the end
+  const fastStart = false as const;
   switch (job.container) {
     case "webm":
       return new mb.WebMOutputFormat();
@@ -192,6 +192,7 @@ export async function exportProject(
 
   const readers = new Map<string, FrameReader<Picture>>();
   const pictures = new Map<string, Picture | null>();
+  const lastUse = pictureLastUse(p);
   const sound = audioSource ? new SoundStore(bank.audio) : null;
   const limiter = new Limiter();
   const check = () => {
@@ -200,7 +201,8 @@ export async function exportProject(
 
   const pictureOf = async (l: Layer): Promise<Picture | null> => {
     if (l.kind === "picture") {
-      if (!pictures.has(l.sourceId)) pictures.set(l.sourceId, await bank.picture(l.sourceId, 0, h).catch(() => null));
+      // a picture that can't be opened fails the export (its message says why)
+      if (!pictures.has(l.sourceId)) pictures.set(l.sourceId, await bank.picture(l.sourceId, 0, h));
       return pictures.get(l.sourceId) ?? null;
     }
     let r = readers.get(l.itemId);
@@ -260,6 +262,11 @@ export async function exportProject(
       drawText(ctx, textAt(p, t, job.size, hasFont), textScale);
       await videoSource.add(t, 1 / fps);
       const videoDone = (i + 1) / fps;
+      for (const id of [...pictures.keys()]) {
+        if ((lastUse.get(id) ?? 0) > videoDone + 1e-9) continue; // a later frame still shows it
+        pictures.delete(id);
+        bank.forget(id); // its bitmap is closed
+      }
       for (const s of chunksDue(videoDone, audioDone, videoLength)) {
         await addChunk(s);
         audioDone = s + 1;

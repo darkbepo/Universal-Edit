@@ -4,7 +4,7 @@ import cases from "../../tests/fixtures/videoedit_cases.json";
 import { defaults } from "../src/core/options";
 import {
   EXPORT_OPTIONS, availableCodecs, chooseCodecs, evenSize, exportEstimate, exportName, exportSize, frameCount,
-  gifSize, hasSound, jobFor, type Encoders,
+  gifSize, hasSound, jobFor, pictureDecodeSize, pictureLastUse, usedSourceIds, type Encoders,
 } from "../src/videoedit/export";
 import { outputFps, type Project } from "../src/videoedit/project";
 
@@ -92,31 +92,29 @@ describe("jobFor", () => {
   const odd = { ...first, settings: { ...first.settings, resolution: "custom", width: 1921, height: 1081 } } as Project;
   const codecs = { video: "avc", audio: "aac" as const };
   it("maps the export values", () => {
-    const j = jobFor(first, vals({ resolution: "720p", audio_bitrate: 128 }), codecs, true);
+    const j = jobFor(first, vals({ resolution: "720p", audio_bitrate: 128 }), codecs);
     expect(j.size).toEqual(evenSize(exportSize(first, "720p")));
     expect(j.fps).toBe(outputFps(first));
     expect(j.video).toEqual({ codec: "avc", bitrate: "high" });
     expect(j.audio).toEqual({ codec: "aac", bitrate: 128000 });
     expect(j.container).toBe("mp4");
-    expect(j.inMemory).toBe(true);
     expect(j.project).toBe(first);
   });
   it("an odd project size is even", () => {
-    const [w, h] = jobFor(odd, vals({}), codecs, false).size;
+    const [w, h] = jobFor(odd, vals({}), codecs).size;
     expect(w % 2).toBe(0);
     expect(h % 2).toBe(0);
   });
   it("a bitrate wins over the quality", () => {
-    const j = jobFor(first, vals({ video_bitrate: 5000, quality: "low", container: "mkv" }), codecs, false);
+    const j = jobFor(first, vals({ video_bitrate: 5000, quality: "low", container: "mkv" }), codecs);
     expect(j.video).toEqual({ codec: "avc", bitrate: 5_000_000 });
     expect(j.container).toBe("mkv");
-    expect(j.inMemory).toBe(false);
   });
   it("no audio codec = no audio track", () => {
-    expect(jobFor(first, vals({}), { video: "avc", audio: null }, true).audio).toBeNull();
+    expect(jobFor(first, vals({}), { video: "avc", audio: null }).audio).toBeNull();
   });
   it("GIF: WebM, gifSize, gif_fps, very high, no audio", () => {
-    const j = jobFor(first, vals({ container: "gif", gif_fps: 12, gif_width: 321 }), { video: "vp9", audio: "opus" }, true);
+    const j = jobFor(first, vals({ container: "gif", gif_fps: 12, gif_width: 321 }), { video: "vp9", audio: "opus" });
     expect(j).toMatchObject({ container: "webm", size: gifSize(first, 321), fps: 12, video: { codec: "vp9", bitrate: "very-high" }, audio: null });
   });
 });
@@ -157,5 +155,31 @@ describe("exportEstimate", () => {
     expect(q("medium")).toBeLessThan(q("high"));
     expect(q("high")).toBeLessThan(q("very-high"));
     expect(exportEstimate(first, vals({ container: "gif" }))).toBeGreaterThan(0);
+  });
+});
+
+describe("what the worker opens", () => {
+  const src = (id: string, kind: "video" | "image" | "audio") =>
+    ({ id, path: id, kind, duration: 5, width: 640, height: 360, fps: 30, has_audio: kind !== "image", size: 1 });
+  const none = { kind: "none", duration: 0.5 };
+  const pic = (id: string, source: string, duration: number) => ({ type: "picture", id, source, duration, transition_in: none });
+  const p = {
+    ...first,
+    sources: [src("v", "video"), src("p", "image"), src("q", "image"), src("m", "audio"), src("unused", "image")],
+    main: [pic("a", "p", 2), { type: "video", id: "b", source: "v", in_: 0, out: 1, speed: 1, transition_in: none }, pic("c", "q", 1), pic("d", "p", 3)],
+    text_rows: [[]],
+    music_rows: [[{ type: "audio", id: "m1", source: "m", start: 0, in_: 0, out: 2 }]],
+  } as unknown as Project;
+  it("usedSourceIds: only what the timeline uses, in the sources' order", () => {
+    expect(usedSourceIds(p)).toEqual(["v", "p", "q", "m"]);
+  });
+  it("pictureLastUse: the end of each picture source's last main item", () => {
+    expect(Object.fromEntries(pictureLastUse(p))).toEqual({ p: 7, q: 4 });
+  });
+  it("pictureDecodeSize: twice what covers the frame, never larger, aspect kept", () => {
+    expect(pictureDecodeSize(4000, 3000, [1280, 720])).toEqual([3413, 2560]);
+    expect(pictureDecodeSize(640, 360, [1920, 1080])).toEqual([640, 360]);
+    expect(pictureDecodeSize(3000, 4000, [1920, 1080])).toEqual([3000, 4000]);
+    expect(pictureDecodeSize(12000, 100, [320, 180])).toEqual([12000, 100]);
   });
 });

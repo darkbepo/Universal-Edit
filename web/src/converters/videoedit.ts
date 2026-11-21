@@ -75,10 +75,16 @@ export const videoEditExportConverter: Converter = {
     const bank = new SourceBank(null);
     const controller = new AbortController(); // Cancel terminates the worker; kept for completeness
     try {
-      for (const [i, f] of files.entries()) {
-        await bank.open(f.file, opts.ids[i], () => undefined);
-      }
       const size = gif ? ex.gifSize(p, Number(values.gif_width ?? 480)) : ex.evenSize(ex.exportSize(p, String(values.resolution ?? "project")));
+      // pictures open on first use, at no more than the export needs, and close after their last
+      // item; videos and sound are opened now (Mediabunny only reads what it decodes), so a file
+      // that can't be read fails before anything is written
+      const kinds = new Map(p.sources.map((s) => [s.id, s.kind]));
+      for (const [i, f] of files.entries()) {
+        const id = opts.ids[i];
+        if (kinds.get(id) === "image") bank.openLater(f.file, id, (w, h) => ex.pictureDecodeSize(w, h, size));
+        else await bank.open(f.file, id, () => undefined);
+      }
       const chosen = await ex.chooseCodecs(values, ex.hasSound(p), {
         video: (c) => mb.canEncodeVideo(c, { width: size[0], height: size[1] }).catch(() => false),
         audio: (c) => mb.canEncodeAudio(c).catch(() => false),
@@ -89,7 +95,7 @@ export const videoEditExportConverter: Converter = {
       if (!gif && opts.handle) {
         const file = guarded(await opts.handle.createWritable());
         try {
-          const job = ex.jobFor(p, values, chosen, false);
+          const job = ex.jobFor(p, values, chosen);
           await exportProject(job, bank, new mb.StreamTarget(file.stream, { chunked: true }), progress, controller.signal);
           await file.commit();
         } catch (e) {
@@ -100,7 +106,7 @@ export const videoEditExportConverter: Converter = {
         return [];
       }
 
-      const job = ex.jobFor(p, values, chosen, true);
+      const job = ex.jobFor(p, values, chosen);
       const target = new mb.BufferTarget();
       await exportProject(job, bank, target, progress, controller.signal);
       const data = new Uint8Array(target.buffer!);
@@ -120,6 +126,10 @@ export const videoEditExportConverter: Converter = {
       if (!out.length) throw new ConversionError("Couldn't make the GIF.");
       ctx.progress(1, "Done");
       return [{ name: ex.exportName(p, "gif"), data: out[0].data, type: "image/gif" }];
+    } catch (e) {
+      if (e instanceof ConversionError) throw e;
+      // an encoder refusing its settings, a broken frame …: a sentence of its own, details logged
+      throw new ConversionError("The export couldn't be finished. Try another codec or quality, or use the desktop app.", String((e as Error)?.stack ?? e));
     } finally {
       bank.dispose();
     }

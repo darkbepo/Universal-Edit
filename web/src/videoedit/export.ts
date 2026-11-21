@@ -5,7 +5,7 @@ import { opt, type OptionSpec, type Values } from "../core/options";
 import { WEBCODECS_LABELS, type WebCodec } from "../engines/webcodecs";
 import { estimateBytes, type Quality } from "./limits";
 import type { ExportJob, ExportQuality } from "../ui/videoeditor/exporter";
-import { length, outputFps, outputSize, type Project } from "./project";
+import { layout, length, outputFps, outputSize, type Project } from "./project";
 
 const isGif = (v: Values): boolean => v.container === "gif";
 const notGif = (v: Values): boolean => !isGif(v);
@@ -145,12 +145,12 @@ export function hasSound(p: Project): boolean {
 /** The exporter's job for these export values (`codecs` from chooseCodecs). GIF = a WebM at the
  *  GIF's size and fps, very high quality, no sound (the GIF is made from it afterwards). */
 export function jobFor(
-  p: Project, values: Values, codecs: { video: string; audio: "aac" | "opus" | null }, inMemory: boolean,
+  p: Project, values: Values, codecs: { video: string; audio: "aac" | "opus" | null },
 ): ExportJob {
   if (isGif(values)) {
     return {
       project: p, size: gifSize(p, Number(values.gif_width ?? 480)), fps: Number(values.gif_fps ?? 15),
-      video: { codec: codecs.video, bitrate: "very-high" }, audio: null, container: "webm", inMemory,
+      video: { codec: codecs.video, bitrate: "very-high" }, audio: null, container: "webm",
     };
   }
   const kbps = Number(values.video_bitrate ?? 0);
@@ -164,8 +164,36 @@ export function jobFor(
       ? { codec: codecs.audio, bitrate: Number(values.audio_bitrate ?? 192) * 1000 }
       : null,
     container,
-    inMemory,
   };
+}
+
+/** The sources the timeline uses (main clips and music), in the project's source order: the
+ *  only ones the export sends to the worker. */
+export function usedSourceIds(p: Project): string[] {
+  const used = new Set<string>();
+  for (const it of p.main) used.add(it.source);
+  for (const row of p.music_rows) for (const a of row) used.add(a.source);
+  return p.sources.filter((s) => used.has(s.id)).map((s) => s.id);
+}
+
+/** For each picture source: when its last main-row item ends (its bitmap can go after that). */
+export function pictureLastUse(p: Project): Map<string, number> {
+  const spans = layout(p);
+  const out = new Map<string, number>();
+  for (const it of p.main) {
+    if (it.type !== "picture") continue;
+    const end = spans.get(it.id)!.end;
+    out.set(it.source, Math.max(out.get(it.source) ?? 0, end));
+  }
+  return out;
+}
+
+/** The size the export decodes a w × h picture at for frames of `size`: twice what covering the
+ *  frame needs (in either orientation, so cropped / turned pictures keep detail), never larger
+ *  than the picture, aspect kept. */
+export function pictureDecodeSize(w: number, h: number, [fw, fh]: [number, number]): [number, number] {
+  const s = Math.min(1, (2 * Math.max(fw, fh)) / Math.max(1, Math.min(w, h)));
+  return s >= 1 ? [w, h] : [Math.max(1, Math.round(w * s)), Math.max(1, Math.round(h * s))];
 }
 
 /** About how many bytes the export will be. GIF is a rough guess (half a bit per pixel). */
