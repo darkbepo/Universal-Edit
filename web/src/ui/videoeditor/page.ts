@@ -192,7 +192,10 @@ export class VideoEditorPage {
   }
 
   show(): void {
-    if (!this.active) document.addEventListener("keydown", this.onKey);
+    if (!this.active) {
+      document.addEventListener("keydown", this.onKey);
+      window.addEventListener("beforeunload", this.onUnload);
+    }
     this.active = true;
     this.el.hidden = false;
     void loadBundledFonts().then(() => this.inspector.updateFontNote(), () => undefined);
@@ -203,6 +206,7 @@ export class VideoEditorPage {
     this.timeline.endGesture(); // a drag or seek in progress lands nowhere
     this.flushPending();
     document.removeEventListener("keydown", this.onKey);
+    window.removeEventListener("beforeunload", this.onUnload);
     this.active = false;
     this.el.hidden = true;
     this.leaveSession(); // leaving drops the project, its decoders and a batch still opening
@@ -233,6 +237,19 @@ export class VideoEditorPage {
   get shown(): boolean {
     return this.active;
   }
+
+  /** Unsaved changes: in the history, or an inspector edit still being made. */
+  private get unsaved(): boolean {
+    return !!this.history && (this.history.dirty || this.pending !== null);
+  }
+
+  /** Closing / reloading the tab with unsaved changes asks first (like the other editors). */
+  private readonly onUnload = (e: BeforeUnloadEvent): void => {
+    if (this.active && this.unsaved) {
+      e.preventDefault();
+      e.returnValue = "";
+    }
+  };
 
   /** False when the visitor wants to keep an unsaved project (the audio editor's question). */
   maybeLeave(): boolean {

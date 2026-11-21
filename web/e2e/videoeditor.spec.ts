@@ -678,7 +678,7 @@ test("cancel", async ({ page }, info) => {
   await expect(edit(page)).toBeEnabled();
 });
 
-test("unsaved changes are asked about", async ({ page }) => {
+test("unsaved changes are asked about", async ({ page }, info) => {
   await page.goto("./?e2e");
   await openEditor(page, [fx("clip.mp4")]);
   const back = page.getByRole("button", { name: "← Back to Convert" });
@@ -694,9 +694,44 @@ test("unsaved changes are asked about", async ({ page }) => {
   await expect.poll(() => asked).toBe("Discard unsaved changes to this video project?");
   await expect(page.locator(".video-editor")).toBeVisible();
   expect(await ve(page, "history.undoLabel")).toBe("Add text");
+  // a project file dropped on the editor asks too; declining keeps the editor and its project
+  let again = "";
+  page.once("dialog", (d) => { again = d.message(); void d.dismiss(); });
+  await addFiles(page, [handProject(info.outputPath())]);
+  await expect.poll(() => again).toBe("Discard unsaved changes to this video project?");
+  await expect(locate(page)).toHaveCount(0);
+  await expect(page.locator(".video-editor")).toBeVisible();
+  expect(await ve(page, "project().text_rows.flat().length")).toBe(1);
+  expect(await ve(page, "history.undoLabel")).toBe("Add text");
   page.once("dialog", (d) => void d.accept());
   await back.click();
   await expect(page.locator(".video-editor")).toBeHidden();
+});
+
+test("beforeunload only while there are unsaved changes", async ({ page }, info) => {
+  await noSavePicker(page);
+  await page.goto("./?e2e");
+  const blocked = () => page.evaluate(() => {
+    const e = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(e);
+    return e.defaultPrevented;
+  });
+  await openEditor(page, [fx("clip.mp4")]);
+  expect(await blocked()).toBe(false);
+  await page.getByRole("button", { name: "+ Text" }).click();
+  await expect.poll(() => ve(page, "history.undoLabel")).toBe("Add text");
+  expect(await blocked()).toBe(true);
+  await saveAs(page, info.outputPath());
+  expect(await blocked()).toBe(false);
+  // typing in the inspector isn't a history step yet, but it is unsaved
+  await page.locator("textarea#ve-text").fill("Not saved");
+  await expect.poll(() => ve(page, "shown().text_rows[0][0].text")).toBe("Not saved");
+  expect(await ve(page, "history.dirty")).toBe(false);
+  expect(await blocked()).toBe(true);
+  page.once("dialog", (d) => void d.accept());
+  await page.getByRole("button", { name: "← Back to Convert" }).click();
+  await expect(page.locator(".video-editor")).toBeHidden();
+  expect(await blocked()).toBe(false); // left: the guard is gone
 });
 
 test("a desktop-saved project opens", async ({ page }, info) => {
