@@ -22,6 +22,36 @@ export function findPython(check = "import docx, lxml"): string | null {
   return null;
 }
 
+/** A Python that can run the desktop's Qt-free video editor model (`umc.videoedit`, taken from
+ * the repo's `src/`, so no install is needed), or null. */
+export function videoEditPython(): string | null {
+  const src = fileURLToPath(new URL("../../src", import.meta.url));
+  return findPython(`import sys; sys.path.insert(0, ${JSON.stringify(src)}); import umc.videoedit.projectfile`);
+}
+
+/** `e2e/videoedit_cross.py`'s answer (spans = [start, end] in seconds). */
+export interface DesktopProject {
+  sources: { id: string; name: string; kind: string; size: number }[];
+  main: { id: string; source: string; span: [number, number] }[];
+  music: { id: string; source: string; span: [number, number] }[];
+  texts: { id: string; text: string; span: [number, number] }[];
+  missing: string[];
+}
+
+/** Runs `e2e/videoedit_cross.py` (`save SPEC OUT` / `load PATH`) → the project as the desktop
+ * loaded it. */
+export function videoEditCross(python: string, args: string[]): DesktopProject {
+  const script = fileURLToPath(new URL("./videoedit_cross.py", import.meta.url));
+  return JSON.parse(execFileSync(python, [script, ...args]).toString("utf8")) as DesktopProject;
+}
+
+/** clip.mp4, img0.png and tone.wav as `videoedit_cross.py` sources (ids s1–s3). */
+export const MIXED_SOURCES = [
+  { id: "s1", name: "clip.mp4", kind: "video", duration: 2.0, width: 320, height: 240, fps: 30.0, has_audio: true },
+  { id: "s2", name: "img0.png", kind: "image", duration: 0.0, width: 321, height: 241, fps: 0.0, has_audio: false },
+  { id: "s3", name: "tone.wav", kind: "audio", duration: 3.0, width: 0, height: 0, fps: 0.0, has_audio: true },
+];
+
 /** A 20 × 10 × 5 mm box as binary STL (12 triangles), away from the origin. */
 export function boxStl(path: string) {
   const [w, d, h] = [20, 10, 5];
@@ -324,29 +354,17 @@ export default async function globalSetup() {
   // A video project saved by the desktop app's own code (absolute paths + relpath, its field
   // order): the website must open it and keep those paths when it saves it again.
   rmSync(`${FIXTURES}desktop.umcvideo`, { force: true });
-  const anyPython = findPython("import json");
-  if (anyPython && existsSync(`${FIXTURES}clip.mp4`) && existsSync(`${FIXTURES}tone.wav`)) {
+  const crossPython = videoEditPython();
+  if (crossPython && existsSync(`${FIXTURES}clip.mp4`) && existsSync(`${FIXTURES}tone.wav`)) {
     try {
-      execFileSync(anyPython, ["-c", [
-        "import sys",
-        "sys.path.insert(0, sys.argv[1])",
-        "from pathlib import Path",
-        "from umc.videoedit import edits",
-        "from umc.videoedit.project import Project, ProjectSettings, Source",
-        "from umc.videoedit.projectfile import save_project",
-        "d = Path(sys.argv[2]).absolute()",
-        "def src(i, name, kind, dur, w, h, fps, audio):",
-        "    p = d / name",
-        "    return Source(i, p, kind, dur, w, h, fps, audio, p.stat().st_size)",
-        "s = [src('s1', 'clip.mp4', 'video', 2.0, 320, 240, 30.0, True), src('s2', 'img0.png', 'image', 0.0, 321, 241, 0.0, False),",
-        "     src('s3', 'tone.wav', 'audio', 3.0, 0, 0, 0.0, True)]",
-        "p = edits.add_sources(Project(ProjectSettings(), ()), s)",
-        "p, _ = edits.insert_main(p, 0, 's1')",
-        "p, _ = edits.insert_main(p, 1, 's2')",
-        "p, _ = edits.add_at(p, 's3', 0.0, 0)",
-        "p, _ = edits.add_text(p, 0.5)",
-        "save_project(p, d / 'desktop.umcvideo')",
-      ].join("\n"), fileURLToPath(new URL("../../src", import.meta.url)), FIXTURES]);
+      const spec = `${FIXTURES}desktop-spec.json`;
+      writeFileSync(spec, JSON.stringify({
+        sources: MIXED_SOURCES,
+        main: [{ source: "s1" }, { source: "s2" }],
+        music: [{ source: "s3", start: 0 }],
+        texts: [{ start: 0.5 }],
+      }));
+      videoEditCross(crossPython, ["save", spec, `${FIXTURES}desktop.umcvideo`]);
     } catch (e) {
       console.warn("couldn't write desktop.umcvideo: the cross-app video project test will be skipped", e);
     }

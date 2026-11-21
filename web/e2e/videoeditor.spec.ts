@@ -1,9 +1,9 @@
 // The website's video editor: the Edit switch and the tile (for everyone; old ?video-editor links still work),
 // opening sources (straight, or through the FFmpeg copy), the media list, the timeline and the still preview.
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
-import { FIXTURES } from "./global-setup";
+import { type DesktopProject, FIXTURES, MIXED_SOURCES, videoEditCross, videoEditPython } from "./global-setup";
 
 const fx = (name: string) => `${FIXTURES}${name}`;
 const MIXED = () => [fx("clip.mp4"), fx("img0.png"), fx("tone.wav")];
@@ -1502,4 +1502,97 @@ test("the dialog hides codecs the browser can't encode", async ({ page }) => {
   for (const id of ids(await labels())) expect(encodable).toContain(id);
   await exportDialog(page).locator("#vex-container").selectOption({ label: "WebM" });
   await expect.poll(async () => ids(await labels()).filter((i) => i === "h264" || i === "h265")).toEqual([]);
+});
+
+// ---------------------------------------------------------------- cross-app project files
+// The desktop's own code (`e2e/videoedit_cross.py` → umc.videoedit.projectfile) reads what the
+// website saves, and the website opens what the desktop saves.
+/** The mixed fixtures copied into `where` (a project there finds them by name, like a user's folder). */
+const besideProject = (where: string) => {
+  mkdirSync(where, { recursive: true });
+  return MIXED().map((f) => {
+    const to = `${where}/${f.replace(/^.*[\\/]/, "")}`;
+    copyFileSync(f, to);
+    return to;
+  });
+};
+type Spans = Record<string, [number, number]>;
+/** Every item's [start, end] on the web timeline. */
+const webSpans = async (page: Page): Promise<Spans> =>
+  Object.fromEntries(Object.entries(await spans(page)).map(([id, s]) => [id, [s.start, s.end]]));
+/** The same from the desktop's answer. */
+const desktopSpans = (d: DesktopProject): Spans =>
+  Object.fromEntries([...d.main, ...d.music, ...d.texts].map((i) => [i.id, i.span]));
+const sameSpans = (got: Spans, want: Spans) => {
+  expect(Object.keys(got).sort()).toEqual(Object.keys(want).sort());
+  for (const [id, [s, e]] of Object.entries(want)) {
+    expect(Math.abs(got[id][0] - s), `${id} start`).toBeLessThan(0.01);
+    expect(Math.abs(got[id][1] - e), `${id} end`).toBeLessThan(0.01);
+  }
+};
+const needsCrossPython = () => {
+  const python = videoEditPython();
+  test.skip(!python, "needs a Python that runs the desktop's umc.videoedit (UMC_PYTHON, python3 or the desktop venv)");
+  return python!;
+};
+const itemIds = (items: unknown[]) => items.map((m) => (m as { id: string }).id);
+
+test("a web-saved project opens on the desktop", async ({ page }, info) => {
+  needsTone();
+  const python = needsCrossPython();
+  await noSavePicker(page);
+  await page.goto("./?e2e");
+  await openEditor(page, MIXED());
+  await ve(page, "seek(1)");
+  await page.keyboard.press("s"); // the clip split in two: 3 main items
+  await expect.poll(() => ve(page, "project().main.length")).toBe(3);
+  await ve(page, "seek(0.5)");
+  await page.getByRole("button", { name: "+ Text" }).click();
+  await page.locator("textarea#ve-text").fill("From the website ✓");
+  await timeline(page).focus(); // leaving the box finishes the edit
+  await expect.poll(() => ve(page, "history.undoLabel")).toBe("Change text");
+  const saved = await saveAs(page, info.outputPath("web"));
+  besideProject(info.outputPath("web"));
+
+  const desktop = videoEditCross(python, ["load", saved.path]);
+  expect(desktop.missing).toEqual([]);
+  const got = await ve<Saved>(page, "project()");
+  expect(desktop.main.map((m) => m.id)).toEqual(itemIds(got.main));
+  expect(desktop.music.map((m) => m.id)).toEqual(itemIds(got.music_rows.flat()));
+  expect(desktop.texts.map((t) => t.text)).toEqual(["From the website ✓"]);
+  expect(desktop.main.length).toBe(3);
+  expect(desktop.music.length).toBe(1);
+  expect(desktop.sources.map((s) => [s.name, s.kind, s.size])).toEqual(got.sources.map((s) => [s.path, s.kind, s.size]));
+  sameSpans(desktopSpans(desktop), await webSpans(page));
+});
+
+test("a desktop-saved project opens on the website", async ({ page }, info) => {
+  needsTone();
+  const python = needsCrossPython();
+  const where = info.outputPath("desktop");
+  const files = besideProject(where);
+  const spec = `${where}/spec.json`;
+  writeFileSync(spec, JSON.stringify({
+    sources: MIXED_SOURCES,
+    main: [{ source: "s1", changes: { in_: 0.25, out: 1.75 } }, { source: "s2", changes: { duration: 1.5 } }],
+    music: [{ source: "s3", start: 0.5 }],
+    texts: [{ start: 1, changes: { text: "From the desktop ✓", end: 2.5 } }],
+  }));
+  const desktop = videoEditCross(python, ["save", spec, `${where}/cross.umcvideo`]);
+  expect(desktop.missing).toEqual([]);
+  expect(desktop.main.map((m) => m.span)).toEqual([[0, 1.5], [1.5, 3]]);
+
+  await page.goto("./?e2e");
+  await openProjectFile(page, `${where}/cross.umcvideo`);
+  await pickSeveral(page, files); // one pick: all three matched by name + size
+  await expect(statuses(page)).toHaveText(["Use “clip.mp4”", "Use “img0.png”", "Use “tone.wav”"]);
+  await locate(page).getByRole("button", { name: "Open project" }).click();
+  await expect(locate(page)).toHaveCount(0);
+  await expect.poll(() => ve(page, "history.undoLabel")).toBe("Fix missing files");
+  for (const id of ["s1", "s2", "s3"]) await expect.poll(() => ve(page, `decodes("${id}")`)).toBe(true);
+  const got = await ve<Saved>(page, "project()");
+  expect(itemIds(got.main)).toEqual(desktop.main.map((m) => m.id));
+  expect(itemIds(got.music_rows.flat())).toEqual(desktop.music.map((m) => m.id));
+  expect(got.text_rows.flat().map((t) => (t as { text: string }).text)).toEqual(["From the desktop ✓"]);
+  sameSpans(await webSpans(page), desktopSpans(desktop));
 });
