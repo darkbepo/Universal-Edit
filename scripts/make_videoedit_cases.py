@@ -25,6 +25,7 @@ from umc.core.errors import ToolMissingError  # noqa: E402
 from umc.core.options import option_specs  # noqa: E402
 from umc.tools.ffmpeg import ffmpeg_path  # noqa: E402
 from umc.videoedit import edits  # noqa: E402
+from umc.videoedit.export import export_size  # noqa: E402
 from umc.videoedit.project import (  # noqa: E402
     TRANSITIONS,
     AudioClip,
@@ -791,6 +792,40 @@ def schema_cases() -> dict[str, list[dict[str, Any]]]:
     return out
 
 
+def export_size_cases() -> list[dict[str, Any]]:
+    """`export_size` of a few projects (landscape, portrait, odd height) for every resolution."""
+    projects = [
+        ("landscape_1080", proj([V("a", 0, 2)])),
+        (
+            "portrait_vertical",
+            proj([V("a", 0, 2)], settings=ProjectSettings(resolution="vertical")),
+        ),
+        ("square", proj([V("a", 0, 2)], settings=ProjectSettings(resolution="square"))),
+        ("first_video_720", proj([V("a", 0, 2, "v2")])),
+        (
+            "odd_height",
+            proj(
+                [V("a", 0, 2)],
+                settings=ProjectSettings(resolution="custom", width=1001, height=721),
+            ),
+        ),
+        ("pictures_only", proj([P("a")])),
+        ("empty", proj([])),
+    ]
+    out = []
+    for name, project in projects:
+        for res in ("project", "480p", "720p", "1080p", "4k"):
+            out.append(
+                {
+                    "name": f"{name}_{res}",
+                    "project": to_dict(project),
+                    "resolution": res,
+                    "size": list(export_size(project, res)),
+                }
+            )
+    return out
+
+
 def main() -> None:
     cases = {
         "layout": layout_cases(),
@@ -801,6 +836,7 @@ def main() -> None:
         "fade": fade_cases(),
         "text": text_cases(),
         "schemas": schema_cases(),
+        "export_size": export_size_cases(),
     }
     OUT.write_text(json.dumps(cases, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
     errors = sum(1 for e in cases["edits"] if e["error"])

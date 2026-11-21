@@ -33353,5 +33353,3467 @@
     "choices": []
    }
   ]
- }
+ },
+ "export_size": [
+  {
+   "name": "landscape_1080_project",
+   "project": {
+    "format": "umcvideo",
+    "version": 1,
+    "settings": {
+     "resolution": "first",
+     "width": 1920,
+     "height": 1080,
+     "fps": "first",
+     "background": "#000000"
+    },
+    "sources": [
+     {
+      "id": "v1",
+      "path": "v1.mp4",
+      "kind": "video",
+      "duration": 10.0,
+      "width": 1920,
+      "height": 1080,
+      "fps": 30.0,
+      "has_audio": true,
+      "size": 5000000,
+      "relpath": "v1.mp4"
+     },
+     {
+      "id": "v2",
+      "path": "v2.mp4",
+      "kind": "video",
+      "duration": 4.0,
+      "width": 1280,
+      "height": 720,
+      "fps": 25.0,
+      "has_audio": false,
+      "size": 1200000,
+      "relpath": "v2.mp4"
+     },
+     {
+      "id": "p1",
+      "path": "p1.png",
+      "kind": "image",
+      "duration": 0.0,
+      "width": 800,
+      "height": 600,
+      "fps": 0.0,
+      "has_audio": false,
+      "size": 90000,
+      "relpath": "p1.png"
+     },
+     {
+      "id": "m1",
+      "path": "m1.mp3",
+      "kind": "audio",
+      "duration": 60.0,
+      "width": 0,
+      "height": 0,
+      "fps": 0.0,
+      "has_audio": true,
+      "size": 960000,
+      "relpath": "m1.mp3"
+     }
+    ],
+    "main": [
+     {
+      "type": "video",
+      "id": "a",
+      "source": "v1",
+      "in_": 0,
+      "out": 2,
+      "speed": 1.0,
+      "volume": 100,
+      "mute": false,
+      "fade_in": 0.0,
+      "fade_out": 0.0,
+      "fit": "letterbox",
+      "rotate": 0,
+      "flip_h": false,
+      "flip_v": false,
+      "crop_left": 0,
+      "crop_top": 0,
+      "crop_right": 0,
+      "crop_bottom": 0,
+      "brightness": 0,
+      "contrast": 0,
+      "saturation": 0,
+      "transition_in": {
+       "kind": "none",
+       "duration": 0.5
+      }
+     }
+    ],
+    "text_rows": [
+     []
+    ],
+    "music_rows": [
+     []
+    ]
+   },
+   "resolution": "project",
+   "size": [
+    1920,
+    1080
+   ]
+  },
+  {
+   "name": "landscape_1080_480p",
+   "project": {
+    "format": "umcvideo",
+    "version": 1,
+    "settings": {
+     "resolution": "first",
+     "width": 1920,
+     "height": 1080,
+     "fps": "first",
+     "background": "#000000"
+    },
+    "sources": [
+     {
+      "id": "v1",
+      "path": "v1.mp4",
+      "kind": "video",
+      "duration": 10.0,
+      "width": 1920,
+      "height": 1080,
+      "fps": 30.0,
+      "has_audio": true,
+      "size": 5000000,
+      "relpath": "v1.mp4"
+     },
+     {
+      "id": "v2",
+      "path": "v2.mp4",
+      "kind": "video",
+      "duration": 4.0,
+      "width": 1280,
+      "height": 720,
+      "fps": 25.0,
+      "has_audio": false,
+      "size": 1200000,
+      "relpath": "v2.mp4"
+     },
+     {
+      "id": "p1",
+      "path": "p1.png",
+      "kind": "image",
+      "duration": 0.0,
+      "width": 800,
+      "height": 600,
+      "fps": 0.0,
+      "has_audio": false,
+      "size": 90000,
+      "relpath": "p1.png"
+     },
+     {
+      "id": "m1",
+      "path": "m1.mp3",
+      "kind": "audio",
+      "duration": 60.0,
+      "width": 0,
+      "height": 0,
+      "fps": 0.0,
+      "has_audio": true,
+      "size": 960000,
+      "relpath": "m1.mp3"
+     }
+    ],
+    "main": [
+     {
+      "type": "video",
+      "id": "a",
+      "source": "v1",
+      "in_": 0,
+      "out": 2,
+      "speed": 1.0,
+      "volume": 100,
+      "mute": false,
+      "fade_in": 0.0,
+      "fade_out": 0.0,
+      "fit": "letterbox",
+      "rotate": 0,
+      "flip_h": false,
+      "flip_v": false,
+      "crop_left": 0,
+      "crop_top": 0,
+      "crop_right": 0,
+      "crop_bottom": 0,
+      "brightness": 0,
+      "contrast": 0,
+      "saturation": 0,
+      "transition_in": {
+       "kind": "none",
+       "duration": 0.5
+      }
+     }
+    ],
+    "text_rows": [
+     []
+    ],
+    "music_rows": [
+     []
+    ]
+   },
+   "resolution": "480p",
+   "size": [
+    852,
+    480
+   ]
+  },
+  {
+   "name": "landscape_1080_720p",
+   "project": {
+    "format": "umcvideo",
+    "version": 1,
+    "settings": {
+     "resolution": "first",
+     "width": 1920,
+     "height": 1080,
+     "fps": "first",
+     "background": "#000000"
+    },
+    "sources": [
+     {
+      "id": "v1",
+      "path": "v1.mp4",
+      "kind": "video",
+      "duration": 10.0,
+      "width": 1920,
+      "height": 1080,
+      "fps": 30.0,
+      "has_audio": true,
+      "size": 5000000,
+      "relpath": "v1.mp4"
+     },
+     {
+      "id": "v2",
+      "path": "v2.mp4",
+      "kind": "video",
+      "duration": 4.0,
+      "width": 1280,
+      "height": 720,
+      "fps": 25.0,
+      "has_audio": false,
+      "size": 1200000,
+      "relpath": "v2.mp4"
+     },
+     {
+      "id": "p1",
+      "path": "p1.png",
+      "kind": "image",
+      "duration": 0.0,
+      "width": 800,
+      "height": 600,
+      "fps": 0.0,
+      "has_audio": false,
+      "size": 90000,
+      "relpath": "p1.png"
+     },
+     {
+      "id": "m1",
+      "path": "m1.mp3",
+      "kind": "audio",
+      "duration": 60.0,
+      "width": 0,
+      "height": 0,
+      "fps": 0.0,
+      "has_audio": true,
+      "size": 960000,
+      "relpath": "m1.mp3"
+     }
+    ],
+    "main": [
+     {
+      "type": "video",
+      "id": "a",
+      "source": "v1",
+      "in_": 0,
+      "out": 2,
+      "speed": 1.0,
+      "volume": 100,
+      "mute": false,
+      "fade_in": 0.0,
+      "fade_out": 0.0,
+      "fit": "letterbox",
+      "rotate": 0,
+      "flip_h": false,
+      "flip_v": false,
+      "crop_left": 0,
+      "crop_top": 0,
+      "crop_right": 0,
+      "crop_bottom": 0,
+      "brightness": 0,
+      "contrast": 0,
+      "saturation": 0,
+      "transition_in": {
+       "kind": "none",
+       "duration": 0.5
+      }
+     }
+    ],
+    "text_rows": [
+     []
+    ],
+    "music_rows": [
+     []
+    ]
+   },
+   "resolution": "720p",
+   "size": [
+    1280,
+    720
+   ]
+  },
+  {
+   "name": "landscape_1080_1080p",
+   "project": {
+    "format": "umcvideo",
+    "version": 1,
+    "settings": {
+     "resolution": "first",
+     "width": 1920,
+     "height": 1080,
+     "fps": "first",
+     "background": "#000000"
+    },
+    "sources": [
+     {
+      "id": "v1",
+      "path": "v1.mp4",
+      "kind": "video",
+      "duration": 10.0,
+      "width": 1920,
+      "height": 1080,
+      "fps": 30.0,
+      "has_audio": true,
+      "size": 5000000,
+      "relpath": "v1.mp4"
+     },
+     {
+      "id": "v2",
+      "path": "v2.mp4",
+      "kind": "video",
+      "duration": 4.0,
+      "width": 1280,
+      "height": 720,
+      "fps": 25.0,
+      "has_audio": false,
+      "size": 1200000,
+      "relpath": "v2.mp4"
+     },
+     {
+      "id": "p1",
+      "path": "p1.png",
+      "kind": "image",
+      "duration": 0.0,
+      "width": 800,
+      "height": 600,
+      "fps": 0.0,
+      "has_audio": false,
+      "size": 90000,
+      "relpath": "p1.png"
+     },
+     {
+      "id": "m1",
+      "path": "m1.mp3",
+      "kind": "audio",
+      "duration": 60.0,
+      "width": 0,
+      "height": 0,
+      "fps": 0.0,
+      "has_audio": true,
+      "size": 960000,
+      "relpath": "m1.mp3"
+     }
+    ],
+    "main": [
+     {
+      "type": "video",
+      "id": "a",
+      "source": "v1",
+      "in_": 0,
+      "out": 2,
+      "speed": 1.0,
+      "volume": 100,
+      "mute": false,
+      "fade_in": 0.0,
+      "fade_out": 0.0,
+      "fit": "letterbox",
+      "rotate": 0,
+      "flip_h": false,
+      "flip_v": false,
+      "crop_left": 0,
+      "crop_top": 0,
+      "crop_right": 0,
+      "crop_bottom": 0,
+      "brightness": 0,
+      "contrast": 0,
+      "saturation": 0,
+      "transition_in": {
+       "kind": "none",
+       "duration": 0.5
+      }
+     }
+    ],
+    "text_rows": [
+     []
+    ],
+    "music_rows": [
+     []
+    ]
+   },
+   "resolution": "1080p",
+   "size": [
+    1920,
+    1080
+   ]
+  },
+  {
+   "name": "landscape_1080_4k",
+   "project": {
+    "format": "umcvideo",
+    "version": 1,
+    "settings": {
+     "resolution": "first",
+     "width": 1920,
+     "height": 1080,
+     "fps": "first",
+     "background": "#000000"
+    },
+    "sources": [
+     {
+      "id": "v1",
+      "path": "v1.mp4",
+      "kind": "video",
+      "duration": 10.0,
+      "width": 1920,
+      "height": 1080,
+      "fps": 30.0,
+      "has_audio": true,
+      "size": 5000000,
+      "relpath": "v1.mp4"
+     },
+     {
+      "id": "v2",
+      "path": "v2.mp4",
+      "kind": "video",
+      "duration": 4.0,
+      "width": 1280,
+      "height": 720,
+      "fps": 25.0,
+      "has_audio": false,
+      "size": 1200000,
+      "relpath": "v2.mp4"
+     },
+     {
+      "id": "p1",
+      "path": "p1.png",
+      "kind": "image",
+      "duration": 0.0,
+      "width": 800,
+      "height": 600,
+      "fps": 0.0,
+      "has_audio": false,
+      "size": 90000,
+      "relpath": "p1.png"
+     },
+     {
+      "id": "m1",
+      "path": "m1.mp3",
+      "kind": "audio",
+      "duration": 60.0,
+      "width": 0,
+      "height": 0,
+      "fps": 0.0,
+      "has_audio": true,
+      "size": 960000,
+      "relpath": "m1.mp3"
+     }
+    ],
+    "main": [
+     {
+      "type": "video",
+      "id": "a",
+      "source": "v1",
+      "in_": 0,
+      "out": 2,
+      "speed": 1.0,
+      "volume": 100,
+      "mute": false,
+      "fade_in": 0.0,
+      "fade_out": 0.0,
+      "fit": "letterbox",
+      "rotate": 0,
+      "flip_h": false,
+      "flip_v": false,
+      "crop_left": 0,
+      "crop_top": 0,
+      "crop_right": 0,
+      "crop_bottom": 0,
+      "brightness": 0,
+      "contrast": 0,
+      "saturation": 0,
+      "transition_in": {
+       "kind": "none",
+       "duration": 0.5
+      }
+     }
+    ],
+    "text_rows": [
+     []
+    ],
+    "music_rows": [
+     []
+    ]
+   },
+   "resolution": "4k",
+   "size": [
+    3840,
+    2160
+   ]
+  },
+  {
+   "name": "portrait_vertical_project",
+   "project": {
+    "format": "umcvideo",
+    "version": 1,
+    "settings": {
+     "resolution": "vertical",
+     "width": 1920,
+     "height": 1080,
+     "fps": "first",
+     "background": "#000000"
+    },
+    "sources": [
+     {
+      "id": "v1",
+      "path": "v1.mp4",
+      "kind": "video",
+      "duration": 10.0,
+      "width": 1920,
+      "height": 1080,
+      "fps": 30.0,
+      "has_audio": true,
+      "size": 5000000,
+      "relpath": "v1.mp4"
+     },
+     {
+      "id": "v2",
+      "path": "v2.mp4",
+      "kind": "video",
+      "duration": 4.0,
+      "width": 1280,
+      "height": 720,
+      "fps": 25.0,
+      "has_audio": false,
+      "size": 1200000,
+      "relpath": "v2.mp4"
+     },
+     {
+      "id": "p1",
+      "path": "p1.png",
+      "kind": "image",
+      "duration": 0.0,
+      "width": 800,
+      "height": 600,
+      "fps": 0.0,
+      "has_audio": false,
+      "size": 90000,
+      "relpath": "p1.png"
+     },
+     {
+      "id": "m1",
+      "path": "m1.mp3",
+      "kind": "audio",
+      "duration": 60.0,
+      "width": 0,
+      "height": 0,
+      "fps": 0.0,
+      "has_audio": true,
+      "size": 960000,
+      "relpath": "m1.mp3"
+     }
+    ],
+    "main": [
+     {
+      "type": "video",
+      "id": "a",
+      "source": "v1",
+      "in_": 0,
+      "out": 2,
+      "speed": 1.0,
+      "volume": 100,
+      "mute": false,
+      "fade_in": 0.0,
+      "fade_out": 0.0,
+      "fit": "letterbox",
+      "rotate": 0,
+      "flip_h": false,
+      "flip_v": false,
+      "crop_left": 0,
+      "crop_top": 0,
+      "crop_right": 0,
+      "crop_bottom": 0,
+      "brightness": 0,
+      "contrast": 0,
+      "saturation": 0,
+      "transition_in": {
+       "kind": "none",
+       "duration": 0.5
+      }
+     }
+    ],
+    "text_rows": [
+     []
+    ],
+    "music_rows": [
+     []
+    ]
+   },
+   "resolution": "project",
+   "size": [
+    1080,
+    1920
+   ]
+  },
+  {
+   "name": "portrait_vertical_480p",
+   "project": {
+    "format": "umcvideo",
+    "version": 1,
+    "settings": {
+     "resolution": "vertical",
+     "width": 1920,
+     "height": 1080,
+     "fps": "first",
+     "background": "#000000"
+    },
+    "sources": [
+     {
+      "id": "v1",
+      "path": "v1.mp4",
+      "kind": "video",
+      "duration": 10.0,
+      "width": 1920,
+      "height": 1080,
+      "fps": 30.0,
+      "has_audio": true,
+      "size": 5000000,
+      "relpath": "v1.mp4"
+     },
+     {
+      "id": "v2",
+      "path": "v2.mp4",
+      "kind": "video",
+      "duration": 4.0,
+      "width": 1280,
+      "height": 720,
+      "fps": 25.0,
+      "has_audio": false,
+      "size": 1200000,
+      "relpath": "v2.mp4"
+     },
+     {
+      "id": "p1",
+      "path": "p1.png",
+      "kind": "image",
+      "duration": 0.0,
+      "width": 800,
+      "height": 600,
+      "fps": 0.0,
+      "has_audio": false,
+      "size": 90000,
+      "relpath": "p1.png"
+     },
+     {
+      "id": "m1",
+      "path": "m1.mp3",
+      "kind": "audio",
+      "duration": 60.0,
+      "width": 0,
+      "height": 0,
+      "fps": 0.0,
+      "has_audio": true,
+      "size": 960000,
+      "relpath": "m1.mp3"
+     }
+    ],
+    "main": [
+     {
+      "type": "video",
+      "id": "a",
+      "source": "v1",
+      "in_": 0,
+      "out": 2,
+      "speed": 1.0,
+      "volume": 100,
+      "mute": false,
+      "fade_in": 0.0,
+      "fade_out": 0.0,
+      "fit": "letterbox",
+      "rotate": 0,
+      "flip_h": false,
+      "flip_v": false,
+      "crop_left": 0,
+      "crop_top": 0,
+      "crop_right": 0,
+      "crop_bottom": 0,
+      "brightness": 0,
+      "contrast": 0,
+      "saturation": 0,
+      "transition_in": {
+       "kind": "none",
+       "duration": 0.5
+      }
+     }
+    ],
+    "text_rows": [
+     []
+    ],
+    "music_rows": [
+     []
+    ]
+   },
+   "resolution": "480p",
+   "size": [
+    270,
+    480
+   ]
+  },
+  {
+   "name": "portrait_vertical_720p",
+   "project": {
+    "format": "umcvideo",
+    "version": 1,
+    "settings": {
+     "resolution": "vertical",
+     "width": 1920,
+     "height": 1080,
+     "fps": "first",
+     "background": "#000000"
+    },
+    "sources": [
+     {
+      "id": "v1",
+      "path": "v1.mp4",
+      "kind": "video",
+      "duration": 10.0,
+      "width": 1920,
+      "height": 1080,
+      "fps": 30.0,
+      "has_audio": true,
+      "size": 5000000,
+      "relpath": "v1.mp4"
+     },
+     {
+      "id": "v2",
+      "path": "v2.mp4",
+      "kind": "video",
+      "duration": 4.0,
+      "width": 1280,
+      "height": 720,
+      "fps": 25.0,
+      "has_audio": false,
+      "size": 1200000,
+      "relpath": "v2.mp4"
+     },
+     {
+      "id": "p1",
+      "path": "p1.png",
+      "kind": "image",
+      "duration": 0.0,
+      "width": 800,
+      "height": 600,
+      "fps": 0.0,
+      "has_audio": false,
+      "size": 90000,
+      "relpath": "p1.png"
+     },
+     {
+      "id": "m1",
+      "path": "m1.mp3",
+      "kind": "audio",
+      "duration": 60.0,
+      "width": 0,
+      "height": 0,
+      "fps": 0.0,
+      "has_audio": true,
+      "size": 960000,
+      "relpath": "m1.mp3"
+     }
+    ],
+    "main": [
+     {
+      "type": "video",
+      "id": "a",
+      "source": "v1",
+      "in_": 0,
+      "out": 2,
+      "speed": 1.0,
+      "volume": 100,
+      "mute": false,
+      "fade_in": 0.0,
+      "fade_out": 0.0,
+      "fit": "letterbox",
+      "rotate": 0,
+      "flip_h": false,
+      "flip_v": false,
+      "crop_left": 0,
+      "crop_top": 0,
+      "crop_right": 0,
+      "crop_bottom": 0,
+      "brightness": 0,
+      "contrast": 0,
+      "saturation": 0,
+      "transition_in": {
+       "kind": "none",
+       "duration": 0.5
+      }
+     }
+    ],
+    "text_rows": [
+     []
+    ],
+    "music_rows": [
+     []
+    ]
+   },
+   "resolution": "720p",
+   "size": [
+    404,
+    720
+   ]
+  },
+  {
+   "name": "portrait_vertical_1080p",
+   "project": {
+    "format": "umcvideo",
+    "version": 1,
+    "settings": {
+     "resolution": "vertical",
+     "width": 1920,
+     "height": 1080,
+     "fps": "first",
+     "background": "#000000"
+    },
+    "sources": [
+     {
+      "id": "v1",
+      "path": "v1.mp4",
+      "kind": "video",
+      "duration": 10.0,
+      "width": 1920,
+      "height": 1080,
+      "fps": 30.0,
+      "has_audio": true,
+      "size": 5000000,
+      "relpath": "v1.mp4"
+     },
+     {
+      "id": "v2",
+      "path": "v2.mp4",
+      "kind": "video",
+      "duration": 4.0,
+      "width": 1280,
+      "height": 720,
+      "fps": 25.0,
+      "has_audio": false,
+      "size": 1200000,
+      "relpath": "v2.mp4"
+     },
+     {
+      "id": "p1",
+      "path": "p1.png",
+      "kind": "image",
+      "duration": 0.0,
+      "width": 800,
+      "height": 600,
+      "fps": 0.0,
+      "has_audio": false,
+      "size": 90000,
+      "relpath": "p1.png"
+     },
+     {
+      "id": "m1",
+      "path": "m1.mp3",
+      "kind": "audio",
+      "duration": 60.0,
+      "width": 0,
+      "height": 0,
+      "fps": 0.0,
+      "has_audio": true,
+      "size": 960000,
+      "relpath": "m1.mp3"
+     }
+    ],
+    "main": [
+     {
+      "type": "video",
+      "id": "a",
+      "source": "v1",
+      "in_": 0,
+      "out": 2,
+      "speed": 1.0,
+      "volume": 100,
+      "mute": false,
+      "fade_in": 0.0,
+      "fade_out": 0.0,
+      "fit": "letterbox",
+      "rotate": 0,
+      "flip_h": false,
+      "flip_v": false,
+      "crop_left": 0,
+      "crop_top": 0,
+      "crop_right": 0,
+      "crop_bottom": 0,
+      "brightness": 0,
+      "contrast": 0,
+      "saturation": 0,
+      "transition_in": {
+       "kind": "none",
+       "duration": 0.5
+      }
+     }
+    ],
+    "text_rows": [
+     []
+    ],
+    "music_rows": [
+     []
+    ]
+   },
+   "resolution": "1080p",
+   "size": [
+    608,
+    1080
+   ]
+  },
+  {
+   "name": "portrait_vertical_4k",
+   "project": {
+    "format": "umcvideo",
+    "version": 1,
+    "settings": {
+     "resolution": "vertical",
+     "width": 1920,
+     "height": 1080,
+     "fps": "first",
+     "background": "#000000"
+    },
+    "sources": [
+     {
+      "id": "v1",
+      "path": "v1.mp4",
+      "kind": "video",
+      "duration": 10.0,
+      "width": 1920,
+      "height": 1080,
+      "fps": 30.0,
+      "has_audio": true,
+      "size": 5000000,
+      "relpath": "v1.mp4"
+     },
+     {
+      "id": "v2",
+      "path": "v2.mp4",
+      "kind": "video",
+      "duration": 4.0,
+      "width": 1280,
+      "height": 720,
+      "fps": 25.0,
+      "has_audio": false,
+      "size": 1200000,
+      "relpath": "v2.mp4"
+     },
+     {
+      "id": "p1",
+      "path": "p1.png",
+      "kind": "image",
+      "duration": 0.0,
+      "width": 800,
+      "height": 600,
+      "fps": 0.0,
+      "has_audio": false,
+      "size": 90000,
+      "relpath": "p1.png"
+     },
+     {
+      "id": "m1",
+      "path": "m1.mp3",
+      "kind": "audio",
+      "duration": 60.0,
+      "width": 0,
+      "height": 0,
+      "fps": 0.0,
+      "has_audio": true,
+      "size": 960000,
+      "relpath": "m1.mp3"
+     }
+    ],
+    "main": [
+     {
+      "type": "video",
+      "id": "a",
+      "source": "v1",
+      "in_": 0,
+      "out": 2,
+      "speed": 1.0,
+      "volume": 100,
+      "mute": false,
+      "fade_in": 0.0,
+      "fade_out": 0.0,
+      "fit": "letterbox",
+      "rotate": 0,
+      "flip_h": false,
+      "flip_v": false,
+      "crop_left": 0,
+      "crop_top": 0,
+      "crop_right": 0,
+      "crop_bottom": 0,
+      "brightness": 0,
+      "contrast": 0,
+      "saturation": 0,
+      "transition_in": {
+       "kind": "none",
+       "duration": 0.5
+      }
+     }
+    ],
+    "text_rows": [
+     []
+    ],
+    "music_rows": [
+     []
+    ]
+   },
+   "resolution": "4k",
+   "size": [
+    1214,
+    2160
+   ]
+  },
+  {
+   "name": "square_project",
+   "project": {
+    "format": "umcvideo",
+    "version": 1,
+    "settings": {
+     "resolution": "square",
+     "width": 1920,
+     "height": 1080,
+     "fps": "first",
+     "background": "#000000"
+    },
+    "sources": [
+     {
+      "id": "v1",
+      "path": "v1.mp4",
+      "kind": "video",
+      "duration": 10.0,
+      "width": 1920,
+      "height": 1080,
+      "fps": 30.0,
+      "has_audio": true,
+      "size": 5000000,
+      "relpath": "v1.mp4"
+     },
+     {
+      "id": "v2",
+      "path": "v2.mp4",
+      "kind": "video",
+      "duration": 4.0,
+      "width": 1280,
+      "height": 720,
+      "fps": 25.0,
+      "has_audio": false,
+      "size": 1200000,
+      "relpath": "v2.mp4"
+     },
+     {
+      "id": "p1",
+      "path": "p1.png",
+      "kind": "image",
+      "duration": 0.0,
+      "width": 800,
+      "height": 600,
+      "fps": 0.0,
+      "has_audio": false,
+      "size": 90000,
+      "relpath": "p1.png"
+     },
+     {
+      "id": "m1",
+      "path": "m1.mp3",
+      "kind": "audio",
+      "duration": 60.0,
+      "width": 0,
+      "height": 0,
+      "fps": 0.0,
+      "has_audio": true,
+      "size": 960000,
+      "relpath": "m1.mp3"
+     }
+    ],
+    "main": [
+     {
+      "type": "video",
+      "id": "a",
+      "source": "v1",
+      "in_": 0,
+      "out": 2,
+      "speed": 1.0,
+      "volume": 100,
+      "mute": false,
+      "fade_in": 0.0,
+      "fade_out": 0.0,
+      "fit": "letterbox",
+      "rotate": 0,
+      "flip_h": false,
+      "flip_v": false,
+      "crop_left": 0,
+      "crop_top": 0,
+      "crop_right": 0,
+      "crop_bottom": 0,
+      "brightness": 0,
+      "contrast": 0,
+      "saturation": 0,
+      "transition_in": {
+       "kind": "none",
+       "duration": 0.5
+      }
+     }
+    ],
+    "text_rows": [
+     []
+    ],
+    "music_rows": [
+     []
+    ]
+   },
+   "resolution": "project",
+   "size": [
+    1080,
+    1080
+   ]
+  },
+  {
+   "name": "square_480p",
+   "project": {
+    "format": "umcvideo",
+    "version": 1,
+    "settings": {
+     "resolution": "square",
+     "width": 1920,
+     "height": 1080,
+     "fps": "first",
+     "background": "#000000"
+    },
+    "sources": [
+     {
+      "id": "v1",
+      "path": "v1.mp4",
+      "kind": "video",
+      "duration": 10.0,
+      "width": 1920,
+      "height": 1080,
+      "fps": 30.0,
+      "has_audio": true,
+      "size": 5000000,
+      "relpath": "v1.mp4"
+     },
+     {
+      "id": "v2",
+      "path": "v2.mp4",
+      "kind": "video",
+      "duration": 4.0,
+      "width": 1280,
+      "height": 720,
+      "fps": 25.0,
+      "has_audio": false,
+      "size": 1200000,
+      "relpath": "v2.mp4"
+     },
+     {
+      "id": "p1",
+      "path": "p1.png",
+      "kind": "image",
+      "duration": 0.0,
+      "width": 800,
+      "height": 600,
+      "fps": 0.0,
+      "has_audio": false,
+      "size": 90000,
+      "relpath": "p1.png"
+     },
+     {
+      "id": "m1",
+      "path": "m1.mp3",
+      "kind": "audio",
+      "duration": 60.0,
+      "width": 0,
+      "height": 0,
+      "fps": 0.0,
+      "has_audio": true,
+      "size": 960000,
+      "relpath": "m1.mp3"
+     }
+    ],
+    "main": [
+     {
+      "type": "video",
+      "id": "a",
+      "source": "v1",
+      "in_": 0,
+      "out": 2,
+      "speed": 1.0,
+      "volume": 100,
+      "mute": false,
+      "fade_in": 0.0,
+      "fade_out": 0.0,
+      "fit": "letterbox",
+      "rotate": 0,
+      "flip_h": false,
+      "flip_v": false,
+      "crop_left": 0,
+      "crop_top": 0,
+      "crop_right": 0,
+      "crop_bottom": 0,
+      "brightness": 0,
+      "contrast": 0,
+      "saturation": 0,
+      "transition_in": {
+       "kind": "none",
+       "duration": 0.5
+      }
+     }
+    ],
+    "text_rows": [
+     []
+    ],
+    "music_rows": [
+     []
+    ]
+   },
+   "resolution": "480p",
+   "size": [
+    480,
+    480
+   ]
+  },
+  {
+   "name": "square_720p",
+   "project": {
+    "format": "umcvideo",
+    "version": 1,
+    "settings": {
+     "resolution": "square",
+     "width": 1920,
+     "height": 1080,
+     "fps": "first",
+     "background": "#000000"
+    },
+    "sources": [
+     {
+      "id": "v1",
+      "path": "v1.mp4",
+      "kind": "video",
+      "duration": 10.0,
+      "width": 1920,
+      "height": 1080,
+      "fps": 30.0,
+      "has_audio": true,
+      "size": 5000000,
+      "relpath": "v1.mp4"
+     },
+     {
+      "id": "v2",
+      "path": "v2.mp4",
+      "kind": "video",
+      "duration": 4.0,
+      "width": 1280,
+      "height": 720,
+      "fps": 25.0,
+      "has_audio": false,
+      "size": 1200000,
+      "relpath": "v2.mp4"
+     },
+     {
+      "id": "p1",
+      "path": "p1.png",
+      "kind": "image",
+      "duration": 0.0,
+      "width": 800,
+      "height": 600,
+      "fps": 0.0,
+      "has_audio": false,
+      "size": 90000,
+      "relpath": "p1.png"
+     },
+     {
+      "id": "m1",
+      "path": "m1.mp3",
+      "kind": "audio",
+      "duration": 60.0,
+      "width": 0,
+      "height": 0,
+      "fps": 0.0,
+      "has_audio": true,
+      "size": 960000,
+      "relpath": "m1.mp3"
+     }
+    ],
+    "main": [
+     {
+      "type": "video",
+      "id": "a",
+      "source": "v1",
+      "in_": 0,
+      "out": 2,
+      "speed": 1.0,
+      "volume": 100,
+      "mute": false,
+      "fade_in": 0.0,
+      "fade_out": 0.0,
+      "fit": "letterbox",
+      "rotate": 0,
+      "flip_h": false,
+      "flip_v": false,
+      "crop_left": 0,
+      "crop_top": 0,
+      "crop_right": 0,
+      "crop_bottom": 0,
+      "brightness": 0,
+      "contrast": 0,
+      "saturation": 0,
+      "transition_in": {
+       "kind": "none",
+       "duration": 0.5
+      }
+     }
+    ],
+    "text_rows": [
+     []
+    ],
+    "music_rows": [
+     []
+    ]
+   },
+   "resolution": "720p",
+   "size": [
+    720,
+    720
+   ]
+  },
+  {
+   "name": "square_1080p",
+   "project": {
+    "format": "umcvideo",
+    "version": 1,
+    "settings": {
+     "resolution": "square",
+     "width": 1920,
+     "height": 1080,
+     "fps": "first",
+     "background": "#000000"
+    },
+    "sources": [
+     {
+      "id": "v1",
+      "path": "v1.mp4",
+      "kind": "video",
+      "duration": 10.0,
+      "width": 1920,
+      "height": 1080,
+      "fps": 30.0,
+      "has_audio": true,
+      "size": 5000000,
+      "relpath": "v1.mp4"
+     },
+     {
+      "id": "v2",
+      "path": "v2.mp4",
+      "kind": "video",
+      "duration": 4.0,
+      "width": 1280,
+      "height": 720,
+      "fps": 25.0,
+      "has_audio": false,
+      "size": 1200000,
+      "relpath": "v2.mp4"
+     },
+     {
+      "id": "p1",
+      "path": "p1.png",
+      "kind": "image",
+      "duration": 0.0,
+      "width": 800,
+      "height": 600,
+      "fps": 0.0,
+      "has_audio": false,
+      "size": 90000,
+      "relpath": "p1.png"
+     },
+     {
+      "id": "m1",
+      "path": "m1.mp3",
+      "kind": "audio",
+      "duration": 60.0,
+      "width": 0,
+      "height": 0,
+      "fps": 0.0,
+      "has_audio": true,
+      "size": 960000,
+      "relpath": "m1.mp3"
+     }
+    ],
+    "main": [
+     {
+      "type": "video",
+      "id": "a",
+      "source": "v1",
+      "in_": 0,
+      "out": 2,
+      "speed": 1.0,
+      "volume": 100,
+      "mute": false,
+      "fade_in": 0.0,
+      "fade_out": 0.0,
+      "fit": "letterbox",
+      "rotate": 0,
+      "flip_h": false,
+      "flip_v": false,
+      "crop_left": 0,
+      "crop_top": 0,
+      "crop_right": 0,
+      "crop_bottom": 0,
+      "brightness": 0,
+      "contrast": 0,
+      "saturation": 0,
+      "transition_in": {
+       "kind": "none",
+       "duration": 0.5
+      }
+     }
+    ],
+    "text_rows": [
+     []
+    ],
+    "music_rows": [
+     []
+    ]
+   },
+   "resolution": "1080p",
+   "size": [
+    1080,
+    1080
+   ]
+  },
+  {
+   "name": "square_4k",
+   "project": {
+    "format": "umcvideo",
+    "version": 1,
+    "settings": {
+     "resolution": "square",
+     "width": 1920,
+     "height": 1080,
+     "fps": "first",
+     "background": "#000000"
+    },
+    "sources": [
+     {
+      "id": "v1",
+      "path": "v1.mp4",
+      "kind": "video",
+      "duration": 10.0,
+      "width": 1920,
+      "height": 1080,
+      "fps": 30.0,
+      "has_audio": true,
+      "size": 5000000,
+      "relpath": "v1.mp4"
+     },
+     {
+      "id": "v2",
+      "path": "v2.mp4",
+      "kind": "video",
+      "duration": 4.0,
+      "width": 1280,
+      "height": 720,
+      "fps": 25.0,
+      "has_audio": false,
+      "size": 1200000,
+      "relpath": "v2.mp4"
+     },
+     {
+      "id": "p1",
+      "path": "p1.png",
+      "kind": "image",
+      "duration": 0.0,
+      "width": 800,
+      "height": 600,
+      "fps": 0.0,
+      "has_audio": false,
+      "size": 90000,
+      "relpath": "p1.png"
+     },
+     {
+      "id": "m1",
+      "path": "m1.mp3",
+      "kind": "audio",
+      "duration": 60.0,
+      "width": 0,
+      "height": 0,
+      "fps": 0.0,
+      "has_audio": true,
+      "size": 960000,
+      "relpath": "m1.mp3"
+     }
+    ],
+    "main": [
+     {
+      "type": "video",
+      "id": "a",
+      "source": "v1",
+      "in_": 0,
+      "out": 2,
+      "speed": 1.0,
+      "volume": 100,
+      "mute": false,
+      "fade_in": 0.0,
+      "fade_out": 0.0,
+      "fit": "letterbox",
+      "rotate": 0,
+      "flip_h": false,
+      "flip_v": false,
+      "crop_left": 0,
+      "crop_top": 0,
+      "crop_right": 0,
+      "crop_bottom": 0,
+      "brightness": 0,
+      "contrast": 0,
+      "saturation": 0,
+      "transition_in": {
+       "kind": "none",
+       "duration": 0.5
+      }
+     }
+    ],
+    "text_rows": [
+     []
+    ],
+    "music_rows": [
+     []
+    ]
+   },
+   "resolution": "4k",
+   "size": [
+    2160,
+    2160
+   ]
+  },
+  {
+   "name": "first_video_720_project",
+   "project": {
+    "format": "umcvideo",
+    "version": 1,
+    "settings": {
+     "resolution": "first",
+     "width": 1920,
+     "height": 1080,
+     "fps": "first",
+     "background": "#000000"
+    },
+    "sources": [
+     {
+      "id": "v1",
+      "path": "v1.mp4",
+      "kind": "video",
+      "duration": 10.0,
+      "width": 1920,
+      "height": 1080,
+      "fps": 30.0,
+      "has_audio": true,
+      "size": 5000000,
+      "relpath": "v1.mp4"
+     },
+     {
+      "id": "v2",
+      "path": "v2.mp4",
+      "kind": "video",
+      "duration": 4.0,
+      "width": 1280,
+      "height": 720,
+      "fps": 25.0,
+      "has_audio": false,
+      "size": 1200000,
+      "relpath": "v2.mp4"
+     },
+     {
+      "id": "p1",
+      "path": "p1.png",
+      "kind": "image",
+      "duration": 0.0,
+      "width": 800,
+      "height": 600,
+      "fps": 0.0,
+      "has_audio": false,
+      "size": 90000,
+      "relpath": "p1.png"
+     },
+     {
+      "id": "m1",
+      "path": "m1.mp3",
+      "kind": "audio",
+      "duration": 60.0,
+      "width": 0,
+      "height": 0,
+      "fps": 0.0,
+      "has_audio": true,
+      "size": 960000,
+      "relpath": "m1.mp3"
+     }
+    ],
+    "main": [
+     {
+      "type": "video",
+      "id": "a",
+      "source": "v2",
+      "in_": 0,
+      "out": 2,
+      "speed": 1.0,
+      "volume": 100,
+      "mute": false,
+      "fade_in": 0.0,
+      "fade_out": 0.0,
+      "fit": "letterbox",
+      "rotate": 0,
+      "flip_h": false,
+      "flip_v": false,
+      "crop_left": 0,
+      "crop_top": 0,
+      "crop_right": 0,
+      "crop_bottom": 0,
+      "brightness": 0,
+      "contrast": 0,
+      "saturation": 0,
+      "transition_in": {
+       "kind": "none",
+       "duration": 0.5
+      }
+     }
+    ],
+    "text_rows": [
+     []
+    ],
+    "music_rows": [
+     []
+    ]
+   },
+   "resolution": "project",
+   "size": [
+    1280,
+    720
+   ]
+  },
+  {
+   "name": "first_video_720_480p",
+   "project": {
+    "format": "umcvideo",
+    "version": 1,
+    "settings": {
+     "resolution": "first",
+     "width": 1920,
+     "height": 1080,
+     "fps": "first",
+     "background": "#000000"
+    },
+    "sources": [
+     {
+      "id": "v1",
+      "path": "v1.mp4",
+      "kind": "video",
+      "duration": 10.0,
+      "width": 1920,
+      "height": 1080,
+      "fps": 30.0,
+      "has_audio": true,
+      "size": 5000000,
+      "relpath": "v1.mp4"
+     },
+     {
+      "id": "v2",
+      "path": "v2.mp4",
+      "kind": "video",
+      "duration": 4.0,
+      "width": 1280,
+      "height": 720,
+      "fps": 25.0,
+      "has_audio": false,
+      "size": 1200000,
+      "relpath": "v2.mp4"
+     },
+     {
+      "id": "p1",
+      "path": "p1.png",
+      "kind": "image",
+      "duration": 0.0,
+      "width": 800,
+      "height": 600,
+      "fps": 0.0,
+      "has_audio": false,
+      "size": 90000,
+      "relpath": "p1.png"
+     },
+     {
+      "id": "m1",
+      "path": "m1.mp3",
+      "kind": "audio",
+      "duration": 60.0,
+      "width": 0,
+      "height": 0,
+      "fps": 0.0,
+      "has_audio": true,
+      "size": 960000,
+      "relpath": "m1.mp3"
+     }
+    ],
+    "main": [
+     {
+      "type": "video",
+      "id": "a",
+      "source": "v2",
+      "in_": 0,
+      "out": 2,
+      "speed": 1.0,
+      "volume": 100,
+      "mute": false,
+      "fade_in": 0.0,
+      "fade_out": 0.0,
+      "fit": "letterbox",
+      "rotate": 0,
+      "flip_h": false,
+      "flip_v": false,
+      "crop_left": 0,
+      "crop_top": 0,
+      "crop_right": 0,
+      "crop_bottom": 0,
+      "brightness": 0,
+      "contrast": 0,
+      "saturation": 0,
+      "transition_in": {
+       "kind": "none",
+       "duration": 0.5
+      }
+     }
+    ],
+    "text_rows": [
+     []
+    ],
+    "music_rows": [
+     []
+    ]
+   },
+   "resolution": "480p",
+   "size": [
+    852,
+    480
+   ]
+  },
+  {
+   "name": "first_video_720_720p",
+   "project": {
+    "format": "umcvideo",
+    "version": 1,
+    "settings": {
+     "resolution": "first",
+     "width": 1920,
+     "height": 1080,
+     "fps": "first",
+     "background": "#000000"
+    },
+    "sources": [
+     {
+      "id": "v1",
+      "path": "v1.mp4",
+      "kind": "video",
+      "duration": 10.0,
+      "width": 1920,
+      "height": 1080,
+      "fps": 30.0,
+      "has_audio": true,
+      "size": 5000000,
+      "relpath": "v1.mp4"
+     },
+     {
+      "id": "v2",
+      "path": "v2.mp4",
+      "kind": "video",
+      "duration": 4.0,
+      "width": 1280,
+      "height": 720,
+      "fps": 25.0,
+      "has_audio": false,
+      "size": 1200000,
+      "relpath": "v2.mp4"
+     },
+     {
+      "id": "p1",
+      "path": "p1.png",
+      "kind": "image",
+      "duration": 0.0,
+      "width": 800,
+      "height": 600,
+      "fps": 0.0,
+      "has_audio": false,
+      "size": 90000,
+      "relpath": "p1.png"
+     },
+     {
+      "id": "m1",
+      "path": "m1.mp3",
+      "kind": "audio",
+      "duration": 60.0,
+      "width": 0,
+      "height": 0,
+      "fps": 0.0,
+      "has_audio": true,
+      "size": 960000,
+      "relpath": "m1.mp3"
+     }
+    ],
+    "main": [
+     {
+      "type": "video",
+      "id": "a",
+      "source": "v2",
+      "in_": 0,
+      "out": 2,
+      "speed": 1.0,
+      "volume": 100,
+      "mute": false,
+      "fade_in": 0.0,
+      "fade_out": 0.0,
+      "fit": "letterbox",
+      "rotate": 0,
+      "flip_h": false,
+      "flip_v": false,
+      "crop_left": 0,
+      "crop_top": 0,
+      "crop_right": 0,
+      "crop_bottom": 0,
+      "brightness": 0,
+      "contrast": 0,
+      "saturation": 0,
+      "transition_in": {
+       "kind": "none",
+       "duration": 0.5
+      }
+     }
+    ],
+    "text_rows": [
+     []
+    ],
+    "music_rows": [
+     []
+    ]
+   },
+   "resolution": "720p",
+   "size": [
+    1280,
+    720
+   ]
+  },
+  {
+   "name": "first_video_720_1080p",
+   "project": {
+    "format": "umcvideo",
+    "version": 1,
+    "settings": {
+     "resolution": "first",
+     "width": 1920,
+     "height": 1080,
+     "fps": "first",
+     "background": "#000000"
+    },
+    "sources": [
+     {
+      "id": "v1",
+      "path": "v1.mp4",
+      "kind": "video",
+      "duration": 10.0,
+      "width": 1920,
+      "height": 1080,
+      "fps": 30.0,
+      "has_audio": true,
+      "size": 5000000,
+      "relpath": "v1.mp4"
+     },
+     {
+      "id": "v2",
+      "path": "v2.mp4",
+      "kind": "video",
+      "duration": 4.0,
+      "width": 1280,
+      "height": 720,
+      "fps": 25.0,
+      "has_audio": false,
+      "size": 1200000,
+      "relpath": "v2.mp4"
+     },
+     {
+      "id": "p1",
+      "path": "p1.png",
+      "kind": "image",
+      "duration": 0.0,
+      "width": 800,
+      "height": 600,
+      "fps": 0.0,
+      "has_audio": false,
+      "size": 90000,
+      "relpath": "p1.png"
+     },
+     {
+      "id": "m1",
+      "path": "m1.mp3",
+      "kind": "audio",
+      "duration": 60.0,
+      "width": 0,
+      "height": 0,
+      "fps": 0.0,
+      "has_audio": true,
+      "size": 960000,
+      "relpath": "m1.mp3"
+     }
+    ],
+    "main": [
+     {
+      "type": "video",
+      "id": "a",
+      "source": "v2",
+      "in_": 0,
+      "out": 2,
+      "speed": 1.0,
+      "volume": 100,
+      "mute": false,
+      "fade_in": 0.0,
+      "fade_out": 0.0,
+      "fit": "letterbox",
+      "rotate": 0,
+      "flip_h": false,
+      "flip_v": false,
+      "crop_left": 0,
+      "crop_top": 0,
+      "crop_right": 0,
+      "crop_bottom": 0,
+      "brightness": 0,
+      "contrast": 0,
+      "saturation": 0,
+      "transition_in": {
+       "kind": "none",
+       "duration": 0.5
+      }
+     }
+    ],
+    "text_rows": [
+     []
+    ],
+    "music_rows": [
+     []
+    ]
+   },
+   "resolution": "1080p",
+   "size": [
+    1920,
+    1080
+   ]
+  },
+  {
+   "name": "first_video_720_4k",
+   "project": {
+    "format": "umcvideo",
+    "version": 1,
+    "settings": {
+     "resolution": "first",
+     "width": 1920,
+     "height": 1080,
+     "fps": "first",
+     "background": "#000000"
+    },
+    "sources": [
+     {
+      "id": "v1",
+      "path": "v1.mp4",
+      "kind": "video",
+      "duration": 10.0,
+      "width": 1920,
+      "height": 1080,
+      "fps": 30.0,
+      "has_audio": true,
+      "size": 5000000,
+      "relpath": "v1.mp4"
+     },
+     {
+      "id": "v2",
+      "path": "v2.mp4",
+      "kind": "video",
+      "duration": 4.0,
+      "width": 1280,
+      "height": 720,
+      "fps": 25.0,
+      "has_audio": false,
+      "size": 1200000,
+      "relpath": "v2.mp4"
+     },
+     {
+      "id": "p1",
+      "path": "p1.png",
+      "kind": "image",
+      "duration": 0.0,
+      "width": 800,
+      "height": 600,
+      "fps": 0.0,
+      "has_audio": false,
+      "size": 90000,
+      "relpath": "p1.png"
+     },
+     {
+      "id": "m1",
+      "path": "m1.mp3",
+      "kind": "audio",
+      "duration": 60.0,
+      "width": 0,
+      "height": 0,
+      "fps": 0.0,
+      "has_audio": true,
+      "size": 960000,
+      "relpath": "m1.mp3"
+     }
+    ],
+    "main": [
+     {
+      "type": "video",
+      "id": "a",
+      "source": "v2",
+      "in_": 0,
+      "out": 2,
+      "speed": 1.0,
+      "volume": 100,
+      "mute": false,
+      "fade_in": 0.0,
+      "fade_out": 0.0,
+      "fit": "letterbox",
+      "rotate": 0,
+      "flip_h": false,
+      "flip_v": false,
+      "crop_left": 0,
+      "crop_top": 0,
+      "crop_right": 0,
+      "crop_bottom": 0,
+      "brightness": 0,
+      "contrast": 0,
+      "saturation": 0,
+      "transition_in": {
+       "kind": "none",
+       "duration": 0.5
+      }
+     }
+    ],
+    "text_rows": [
+     []
+    ],
+    "music_rows": [
+     []
+    ]
+   },
+   "resolution": "4k",
+   "size": [
+    3840,
+    2160
+   ]
+  },
+  {
+   "name": "odd_height_project",
+   "project": {
+    "format": "umcvideo",
+    "version": 1,
+    "settings": {
+     "resolution": "custom",
+     "width": 1001,
+     "height": 721,
+     "fps": "first",
+     "background": "#000000"
+    },
+    "sources": [
+     {
+      "id": "v1",
+      "path": "v1.mp4",
+      "kind": "video",
+      "duration": 10.0,
+      "width": 1920,
+      "height": 1080,
+      "fps": 30.0,
+      "has_audio": true,
+      "size": 5000000,
+      "relpath": "v1.mp4"
+     },
+     {
+      "id": "v2",
+      "path": "v2.mp4",
+      "kind": "video",
+      "duration": 4.0,
+      "width": 1280,
+      "height": 720,
+      "fps": 25.0,
+      "has_audio": false,
+      "size": 1200000,
+      "relpath": "v2.mp4"
+     },
+     {
+      "id": "p1",
+      "path": "p1.png",
+      "kind": "image",
+      "duration": 0.0,
+      "width": 800,
+      "height": 600,
+      "fps": 0.0,
+      "has_audio": false,
+      "size": 90000,
+      "relpath": "p1.png"
+     },
+     {
+      "id": "m1",
+      "path": "m1.mp3",
+      "kind": "audio",
+      "duration": 60.0,
+      "width": 0,
+      "height": 0,
+      "fps": 0.0,
+      "has_audio": true,
+      "size": 960000,
+      "relpath": "m1.mp3"
+     }
+    ],
+    "main": [
+     {
+      "type": "video",
+      "id": "a",
+      "source": "v1",
+      "in_": 0,
+      "out": 2,
+      "speed": 1.0,
+      "volume": 100,
+      "mute": false,
+      "fade_in": 0.0,
+      "fade_out": 0.0,
+      "fit": "letterbox",
+      "rotate": 0,
+      "flip_h": false,
+      "flip_v": false,
+      "crop_left": 0,
+      "crop_top": 0,
+      "crop_right": 0,
+      "crop_bottom": 0,
+      "brightness": 0,
+      "contrast": 0,
+      "saturation": 0,
+      "transition_in": {
+       "kind": "none",
+       "duration": 0.5
+      }
+     }
+    ],
+    "text_rows": [
+     []
+    ],
+    "music_rows": [
+     []
+    ]
+   },
+   "resolution": "project",
+   "size": [
+    1000,
+    720
+   ]
+  },
+  {
+   "name": "odd_height_480p",
+   "project": {
+    "format": "umcvideo",
+    "version": 1,
+    "settings": {
+     "resolution": "custom",
+     "width": 1001,
+     "height": 721,
+     "fps": "first",
+     "background": "#000000"
+    },
+    "sources": [
+     {
+      "id": "v1",
+      "path": "v1.mp4",
+      "kind": "video",
+      "duration": 10.0,
+      "width": 1920,
+      "height": 1080,
+      "fps": 30.0,
+      "has_audio": true,
+      "size": 5000000,
+      "relpath": "v1.mp4"
+     },
+     {
+      "id": "v2",
+      "path": "v2.mp4",
+      "kind": "video",
+      "duration": 4.0,
+      "width": 1280,
+      "height": 720,
+      "fps": 25.0,
+      "has_audio": false,
+      "size": 1200000,
+      "relpath": "v2.mp4"
+     },
+     {
+      "id": "p1",
+      "path": "p1.png",
+      "kind": "image",
+      "duration": 0.0,
+      "width": 800,
+      "height": 600,
+      "fps": 0.0,
+      "has_audio": false,
+      "size": 90000,
+      "relpath": "p1.png"
+     },
+     {
+      "id": "m1",
+      "path": "m1.mp3",
+      "kind": "audio",
+      "duration": 60.0,
+      "width": 0,
+      "height": 0,
+      "fps": 0.0,
+      "has_audio": true,
+      "size": 960000,
+      "relpath": "m1.mp3"
+     }
+    ],
+    "main": [
+     {
+      "type": "video",
+      "id": "a",
+      "source": "v1",
+      "in_": 0,
+      "out": 2,
+      "speed": 1.0,
+      "volume": 100,
+      "mute": false,
+      "fade_in": 0.0,
+      "fade_out": 0.0,
+      "fit": "letterbox",
+      "rotate": 0,
+      "flip_h": false,
+      "flip_v": false,
+      "crop_left": 0,
+      "crop_top": 0,
+      "crop_right": 0,
+      "crop_bottom": 0,
+      "brightness": 0,
+      "contrast": 0,
+      "saturation": 0,
+      "transition_in": {
+       "kind": "none",
+       "duration": 0.5
+      }
+     }
+    ],
+    "text_rows": [
+     []
+    ],
+    "music_rows": [
+     []
+    ]
+   },
+   "resolution": "480p",
+   "size": [
+    666,
+    480
+   ]
+  },
+  {
+   "name": "odd_height_720p",
+   "project": {
+    "format": "umcvideo",
+    "version": 1,
+    "settings": {
+     "resolution": "custom",
+     "width": 1001,
+     "height": 721,
+     "fps": "first",
+     "background": "#000000"
+    },
+    "sources": [
+     {
+      "id": "v1",
+      "path": "v1.mp4",
+      "kind": "video",
+      "duration": 10.0,
+      "width": 1920,
+      "height": 1080,
+      "fps": 30.0,
+      "has_audio": true,
+      "size": 5000000,
+      "relpath": "v1.mp4"
+     },
+     {
+      "id": "v2",
+      "path": "v2.mp4",
+      "kind": "video",
+      "duration": 4.0,
+      "width": 1280,
+      "height": 720,
+      "fps": 25.0,
+      "has_audio": false,
+      "size": 1200000,
+      "relpath": "v2.mp4"
+     },
+     {
+      "id": "p1",
+      "path": "p1.png",
+      "kind": "image",
+      "duration": 0.0,
+      "width": 800,
+      "height": 600,
+      "fps": 0.0,
+      "has_audio": false,
+      "size": 90000,
+      "relpath": "p1.png"
+     },
+     {
+      "id": "m1",
+      "path": "m1.mp3",
+      "kind": "audio",
+      "duration": 60.0,
+      "width": 0,
+      "height": 0,
+      "fps": 0.0,
+      "has_audio": true,
+      "size": 960000,
+      "relpath": "m1.mp3"
+     }
+    ],
+    "main": [
+     {
+      "type": "video",
+      "id": "a",
+      "source": "v1",
+      "in_": 0,
+      "out": 2,
+      "speed": 1.0,
+      "volume": 100,
+      "mute": false,
+      "fade_in": 0.0,
+      "fade_out": 0.0,
+      "fit": "letterbox",
+      "rotate": 0,
+      "flip_h": false,
+      "flip_v": false,
+      "crop_left": 0,
+      "crop_top": 0,
+      "crop_right": 0,
+      "crop_bottom": 0,
+      "brightness": 0,
+      "contrast": 0,
+      "saturation": 0,
+      "transition_in": {
+       "kind": "none",
+       "duration": 0.5
+      }
+     }
+    ],
+    "text_rows": [
+     []
+    ],
+    "music_rows": [
+     []
+    ]
+   },
+   "resolution": "720p",
+   "size": [
+    1000,
+    720
+   ]
+  },
+  {
+   "name": "odd_height_1080p",
+   "project": {
+    "format": "umcvideo",
+    "version": 1,
+    "settings": {
+     "resolution": "custom",
+     "width": 1001,
+     "height": 721,
+     "fps": "first",
+     "background": "#000000"
+    },
+    "sources": [
+     {
+      "id": "v1",
+      "path": "v1.mp4",
+      "kind": "video",
+      "duration": 10.0,
+      "width": 1920,
+      "height": 1080,
+      "fps": 30.0,
+      "has_audio": true,
+      "size": 5000000,
+      "relpath": "v1.mp4"
+     },
+     {
+      "id": "v2",
+      "path": "v2.mp4",
+      "kind": "video",
+      "duration": 4.0,
+      "width": 1280,
+      "height": 720,
+      "fps": 25.0,
+      "has_audio": false,
+      "size": 1200000,
+      "relpath": "v2.mp4"
+     },
+     {
+      "id": "p1",
+      "path": "p1.png",
+      "kind": "image",
+      "duration": 0.0,
+      "width": 800,
+      "height": 600,
+      "fps": 0.0,
+      "has_audio": false,
+      "size": 90000,
+      "relpath": "p1.png"
+     },
+     {
+      "id": "m1",
+      "path": "m1.mp3",
+      "kind": "audio",
+      "duration": 60.0,
+      "width": 0,
+      "height": 0,
+      "fps": 0.0,
+      "has_audio": true,
+      "size": 960000,
+      "relpath": "m1.mp3"
+     }
+    ],
+    "main": [
+     {
+      "type": "video",
+      "id": "a",
+      "source": "v1",
+      "in_": 0,
+      "out": 2,
+      "speed": 1.0,
+      "volume": 100,
+      "mute": false,
+      "fade_in": 0.0,
+      "fade_out": 0.0,
+      "fit": "letterbox",
+      "rotate": 0,
+      "flip_h": false,
+      "flip_v": false,
+      "crop_left": 0,
+      "crop_top": 0,
+      "crop_right": 0,
+      "crop_bottom": 0,
+      "brightness": 0,
+      "contrast": 0,
+      "saturation": 0,
+      "transition_in": {
+       "kind": "none",
+       "duration": 0.5
+      }
+     }
+    ],
+    "text_rows": [
+     []
+    ],
+    "music_rows": [
+     []
+    ]
+   },
+   "resolution": "1080p",
+   "size": [
+    1500,
+    1080
+   ]
+  },
+  {
+   "name": "odd_height_4k",
+   "project": {
+    "format": "umcvideo",
+    "version": 1,
+    "settings": {
+     "resolution": "custom",
+     "width": 1001,
+     "height": 721,
+     "fps": "first",
+     "background": "#000000"
+    },
+    "sources": [
+     {
+      "id": "v1",
+      "path": "v1.mp4",
+      "kind": "video",
+      "duration": 10.0,
+      "width": 1920,
+      "height": 1080,
+      "fps": 30.0,
+      "has_audio": true,
+      "size": 5000000,
+      "relpath": "v1.mp4"
+     },
+     {
+      "id": "v2",
+      "path": "v2.mp4",
+      "kind": "video",
+      "duration": 4.0,
+      "width": 1280,
+      "height": 720,
+      "fps": 25.0,
+      "has_audio": false,
+      "size": 1200000,
+      "relpath": "v2.mp4"
+     },
+     {
+      "id": "p1",
+      "path": "p1.png",
+      "kind": "image",
+      "duration": 0.0,
+      "width": 800,
+      "height": 600,
+      "fps": 0.0,
+      "has_audio": false,
+      "size": 90000,
+      "relpath": "p1.png"
+     },
+     {
+      "id": "m1",
+      "path": "m1.mp3",
+      "kind": "audio",
+      "duration": 60.0,
+      "width": 0,
+      "height": 0,
+      "fps": 0.0,
+      "has_audio": true,
+      "size": 960000,
+      "relpath": "m1.mp3"
+     }
+    ],
+    "main": [
+     {
+      "type": "video",
+      "id": "a",
+      "source": "v1",
+      "in_": 0,
+      "out": 2,
+      "speed": 1.0,
+      "volume": 100,
+      "mute": false,
+      "fade_in": 0.0,
+      "fade_out": 0.0,
+      "fit": "letterbox",
+      "rotate": 0,
+      "flip_h": false,
+      "flip_v": false,
+      "crop_left": 0,
+      "crop_top": 0,
+      "crop_right": 0,
+      "crop_bottom": 0,
+      "brightness": 0,
+      "contrast": 0,
+      "saturation": 0,
+      "transition_in": {
+       "kind": "none",
+       "duration": 0.5
+      }
+     }
+    ],
+    "text_rows": [
+     []
+    ],
+    "music_rows": [
+     []
+    ]
+   },
+   "resolution": "4k",
+   "size": [
+    3000,
+    2160
+   ]
+  },
+  {
+   "name": "pictures_only_project",
+   "project": {
+    "format": "umcvideo",
+    "version": 1,
+    "settings": {
+     "resolution": "first",
+     "width": 1920,
+     "height": 1080,
+     "fps": "first",
+     "background": "#000000"
+    },
+    "sources": [
+     {
+      "id": "v1",
+      "path": "v1.mp4",
+      "kind": "video",
+      "duration": 10.0,
+      "width": 1920,
+      "height": 1080,
+      "fps": 30.0,
+      "has_audio": true,
+      "size": 5000000,
+      "relpath": "v1.mp4"
+     },
+     {
+      "id": "v2",
+      "path": "v2.mp4",
+      "kind": "video",
+      "duration": 4.0,
+      "width": 1280,
+      "height": 720,
+      "fps": 25.0,
+      "has_audio": false,
+      "size": 1200000,
+      "relpath": "v2.mp4"
+     },
+     {
+      "id": "p1",
+      "path": "p1.png",
+      "kind": "image",
+      "duration": 0.0,
+      "width": 800,
+      "height": 600,
+      "fps": 0.0,
+      "has_audio": false,
+      "size": 90000,
+      "relpath": "p1.png"
+     },
+     {
+      "id": "m1",
+      "path": "m1.mp3",
+      "kind": "audio",
+      "duration": 60.0,
+      "width": 0,
+      "height": 0,
+      "fps": 0.0,
+      "has_audio": true,
+      "size": 960000,
+      "relpath": "m1.mp3"
+     }
+    ],
+    "main": [
+     {
+      "type": "picture",
+      "id": "a",
+      "source": "p1",
+      "duration": 3.0,
+      "fit": "letterbox",
+      "rotate": 0,
+      "flip_h": false,
+      "flip_v": false,
+      "fade_in": 0.0,
+      "fade_out": 0.0,
+      "brightness": 0,
+      "contrast": 0,
+      "saturation": 0,
+      "transition_in": {
+       "kind": "none",
+       "duration": 0.5
+      }
+     }
+    ],
+    "text_rows": [
+     []
+    ],
+    "music_rows": [
+     []
+    ]
+   },
+   "resolution": "project",
+   "size": [
+    1920,
+    1080
+   ]
+  },
+  {
+   "name": "pictures_only_480p",
+   "project": {
+    "format": "umcvideo",
+    "version": 1,
+    "settings": {
+     "resolution": "first",
+     "width": 1920,
+     "height": 1080,
+     "fps": "first",
+     "background": "#000000"
+    },
+    "sources": [
+     {
+      "id": "v1",
+      "path": "v1.mp4",
+      "kind": "video",
+      "duration": 10.0,
+      "width": 1920,
+      "height": 1080,
+      "fps": 30.0,
+      "has_audio": true,
+      "size": 5000000,
+      "relpath": "v1.mp4"
+     },
+     {
+      "id": "v2",
+      "path": "v2.mp4",
+      "kind": "video",
+      "duration": 4.0,
+      "width": 1280,
+      "height": 720,
+      "fps": 25.0,
+      "has_audio": false,
+      "size": 1200000,
+      "relpath": "v2.mp4"
+     },
+     {
+      "id": "p1",
+      "path": "p1.png",
+      "kind": "image",
+      "duration": 0.0,
+      "width": 800,
+      "height": 600,
+      "fps": 0.0,
+      "has_audio": false,
+      "size": 90000,
+      "relpath": "p1.png"
+     },
+     {
+      "id": "m1",
+      "path": "m1.mp3",
+      "kind": "audio",
+      "duration": 60.0,
+      "width": 0,
+      "height": 0,
+      "fps": 0.0,
+      "has_audio": true,
+      "size": 960000,
+      "relpath": "m1.mp3"
+     }
+    ],
+    "main": [
+     {
+      "type": "picture",
+      "id": "a",
+      "source": "p1",
+      "duration": 3.0,
+      "fit": "letterbox",
+      "rotate": 0,
+      "flip_h": false,
+      "flip_v": false,
+      "fade_in": 0.0,
+      "fade_out": 0.0,
+      "brightness": 0,
+      "contrast": 0,
+      "saturation": 0,
+      "transition_in": {
+       "kind": "none",
+       "duration": 0.5
+      }
+     }
+    ],
+    "text_rows": [
+     []
+    ],
+    "music_rows": [
+     []
+    ]
+   },
+   "resolution": "480p",
+   "size": [
+    852,
+    480
+   ]
+  },
+  {
+   "name": "pictures_only_720p",
+   "project": {
+    "format": "umcvideo",
+    "version": 1,
+    "settings": {
+     "resolution": "first",
+     "width": 1920,
+     "height": 1080,
+     "fps": "first",
+     "background": "#000000"
+    },
+    "sources": [
+     {
+      "id": "v1",
+      "path": "v1.mp4",
+      "kind": "video",
+      "duration": 10.0,
+      "width": 1920,
+      "height": 1080,
+      "fps": 30.0,
+      "has_audio": true,
+      "size": 5000000,
+      "relpath": "v1.mp4"
+     },
+     {
+      "id": "v2",
+      "path": "v2.mp4",
+      "kind": "video",
+      "duration": 4.0,
+      "width": 1280,
+      "height": 720,
+      "fps": 25.0,
+      "has_audio": false,
+      "size": 1200000,
+      "relpath": "v2.mp4"
+     },
+     {
+      "id": "p1",
+      "path": "p1.png",
+      "kind": "image",
+      "duration": 0.0,
+      "width": 800,
+      "height": 600,
+      "fps": 0.0,
+      "has_audio": false,
+      "size": 90000,
+      "relpath": "p1.png"
+     },
+     {
+      "id": "m1",
+      "path": "m1.mp3",
+      "kind": "audio",
+      "duration": 60.0,
+      "width": 0,
+      "height": 0,
+      "fps": 0.0,
+      "has_audio": true,
+      "size": 960000,
+      "relpath": "m1.mp3"
+     }
+    ],
+    "main": [
+     {
+      "type": "picture",
+      "id": "a",
+      "source": "p1",
+      "duration": 3.0,
+      "fit": "letterbox",
+      "rotate": 0,
+      "flip_h": false,
+      "flip_v": false,
+      "fade_in": 0.0,
+      "fade_out": 0.0,
+      "brightness": 0,
+      "contrast": 0,
+      "saturation": 0,
+      "transition_in": {
+       "kind": "none",
+       "duration": 0.5
+      }
+     }
+    ],
+    "text_rows": [
+     []
+    ],
+    "music_rows": [
+     []
+    ]
+   },
+   "resolution": "720p",
+   "size": [
+    1280,
+    720
+   ]
+  },
+  {
+   "name": "pictures_only_1080p",
+   "project": {
+    "format": "umcvideo",
+    "version": 1,
+    "settings": {
+     "resolution": "first",
+     "width": 1920,
+     "height": 1080,
+     "fps": "first",
+     "background": "#000000"
+    },
+    "sources": [
+     {
+      "id": "v1",
+      "path": "v1.mp4",
+      "kind": "video",
+      "duration": 10.0,
+      "width": 1920,
+      "height": 1080,
+      "fps": 30.0,
+      "has_audio": true,
+      "size": 5000000,
+      "relpath": "v1.mp4"
+     },
+     {
+      "id": "v2",
+      "path": "v2.mp4",
+      "kind": "video",
+      "duration": 4.0,
+      "width": 1280,
+      "height": 720,
+      "fps": 25.0,
+      "has_audio": false,
+      "size": 1200000,
+      "relpath": "v2.mp4"
+     },
+     {
+      "id": "p1",
+      "path": "p1.png",
+      "kind": "image",
+      "duration": 0.0,
+      "width": 800,
+      "height": 600,
+      "fps": 0.0,
+      "has_audio": false,
+      "size": 90000,
+      "relpath": "p1.png"
+     },
+     {
+      "id": "m1",
+      "path": "m1.mp3",
+      "kind": "audio",
+      "duration": 60.0,
+      "width": 0,
+      "height": 0,
+      "fps": 0.0,
+      "has_audio": true,
+      "size": 960000,
+      "relpath": "m1.mp3"
+     }
+    ],
+    "main": [
+     {
+      "type": "picture",
+      "id": "a",
+      "source": "p1",
+      "duration": 3.0,
+      "fit": "letterbox",
+      "rotate": 0,
+      "flip_h": false,
+      "flip_v": false,
+      "fade_in": 0.0,
+      "fade_out": 0.0,
+      "brightness": 0,
+      "contrast": 0,
+      "saturation": 0,
+      "transition_in": {
+       "kind": "none",
+       "duration": 0.5
+      }
+     }
+    ],
+    "text_rows": [
+     []
+    ],
+    "music_rows": [
+     []
+    ]
+   },
+   "resolution": "1080p",
+   "size": [
+    1920,
+    1080
+   ]
+  },
+  {
+   "name": "pictures_only_4k",
+   "project": {
+    "format": "umcvideo",
+    "version": 1,
+    "settings": {
+     "resolution": "first",
+     "width": 1920,
+     "height": 1080,
+     "fps": "first",
+     "background": "#000000"
+    },
+    "sources": [
+     {
+      "id": "v1",
+      "path": "v1.mp4",
+      "kind": "video",
+      "duration": 10.0,
+      "width": 1920,
+      "height": 1080,
+      "fps": 30.0,
+      "has_audio": true,
+      "size": 5000000,
+      "relpath": "v1.mp4"
+     },
+     {
+      "id": "v2",
+      "path": "v2.mp4",
+      "kind": "video",
+      "duration": 4.0,
+      "width": 1280,
+      "height": 720,
+      "fps": 25.0,
+      "has_audio": false,
+      "size": 1200000,
+      "relpath": "v2.mp4"
+     },
+     {
+      "id": "p1",
+      "path": "p1.png",
+      "kind": "image",
+      "duration": 0.0,
+      "width": 800,
+      "height": 600,
+      "fps": 0.0,
+      "has_audio": false,
+      "size": 90000,
+      "relpath": "p1.png"
+     },
+     {
+      "id": "m1",
+      "path": "m1.mp3",
+      "kind": "audio",
+      "duration": 60.0,
+      "width": 0,
+      "height": 0,
+      "fps": 0.0,
+      "has_audio": true,
+      "size": 960000,
+      "relpath": "m1.mp3"
+     }
+    ],
+    "main": [
+     {
+      "type": "picture",
+      "id": "a",
+      "source": "p1",
+      "duration": 3.0,
+      "fit": "letterbox",
+      "rotate": 0,
+      "flip_h": false,
+      "flip_v": false,
+      "fade_in": 0.0,
+      "fade_out": 0.0,
+      "brightness": 0,
+      "contrast": 0,
+      "saturation": 0,
+      "transition_in": {
+       "kind": "none",
+       "duration": 0.5
+      }
+     }
+    ],
+    "text_rows": [
+     []
+    ],
+    "music_rows": [
+     []
+    ]
+   },
+   "resolution": "4k",
+   "size": [
+    3840,
+    2160
+   ]
+  },
+  {
+   "name": "empty_project",
+   "project": {
+    "format": "umcvideo",
+    "version": 1,
+    "settings": {
+     "resolution": "first",
+     "width": 1920,
+     "height": 1080,
+     "fps": "first",
+     "background": "#000000"
+    },
+    "sources": [
+     {
+      "id": "v1",
+      "path": "v1.mp4",
+      "kind": "video",
+      "duration": 10.0,
+      "width": 1920,
+      "height": 1080,
+      "fps": 30.0,
+      "has_audio": true,
+      "size": 5000000,
+      "relpath": "v1.mp4"
+     },
+     {
+      "id": "v2",
+      "path": "v2.mp4",
+      "kind": "video",
+      "duration": 4.0,
+      "width": 1280,
+      "height": 720,
+      "fps": 25.0,
+      "has_audio": false,
+      "size": 1200000,
+      "relpath": "v2.mp4"
+     },
+     {
+      "id": "p1",
+      "path": "p1.png",
+      "kind": "image",
+      "duration": 0.0,
+      "width": 800,
+      "height": 600,
+      "fps": 0.0,
+      "has_audio": false,
+      "size": 90000,
+      "relpath": "p1.png"
+     },
+     {
+      "id": "m1",
+      "path": "m1.mp3",
+      "kind": "audio",
+      "duration": 60.0,
+      "width": 0,
+      "height": 0,
+      "fps": 0.0,
+      "has_audio": true,
+      "size": 960000,
+      "relpath": "m1.mp3"
+     }
+    ],
+    "main": [],
+    "text_rows": [
+     []
+    ],
+    "music_rows": [
+     []
+    ]
+   },
+   "resolution": "project",
+   "size": [
+    1920,
+    1080
+   ]
+  },
+  {
+   "name": "empty_480p",
+   "project": {
+    "format": "umcvideo",
+    "version": 1,
+    "settings": {
+     "resolution": "first",
+     "width": 1920,
+     "height": 1080,
+     "fps": "first",
+     "background": "#000000"
+    },
+    "sources": [
+     {
+      "id": "v1",
+      "path": "v1.mp4",
+      "kind": "video",
+      "duration": 10.0,
+      "width": 1920,
+      "height": 1080,
+      "fps": 30.0,
+      "has_audio": true,
+      "size": 5000000,
+      "relpath": "v1.mp4"
+     },
+     {
+      "id": "v2",
+      "path": "v2.mp4",
+      "kind": "video",
+      "duration": 4.0,
+      "width": 1280,
+      "height": 720,
+      "fps": 25.0,
+      "has_audio": false,
+      "size": 1200000,
+      "relpath": "v2.mp4"
+     },
+     {
+      "id": "p1",
+      "path": "p1.png",
+      "kind": "image",
+      "duration": 0.0,
+      "width": 800,
+      "height": 600,
+      "fps": 0.0,
+      "has_audio": false,
+      "size": 90000,
+      "relpath": "p1.png"
+     },
+     {
+      "id": "m1",
+      "path": "m1.mp3",
+      "kind": "audio",
+      "duration": 60.0,
+      "width": 0,
+      "height": 0,
+      "fps": 0.0,
+      "has_audio": true,
+      "size": 960000,
+      "relpath": "m1.mp3"
+     }
+    ],
+    "main": [],
+    "text_rows": [
+     []
+    ],
+    "music_rows": [
+     []
+    ]
+   },
+   "resolution": "480p",
+   "size": [
+    852,
+    480
+   ]
+  },
+  {
+   "name": "empty_720p",
+   "project": {
+    "format": "umcvideo",
+    "version": 1,
+    "settings": {
+     "resolution": "first",
+     "width": 1920,
+     "height": 1080,
+     "fps": "first",
+     "background": "#000000"
+    },
+    "sources": [
+     {
+      "id": "v1",
+      "path": "v1.mp4",
+      "kind": "video",
+      "duration": 10.0,
+      "width": 1920,
+      "height": 1080,
+      "fps": 30.0,
+      "has_audio": true,
+      "size": 5000000,
+      "relpath": "v1.mp4"
+     },
+     {
+      "id": "v2",
+      "path": "v2.mp4",
+      "kind": "video",
+      "duration": 4.0,
+      "width": 1280,
+      "height": 720,
+      "fps": 25.0,
+      "has_audio": false,
+      "size": 1200000,
+      "relpath": "v2.mp4"
+     },
+     {
+      "id": "p1",
+      "path": "p1.png",
+      "kind": "image",
+      "duration": 0.0,
+      "width": 800,
+      "height": 600,
+      "fps": 0.0,
+      "has_audio": false,
+      "size": 90000,
+      "relpath": "p1.png"
+     },
+     {
+      "id": "m1",
+      "path": "m1.mp3",
+      "kind": "audio",
+      "duration": 60.0,
+      "width": 0,
+      "height": 0,
+      "fps": 0.0,
+      "has_audio": true,
+      "size": 960000,
+      "relpath": "m1.mp3"
+     }
+    ],
+    "main": [],
+    "text_rows": [
+     []
+    ],
+    "music_rows": [
+     []
+    ]
+   },
+   "resolution": "720p",
+   "size": [
+    1280,
+    720
+   ]
+  },
+  {
+   "name": "empty_1080p",
+   "project": {
+    "format": "umcvideo",
+    "version": 1,
+    "settings": {
+     "resolution": "first",
+     "width": 1920,
+     "height": 1080,
+     "fps": "first",
+     "background": "#000000"
+    },
+    "sources": [
+     {
+      "id": "v1",
+      "path": "v1.mp4",
+      "kind": "video",
+      "duration": 10.0,
+      "width": 1920,
+      "height": 1080,
+      "fps": 30.0,
+      "has_audio": true,
+      "size": 5000000,
+      "relpath": "v1.mp4"
+     },
+     {
+      "id": "v2",
+      "path": "v2.mp4",
+      "kind": "video",
+      "duration": 4.0,
+      "width": 1280,
+      "height": 720,
+      "fps": 25.0,
+      "has_audio": false,
+      "size": 1200000,
+      "relpath": "v2.mp4"
+     },
+     {
+      "id": "p1",
+      "path": "p1.png",
+      "kind": "image",
+      "duration": 0.0,
+      "width": 800,
+      "height": 600,
+      "fps": 0.0,
+      "has_audio": false,
+      "size": 90000,
+      "relpath": "p1.png"
+     },
+     {
+      "id": "m1",
+      "path": "m1.mp3",
+      "kind": "audio",
+      "duration": 60.0,
+      "width": 0,
+      "height": 0,
+      "fps": 0.0,
+      "has_audio": true,
+      "size": 960000,
+      "relpath": "m1.mp3"
+     }
+    ],
+    "main": [],
+    "text_rows": [
+     []
+    ],
+    "music_rows": [
+     []
+    ]
+   },
+   "resolution": "1080p",
+   "size": [
+    1920,
+    1080
+   ]
+  },
+  {
+   "name": "empty_4k",
+   "project": {
+    "format": "umcvideo",
+    "version": 1,
+    "settings": {
+     "resolution": "first",
+     "width": 1920,
+     "height": 1080,
+     "fps": "first",
+     "background": "#000000"
+    },
+    "sources": [
+     {
+      "id": "v1",
+      "path": "v1.mp4",
+      "kind": "video",
+      "duration": 10.0,
+      "width": 1920,
+      "height": 1080,
+      "fps": 30.0,
+      "has_audio": true,
+      "size": 5000000,
+      "relpath": "v1.mp4"
+     },
+     {
+      "id": "v2",
+      "path": "v2.mp4",
+      "kind": "video",
+      "duration": 4.0,
+      "width": 1280,
+      "height": 720,
+      "fps": 25.0,
+      "has_audio": false,
+      "size": 1200000,
+      "relpath": "v2.mp4"
+     },
+     {
+      "id": "p1",
+      "path": "p1.png",
+      "kind": "image",
+      "duration": 0.0,
+      "width": 800,
+      "height": 600,
+      "fps": 0.0,
+      "has_audio": false,
+      "size": 90000,
+      "relpath": "p1.png"
+     },
+     {
+      "id": "m1",
+      "path": "m1.mp3",
+      "kind": "audio",
+      "duration": 60.0,
+      "width": 0,
+      "height": 0,
+      "fps": 0.0,
+      "has_audio": true,
+      "size": 960000,
+      "relpath": "m1.mp3"
+     }
+    ],
+    "main": [],
+    "text_rows": [
+     []
+    ],
+    "music_rows": [
+     []
+    ]
+   },
+   "resolution": "4k",
+   "size": [
+    3840,
+    2160
+   ]
+  }
+ ]
 }
