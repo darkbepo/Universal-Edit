@@ -1199,6 +1199,7 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       Not yet: picture-in-picture, keyframes, the website editor.
       Website: step 1 model ✅ — `web/src/videoedit/` ports, shared `tests/fixtures/videoedit_cases.json` (`python scripts/make_videoedit_cases.py`, on purpose only), `Source.size`.
       Website: step 2 maths ✅ — compose / textlayout / mix / tempo / limits in web/src/videoedit/ (no DOM); FFmpeg reference colours in videoedit_cases.json (grade, transition, fade, text).
+      Website: step 3 page ✅ — behind ?video-editor / ?e2e (core/editors.ts videoEditorGate; the tile only with ?video-editor): ui/videoeditor/ (page, timeline + DOM-free timelinemath, media, inspector on SettingsForm, preview + stillqueue, draw.ts, sources.ts = Mediabunny + canDecode, else hidden converter "video-edit-source"), .umcvideo = family "project", locate window (videoedit/locate.ts + match.ts); e2e/videoeditor.spec.ts, hook window.__videoeditor. `timelinemath.wheel` takes DOM deltaY as is; `drawText` scales only outline / box padding (textAt is already at drawn size).
    17. Code editor (both apps; owner, Nov 2026: "quick edits, Notepad++ in spirit") — spec
       `docs/superpowers/specs/2026-11-14-code-editor-design.md`, one plan per step.
       1. ✅ Accept code files (plan `docs/superpowers/plans/2026-11-14-code-editor-step1-detection.md`):
