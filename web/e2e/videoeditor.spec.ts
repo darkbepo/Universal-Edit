@@ -981,3 +981,86 @@ test("a desktop-saved project opens", async ({ page }, info) => {
   expect(again.name).toBe("clip.umcvideo");
   expect(where(again.json)).toEqual(where(desktop)); // re-saving keeps the desktop's path / relpath
 });
+
+// ---------------------------------------------------------------- thumbnails and waveforms
+interface Scanned { thumbs: Record<string, number>; waves: Record<string, number>; scans: Record<string, number> }
+const scanned = (page: Page) => ve<Scanned>(page, "scanned()");
+/** Pixels of the timeline canvas inside a clip: the top-left area where its thumbnails go. */
+const clipPixels = (page: Page, id: string) =>
+  page.evaluate((cid) => {
+    const w = window as unknown as { __videoeditor: { spans(): Record<string, { start: number; row_kind: string; row: number }>; view(): { pps: number; scroll: number; m: { header: number } }; rows(): { kind: string; row: number; y: number }[] } };
+    const hook = w.__videoeditor;
+    const s = hook.spans()[cid];
+    const v = hook.view();
+    const r = hook.rows().find((q) => q.kind === s.row_kind && q.row === s.row)!;
+    const c = document.querySelector("canvas.ve-timeline") as HTMLCanvasElement;
+    const dpr = c.width / c.clientWidth;
+    const x0 = Math.round((s.start - v.scroll) * v.pps + v.m.header) + 3;
+    const out: number[][] = [];
+    const d = c.getContext("2d")!;
+    for (let k = 0; k < 8; k++) {
+      const px = d.getImageData(Math.round((x0 + k * 4) * dpr), Math.round((r.y + 30) * dpr), 1, 1).data;
+      out.push([px[0], px[1], px[2]]);
+    }
+    const probe = document.createElement("span");
+    probe.style.color = "var(--clip-video)";
+    document.body.append(probe);
+    const m = /(\d+), (\d+), (\d+)/.exec(getComputedStyle(probe).color)!;
+    probe.remove();
+    return { pixels: out, fill: [Number(m[1]), Number(m[2]), Number(m[3])] };
+  }, id);
+
+test("clips show thumbnails and a waveform", async ({ page }) => {
+  needsRed();
+  await page.goto("./?e2e");
+  await openEditor(page, [fx("clip.mp4"), fx("blue.png")]);
+  await expect.poll(async () => Object.keys((await scanned(page)).waves).length).toBe(1);
+  await expect.poll(async () => Object.keys((await scanned(page)).thumbs).length).toBe(2);
+  const got = await scanned(page);
+  const src = await ve<Src[]>(page, "project().sources");
+  const video = src.find((s) => s.kind === "video")!;
+  expect(got.thumbs[video.id]).toBe(Math.min(40, Math.max(1, Math.ceil((video.duration * 80) / 120))));
+  expect(got.thumbs[src.find((s) => s.kind === "image")!.id]).toBe(1);
+  expect(got.waves[video.id]).toBe(Math.max(50, Math.min(4000, Math.round(video.duration * 50))));
+  expect(Object.keys(got.waves)).toEqual([video.id]);
+  const cid = (await ve<string[]>(page, "project().main.map((m) => m.id)"))[0];
+  await expect.poll(async () => {
+    const { pixels, fill } = await clipPixels(page, cid);
+    return pixels.some((p) => p.some((v, i) => Math.abs(v - fill[i]) > 12));
+  }).toBe(true);
+});
+
+test("a relinked source is scanned again", async ({ page }, info) => {
+  needsTone();
+  await noSavePicker(page);
+  await page.goto("./?e2e");
+  page.on("dialog", (d) => void d.accept());
+  const path = handProject(info.outputPath());
+  for (const n of [1, 2]) {
+    if (n === 1) await openProjectFile(page, path);
+    else {
+      await expect.poll(async () => (await scanned(page)).scans.s3).toBe(1); // let the first scans finish
+      await page.locator(".ve-media input[type=file]").setInputFiles([path]); // the same project again
+      await expect(locate(page)).toBeVisible();
+    }
+    await pickSeveral(page, MIXED());
+    await locate(page).getByRole("button", { name: "Open project" }).click();
+    await expect.poll(async () => (await scanned(page)).scans.s1).toBe(n);
+  }
+  const got = await scanned(page);
+  expect(got.thumbs.s1).toBeGreaterThan(0);
+  expect(got.waves.s1).toBeGreaterThan(0);
+  expect(got.waves.s3).toBeGreaterThan(0);
+});
+
+test("leaving stops the scan", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
+  await page.goto("./?e2e");
+  await openEditor(page, MIXED());
+  await page.getByRole("button", { name: "← Back to Convert" }).click();
+  await expect(page.locator(".video-editor")).toBeHidden();
+  await page.waitForTimeout(1500);
+  expect(errors).toEqual([]);
+});

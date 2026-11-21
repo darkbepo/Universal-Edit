@@ -1,9 +1,10 @@
 // The timeline (port of gui/videoedit/timeline.py's painting and events): a canvas that paints the
 // project and forwards pointer events to the maths in timelinemath.ts. Mouse and touch alike
 // (pointer events with pointer capture); the page gets edits, seeks, selections and drops.
-import { layout, type Project, type Span, type TextItem } from "../../videoedit/project";
+import { layout, type Project, type Source, type Span, type TextItem } from "../../videoedit/project";
 import { addRow } from "../../videoedit/edits";
 import { SOURCE_MIME } from "./media";
+import { WAVE_H, thumbSlots, waveBars } from "./playmath";
 import {
   DESKTOP, ZOOM_STEP, addRowRect, boundaryX, dragMoved, dragResult, ghost, hitTest, rowAt, rows, rulerTicks,
   selectionFor, spanRect, tFor, totalHeight, wheel, xFor, zoom, DEFAULT_PPS, follow as followScroll,
@@ -46,6 +47,10 @@ export class TimelineView {
   readonly el: HTMLCanvasElement;
   private project: Project | null = null;
   private spans = new Map<string, Span>();
+  private sourceById = new Map<string, Source>();
+  /** Scanned thumbnails and waveforms by source id (the scanner owns the bitmaps). */
+  private thumbs = new Map<string, ImageBitmap[]>();
+  private waves = new Map<string, Float32Array>();
   private rowList: Row[] = [];
   private items = new Map<string, Project["main"][number] | TextItem | Project["music_rows"][number][number]>();
   private pps = DEFAULT_PPS;
@@ -91,6 +96,7 @@ export class TimelineView {
     this.spans = p ? layout(p) : new Map();
     this.rowList = p ? rows(p, M) : [];
     this.items = new Map();
+    this.sourceById = new Map(p ? p.sources.map((src) => [src.id, src]) : []);
     if (p) {
       for (const m of p.main) this.items.set(m.id, m);
       for (const r of p.text_rows) for (const t of r) this.items.set(t.id, t);
@@ -101,6 +107,30 @@ export class TimelineView {
       this.el.style.cursor = "";
     }
     this.resize();
+  }
+
+  setThumbnails(id: string, images: ImageBitmap[]): void {
+    if (this.thumbs.get(id) === images) return;
+    this.thumbs.set(id, images);
+    this.draw();
+  }
+
+  setWaveform(id: string, peaks: Float32Array): void {
+    if (this.waves.get(id) === peaks) return;
+    this.waves.set(id, peaks);
+    this.draw();
+  }
+
+  /** Let go of a source's scanned pictures (before the scanner closes them). */
+  forgetSource(id: string): void {
+    if (this.thumbs.delete(id) || this.waves.delete(id)) this.draw();
+  }
+
+  forgetAllSources(): void {
+    if (!this.thumbs.size && !this.waves.size) return;
+    this.thumbs.clear();
+    this.waves.clear();
+    this.draw();
   }
 
   /** Drop a drag or ruler seek in progress (no edit, no more seeks) and release the pointer. */
@@ -387,6 +417,7 @@ export class TimelineView {
     ctx.beginPath();
     ctx.rect(rect.x, rect.y, rect.w, rect.h);
     ctx.clip();
+    this.paintScans(ctx, item, rect);
     ctx.font = `11px ${font}`;
     ctx.textBaseline = "top";
     ctx.fillStyle = lightness(fill) > 150 ? "#101114" : "#ffffff";
@@ -397,6 +428,32 @@ export class TimelineView {
       ctx.lineWidth = 2;
       roundRect(ctx, rect, 5);
       ctx.stroke();
+    }
+  }
+
+  /** Thumbnails (video / picture clips) and the waveform (video / music clips) of a clip. */
+  private paintScans(ctx: CanvasRenderingContext2D, item: { type: string }, rect: Rect): void {
+    if (item.type === "text") return;
+    const clip = item as { type: string; source: string; in_?: number; out?: number };
+    const src = this.sourceById.get(clip.source);
+    if (!src) return;
+    const images = this.thumbs.get(src.id);
+    if (images?.length && item.type !== "audio") {
+      const first = images[0];
+      const aspect = first.width / Math.max(1, first.height);
+      for (const slot of thumbSlots(rect, aspect, images.length, M.header, this.width)) {
+        ctx.drawImage(images[slot.index], slot.rect.x, slot.rect.y, slot.rect.w, slot.rect.h);
+      }
+    }
+    const peaks = this.waves.get(src.id);
+    if (peaks && item.type !== "picture" && clip.in_ !== undefined && clip.out !== undefined) {
+      const waveH = item.type === "video" ? WAVE_H : rect.h - 12;
+      const wave = { x: rect.x, y: rect.y + rect.h - waveH, w: rect.w, h: waveH };
+      const mid = Math.round(wave.y + wave.h / 2);
+      ctx.fillStyle = "rgba(255,255,255,0.67)";
+      for (const bar of waveBars(wave, peaks, clip.in_, clip.out, src.duration, M.header, this.width)) {
+        ctx.fillRect(bar.x, mid - bar.half, 1, bar.half * 2 + 1);
+      }
     }
   }
 

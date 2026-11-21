@@ -24,6 +24,7 @@ import { Player } from "./player";
 import { startTime } from "./playmath";
 import { Preview } from "./preview";
 import { actionFor, type ActionId } from "./shortcuts";
+import { Scanner } from "./scanner";
 import { SoundStore } from "./sound";
 import { Abandoned, SourceBank } from "./sources";
 import { TimelineView } from "./timeline";
@@ -65,6 +66,10 @@ export class VideoEditorPage {
   private bank: SourceBank;
   /** The bank's decoded sound for the mixer (one per bank). */
   private sound: SoundStore;
+  /** Thumbnails and waveforms for the timeline (one per bank). */
+  private scanner: Scanner;
+  /** What the scanner has found, for the e2e hook (counts, per source id). */
+  private found = { thumbs: {} as Record<string, number>, waves: {} as Record<string, number>, scans: {} as Record<string, number> };
   private media: MediaList;
   private preview: Preview;
   private player: Player;
@@ -93,6 +98,7 @@ export class VideoEditorPage {
   constructor(private opts: VideoEditorOptions) {
     this.bank = new SourceBank(opts.client);
     this.sound = new SoundStore(this.bank.audio);
+    this.scanner = this.newScanner();
     this.preview = new Preview(() => this.bank, {
       step: (n) => this.stepFrames(n),
       play: () => this.togglePlay(),
@@ -227,6 +233,8 @@ export class VideoEditorPage {
         return page.player.playing;
       },
       stats: () => page.player.stats(),
+      /** What the scanner found: pictures and wave buckets per source, finished scans per source. */
+      scanned: () => ({ thumbs: { ...page.found.thumbs }, waves: { ...page.found.waves }, scans: { ...page.found.scans } }),
       /** Play as if there were no sound device. */
       forceWallClock: () => page.player.forceWallClock(),
     };
@@ -265,6 +273,7 @@ export class VideoEditorPage {
     this.preview.clear(); // a still being made for the old project never paints
     this.freshBank();
     this.work = Promise.resolve();
+    this.found.scans = {}; // a new visit counts from 0
     this.history = null;
     this.pending = null;
     this.selected = null;
@@ -273,12 +282,40 @@ export class VideoEditorPage {
     this.handle = null;
   }
 
+  private newScanner(): Scanner {
+    return new Scanner(() => this.bank, {
+      thumbs: (id, images) => {
+        this.found.thumbs[id] = images.length;
+        this.timeline.setThumbnails(id, images);
+      },
+      wave: (id, peaks) => {
+        this.found.waves[id] = peaks.length;
+        this.timeline.setWaveform(id, peaks);
+      },
+      done: (id) => (this.found.scans[id] = (this.found.scans[id] ?? 0) + 1),
+    });
+  }
+
+  /** A source's decoders and scanned pictures go (relink / remove). */
+  private forgetSource(id: string): void {
+    this.bank.forget(id);
+    this.sound.forget(id);
+    this.timeline.forgetSource(id); // before the scanner closes its bitmaps
+    this.scanner.forget(id);
+    delete this.found.thumbs[id];
+    delete this.found.waves[id];
+  }
+
   private freshBank(): void {
     this.stopPlayback(false); // its streams read the old bank
+    this.timeline.forgetAllSources();
+    this.scanner.dispose();
+    this.found = { thumbs: {}, waves: {}, scans: this.found.scans };
     this.bank.abandon();
     this.sound.dispose();
     this.bank = new SourceBank(this.opts.client);
     this.sound = new SoundStore(this.bank.audio);
+    this.scanner = this.newScanner();
   }
 
   get shown(): boolean {
@@ -417,8 +454,7 @@ export class VideoEditorPage {
             if (opened.note) this.notes = new Map(this.notes).set(s.id, opened.note);
             continue;
           }
-          bank.forget(s.id);
-          this.sound.forget(s.id);
+          this.forgetSource(s.id);
           messages.push(`Couldn't use “${f.name}” for “${name}”.`);
         } catch (e) {
           if (e instanceof Abandoned || mine !== this.session) return true;
@@ -823,6 +859,7 @@ export class VideoEditorPage {
     this.timeline.setPlayhead(this.playhead);
     if (inspector) this.inspector.show(hi?.project ?? null, this.selected);
     this.media.set(hi?.project.sources ?? [], this.notes);
+    if (hi) this.scanner.want(hi.project.sources);
     const undo = this.buttons.get("undo")!;
     const redo = this.buttons.get("redo")!;
     this.buttons.get("save")!.disabled = !hi;
