@@ -3,7 +3,7 @@
     python scripts/readme/make_samples.py OUT_DIR
 
 Writes pictures (painted landscapes), a Word letter, a stereo song, a 3D model (torus knot),
-a short video and a PDF. Everything is drawn from code, so it is free to show.
+a short video with its subtitles, a little web page's CSS and a PDF. Everything is drawn from code, so it is free to show.
 """
 
 from __future__ import annotations
@@ -264,6 +264,61 @@ def video_and_pdf(out: Path, ffmpeg: str) -> None:
     imgs[0].save(out / "photo-book.pdf", save_all=True, append_images=imgs[1:])
 
 
+SUBTITLES = """1
+00:00:00,400 --> 00:00:02,000
+Over the ridge at first light.
+
+2
+00:00:02,100 --> 00:00:03,200
+<i>Wind from the north, twelve knots.</i>
+
+3
+00:00:03,000 --> 00:00:03,300
+Hold this heading.
+
+4
+00:00:03,500 --> 00:00:05,000
+The valley opens up below us now, all the way to the lake.
+"""
+
+STYLE_CSS = """/* Trail notes: the page's look */
+:root {
+  --sky: #9fc8f0;
+  --ridge: #3d5a73;
+  --sun: #ffd27a;
+}
+
+body {
+  margin: 0;
+  font: 16px/1.6 system-ui, sans-serif;
+  background: linear-gradient(var(--sky), white 60%);
+}
+
+.card {
+  max-width: 42rem;
+  margin: 2rem auto;
+  padding: 1.5rem 2rem;
+  border-radius: 14px;
+  background: white;
+  box-shadow: 0 8px 30px rgb(0 0 0 / 0.08);
+}
+
+.card h1 {
+  color: var(--ridge);
+  font-size: 2rem;
+}
+
+@media (max-width: 560px) {
+  .card { margin: 0; border-radius: 0; }
+}
+"""
+
+
+def text_files(out: Path) -> None:
+    (out / "mountain-flight.srt").write_text(SUBTITLES, encoding="utf-8")
+    (out / "trail-notes.css").write_text(STYLE_CSS, encoding="utf-8")
+
+
 def main() -> None:
     out = Path(sys.argv[1])
     out.mkdir(parents=True, exist_ok=True)
@@ -272,6 +327,7 @@ def main() -> None:
     letter(out)
     song(out)
     knot(out)
+    text_files(out)
     ffmpeg = sys.argv[2] if len(sys.argv) > 2 else "ffmpeg"
     video_and_pdf(out, ffmpeg)
     print("samples in", out)

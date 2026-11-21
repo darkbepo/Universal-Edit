@@ -21,7 +21,7 @@ Free and open source · nothing is uploaded · works in your browser · desktop 
 - 🔒 **Private by design.** Your files never leave your device. The website does all its work
   inside your browser; the desktop app works offline.
 - 🧰 **One tool instead of ten.** Convert between hundreds of formats, then touch things up in
-  the built-in image, video, audio and document editors.
+  the built-in image, video, audio, document, code and subtitle editors.
 - 🎯 **Simple first, powerful when you need it.** Drop files in, pick a format, press
   **Convert** — the defaults are sensible. Every setting is there if you want it.
 - 💸 **Free, forever.** Open source (AGPL-3.0), no accounts, no watermarks, no limits on how
@@ -42,8 +42,8 @@ only the formats they can become, grouped into cards. Each file gets its own pro
 <tr>
 <td><b>Image editor</b> — layers, selections of any shape, adjustments, filters, editable
 text and shapes, clone stamp, content-aware fill and one-click background removal.</td>
-<td><b>Video editor</b> <i>(desktop)</i> — cut, split and join clips, add pictures, music,
-titles and transitions, preview with sound, export to MP4, WebM, GIF and more.</td>
+<td><b>Video editor</b> <i>(desktop; website coming soon)</i> — cut, split and join clips, add
+pictures, music, titles and transitions, preview with sound, export to MP4, WebM, GIF and more.</td>
 </tr>
 <tr>
 <td><img src="docs/images/audio.jpg" alt="Audio editor showing a stereo waveform with a selection"></td>
@@ -64,6 +64,31 @@ headings, lists, tables and pictures, and save back or as PDF.</td>
 mm, the volume and whether it's watertight before you print.</td>
 <td><b>Properties</b> — everything about a file at a glance: size and dates, camera and
 lens, codecs and tags, pages and authors.</td>
+</tr>
+<tr>
+<td><img src="docs/images/code.jpg" alt="Code editor with a CSS file open, coloured, with line numbers"></td>
+<td><img src="docs/images/subtitle.jpg" alt="Subtitle editor: a list of subtitles with their times, one marked too fast, next to the video with the subtitle over the picture"></td>
+</tr>
+<tr>
+<td><b>Code editor</b> — quick edits to code and text files: colours for 40+ languages,
+find & replace, a tab per file, and checks for JSON, YAML and XML.</td>
+<td><b>Subtitle editor</b> — fix text and timing next to the video: shift or sync every line,
+split and join, and spot lines that overlap or go by too fast.</td>
+</tr>
+</table>
+
+### Coming soon
+
+<table>
+<tr>
+<td width="33%"><img src="docs/images/vector.jpg" alt="Vector editor: coming soon"></td>
+<td width="33%"><img src="docs/images/font.jpg" alt="Font editor: coming soon"></td>
+<td width="33%"><img src="docs/images/data.jpg" alt="Data editor: coming soon"></td>
+</tr>
+<tr>
+<td><b>Vector editor</b> — select, move and reshape SVG shapes and paths.</td>
+<td><b>Font editor</b> — names, letter spacing, kerning and a view of every glyph.</td>
+<td><b>Data editor</b> — CSV, JSON, XML, YAML and spreadsheets as an editable table.</td>
 </tr>
 </table>
 

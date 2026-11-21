@@ -4,7 +4,8 @@
 //   cd web && npm run build && npm run preview          (serves http://localhost:4173)
 //   node ../scripts/readme/shoot.mjs SAMPLES [BASE_URL] [only-scene]
 //
-// Writes docs/images/<scene>.jpg. Uses the installed Microsoft Edge (no Playwright download).
+// Writes docs/images/<scene>.jpg. Uses the installed Microsoft Edge (no Playwright download);
+// UMC_SHOOT_CHROMIUM=1 uses Playwright's own Chromium instead (Linux, CI).
 // The video editor is desktop-only: scripts/readme/shoot_desktop.py makes its raw shot.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -75,6 +76,29 @@ const SCENES = {
     await page.locator(".viewer3d-info").filter({ hasText: "Width (X)" }).waitFor({ timeout: 120_000 });
     await page.waitForTimeout(800);
   },
+  async code(page) {
+    await page.goto(`${base}/?e2e`);
+    await page.locator('input[type="file"]').first().setInputFiles([s("trail-notes.css")]);
+    await page.getByRole("button", { name: "Edit", exact: true }).click();
+    await page.locator(".code-editor .cm-content").waitFor({ timeout: 60_000 });
+    await page.locator(".code-editor .cm-content").click();
+    await page.keyboard.press("Control+End");
+    await page.waitForTimeout(800);
+  },
+  async subtitle(page) {
+    await page.goto(`${base}/?e2e`);
+    await page.locator('input[type="file"]').first().setInputFiles([s("mountain-flight.mp4"), s("mountain-flight.srt")]);
+    await page.getByRole("button", { name: "Edit", exact: true }).click();
+    await page.locator(".sub-row").first().waitFor({ timeout: 60_000 });
+    await page.evaluate(() => window.__subeditor.select(1));
+    await page.locator(".sub-video").evaluate((v) => new Promise((done) => {
+      if (v.readyState >= 2) return done();
+      v.addEventListener("loadeddata", () => done(), { once: true });
+      setTimeout(done, 5000);
+    }));
+    await page.evaluate(() => window.__subeditor.showAt(2500));
+    await page.waitForTimeout(800);
+  },
   async properties(page) {
     await page.goto(`${base}/?e2e`);
     await page.locator('input[type="file"]').first().setInputFiles([s("IMG_2048.jpg")]);
@@ -84,9 +108,10 @@ const SCENES = {
   },
 };
 
-/** Promo card text: [file, headline, subline, background colours]. */
+/** Promo card text: [headline, subline, background colours, Tabler icon for a "Coming soon"
+ * card (an editor not made yet: no screenshot, a calm placeholder panel instead)]. */
 export const CARDS = {
-  start: ["Drop. Pick. Done.", "Hundreds of formats and five editors — and your files never leave your device.", ["#5b4bdb", "#1fa2c7"]],
+  start: ["Drop. Pick. Done.", "Hundreds of formats and seven editors — and your files never leave your device.", ["#5b4bdb", "#1fa2c7"]],
   convert: ["Convert anything", "Drop files in, pick a format, press Convert. Hundreds of formats, sensible defaults.", ["#3a7bd5", "#00d2a8"]],
   image: ["Image editor", "Layers, selections, adjustments, filters, text, retouching and background removal.", ["#ee6b4d", "#c53d8c"]],
   document: ["Document editor", "Open Word, ODT, RTF, Markdown or HTML, edit, and save back or as PDF.", ["#2f6fdb", "#7a5af8"]],
@@ -94,11 +119,31 @@ export const CARDS = {
   model: ["3D viewer", "STL, OBJ, 3MF, STEP and more: measure, check it's watertight, convert for printing.", ["#f2994a", "#d9466f"]],
   properties: ["Properties", "Everything about a file at a glance: size, codecs, camera, tags, pages.", ["#6a5acd", "#3aa0c9"]],
   video: ["Video editor", "Cut, join, add pictures, music, titles and transitions — export to MP4 and more.", ["#8e44ad", "#e2557a"]],
+  code: ["Code editor", "Quick edits to code and text files: colours, find & replace, checks for JSON / YAML / XML.", ["#3b4cca", "#2aa198"]],
+  subtitle: ["Subtitle editor", "Fix text and timing next to the video: shift, sync, split, join, spot lines that are too fast.", ["#1f9d61", "#2c7be5"]],
+  vector: ["Vector editor", "Select, move and reshape SVG shapes and paths, with fill, stroke, text and layers.", ["#2fb5d6", "#5b5ef0"], "vector"],
+  font: ["Font editor", "Change a font's names, letter spacing and kerning, and see every glyph.", ["#9b7bf2", "#d96fd1"], "font"],
+  data: ["Data editor", "Edit CSV, JSON, XML, YAML and spreadsheets as a table: rows, columns, sort, find.", ["#3fae5a", "#c9a227"], "table"],
 };
 
+/** A Tabler icon's inner SVG, from the website's own icon set. */
+function iconSvg(name) {
+  const src = readFileSync(join(repo, "web", "src", "ui", "icon_data.ts"), "utf8");
+  const m = src.match(new RegExp(`"${name}":\\s*"((?:[^"\\\\]|\\\\.)*)"`));
+  return m ? JSON.parse(`"${m[1]}"`) : "";
+}
+
+function soonPanel(icon) {
+  return `<div class="soon"><svg viewBox="0 0 24 24" width="120" height="120" fill="none" stroke="#fff" stroke-width="1.5"
+    stroke-linecap="round" stroke-linejoin="round">${iconSvg(icon)}</svg><b>Coming soon</b>
+    <span>Planned for both the desktop app and the website.</span></div>`;
+}
+
 async function frame(browser, name) {
-  const [title, sub, [c1, c2]] = CARDS[name];
-  const shot = readFileSync(join(raw, `${name}.png`)).toString("base64");
+  const [title, sub, [c1, c2], soon] = CARDS[name];
+  const body = soon
+    ? soonPanel(soon)
+    : `<img src="data:image/png;base64,${readFileSync(join(raw, `${name}.png`)).toString("base64")}">`;
   const page = await browser.newPage({ viewport: { width: 1600, height: 900 }, deviceScaleFactor: 1 });
   await page.setContent(`<!doctype html><html><head><style>
     *{box-sizing:border-box;margin:0}
@@ -115,15 +160,19 @@ async function frame(browser, name) {
     .bar{height:34px;background:#1f2228;display:flex;align-items:center;gap:8px;padding:0 14px}
     .bar i{width:12px;height:12px;border-radius:50%;display:block}
     img{display:block;width:1440px}
+    .soon{height:600px;background:rgba(15,16,20,.55);display:flex;flex-direction:column;align-items:center;
+      justify-content:center;gap:18px;color:#fff}
+    .soon svg{opacity:.85}.soon b{font-size:44px;font-weight:600;letter-spacing:.5px}
+    .soon span{font-size:24px;opacity:.8}
   </style></head><body><h1>${title}</h1><p>${sub}</p>
   <div class="win"><div class="bar"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i></div>
-  <img src="data:image/png;base64,${shot}"></div></body></html>`);
+  ${body}</div></body></html>`);
   await page.waitForTimeout(300);
   await page.screenshot({ path: join(out, `${name}.jpg`), fullPage: true, type: "jpeg", quality: 88 });
   await page.close();
 }
 
-const browser = await chromium.launch({ channel: "msedge" });
+const browser = await chromium.launch(process.env.UMC_SHOOT_CHROMIUM ? {} : { channel: "msedge" });
 for (const name of Object.keys(CARDS)) {
   if (only && name !== only) continue;
   if (SCENES[name]) {
@@ -140,7 +189,7 @@ for (const name of Object.keys(CARDS)) {
     }
     await ctx.close();
   }
-  if (!existsSync(join(raw, `${name}.png`))) { console.warn(`${name}: no raw shot`); continue; }
+  if (!CARDS[name][3] && !existsSync(join(raw, `${name}.png`))) { console.warn(`${name}: no raw shot`); continue; }
   await frame(browser, name);
   console.log("framed", name);
 }
