@@ -86,4 +86,12 @@ describe("start", () => {
     expect(nextSourceId(mk(["s1", "s2"]))).toBe("s3");
     expect(nextSourceId(mk(["s1", "s3"]))).toBe("s2");
   });
+
+  it("nextSourceId skips ids used before (freed ones too)", () => {
+    const mk = (ids: string[]) => ({ ...newProject(), sources: ids.map((i) => src(i, "video")) });
+    expect(nextSourceId(mk(["s1", "s3"]), new Set(["s1", "s2", "s3"]))).toBe("s4");
+    expect(nextSourceId(mk([]), new Set(["s1", "s3"]))).toBe("s2");
+    expect(nextSourceId(mk(["s2"]), new Set(["s1"]))).toBe("s3");
+    expect(nextSourceId(mk(["s1"]), new Set())).toBe("s2");
+  });
 });

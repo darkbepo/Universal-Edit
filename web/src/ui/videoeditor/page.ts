@@ -13,7 +13,7 @@ import {
   NO_TRANSITION, find, layout, length, newProject, outputFps, textItem, type Project, type Source, type TextItem,
 } from "../../videoedit/project";
 import { changeLabel, targetOf } from "../../videoedit/schemas";
-import { projectFrom } from "../../videoedit/start";
+import { nextSourceId, projectFrom } from "../../videoedit/start";
 import type { ConversionClient } from "../../worker/client";
 import { backLabel } from "../back";
 import { loadBundledFonts } from "./fonts";
@@ -64,6 +64,10 @@ export class VideoEditorPage {
   private preview: Preview;
   private history: History | null = null;
   private notes: Map<string, string> = new Map();
+  /** Every source id this session has used (the opened project's, every file added since, freed
+   *  ones too). The bank decodes by id across the whole undo history, so an id is never given to
+   *  a second file: an undone state would show the new file's frames. */
+  private usedIds = new Set<string>();
   private playhead = 0;
   private selected: string | null = null;
   /** An inspector edit being made: previewed, pushed as one step once it's finished. */
@@ -226,6 +230,7 @@ export class VideoEditorPage {
     this.pending = null;
     this.selected = null;
     this.notes = new Map();
+    this.usedIds = new Set();
     this.handle = null;
   }
 
@@ -299,9 +304,10 @@ export class VideoEditorPage {
     this.history = null;
     this.pending = null;
     this.notes = new Map();
+    this.usedIds = new Set();
     this.handle = null;
     this.render();
-    const { sources, messages } = await this.probe(files, new Set(), session);
+    const { sources, messages } = await this.probe(files, session);
     if (session !== this.session) return true; // superseded (left meanwhile): nothing to report, the bank was abandoned
     if (!sources.length) {
       this.showMessage(messages.join(" ") || "Nothing to edit.", true);
@@ -348,6 +354,7 @@ export class VideoEditorPage {
     this.history = null;
     this.pending = null;
     this.notes = new Map();
+    this.usedIds = new Set(project.sources.map((s) => s.id));
     this.handle = null;
     this.render();
     const bank = this.bank;
@@ -369,11 +376,13 @@ export class VideoEditorPage {
             continue;
           }
           bank.forget(s.id);
+          messages.push(`Couldn't use “${f.name}” for “${name}”.`);
         } catch (e) {
           if (e instanceof Abandoned || mine !== this.session) return true;
           if (!(e instanceof ConversionError)) console.error(`Couldn't open ${f.name}`, e);
+          const reason = e instanceof ConversionError ? ` ${e.message}` : "";
+          messages.push(`Couldn't use “${f.name}” for “${name}”.${reason}`);
         }
-        messages.push(`Couldn't use “${f.name}” for “${name}”.`);
       } else messages.push(`Removed “${name}” from the project.`);
       fixed = removeSource(fixed, s.id);
     }
@@ -453,8 +462,7 @@ export class VideoEditorPage {
 
   private async addToProject(files: File[]): Promise<boolean> {
     const session = this.session;
-    const taken = new Set(this.history!.project.sources.map((s) => s.id));
-    const { sources, messages } = await this.probe(files, taken, session);
+    const { sources, messages } = await this.probe(files, session);
     if (session !== this.session || !this.history) return false; // left: that bank was abandoned
     if (sources.length) this.apply((p) => addSources(p, sources), "Add files");
     if (messages.length) this.showMessage(messages.join(" "), true);
@@ -463,26 +471,26 @@ export class VideoEditorPage {
 
   /** Probe one file after the other; messages for those that can't be used. Stops between files
    *  once `session` is over (the bank it used is abandoned then and keeps nothing). */
-  private async probe(files: File[], taken: Set<string>, session: number): Promise<{ sources: Source[]; messages: string[] }> {
+  private async probe(files: File[], session: number): Promise<{ sources: Source[]; messages: string[] }> {
     const sources: Source[] = [];
     const messages: string[] = [];
     const bank = this.bank;
-    let n = 1;
+    const used = this.usedIds; // this session's (a new session gets a new set)
     for (const file of files) {
       if (session !== this.session) break;
       if (isProjectFile(file)) {
         messages.push(`Open “${file.name}” on its own to edit that project.`);
         continue;
       }
-      while (taken.has(`s${n}`)) n++;
-      const id = `s${n}`;
+      // never one the current project, any undo / redo state or a file tried before has had
+      const id = nextSourceId(this.history?.project ?? newProject(), used);
+      used.add(id);
       const opening = `Opening “${file.name}”…`;
       this.showMessage(opening);
       try {
         const opened = await bank.open(file, id, (f, msg) => this.showMessage(`${msg || opening} ${Math.round(f * 100)} %`));
         if (session !== this.session) break;
         sources.push(opened.source);
-        taken.add(id);
         if (opened.note) this.notes = new Map(this.notes).set(id, opened.note);
       } catch (e) {
         if (e instanceof Abandoned || session !== this.session) break;
@@ -547,6 +555,7 @@ export class VideoEditorPage {
       this.pending = { project, label: changeLabel(targetOf(base, id).kind, changes) };
     } catch (e) {
       this.pending = null;
+      if (!(e instanceof ConversionError)) console.error("An inspector change couldn't be applied", e);
       this.showMessage(e instanceof ConversionError ? e.message : "That item no longer exists.", true);
       this.inspector.show(base, this.selected);
       this.render(false);

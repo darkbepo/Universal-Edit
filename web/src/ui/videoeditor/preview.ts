@@ -93,7 +93,10 @@ export class Preview {
   show(p: Project, t: number): void {
     this.last = { p, t };
     const box = this.screen.getBoundingClientRect();
-    if (box.width < 1 || box.height < 1) return; // not laid out (hidden): the resize brings it
+    if (box.width < 1 || box.height < 1) {
+      this.queue.clear(); // a still asked for before can't paint over this newer call
+      return; // not laid out (hidden): the resize brings it
+    }
     const out = outputSize(p);
     const size = previewSize(box, window.devicePixelRatio || 1, out);
     // shown at the fitted size in CSS px (the backing store may be smaller: the 720 px cap)

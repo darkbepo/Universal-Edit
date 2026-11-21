@@ -645,6 +645,75 @@ test("remove a missing file", async ({ page }, info) => {
   await expect.poll(() => ve(page, "project().sources.length")).toBe(3);
 });
 
+// The decoders are keyed by source id across the whole undo history: an id freed by "Fix missing
+// files" (or by an undo) must never be given to a later file, or older states show its frames.
+test("an id freed by Fix missing files isn't reused", async ({ page }, info) => {
+  needsTone();
+  await page.goto("./?e2e");
+  await openProjectFile(page, handProject(info.outputPath()));
+  await pickSeveral(page, [fx("clip.mp4"), fx("tone.wav")]); // img0.png (s2) is removed
+  await locate(page).getByRole("button", { name: "Open project" }).click();
+  await expect.poll(() => ve(page, "history.undoLabel")).toBe("Fix missing files");
+  expect(await ve(page, "project().sources.map((s) => s.id)")).toEqual(["s1", "s3"]);
+  await page.locator(".ve-media input[type=file]").setInputFiles([fx("blue.png")]);
+  await expect.poll(() => ve(page, "history.undoLabel")).toBe("Add files");
+  await page.keyboard.press("Control+z");
+  await page.keyboard.press("Control+z");
+  await expect.poll(() => ve(page, "project().sources.length")).toBe(3);
+  // the restored picture (s2, img0.png, never picked) has no decoder: not the new file's frames
+  const s = await spans(page);
+  await ve(page, `seek(${(s.c2.start + s.c2.end) / 2})`);
+  const px = await pixel(page);
+  expect(px).not.toBeNull();
+  expect(near(px, BLUE)).toBe(false);
+  expect(await ve(page, `decodes("s2")`)).toBe(false);
+  // redo brings the new file back under its own id
+  await page.keyboard.press("Control+y");
+  await page.keyboard.press("Control+y");
+  await expect.poll(() => ve(page, "history.undoLabel")).toBe("Add files");
+  expect(await ve(page, "project().sources.map((s) => s.id)")).toEqual(["s1", "s3", "s4"]);
+  expect(await ve(page, `decodes("s4")`)).toBe(true);
+});
+
+test("a picked file that can't be used says why", async ({ page }, info) => {
+  needsTone();
+  await page.goto("./?e2e");
+  await openProjectFile(page, handProject(info.outputPath()));
+  await ve(page, "setLimits({ pictureSide: 100 })");
+  await pickSeveral(page, MIXED());
+  await locate(page).getByRole("button", { name: "Open project" }).click();
+  await expect.poll(() => ve(page, "history.undoLabel")).toBe("Fix missing files");
+  await ve(page, "setLimits(null)");
+  await expect(statusMsg(page)).toContainText(/^Couldn't use “img0\.png” for “img0\.png”\. \S/);
+});
+
+test("a file added while Redo is pressed doesn't take the redone id", async ({ page }) => {
+  test.skip(!existsSync(fx("clip.avi")), "needs ffmpeg");
+  await page.goto("./?e2e");
+  await openEditor(page, [fx("clip.mp4")]);
+  await page.locator(".ve-media input[type=file]").setInputFiles([fx("blue.png")]);
+  await expect.poll(() => ve(page, "history.undoLabel")).toBe("Add files");
+  await rows(page).nth(1).getByRole("button", { name: /^Add/ }).click(); // blue.png (s2) at the playhead
+  await expect.poll(() => ve(page, "history.undoLabel")).toBe("Add clip");
+  await page.keyboard.press("Control+z");
+  await page.keyboard.press("Control+z");
+  await expect.poll(() => ve(page, "project().sources.length")).toBe(1);
+  // the AVI goes through the copy (slow): redo both steps while it is being opened
+  await page.locator(".ve-media input[type=file]").setInputFiles([fx("clip.avi")]);
+  await expect(statusMsg(page)).toContainText(/Opening|Loading video engine|Converting/);
+  await page.keyboard.press("Control+y");
+  await page.keyboard.press("Control+y");
+  await expect.poll(() => ve(page, "history.undoLabel")).toBe("Add clip");
+  await expect.poll(() => ve(page, "history.undoLabel"), { timeout: 120_000 }).toBe("Add files");
+  expect(await ve(page, "project().sources.map((s) => s.id)")).toEqual(["s1", "s2", "s3"]);
+  expect(await ve(page, "project().sources.map((s) => s.path)")).toEqual(["clip.mp4", "blue.png", "clip.avi"]);
+  // the redone picture still shows blue.png
+  const clip = (await ve<{ id: string; source: string }[]>(page, "project().main")).find((m) => m.source === "s2")!;
+  const s = await spans(page);
+  await ve(page, `seek(${(s[clip.id].start + s[clip.id].end) / 2})`);
+  expect(near(await pixel(page), BLUE)).toBe(true);
+});
+
 test("Find file…, and a name-only match of another length is refused", async ({ page }, info) => {
   needsTone();
   // the project knows no sizes, so a name match must agree on the duration: clip.mp4 is 2 s
