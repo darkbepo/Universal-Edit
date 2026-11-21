@@ -415,8 +415,8 @@ test("the preview shows the frame under the playhead", async ({ page }) => {
   await expect(page.locator(".ve-time")).toHaveText(/^0:01\.50 \/ 0:04\.0\d$/);
   // the screen is SCREEN_BG in both themes
   expect(await page.locator(".ve-screen").evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgb(11, 12, 15)");
-  await expect(page.getByRole("button", { name: "▶" })).toBeDisabled();
-  await expect(page.getByRole("button", { name: "▶" })).toHaveAttribute("title", "Playback comes soon");
+  await expect(playButton(page)).toBeEnabled();
+  await expect(playButton(page)).toHaveAttribute("title", "Play (Space)");
 });
 
 test("scrubbing", async ({ page }) => {
@@ -507,6 +507,160 @@ test("leaving blanks the preview", async ({ page }) => {
   await page.getByRole("button", { name: "← Back to Convert" }).click();
   await expect(page.locator(".video-editor")).toBeHidden();
   expect(await pixel(page)).toBeNull();
+});
+
+// ---------------------------------------------------------------- playback
+const NO_SOUND = "No sound device — preview is silent";
+const playing = (page: Page) => ve<boolean>(page, "playing");
+const total = (page: Page) => ve<number>(page, "length()");
+interface Stats { chunks: number; loudChunks: number; frames: number }
+const stats = (page: Page) => ve<Stats>(page, "stats()");
+const playButton = (page: Page) => page.locator(".ve-transport .ve-play");
+
+test("Space plays and the playhead moves", async ({ page }) => {
+  await page.goto("./?e2e");
+  await openEditor(page, [fx("clip.mp4")]);
+  await expect(playButton(page)).toBeEnabled();
+  await expect(playButton(page)).toHaveText("▶");
+  await timeline(page).focus();
+  await page.keyboard.press("Space");
+  await expect(playButton(page)).toHaveText("⏸");
+  await expect(playButton(page)).toHaveAttribute("title", "Pause (Space)");
+  expect(await playing(page)).toBe(true);
+  await page.waitForTimeout(800);
+  expect(await ve<number>(page, "playhead")).toBeGreaterThan(0.3);
+  await expect.poll(() => stats(page).then((s) => s.frames)).toBeGreaterThan(0);
+  await page.keyboard.press("Space");
+  await expect(playButton(page)).toHaveText("▶");
+  expect(await playing(page)).toBe(false);
+});
+
+test("playing to the end stops at the end", async ({ page }) => {
+  needsRed();
+  await page.goto("./?e2e");
+  await openEditor(page, RED_BLUE());
+  const end = await total(page);
+  await ve(page, `seek(${end - 0.5})`);
+  await ve(page, "play()");
+  expect(await playing(page)).toBe(true);
+  await expect.poll(() => playing(page), { timeout: 5000 }).toBe(false);
+  expect(Math.abs((await ve<number>(page, "playhead")) - end)).toBeLessThan(0.05);
+  await expect(playButton(page)).toHaveText("▶");
+  expect(near(await pixel(page), [0, 0, 0], 4)).toBe(true); // the still past the end: the background
+  // Play at the end starts from the beginning
+  await ve(page, "play()");
+  await expect.poll(() => ve<number>(page, "playhead")).toBeLessThan(1);
+  await ve(page, "stop()");
+});
+
+test("Loop starts again", async ({ page }) => {
+  await page.goto("./?e2e");
+  await openEditor(page, [fx("clip.mp4")]);
+  const loop = page.locator(".ve-transport .ve-loop");
+  await expect(loop).toHaveAttribute("aria-pressed", "false");
+  await timeline(page).focus();
+  await page.keyboard.press("l");
+  await expect(loop).toHaveAttribute("aria-pressed", "true");
+  const end = await total(page);
+  await ve(page, `seek(${end - 0.4})`);
+  await ve(page, "play()");
+  await expect.poll(() => ve<number>(page, "playhead"), { timeout: 5000 }).toBeLessThan(1);
+  expect(await playing(page)).toBe(true);
+  await ve(page, "stop()");
+  await loop.click();
+  await expect(loop).toHaveAttribute("aria-pressed", "false");
+});
+
+test("seek while playing stops and shows the still at the seek", async ({ page }) => {
+  needsRed();
+  await page.goto("./?e2e");
+  await openEditor(page, RED_BLUE());
+  await ve(page, "play()");
+  await expect.poll(() => ve<number>(page, "playhead")).toBeGreaterThan(0.2);
+  await ve(page, "seek(2)");
+  expect(await playing(page)).toBe(false);
+  expect(await ve<number>(page, "playhead")).toBeCloseTo(2, 5);
+  expect(near(await pixel(page), BLUE)).toBe(true);
+  await expect(playButton(page)).toHaveText("▶");
+});
+
+test("an edit while playing stops", async ({ page }) => {
+  await page.goto("./?e2e");
+  await openEditor(page, [fx("clip.mp4"), fx("img0.png")]);
+  await ve(page, "play()");
+  expect(await playing(page)).toBe(true);
+  await page.getByRole("button", { name: "+ Text" }).click();
+  await expect.poll(() => ve(page, "history.undoLabel")).toBe("Add text");
+  expect(await playing(page)).toBe(false);
+  await expect(playButton(page)).toHaveText("▶");
+  await ve(page, "play()");
+  expect(await playing(page)).toBe(true);
+  await timeline(page).focus();
+  await page.keyboard.press("Control+z");
+  await expect.poll(() => playing(page)).toBe(false);
+});
+
+test("sound plays", async ({ page }) => {
+  await page.goto("./?e2e");
+  await openEditor(page, [fx("clip.mp4")]);
+  await ve(page, "play()");
+  await expect.poll(() => stats(page).then((s) => s.chunks), { timeout: 5000 }).toBeGreaterThanOrEqual(2);
+  expect((await stats(page)).loudChunks).toBeGreaterThan(0);
+  await ve(page, "stop()");
+  const [clip] = await mainIds(page);
+  await ve(page, `select("${clip}")`);
+  await page.locator("#ve-mute").check();
+  await expect.poll(() => ve(page, "project().main[0].mute")).toBe(true);
+  await ve(page, "seek(0)");
+  await ve(page, "play()");
+  await expect.poll(() => stats(page).then((s) => s.chunks), { timeout: 5000 }).toBeGreaterThanOrEqual(2);
+  expect((await stats(page)).loudChunks).toBe(0);
+  await ve(page, "stop()");
+});
+
+test("plays across a crossfade", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("./?e2e");
+  await openEditor(page, [fx("clip.mp4"), fx("img0.png")]);
+  const [, b] = await mainIds(page);
+  const s = await spans(page);
+  const tab = await at(page, s[b].start, "main", 0, 10);
+  await page.mouse.click(tab.x, tab.y);
+  await page.locator("#ve-kind").selectOption({ label: "Crossfade" });
+  await expect.poll(() => ve(page, "history.undoLabel")).toBe("Change transition");
+  const s2 = await spans(page);
+  await ve(page, `seek(${s2[b].start - 0.3})`);
+  await ve(page, "play()");
+  await expect.poll(() => ve<number>(page, "playhead"), { timeout: 5000 }).toBeGreaterThan(s2[b].start + 0.6);
+  expect((await stats(page)).frames).toBeGreaterThan(0);
+  expect(await playing(page)).toBe(true);
+  await ve(page, "stop()");
+  expect(errors).toEqual([]);
+  await expect(statusMsg(page)).not.toHaveClass(/error/);
+});
+
+test("no sound device", async ({ page }) => {
+  await page.goto("./?e2e");
+  await openEditor(page, [fx("clip.mp4")]);
+  await ve(page, "forceWallClock()");
+  await ve(page, "play()");
+  await expect(statusMsg(page)).toHaveText(NO_SOUND);
+  await expect.poll(() => ve<number>(page, "playhead")).toBeGreaterThan(0.3);
+  expect((await stats(page)).chunks).toBe(0);
+  await ve(page, "stop()");
+});
+
+test("the volume slider keeps its value", async ({ page }) => {
+  await page.goto("./?e2e");
+  await openEditor(page, [fx("clip.mp4")]);
+  const slider = () => page.locator(".video-editor").getByRole("slider", { name: "Volume" });
+  await expect(slider()).toBeVisible();
+  await slider().fill("35");
+  expect(await page.evaluate(() => localStorage.getItem("umc-audio-volume"))).toBe("35");
+  await page.reload();
+  await openEditor(page, [fx("clip.mp4")]);
+  await expect(slider()).toHaveValue("35");
 });
 
 // SourceBank.picture (the still preview is its first user)

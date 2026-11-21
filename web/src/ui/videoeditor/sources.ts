@@ -11,6 +11,7 @@ import { DIRECT_AUDIO, DIRECT_PICTURE, DIRECT_VIDEO, needsCopy, sourceProblem } 
 import type { Source } from "../../videoedit/project";
 import { JobCancelled, type ConversionClient } from "../../worker/client";
 import type { Picture } from "./draw";
+import type { Timed } from "./framestream";
 import type { Decoded, Decoder } from "./sound";
 
 type MB = typeof import("mediabunny");
@@ -210,6 +211,28 @@ export class SourceBank {
       return { image: got.canvas, width: got.canvas.width, height: got.canvas.height };
     } catch {
       return null; // disposed meanwhile (forgotten / left), or a broken frame
+    }
+  }
+
+  /** A video's frames from source second `from` on, `height` px high, for playback (a sink of its
+   *  own, so a still asked for meanwhile doesn't move it). Ends quietly when the source is gone. */
+  async *frames(id: string, from: number, height: number): AsyncGenerator<Timed<Picture>> {
+    const e = this.entries.get(id);
+    if (!e?.video) return;
+    const video = e.video;
+    try {
+      const mb = await this.mediabunny();
+      const h = Math.max(1, Math.round(Math.min(height, video.displayHeight)));
+      const sink = new mb.CanvasSink(video, { height: h, fit: "contain" });
+      const first = await video.getFirstTimestamp();
+      for await (const got of sink.canvases(Math.max(first, from))) {
+        if (!this.entries.has(id)) return;
+        const c = got.canvas;
+        yield { timestamp: got.timestamp, duration: got.duration, value: { image: c, width: c.width, height: c.height } };
+      }
+    } catch (err) {
+      if (this.entries.get(id) !== e) return; // disposed meanwhile (forgotten / left)
+      throw err;
     }
   }
 

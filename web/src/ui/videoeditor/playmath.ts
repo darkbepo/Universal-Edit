@@ -31,6 +31,12 @@ export function startTime(playhead: number, total: number): number {
   return playhead < total - END_SLACK ? playhead : 0;
 }
 
+/** What playback is timed by: the sound's own clock when there is an AudioContext (frames
+ *  follow the sound, like the desktop's player), else the wall clock (silent preview). */
+export function pickClock(hasAudioContext: boolean): "audio" | "wall" {
+  return hasAudioContext ? "audio" : "wall";
+}
+
 /** A stretch of one source (source seconds) the mixer asked for. */
 export interface Need { sourceId: string; from: number; to: number }
 

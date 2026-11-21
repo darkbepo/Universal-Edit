@@ -922,6 +922,8 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 .ve-still { display: block; }
 .ve-transport { display: flex; justify-content: center; align-items: center; gap: 6px; flex-wrap: wrap; padding: 0 8px; }
 .ve-time { min-width: 150px; text-align: center; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ve-loop[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.ve-volume { width: 90px; margin: 0; accent-color: var(--accent); }
 .video-timeline { grid-column: 1 / -1; overflow: auto; border-top: 1px solid var(--border); background: var(--surface-alt); }
 .video-editor .editor-status .msg { flex: 1; }
 .ve-media { display: flex; flex-direction: column; gap: 8px; min-width: 0; }

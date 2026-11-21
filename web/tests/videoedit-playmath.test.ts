@@ -1,7 +1,7 @@
 // Playback maths: thumbnail / waveform counts, what sound a window needs, painting slots, resampling.
 import { describe, expect, it } from "vitest";
 import {
-  PeakAccumulator, THUMB_HEIGHT, WAVE_H, audioNeeds, startTime, thumbCount, thumbSlots, thumbTimes, waveBars, waveBuckets,
+  PeakAccumulator, THUMB_HEIGHT, WAVE_H, audioNeeds, pickClock, startTime, thumbCount, thumbSlots, thumbTimes, waveBars, waveBuckets,
 } from "../src/ui/videoeditor/playmath";
 import { toStereo48k } from "../src/videoedit/resample";
 import { audioClip, videoClip, type AudioClip, type MainItem, type Project, type Source } from "../src/videoedit/project";
@@ -131,5 +131,12 @@ describe("toStereo48k", () => {
   });
   it("44.1 kHz 441 -> 480", () => {
     expect(toStereo48k([new Float32Array(441)], 44100)[0].length).toBe(480);
+  });
+});
+
+describe("pickClock", () => {
+  it("plays by the sound clock with an AudioContext, else by the wall clock", () => {
+    expect(pickClock(true)).toBe("audio");
+    expect(pickClock(false)).toBe("wall");
   });
 });

@@ -1,6 +1,6 @@
 // The website's video editor page (port of the desktop's gui/videoedit/): top bar, media list,
-// preview, inspector, timeline and a status line. Sources are opened on the page (sources.ts);
-// the player and export arrive in the next steps. Loaded on demand from
+// preview, inspector, timeline and a status line. Sources are opened on the page (sources.ts) and
+// played by player.ts; export arrives in a later step. Loaded on demand from
 // ui/app.ts, only behind the test gate.
 import { canonicalExt, PROJECT_EXTS } from "../../core/detect";
 import { ConversionError, type InputFile } from "../../core/types";
@@ -20,8 +20,11 @@ import { loadBundledFonts } from "./fonts";
 import { Inspector } from "./inspector";
 import { locateWindow } from "./locate";
 import { MediaList } from "./media";
+import { Player } from "./player";
+import { startTime } from "./playmath";
 import { Preview } from "./preview";
 import { actionFor, type ActionId } from "./shortcuts";
+import { SoundStore } from "./sound";
 import { Abandoned, SourceBank } from "./sources";
 import { TimelineView } from "./timeline";
 import { frameNumber } from "./timelinemath";
@@ -60,8 +63,13 @@ export class VideoEditorPage {
   private timeline: TimelineView;
   private inspector: Inspector;
   private bank: SourceBank;
+  /** The bank's decoded sound for the mixer (one per bank). */
+  private sound: SoundStore;
   private media: MediaList;
   private preview: Preview;
+  private player: Player;
+  /** The project being played (an edit, undo or new project stops it). */
+  private playingProject: Project | null = null;
   private history: History | null = null;
   private notes: Map<string, string> = new Map();
   /** Every source id this session has used (the opened project's, every file added since, freed
@@ -84,7 +92,20 @@ export class VideoEditorPage {
 
   constructor(private opts: VideoEditorOptions) {
     this.bank = new SourceBank(opts.client);
-    this.preview = new Preview(() => this.bank, { step: (n) => this.stepFrames(n) });
+    this.sound = new SoundStore(this.bank.audio);
+    this.preview = new Preview(() => this.bank, {
+      step: (n) => this.stepFrames(n),
+      play: () => this.togglePlay(),
+      loop: (on) => (this.player.loop = on),
+      volume: (v) => (this.player.volume = v),
+    });
+    this.player = new Player(() => this.bank, () => this.sound, {
+      frame: (paint) => this.preview.showFrame(paint),
+      position: (t) => this.playingAt(t),
+      ended: () => this.playFinished(),
+      notice: (msg) => this.showMessage(msg),
+    });
+    this.player.volume = this.preview.volume;
     this.media = new MediaList({
       add: (id) => this.addSourceAtPlayhead(id),
       files: () => this.media.picker.click(),
@@ -192,6 +213,22 @@ export class VideoEditorPage {
       still: (): Promise<void> => page.preview.idle(),
       /** The preview's pixel at fractions 0…1 of the frame's width / height (null: none shown). */
       pixel: (fx: number, fy: number): [number, number, number, number] | null => page.preview.pixel(fx, fy),
+      /** The shown project's length. */
+      length: (): number => {
+        const p = page.shownProject();
+        return p ? length(p) : 0;
+      },
+      /** Play from the playhead (like ▶ while stopped). */
+      play: () => {
+        if (!page.player.playing) page.togglePlay();
+      },
+      stop: () => page.stopPlayback(),
+      get playing() {
+        return page.player.playing;
+      },
+      stats: () => page.player.stats(),
+      /** Play as if there were no sound device. */
+      forceWallClock: () => page.player.forceWallClock(),
     };
   }
 
@@ -223,6 +260,8 @@ export class VideoEditorPage {
   private leaveSession(): void {
     this.session++;
     this.epoch++;
+    this.stopPlayback(false);
+    this.player.dispose(); // its AudioContext goes with the session
     this.preview.clear(); // a still being made for the old project never paints
     this.freshBank();
     this.work = Promise.resolve();
@@ -235,8 +274,11 @@ export class VideoEditorPage {
   }
 
   private freshBank(): void {
+    this.stopPlayback(false); // its streams read the old bank
     this.bank.abandon();
+    this.sound.dispose();
     this.bank = new SourceBank(this.opts.client);
+    this.sound = new SoundStore(this.bank.audio);
   }
 
   get shown(): boolean {
@@ -376,6 +418,7 @@ export class VideoEditorPage {
             continue;
           }
           bank.forget(s.id);
+          this.sound.forget(s.id);
           messages.push(`Couldn't use “${f.name}” for “${name}”.`);
         } catch (e) {
           if (e instanceof Abandoned || mine !== this.session) return true;
@@ -654,6 +697,7 @@ export class VideoEditorPage {
   }
 
   private seek(t: number): void {
+    this.stopPlayback(false); // the still at the seek follows
     const p = this.shownProject();
     const end = p ? length(p) : 0;
     this.playhead = Math.max(0, Math.min(t, end));
@@ -665,6 +709,48 @@ export class VideoEditorPage {
     const p = this.shownProject();
     if (!p) return;
     this.seek((frameNumber(p, this.playhead) + n) / outputFps(p));
+  }
+
+  // ---------------------------------------------------------------- playback (editor_page._play_toggled …)
+  private togglePlay(): void {
+    if (this.player.playing) {
+      this.stopPlayback();
+      return;
+    }
+    this.flushPending();
+    const p = this.shownProject();
+    if (!p || !this.active || length(p) <= 0) return;
+    const size = this.preview.playSize(p);
+    if (!size) return; // the preview isn't laid out
+    this.player.play(p, startTime(this.playhead, length(p)), size);
+    if (!this.player.playing) return;
+    this.playingProject = p;
+    this.preview.setPlaying(true);
+  }
+
+  /** Stop playing; `still` shows the frame at the playhead (callers that redraw anyway skip it). */
+  private stopPlayback(still = true): void {
+    const was = this.player.playing;
+    this.player.stop();
+    this.playingProject = null;
+    this.preview.setPlaying(false);
+    if (was && still) this.viewChanged();
+  }
+
+  private playingAt(t: number): void {
+    this.playhead = t;
+    this.timeline.setPlayhead(t, true);
+    const p = this.playingProject;
+    if (p) this.preview.setTime(t, length(p));
+  }
+
+  private playFinished(): void {
+    const p = this.playingProject;
+    this.playingProject = null;
+    this.preview.setPlaying(false);
+    if (p) this.playhead = length(p);
+    this.timeline.setPlayhead(this.playhead);
+    this.viewChanged();
   }
 
   /** The shown project or the playhead changed: the still preview follows (no project: blank). */
@@ -709,10 +795,10 @@ export class VideoEditorPage {
         return void this.saveAs();
       case "zoom-in": return this.timeline.zoomIn();
       case "zoom-out": return this.timeline.zoomOut();
-      case "play":
+      case "play": return this.togglePlay();
+      case "loop": return this.preview.toggleLoop();
       case "export":
-      case "loop":
-        return; // playback and export come with later steps
+        return; // export comes with a later step
     }
   }
 
@@ -721,6 +807,8 @@ export class VideoEditorPage {
   private render(inspector = true): void {
     const hi = this.history;
     const shown = this.shownProject();
+    // an edit, undo / redo, opening or leaving changed the project: playback stops (the still follows)
+    if (this.player.playing && shown !== this.playingProject) this.stopPlayback(false);
     if (shown && this.selected !== null) {
       const id = this.selected.startsWith("tr:") ? this.selected.slice(3) : this.selected;
       if (!layout(shown).has(id)) this.selected = null;

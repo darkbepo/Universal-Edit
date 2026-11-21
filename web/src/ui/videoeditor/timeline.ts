@@ -6,7 +6,7 @@ import { addRow } from "../../videoedit/edits";
 import { SOURCE_MIME } from "./media";
 import {
   DESKTOP, ZOOM_STEP, addRowRect, boundaryX, dragMoved, dragResult, ghost, hitTest, rowAt, rows, rulerTicks,
-  selectionFor, spanRect, tFor, totalHeight, wheel, xFor, zoom, DEFAULT_PPS,
+  selectionFor, spanRect, tFor, totalHeight, wheel, xFor, zoom, DEFAULT_PPS, follow as followScroll,
   type Drag, type Rect, type Row, type View,
 } from "./timelinemath";
 
@@ -119,8 +119,10 @@ export class TimelineView {
     this.draw();
   }
 
-  setPlayhead(t: number): void {
+  /** `follow` (playing): the view pages along when the playhead leaves it (timeline.set_playhead). */
+  setPlayhead(t: number, follow = false): void {
     this.playhead = Math.max(0, t);
+    if (follow) this.scroll = followScroll(this.view(), this.playhead);
     this.draw();
   }
 
