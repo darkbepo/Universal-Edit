@@ -223,6 +223,11 @@ export class SourceBank {
     try {
       const mb = await this.mediabunny();
       const h = Math.max(1, Math.round(Math.min(height, video.displayHeight)));
+      // No canvas pool (`poolSize`): a pooled canvas is painted over again after poolSize more
+      // frames, and FrameStream can't promise to hold fewer. Its `ahead` limit counts only frames
+      // past the wanted time; when decoding falls behind playback, frames at or before it pile up
+      // in its buffer between two draws (on top of the shown one and the player's `last`), so no
+      // fixed size is safe. A fresh canvas per frame costs an allocation, never a wrong picture.
       const sink = new mb.CanvasSink(video, { height: h, fit: "contain" });
       const first = await video.getFirstTimestamp();
       for await (const got of sink.canvases(Math.max(first, from))) {

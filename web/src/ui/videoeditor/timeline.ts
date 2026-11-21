@@ -123,7 +123,14 @@ export class TimelineView {
 
   /** Let go of a source's scanned pictures (before the scanner closes them). */
   forgetSource(id: string): void {
-    if (this.thumbs.delete(id) || this.waves.delete(id)) this.draw();
+    const hadThumbs = this.thumbs.delete(id);
+    const hadWave = this.waves.delete(id); // both go: `||` would skip this one
+    if (hadThumbs || hadWave) this.draw();
+  }
+
+  /** Tests: what the timeline holds for a source. */
+  holds(id: string): { thumbs: boolean; wave: boolean } {
+    return { thumbs: this.thumbs.has(id), wave: this.waves.has(id) };
   }
 
   forgetAllSources(): void {

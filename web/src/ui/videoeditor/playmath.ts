@@ -8,6 +8,12 @@ export const THUMB_HEIGHT = 56, THUMB_EVERY_PX = 120, THUMB_MAX = 40, THUMB_PPS 
 export const WAVE_PER_SECOND = 50, WAVE_MAX = 4000, WAVE_H = 16;
 export const CHUNK_SECONDS = 0.5, LEAD_SECONDS = 1.0, END_SLACK = 0.02;
 export const NO_SOUND = "No sound device — preview is silent";
+/** The AudioContext stayed suspended (the browser didn't let it start): said every time. */
+export const SOUND_NOT_STARTED = "Sound didn't start — press Play again";
+/** Playback broke off on an error (a frame that couldn't be drawn, …). */
+export const PLAYBACK_STOPPED = "Playback stopped.";
+/** A cold Play waits at most this long (ms) for the first sound chunk before the clock starts. */
+export const ARM_MS = 300;
 
 const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, v));
 

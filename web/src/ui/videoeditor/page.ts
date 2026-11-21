@@ -21,7 +21,7 @@ import { Inspector } from "./inspector";
 import { locateWindow } from "./locate";
 import { MediaList } from "./media";
 import { Player } from "./player";
-import { startTime } from "./playmath";
+import { PLAYBACK_STOPPED, startTime } from "./playmath";
 import { Preview } from "./preview";
 import { actionFor, type ActionId } from "./shortcuts";
 import { Scanner } from "./scanner";
@@ -109,6 +109,7 @@ export class VideoEditorPage {
       frame: (paint) => this.preview.showFrame(paint),
       position: (t) => this.playingAt(t),
       ended: () => this.playFinished(),
+      stopped: (t) => this.playStopped(t),
       notice: (msg) => this.showMessage(msg),
     });
     this.player.volume = this.preview.volume;
@@ -238,8 +239,14 @@ export class VideoEditorPage {
       /** The source got another file in this bank: drop its scan and ask for it again. */
       rescan: (id: string) => {
         page.dropScan(id);
+        const held = page.timeline.holds(id); // before the new scan can land
         page.render(false);
+        return held;
       },
+      /** What the timeline holds for a source (thumbnails, a waveform). */
+      holds: (id: string) => page.timeline.holds(id),
+      /** The next frame drawn while playing throws (as a broken frame would). */
+      breakNextDraw: () => page.player.breakNextDraw(),
       /** Play as if there were no sound device. */
       forceWallClock: () => page.player.forceWallClock(),
     };
@@ -798,6 +805,17 @@ export class VideoEditorPage {
     if (p) this.playhead = length(p);
     this.timeline.setPlayhead(this.playhead);
     this.viewChanged();
+  }
+
+  /** Playback broke off at `t` (an error): the playhead stays there, the still shows it. */
+  private playStopped(t: number): void {
+    const p = this.playingProject;
+    this.playingProject = null;
+    this.preview.setPlaying(false);
+    if (p) this.playhead = Math.max(0, Math.min(t, length(p)));
+    this.timeline.setPlayhead(this.playhead);
+    this.viewChanged();
+    this.showMessage(PLAYBACK_STOPPED, true);
   }
 
   /** The shown project or the playhead changed: the still preview follows (no project: blank). */

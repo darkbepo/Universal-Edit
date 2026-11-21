@@ -13,7 +13,7 @@ import { textAt } from "../../videoedit/textlayout";
 import { drawFrame, drawText, type Ctx2D, type Picture } from "./draw";
 import { hasFont, loadBundledFonts } from "./fonts";
 import { FrameStream } from "./framestream";
-import { CHUNK_SECONDS, LEAD_SECONDS, NO_SOUND, audioNeeds, pickClock } from "./playmath";
+import { ARM_MS, CHUNK_SECONDS, LEAD_SECONDS, NO_SOUND, SOUND_NOT_STARTED, audioNeeds, pickClock } from "./playmath";
 import { surfaces } from "./preview";
 import type { SoundStore } from "./sound";
 import type { SourceBank } from "./sources";
@@ -22,6 +22,8 @@ export interface PlayerEvents {
   frame(paint: (ctx: CanvasRenderingContext2D, size: [number, number]) => void): void;
   position(t: number): void;
   ended(): void;
+  /** Playback broke off on an error at project second `t` (not the end: the playhead stays). */
+  stopped(t: number): void;
   notice(msg: string): void;
 }
 
@@ -45,8 +47,15 @@ interface Run {
   clock: "audio" | "wall";
   /** Project seconds at the clock's start. */
   t0: number;
+  /** The audio clock starts (`ctxStart`) only once the first chunk is mixed (or after ARM_MS),
+   *  so a cold decode doesn't eat the opening sound; until then the clock stays at t0. */
+  armed: boolean;
+  /** performance.now() at Play (the arming cap and the first-frame wait count from it). */
+  began: number;
   wallStart: number;
   ctxStart: number;
+  /** The last clock time seen (where an error stops the playhead). */
+  last: number;
   streams: Map<string, Stream>;
   pictures: Map<string, Picture | null | "loading">;
   limiter: Limiter;
@@ -69,7 +78,8 @@ export class Player {
   private run: Run | null = null;
   private forcedWall = false;
   private noticed = false;
-  private counts = { chunks: 0, loudChunks: 0, frames: 0 };
+  private counts = { chunks: 0, loudChunks: 0, lateChunks: 0, frames: 0 };
+  private breakDraw = false;
 
   constructor(private bank: () => SourceBank, private sound: () => SoundStore, private on: PlayerEvents) {}
 
@@ -89,7 +99,7 @@ export class Player {
   /** Play `p` from `t` (clamped to it), frames made at `size`. */
   play(p: Project, t: number, size: [number, number]): void {
     this.stop();
-    this.counts = { chunks: 0, loudChunks: 0, frames: 0 };
+    this.counts = { chunks: 0, loudChunks: 0, lateChunks: 0, frames: 0 };
     this.start(p, t, size);
   }
 
@@ -104,8 +114,11 @@ export class Player {
       p, total, size, fps: outputFps(p),
       clock: ctx ? "audio" : "wall",
       t0: Math.max(0, Math.min(t, total)),
+      armed: !ctx,
+      began: performance.now(),
       wallStart: performance.now(),
-      ctxStart: ctx ? ctx.currentTime : 0,
+      ctxStart: 0,
+      last: Math.max(0, Math.min(t, total)),
       streams: new Map(), pictures: new Map(),
       limiter: new Limiter(),
       scheduled: Math.max(0, Math.min(t, total)),
@@ -152,8 +165,14 @@ export class Player {
     this.dispose();
   }
 
-  stats(): { chunks: number; loudChunks: number; frames: number } {
+  /** `lateChunks` = chunks that started late (cut at the front, or dropped). */
+  stats(): { chunks: number; loudChunks: number; lateChunks: number; frames: number } {
     return { ...this.counts };
+  }
+
+  /** Tests: the next frame drawn throws. */
+  breakNextDraw(): void {
+    this.breakDraw = true;
   }
 
   private context(): AudioContext | null {
@@ -161,7 +180,12 @@ export class Player {
     const has = !this.forcedWall && typeof AudioContext !== "undefined";
     if (pickClock(has) === "wall") return null;
     try {
-      const ctx = new AudioContext();
+      let ctx: AudioContext;
+      try {
+        ctx = new AudioContext({ sampleRate: SAMPLE_RATE }); // 48 kHz chunks then stitch sample-accurately
+      } catch {
+        ctx = new AudioContext();
+      }
       const gain = ctx.createGain();
       gain.gain.value = gainFor(this.vol);
       gain.connect(ctx.destination);
@@ -192,19 +216,39 @@ export class Player {
     run.nodes.clear();
   }
 
+  /** Start the audio clock now (a little ahead, so the first chunk isn't late). */
+  private arm(run: Run): void {
+    if (run.armed) return;
+    run.armed = true;
+    run.ctxStart = (this.ctx?.currentTime ?? 0) + 0.02;
+    run.wallStart = performance.now();
+  }
+
+  /** Context seconds since the run's start, less what the speakers haven't played yet (frames
+   *  follow what is heard). */
+  private heard(run: Run, ctx: AudioContext): number {
+    const latency = ctx.outputLatency ?? ctx.baseLatency ?? 0;
+    return Math.max(0, ctx.currentTime - (Number.isFinite(latency) ? latency : 0) - run.ctxStart);
+  }
+
   private clock(run: Run): number {
     if (run.clock === "audio") {
+      if (!run.armed) {
+        if (performance.now() - run.began < ARM_MS) return run.t0;
+        this.arm(run); // the first chunk is slow: start anyway
+      }
       const ctx = this.ctx;
-      if (ctx && ctx.state === "running") return run.t0 + Math.max(0, ctx.currentTime - run.ctxStart);
+      if (ctx && ctx.state === "running") return run.t0 + this.heard(run, ctx);
       const elapsed = performance.now() - run.wallStart;
-      if (ctx && elapsed < SUSPENDED_MS) return run.t0 + Math.max(0, ctx.currentTime - run.ctxStart);
+      if (ctx && elapsed < SUSPENDED_MS) return run.t0 + this.heard(run, ctx);
       // the context never started (or is gone): carry on silently by the wall clock
-      const at = run.t0 + (ctx ? Math.max(0, ctx.currentTime - run.ctxStart) : 0);
+      const at = run.t0 + (ctx ? this.heard(run, ctx) : 0);
       run.clock = "wall";
       run.t0 = at;
       run.wallStart = performance.now();
       this.silence(run);
-      this.silent();
+      if (ctx) this.on.notice(SOUND_NOT_STARTED); // not "no device": Play may well work next time
+      else this.silent();
       return at;
     }
     return run.t0 + (performance.now() - run.wallStart) / 1000;
@@ -214,6 +258,7 @@ export class Player {
     if (run !== this.run) return;
     try {
       const t = this.clock(run);
+      run.last = t;
       if (t >= run.total) {
         this.finish(run);
         return;
@@ -227,8 +272,7 @@ export class Player {
     } catch (e) {
       console.error("Playback stopped", e);
       this.stop();
-      this.on.notice("Playback stopped: a frame couldn't be shown.");
-      this.on.ended();
+      this.on.stopped(run.last);
     }
   }
 
@@ -264,9 +308,9 @@ export class Player {
     run.scheduled = start + CHUNK_SECONDS;
     if (frames === 0) return;
     const dur = frames / SAMPLE_RATE;
-    const when = run.ctxStart + (start - run.t0);
+    const due = () => run.ctxStart + (start - run.t0);
     const sound = this.sound();
-    if (ctx.currentTime < when + dur) {
+    if (!run.armed || ctx.currentTime < due() + dur) {
       try {
         await sound.ensure(audioNeeds(run.p, start, frames));
       } catch (e) {
@@ -276,7 +320,10 @@ export class Player {
     } // else its time has passed: mixed from what's there (the limiter must see every chunk)
     const chs = mixWindow(run.p, start, frames, sound.lookup);
     run.limiter.process(chs);
+    this.arm(run); // the first chunk is ready: the clock starts now (after ARM_MS it already has)
+    const when = due();
     const now = ctx.currentTime;
+    if (now > when) this.counts.lateChunks++;
     if (now >= when + dur || !this.gain) return; // too late: silence
     const buffer = ctx.createBuffer(2, frames, SAMPLE_RATE);
     buffer.copyToChannel(chs[0] as Float32Array<ArrayBuffer>, 0);
@@ -340,7 +387,11 @@ export class Player {
       s.stream.close();
       run.streams.delete(id);
     }
-    if (missing && !run.painted && performance.now() - run.wallStart < FIRST_FRAME_MS) return;
+    if (missing && !run.painted && performance.now() - run.began < FIRST_FRAME_MS) return;
+    if (this.breakDraw) {
+      this.breakDraw = false;
+      throw new Error("A frame broken on purpose (test)");
+    }
     const { canvas, ctx } = run.off;
     drawFrame(ctx, frame, (l) => pictures.get(l) ?? null, surfaces);
     drawText(ctx, textAt(run.p, t, run.size, hasFont), run.size[1] / outputSize(run.p)[1]);

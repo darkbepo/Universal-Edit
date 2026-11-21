@@ -513,7 +513,7 @@ test("leaving blanks the preview", async ({ page }) => {
 const NO_SOUND = "No sound device — preview is silent";
 const playing = (page: Page) => ve<boolean>(page, "playing");
 const total = (page: Page) => ve<number>(page, "length()");
-interface Stats { chunks: number; loudChunks: number; frames: number }
+interface Stats { chunks: number; loudChunks: number; lateChunks: number; frames: number }
 const stats = (page: Page) => ve<Stats>(page, "stats()");
 const playButton = (page: Page) => page.locator(".ve-transport .ve-play");
 
@@ -616,6 +616,47 @@ test("sound plays", async ({ page }) => {
   await expect.poll(() => stats(page).then((s) => s.chunks), { timeout: 5000 }).toBeGreaterThanOrEqual(2);
   expect((await stats(page)).loudChunks).toBe(0);
   await ve(page, "stop()");
+});
+
+test("a cold play keeps the opening sound", async ({ page }) => {
+  await page.goto("./?e2e");
+  await openEditor(page, [fx("clip.mp4")]);
+  await ve(page, "play()"); // nothing decoded yet: the clock waits for the first chunk
+  await expect.poll(() => stats(page).then((s) => s.chunks + s.lateChunks), { timeout: 5000 }).toBeGreaterThanOrEqual(3);
+  expect((await stats(page)).lateChunks).toBe(0);
+  await ve(page, "stop()");
+});
+
+test("a broken frame stops playback where it was", async ({ page }) => {
+  await page.goto("./?e2e");
+  await openEditor(page, [fx("clip.mp4")]);
+  await ve(page, "play()");
+  await expect.poll(() => ve<number>(page, "playhead")).toBeGreaterThan(0.3);
+  await ve(page, "breakNextDraw()");
+  await expect.poll(() => playing(page)).toBe(false);
+  const at = await ve<number>(page, "playhead");
+  expect(at).toBeGreaterThan(0.3);
+  expect(at).toBeLessThan((await total(page)) - 0.1);
+  await expect(statusMsg(page)).toHaveText("Playback stopped.");
+  await expect(playButton(page)).toHaveText("▶");
+  await ve(page, "still()");
+  expect(await pixel(page)).not.toBeNull();
+});
+
+test("leaving while playing stops cleanly", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("./?e2e");
+  await openEditor(page, [fx("clip.mp4")]);
+  await ve(page, "play()");
+  await expect.poll(() => stats(page).then((s) => s.frames)).toBeGreaterThan(0);
+  await page.getByRole("button", { name: "← Back to Convert" }).click();
+  await expect(page.locator(".video-editor")).toBeHidden();
+  expect(await playing(page)).toBe(false);
+  const before = (await stats(page)).frames;
+  await page.waitForTimeout(1000);
+  expect((await stats(page)).frames).toBe(before);
+  expect(errors).toEqual([]);
 });
 
 test("plays across a crossfade", async ({ page }) => {
@@ -1058,7 +1099,9 @@ test("a source given another file drops its old scan and is scanned again", asyn
   await page.goto("./?e2e");
   await openEditor(page, [fx("clip.mp4")]);
   await expect.poll(async () => (await scanned(page)).scans.s1).toBe(1);
-  await ve(page, `rescan("s1")`);
+  expect(await ve(page, `holds("s1")`)).toEqual({ thumbs: true, wave: true });
+  // both the pictures and the waveform go at once (the new scan lands later)
+  expect(await ve(page, `rescan("s1")`)).toEqual({ thumbs: false, wave: false });
   await expect.poll(async () => (await scanned(page)).scans.s1).toBe(2);
   const got = await scanned(page);
   expect(got.thumbs.s1).toBeGreaterThan(0);
