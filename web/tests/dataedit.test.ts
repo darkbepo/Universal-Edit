@@ -10,6 +10,7 @@ import { History } from "../src/dataedit/history";
 import { DataError, newDocument, openBytes, toBytes } from "../src/dataedit/io";
 import { detectIndent, dumps, parse } from "../src/dataedit/jsontree";
 import * as table from "../src/dataedit/table";
+import { toValue } from "../src/dataedit/export";
 import * as xlsx from "../src/dataedit/xlsx";
 import * as xmltree from "../src/dataedit/xmltree";
 import * as yamltree from "../src/dataedit/yamltree";
@@ -241,4 +242,16 @@ describe("lost parts", () => {
     expect(openBytes(enc("<a><!-- c --><b>1</b></a>"), "xml").lost).toEqual(["comments"]);
     expect(() => openBytes(enc("a: 1\n---\nb: 2\n"), "yaml")).toThrow("several YAML documents");
   });
+});
+
+describe("save as: plain values", () => {
+  for (const c of cases.export) {
+    it(c.ext, () => {
+      const data = c.parts
+        ? zipSync(Object.fromEntries(Object.entries(c.parts as Record<string, string>).map(([k, v]) => [k, strToU8(v)])))
+        : enc(c.text);
+      const opened = openBytes(data, c.ext);
+      expect(JSON.parse(JSON.stringify(toValue(opened, opened.doc)))).toEqual(c.value);
+    });
+  }
 });

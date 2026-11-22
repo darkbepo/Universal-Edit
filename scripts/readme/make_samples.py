@@ -3,8 +3,8 @@
     python scripts/readme/make_samples.py OUT_DIR
 
 Writes pictures (painted landscapes), a Word letter, a stereo song, a 3D model (torus knot),
-a short video with its subtitles, a little web page's CSS and a PDF. Everything is drawn
-from code, so it is free to show.
+a short video with its subtitles, a little web page's CSS, a spreadsheet and a PDF.
+Everything is drawn from code, so it is free to show.
 """
 
 from __future__ import annotations
@@ -315,6 +315,46 @@ body {
 """
 
 
+def workbook(out: Path) -> None:
+    """A little spreadsheet of mountain huts (a date column, a second sheet)."""
+    import datetime
+
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Huts"
+    ws.append(["hut", "region", "altitude_m", "beds", "opens", "staffed", "note"])
+    huts = [
+        ("Glacier View", "North ridge", 2310, 48, (6, 15), True, "Book ahead in July"),
+        ("Pine Hollow", "Lake valley", 1240, 22, (5, 1), True, ""),
+        ("Eagle Rest", "North ridge", 2685, 16, (6, 20), False, "Self-catering, bring a stove"),
+        ("Silver Tarn", "High plateau", 1980, 36, (6, 1), True, "Sauna by the lake"),
+        ("Fox Corner", "Lake valley", 980, 18, (4, 20), True, ""),
+        ("Cloud Saddle", "High plateau", 2440, 12, (7, 1), False, "Key from Silver Tarn"),
+        ("Birch Meadow", "South forest", 860, 30, (4, 10), True, "Family rooms"),
+        ("Stone Arch", "South forest", 1520, 24, (5, 15), True, ""),
+        ("Raven Point", "North ridge", 2105, 20, (6, 10), True, "Steep last hour"),
+        ("Moss Lodge", "Lake valley", 1110, 40, (5, 5), True, "Boat hire"),
+        ("Frost Gate", "High plateau", 2790, 8, (7, 10), False, "Winter room only"),
+        ("Fern Hill", "South forest", 740, 26, (4, 1), True, ""),
+    ]
+    for name, region, alt, beds, (m, d), staffed, note in huts:
+        ws.append([name, region, alt, beds, datetime.date(2026, m, d), staffed, note])
+    for c in ws[1]:
+        c.font = Font(bold=True)
+    for row in ws.iter_rows(min_row=2, min_col=5, max_col=5):
+        row[0].number_format = "yyyy-mm-dd"
+    totals = wb.create_sheet("Regions")
+    totals.append(["region", "huts", "beds"])
+    for region in ("North ridge", "Lake valley", "High plateau", "South forest"):
+        totals.append(
+            [region, sum(h[1] == region for h in huts), sum(h[3] for h in huts if h[1] == region)]
+        )
+    wb.save(out / "mountain-huts.xlsx")
+
+
 def text_files(out: Path) -> None:
     (out / "mountain-flight.srt").write_text(SUBTITLES, encoding="utf-8")
     (out / "trail-notes.css").write_text(STYLE_CSS, encoding="utf-8")
@@ -329,6 +369,7 @@ def main() -> None:
     song(out)
     knot(out)
     text_files(out)
+    workbook(out)
     ffmpeg = sys.argv[2] if len(sys.argv) > 2 else "ffmpeg"
     video_and_pdf(out, ffmpeg)
     print("samples in", out)

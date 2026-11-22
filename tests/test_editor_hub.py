@@ -340,3 +340,14 @@ def test_coming_soon_badges_are_never_cut_off(qtbot, window, width, font):
     finally:
         app.setStyleSheet(before)
         app.setFont(before_font)
+
+
+def test_data_editor_file_rules_match_the_website():
+    import re
+
+    from umc.core.editors import DATA_FIRST, DATA_TOO
+
+    ts = (ROOT / "web" / "src" / "core" / "editors.ts").read_text(encoding="utf-8")
+    for name, value in (("DATA_FIRST", DATA_FIRST), ("DATA_TOO", DATA_TOO)):
+        found = re.search(name + r": ReadonlySet<string> = new Set\(\[([^\]]*)\]\)", ts)
+        assert found and set(re.findall(r'"(\w+)"', found[1])) == value, name

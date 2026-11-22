@@ -32,7 +32,7 @@ EDITORS: tuple[EditorInfo, ...] = (
 COMING_SOON = "Coming soon"
 
 # Editors the website doesn't have yet: its tile stays "Coming soon" (available false there).
-WEB_LATER: frozenset[str] = frozenset({"data"})
+WEB_LATER: frozenset[str] = frozenset()
 
 # The data editor (a table): Edit opens these in it first …
 DATA_FIRST: frozenset[str] = frozenset({"csv", "tsv", "xlsx"})

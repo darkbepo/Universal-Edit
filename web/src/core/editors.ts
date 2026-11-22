@@ -20,10 +20,15 @@ export const EDITORS: EditorInfo[] = [
   { id: "vector", title: "Vector editor", blurb: "Edit shapes and paths in SVG drawings", icon: "vector", available: false },
   { id: "font", title: "Font editor", blurb: "Change letters, spacing and font names", icon: "font", available: false },
   { id: "subtitle", title: "Subtitle editor", blurb: "Fix subtitle text and timing", icon: "subtitle", available: true },
-  { id: "data", title: "Data editor", blurb: "Edit CSV, JSON, XML and spreadsheets", icon: "table", available: false },
+  { id: "data", title: "Data editor", blurb: "Edit CSV, JSON, XML and spreadsheets", icon: "table", available: true },
 ];
 
 export const COMING_SOON = "Coming soon";
+
+// The data editor (a table): Edit opens these in it first … (same sets in editors.py)
+export const DATA_FIRST: ReadonlySet<string> = new Set(["csv", "tsv", "xlsx"]);
+// … and offers it under Edit's ▾ for these (the code editor stays first: they're often configs).
+export const DATA_TOO: ReadonlySet<string> = new Set(["json", "yaml", "xml"]);
 
 // Start-screen tile rows (owner, Nov 2026): as many tiles per row as fit, spread evenly over the
 // rows so no tile is left alone, each row centred; the tiles stretch to fill the width.

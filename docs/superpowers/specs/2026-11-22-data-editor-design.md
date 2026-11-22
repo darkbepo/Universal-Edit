@@ -77,4 +77,4 @@ fills it.
 3. Desktop page: add-on "data" (`umc.gui.dataeditor`: `QTableView` over a model reading the
    sheet, edit box, find bar, tabs), Edit + hub tile, self-test step.
 4. Website page `web/src/ui/dataeditor/` (virtual grid: only visible rows are in the DOM), loaded
-   on demand; e2e; tile available in both apps.
+   on demand; e2e; tile available in both apps. All four steps done (2026-11-22).

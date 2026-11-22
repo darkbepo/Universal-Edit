@@ -99,6 +99,14 @@ const SCENES = {
     await page.evaluate(() => window.__subeditor.showAt(2500));
     await page.waitForTimeout(800);
   },
+  async data(page) {
+    await page.goto(`${base}/?e2e`);
+    await page.locator('input[type="file"]').first().setInputFiles([s("mountain-huts.xlsx")]);
+    await page.getByRole("button", { name: "Edit", exact: true }).click();
+    await page.locator(".data-row").first().waitFor({ timeout: 60_000 });
+    await page.evaluate(() => window.__dataeditor.select(2, 6, 4, 6));
+    await page.waitForTimeout(800);
+  },
   async properties(page) {
     await page.goto(`${base}/?e2e`);
     await page.locator('input[type="file"]').first().setInputFiles([s("IMG_2048.jpg")]);
@@ -111,7 +119,7 @@ const SCENES = {
 /** Promo card text: [headline, subline, background colours, Tabler icon for a "Coming soon"
  * card (an editor not made yet: no screenshot, a calm placeholder panel instead)]. */
 export const CARDS = {
-  start: ["Drop. Pick. Done.", "Hundreds of formats and seven editors — and your files never leave your device.", ["#5b4bdb", "#1fa2c7"]],
+  start: ["Drop. Pick. Done.", "Hundreds of formats and eight editors — and your files never leave your device.", ["#5b4bdb", "#1fa2c7"]],
   convert: ["Convert anything", "Drop files in, pick a format, press Convert. Hundreds of formats, sensible defaults.", ["#3a7bd5", "#00d2a8"]],
   image: ["Image editor", "Layers, selections, adjustments, filters, text, retouching and background removal.", ["#ee6b4d", "#c53d8c"]],
   document: ["Document editor", "Open Word, ODT, RTF, Markdown or HTML, edit, and save back or as PDF.", ["#2f6fdb", "#7a5af8"]],
@@ -123,7 +131,7 @@ export const CARDS = {
   subtitle: ["Subtitle editor", "Fix text and timing next to the video: shift, sync, split, join, spot lines that are too fast.", ["#1f9d61", "#2c7be5"]],
   vector: ["Vector editor", "Select, move and reshape SVG shapes and paths, with fill, stroke, text and layers.", ["#2fb5d6", "#5b5ef0"], "vector"],
   font: ["Font editor", "Change a font's names, letter spacing and kerning, and see every glyph.", ["#9b7bf2", "#d96fd1"], "font"],
-  data: ["Data editor", "Edit CSV, JSON, XML, YAML and spreadsheets as a table: rows, columns, sort, find.", ["#3fae5a", "#c9a227"], "table"],
+  data: ["Data editor", "Edit CSV, JSON, XML, YAML and spreadsheets as a table: rows, columns, sort, find.", ["#3fae5a", "#c9a227"]],
 };
 
 /** A Tabler icon's inner SVG, from the website's own icon set. */

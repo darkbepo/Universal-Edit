@@ -1325,7 +1325,7 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
        self-test step. Web `ui/subtitleeditor/page.ts`: virtual list (only visible `.sub-row`s,
        `ROW_PX`), `<video>` + `.sub-caption`, `window.__subeditor` with `?e2e` (`showAt(ms)`
        because headless Chromium may not decode the clip); e2e `e2e/subtitleeditor.spec.ts`.
-    4. Data editor (`data`, both apps; spec `docs/superpowers/specs/2026-11-22-data-editor-design.md`):
+    4. ✅ Data editor (`data`, both apps; spec `docs/superpowers/specs/2026-11-22-data-editor-design.md`):
        CSV / TSV / JSON / XML / YAML / XLSX as an editable table (add / remove rows and columns,
        sort, find), saved back in the same format (Save as through the data converter).
        1. ✅ Model for CSV / TSV / JSON: `dataedit/` ↔ `web/src/dataedit/` (line-by-line ports;
@@ -1373,8 +1373,26 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
           `dataedit/export.py` (plain values → the data converter's writers, table → tree
           unflattens a.b) and the new file is opened. The find bar moved to
           `gui/widgets/find_bar.py` (shared with the subtitle editor). Tile available on the
-          desktop (`WEB_LATER` = {"data"}); installer component + CI add-on list; self-test step.
-       4. Website page.
+          desktop; installer component + CI add-on list; self-test step.
+       4. ✅ Website page `web/src/ui/dataeditor/` (page, shortcuts — ids as the desktop, New =
+          Alt+N), loaded on demand from `ui/app.ts` (`ensureDataEditor`; `editChoices` uses
+          `core/editors.ts` `DATA_FIRST` / `DATA_TOO`, `test_editor_hub.py` checks they match
+          the desktop's). Grid = `.data-grid` (scrolls both ways; `.data-head` sticky, rows
+          absolutely placed, only visible ones drawn — `renderRows` skips when the range and
+          sheet are unchanged; one `--data-cols` grid template for head and rows). Choosing a cell
+          only moves the highlight (`paintSelection`): redrawing would replace the element under
+          the pointer and the browser then never fires a double-click. In-place typing =
+          `.data-input` over the cell (typing a letter starts it; Enter ↓, Tab →, Esc); cells with
+          a line break go to the box (`.data-box`). Copy / cut / paste = the browser's clipboard
+          events on the focused grid (no permission prompt; TSV via `csvtext`). Save as another
+          format = `dataedit/export.ts` (`toValue` shared cases with export.py, then
+          `converters/data.ts` `write`, now exported). `.data-main` / `.data-grid` need
+          `min-width: 0` or the table's width leaks out and a click scrolls the whole page on
+          phones. Hooks: `.data-editor`, `.data-row[data-row]`, `.data-cell[data-col]`,
+          `.data-col[data-col]`, `.data-tab`, `.data-header-switch`, `.data-save-dialog`,
+          `window.__dataeditor` (`columns`, `rows`, `format`, `dirty`, `sheet`, `current`,
+          `select`) with `?e2e`; e2e `e2e/dataeditor.spec.ts` (an XLSX saved on the web is read
+          by openpyxl: `findPython("import openpyxl")`). The data editor is complete.
     The hub's tiles scroll in a short window (`EditorHub.scroll`); at 1280 × 800 all ten fit
     (tiles 84 px high, empty drop zone ≥ 200 px — `test_empty_window_is_one_big_drop_zone`).
 13. ✅ Light / dark mode switch (both apps; owner, Nov 2026): sun / moon button in the top bar,

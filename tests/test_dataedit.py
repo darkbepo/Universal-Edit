@@ -287,3 +287,12 @@ def test_lost_parts_are_listed() -> None:
     assert io.open_bytes(b"<a><!-- c --><b>1</b></a>", "xml").lost == ("comments",)
     with pytest.raises(io.DataError, match="several YAML documents"):
         io.open_bytes(b"a: 1\n---\nb: 2\n", "yaml")
+
+
+@pytest.mark.parametrize("case", CASES["export"], ids=lambda c: c["ext"])
+def test_export_values(case) -> None:
+    from umc.dataedit import export
+
+    data = make_zip(case["parts"]) if "parts" in case else case["text"].encode()
+    opened = io.open_bytes(data, case["ext"])
+    assert json.loads(json.dumps(export.to_value(opened, opened.doc))) == case["value"]

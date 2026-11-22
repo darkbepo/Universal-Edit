@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from umc.codeedit.search import SearchError
-from umc.dataedit import cells, csvtext, io, jsontree, table, xlsx, xmltree, yamltree
+from umc.dataedit import cells, csvtext, export, io, jsontree, table, xlsx, xmltree, yamltree
 from umc.dataedit.cells import MISSING, Num, Raw
 
 OUT = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "dataedit_cases.json"
@@ -421,6 +421,14 @@ XLSX_FILES: list[tuple[str, dict[str, str], list]] = [
 ]  # fmt: skip
 
 
+EXPORTS = [
+    ("csv", "name,age,ok,a.b,,name\nAnn,3,true,x,1.5,dup\nBob,,no,,,\n"),
+    ("yaml", "people:\n  - name: Ann\n    n: 0x1F\n    x: 1.5\n    big: 1_000\n    t: [1, 2]\n"),
+    ("json", '{"meta": 1, "rows": [{"a": {"b": 2.50}}, {"c": null}]}'),
+    ("xml", '<r><i id="1">x</i><i id="2"><n>1.0</n></i></r>'),
+]
+
+
 def make_zip(parts: dict[str, str]) -> bytes:
     buf = BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -568,6 +576,16 @@ def main() -> None:
                 "saved": {n: saved.read(n).decode("utf-8") for n in saved.namelist()},
             }
         )
+    out["export"] = []
+    for ext, text in EXPORTS:
+        opened = io.open_bytes(text.encode("utf-8"), ext)
+        out["export"].append(
+            {"ext": ext, "text": text, "value": export.to_value(opened, opened.doc)}
+        )
+    book = io.open_bytes(make_zip(_book()), "xlsx")
+    out["export"].append(
+        {"ext": "xlsx", "parts": _book(), "value": export.to_value(book, book.doc)}
+    )
     OUT.write_text(json.dumps(out, indent=1) + "\n", encoding="utf-8")
     print(f"wrote {OUT}")
 

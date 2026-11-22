@@ -15,11 +15,11 @@ test("tiles: in the owner's order; the ready editors open, the others say Coming
   await expect(tiles.first()).toBeVisible(); // the page has drawn its tiles
   expect(await tiles.evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.editor))).toEqual(
     ["image", "video", "audio", "document", "code", "model", "vector", "font", "subtitle", "data"]);
-  for (const id of ["image", "video", "audio", "document", "code", "model", "subtitle"]) {
+  for (const id of ["image", "video", "audio", "document", "code", "model", "subtitle", "data"]) {
     await expect(page.locator(`.editor-tile[data-editor=${id}]`)).toBeEnabled();
     await expect(page.locator(`.editor-tile[data-editor=${id}]`)).not.toContainText("Coming soon");
   }
-  for (const id of ["vector", "font", "data"]) {
+  for (const id of ["vector", "font"]) {
     const soon = page.locator(`.editor-tile[data-editor=${id}]`);
     await expect(soon).toBeDisabled();
     await expect(soon).toContainText("Coming soon");
@@ -142,7 +142,7 @@ test("Coming soon labels stay whole on one line at every width", async ({ page }
     await page.goto("./");
     const pills = page.locator(".editor-tile .badge-pill");
     await expect(pills.first()).toBeVisible(); // the page has drawn its tiles
-    expect(await pills.count()).toBe(3); // vector, font, data
+    expect(await pills.count()).toBe(2); // vector, font
     for (const pill of await pills.all()) {
       const box = await pill.evaluate((el) => {
         const r = el.getBoundingClientRect(), t = el.closest(".editor-tile")!.getBoundingClientRect();

@@ -255,7 +255,7 @@ async function read(bytes: Uint8Array, ext: string, name: string, o: Values): Pr
   throw new ConversionError(`Can't read ${ext.toUpperCase()} files as data.`);
 }
 
-async function write(value: Tree, ext: string, o: Values): Promise<Uint8Array> {
+export async function write(value: Tree, ext: string, o: Values): Promise<Uint8Array> {
   const enc = (s: string) => new TextEncoder().encode(s);
   const indent = Number(o.indent);
   if (ext === "json") return enc(JSON.stringify(value, null, indent || undefined) + "\n");

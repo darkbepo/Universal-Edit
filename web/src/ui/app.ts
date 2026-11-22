@@ -3,6 +3,7 @@
 // bar with status, progress and Convert. Narrow screens stack the same parts in one column.
 import { zipSync } from "fflate";
 import { detect } from "../core/detect";
+import { DATA_FIRST, DATA_TOO } from "../core/editors";
 import { defaults, type Values } from "../core/options";
 import { fileFractions } from "../core/progress";
 import { converterById, targetsFor } from "../core/registry";
@@ -67,6 +68,7 @@ export function mountApp(root: HTMLElement): void {
   let docEditor: import("./doceditor/page").DocEditorPage | null = null;
   let codeEditor: import("./codeeditor/page").CodeEditorPage | null = null;
   let subEditor: import("./subtitleeditor/page").SubtitleEditorPage | null = null;
+  let dataEditor: import("./dataeditor/page").DataEditorPage | null = null;
   let editing = false;
   // Three columns (badge + theme | logo + name | Convert/Edit): the outer two are equally wide, so the
   // name stays centred on the page.
@@ -234,7 +236,7 @@ export function mountApp(root: HTMLElement): void {
   const appMain = root.querySelector("main.app") as HTMLElement;
   // A lone .zip is a document when it is a Markdown ZIP the website saved (checked once per file).
   const markdownZips = new WeakMap<InputFile, boolean>();
-  type EditKind = "image" | "model" | "audio" | "document" | "code" | "subtitle" | "video";
+  type EditKind = "image" | "model" | "audio" | "document" | "code" | "subtitle" | "video" | "data";
   // files the code editor opens (the language table's extensions; "" = text with none)
   const CODE_EDITABLE_EXTS = new Set(["", ...codeLanguages.languages.flatMap((l) => l.exts)]);
   /** Every editor that can open the files, the one Edit opens first (the desktop's
@@ -252,6 +254,9 @@ export function mountApp(root: HTMLElement): void {
     }
     if (files.length === 1 && files[0].family === "project") return ["video"];
     if (files.some((f) => f.family === "video") && files.every((f) => f.family === "video" || f.family === "image" || f.family === "audio")) return ["video"];
+    // CSV / TSV / XLSX: the data editor first; JSON / YAML / XML: under ▾ (desktop: DATA_FIRST / DATA_TOO)
+    if (files.length === 1 && DATA_FIRST.has(files[0].ext)) return CODE_EDITABLE_EXTS.has(files[0].ext) ? ["data", "code"] : ["data"];
+    if (files.length === 1 && DATA_TOO.has(files[0].ext) && CODE_EDITABLE_EXTS.has(files[0].ext)) return ["code", "data"];
     if (files.length === 1) {
       const f = files[0];
       if (f.ext === "txt" || f.ext === "md") return ["document", "code"];
@@ -283,7 +288,7 @@ export function mountApp(root: HTMLElement): void {
     editMore.hidden = editChoices().length < 2;
     editMenu.hidden = true;
     const kind = editKind();
-    editMode.title = kind === "video" ? "Open the files in the video editor" : kind === "subtitle" ? "Open the subtitles in the subtitle editor (with the video, if added)" : kind === "code" ? "Open the files in the code editor" : kind === "document" ? "Open the document in the document editor" : kind === "model" ? "Open the 3D models in the 3D viewer" : kind === "image" ? "Open the images in the image editor (each image becomes a layer)" : kind === "audio" ? "Open the sound in the audio editor (several files are joined)" : "Add images, audio, code, subtitles, one text document, or 3D models to edit them";
+    editMode.title = kind === "data" ? "Open the table in the data editor" : kind === "video" ? "Open the files in the video editor" : kind === "subtitle" ? "Open the subtitles in the subtitle editor (with the video, if added)" : kind === "code" ? "Open the files in the code editor" : kind === "document" ? "Open the document in the document editor" : kind === "model" ? "Open the 3D models in the 3D viewer" : kind === "image" ? "Open the images in the image editor (each image becomes a layer)" : kind === "audio" ? "Open the sound in the audio editor (several files are joined)" : "Add images, audio, code, subtitles, one text document, or 3D models to edit them";
   }
   const canEdit = () => editKind() !== null;
   function showConverter() {
@@ -298,6 +303,7 @@ export function mountApp(root: HTMLElement): void {
     audio?.hide();
     video?.hide();
     docEditor?.hide();
+    dataEditor?.hide();
     codeEditor?.hide();
     subEditor?.hide();
     appMain.hidden = false;
@@ -385,6 +391,22 @@ export function mountApp(root: HTMLElement): void {
       return null;
     }
   }
+  let dataEditorP: Promise<import("./dataeditor/page").DataEditorPage> | null = null;
+  const ensureDataEditor = () => (dataEditorP ??= import("./dataeditor/page").then(({ mountDataEditor }) =>
+    (dataEditor = mountDataEditor(root, { onBack: showConverter }))).catch((e) => {
+    dataEditorP = null; // try again next time
+    throw e;
+  }));
+  async function loadDataEditor(): Promise<import("./dataeditor/page").DataEditorPage | null> {
+    try {
+      return await ensureDataEditor();
+    } catch (e) {
+      console.error("Couldn't load the data editor", e);
+      note.textContent = "Couldn't load the data editor. Check the internet connection and try again.";
+      note.hidden = false;
+      return null;
+    }
+  }
   const ensureEditor = () => (editorP ??= import("./editor/page").then(({ mountEditor }) =>
     (editor = mountEditor(root, { client, onBack: showConverter }))));
   let opening = false; // an editor tile is being opened (New picture window, code loading)
@@ -403,6 +425,23 @@ export function mountApp(root: HTMLElement): void {
   async function enterEdit(choice?: EditKind) {
     if (editing || busy || opening || !canEdit()) return;
     const kind = choice && editChoices().includes(choice) ? choice : editKind();
+    if (kind === "data") {
+      opening = true;
+      editMode.disabled = true;
+      try {
+        const page = await loadDataEditor();
+        if (!page) return;
+        if (await page.open(files)) showPage(page);
+        else {
+          note.textContent = page.lastError();
+          note.hidden = false;
+        }
+      } finally {
+        opening = false;
+        editMode.disabled = !canEdit();
+      }
+      return;
+    }
     if (kind === "subtitle") {
       opening = true;
       editMode.disabled = true;
@@ -550,6 +589,13 @@ export function mountApp(root: HTMLElement): void {
         showPage(d);
         return;
       }
+      if (id === "data") {
+        const page = await loadDataEditor();
+        if (!page) return;
+        page.openEmpty();
+        showPage(page);
+        return;
+      }
       if (id === "subtitle") {
         const page = await loadSubEditor();
         if (!page) return;
@@ -581,7 +627,7 @@ export function mountApp(root: HTMLElement): void {
     }
   }
   editMode.addEventListener("click", () => void enterEdit());
-  const labels: Partial<Record<EditKind, string>> = { code: "Edit as code", document: "Edit as document", subtitle: "Edit as subtitles" };
+  const labels: Partial<Record<EditKind, string>> = { code: "Edit as code", document: "Edit as document", subtitle: "Edit as subtitles", data: "Edit as table" };
   editMore.addEventListener("click", (e) => {
     e.stopPropagation();
     if (!editMenu.hidden) {
