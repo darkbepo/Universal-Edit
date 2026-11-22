@@ -91,6 +91,6 @@ export function numberValue(cell: Cell, typed: boolean): number | null {
 
 /** What the edit box shows: fromText(editText(c), typed) equals c. */
 export function editText(cell: Cell, typed: boolean): string {
-  if (typed && typeof cell === "string" && !sameCell(fromText(cell, true), cell)) return "'" + cell;
+  if (typed && typeof cell === "string" && cell && !sameCell(fromText(cell, true), cell)) return "'" + cell; // (empty text: shown empty)
   return display(cell);
 }

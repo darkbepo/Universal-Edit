@@ -84,7 +84,8 @@ def test_cells(case) -> None:
     assert cells.display(cell) == case["display"]
     assert cells.edit_text(cell, True) == case["edit"]
     back = cells.from_text(case["edit"], True)
-    assert back == cell or (cell is MISSING and back is None)  # absent: shown blank, typed null
+    # absent and empty text: shown blank, typed back as null
+    assert back == cell or (cell in (MISSING, "") and back is None)
 
 
 @pytest.mark.parametrize("case", CASES["csv"], ids=lambda c: repr(c["text"][:20]))

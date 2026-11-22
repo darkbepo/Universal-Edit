@@ -95,7 +95,8 @@ def number_value(cell: Cell, typed: bool) -> float | None:
 
 def edit_text(cell: Cell, typed: bool) -> str:
     """What the edit box shows: ``from_text(edit_text(c), typed) == c`` (a ' is added to text
-    that would otherwise turn into another kind)."""
-    if typed and isinstance(cell, str) and from_text(cell, True) != cell:
+    that would otherwise turn into another kind) — except empty text, shown empty (a lone '
+    would puzzle; typing nothing into it changes nothing, as the edit is compared first)."""
+    if typed and isinstance(cell, str) and cell and from_text(cell, True) != cell:
         return "'" + cell
     return display(cell)

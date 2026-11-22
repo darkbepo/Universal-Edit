@@ -75,20 +75,27 @@ find & replace, a tab per file, and checks for JSON, YAML and XML.</td>
 <td><b>Subtitle editor</b> — fix text and timing next to the video: shift or sync every line,
 split and join, and spot lines that overlap or go by too fast.</td>
 </tr>
+<tr>
+<td><img src="docs/images/data.jpg" alt="Data editor with a spreadsheet of mountain huts open: names, regions, heights, dates and notes, with sheet tabs below"></td>
+<td></td>
+</tr>
+<tr>
+<td><b>Data editor</b> — CSV, TSV, JSON, YAML, XML and Excel as an editable table: rows,
+columns, sort, find, copy and paste, and saved back without losing formulas or formatting.</td>
+<td></td>
+</tr>
 </table>
 
 ### Coming soon
 
 <table>
 <tr>
-<td width="33%"><img src="docs/images/vector.jpg" alt="Vector editor: coming soon"></td>
-<td width="33%"><img src="docs/images/font.jpg" alt="Font editor: coming soon"></td>
-<td width="33%"><img src="docs/images/data.jpg" alt="Data editor: coming soon"></td>
+<td width="50%"><img src="docs/images/vector.jpg" alt="Vector editor: coming soon"></td>
+<td width="50%"><img src="docs/images/font.jpg" alt="Font editor: coming soon"></td>
 </tr>
 <tr>
 <td><b>Vector editor</b> — select, move and reshape SVG shapes and paths.</td>
 <td><b>Font editor</b> — names, letter spacing, kerning and a view of every glyph.</td>
-<td><b>Data editor</b> — CSV, JSON, XML, YAML and spreadsheets as an editable table: ready now in both apps (see "The other editors in detail").</td>
 </tr>
 </table>
 

@@ -73,7 +73,7 @@ describe("cells", () => {
       expect(display(cell)).toBe(c.display);
       expect(editText(cell, true)).toBe(c.edit);
       const back = fromText(c.edit, true);
-      expect(sameCell(back, cell) || (isMissing(cell) && back === null)).toBe(true);
+      expect(sameCell(back, cell) || ((isMissing(cell) || cell === "") && back === null)).toBe(true);
     });
   }
 });
