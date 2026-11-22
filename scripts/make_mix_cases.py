@@ -35,7 +35,8 @@ CASES = {
     ],
     "mute": [(4, 2, 20, 0.0, 0.0, True, False), (5, 2, 25, -3.0, 0.25, False, False)],
     "solo wins": [(6, 1, 30, 0.0, 0.0, False, True), (7, 1, 60, 0.0, 0.0, False, False)],
-    "mono out": [(8, 1, 20, -12.0, 0.7, False, False), (9, 1, 35, 6.0, 0.0, False, False)],
+    "mono out": [(8, 1, 20, -12.0, 0.0, False, False), (9, 1, 35, 6.0, 0.0, False, False)],
+    "mono panned": [(8, 1, 20, -12.0, 0.7, False, False), (9, 1, 35, 6.0, 0.0, False, False)],
     "part": [(10, 2, 40, 0.0, -1.0, False, False), (11, 1, 15, -1.5, 0.3, False, False)],
     "offsets": [(12, 2, 30, 0.0, 0.0, False, False, 10), (13, 1, 20, -2.0, 0.4, False, False)],
     "offset part": [

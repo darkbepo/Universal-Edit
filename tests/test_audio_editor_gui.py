@@ -1009,3 +1009,27 @@ def test_right_click_on_the_waveform(window, qtbot, media, monkeypatch):
     page.wave_menu(10).actions()[2].trigger()
     assert doc.selection == (0, doc.frames)
     doc.mark_saved()
+
+
+def test_track_sliders_are_heard_while_playing(window, qtbot, mono, monkeypatch):
+    """Volume and left / right act on the sound being played, not only from the next Play —
+    also for a mono track (played in stereo, so it can go to one side)."""
+    import numpy as np
+
+    page = open_in_editor(window, qtbot, [mono])
+    assert page.doc.channels == 1 and not page.mixing
+    played = []
+    monkeypatch.setattr(page.player, "play", lambda doc, *a: played.append(doc) or "")
+    page.play_from(0)
+    (sound,) = played
+    assert sound.channels == 2
+    before = np.array(sound.samples[:, 1000:2000])
+    assert np.allclose(before[0], before[1]) and np.max(np.abs(before)) > 0.1
+    row = page.tracks_panel.row_widgets[0]
+    row["pan"].setValue(-100)  # left only
+    now = np.array(sound.samples[:, 1000:2000])
+    assert np.allclose(now[0], before[0]) and np.max(np.abs(now[1])) == 0
+    row["pan"].setValue(0)
+    row["gain"].setValue(-24)
+    quiet = np.array(sound.samples[:, 1000:2000])
+    assert np.max(np.abs(quiet)) < np.max(np.abs(before)) * 0.07

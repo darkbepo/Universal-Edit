@@ -42,7 +42,9 @@ export function panGains(pan: number): [number, number] {
 
 export const gain = (db: number) => 10 ** (db / 20);
 
-export const outChannels = (tracks: Track[]) => Math.max(1, ...tracks.map((t) => t.doc.channels));
+/** Stereo when any track is stereo or panned (a panned mono track must reach one side). */
+export const outChannels = (tracks: Track[]) =>
+  tracks.some((t) => t.pan !== 0) ? 2 : Math.max(1, ...tracks.map((t) => t.doc.channels));
 
 /** Frames of the mix: up to the end of the last audible track. */
 export const length = (tracks: Track[]) => Math.max(0, ...audible(tracks).map(trackEnd));
@@ -50,9 +52,8 @@ export const length = (tracks: Track[]) => Math.max(0, ...audible(tracks).map(tr
 /** Up to the end of the last track, heard or not (what the lanes and the waveform span). */
 export const extent = (tracks: Track[]) => Math.max(0, ...tracks.map(trackEnd));
 
-/** The audible tracks' frames [start, end) mixed. */
-export function mix(tracks: Track[], start = 0, end: number | null = null): Samples {
-  const channels = outChannels(tracks);
+/** The audible tracks' frames [start, end) mixed; `channels` fixes the output. */
+export function mix(tracks: Track[], start = 0, end: number | null = null, channels = outChannels(tracks)): Samples {
   const stop = end ?? length(tracks);
   const frames = Math.max(0, stop - start);
   const out = Array.from({ length: channels }, () => new Float32Array(frames));

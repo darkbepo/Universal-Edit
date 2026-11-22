@@ -57,6 +57,9 @@ def gain(db: float) -> float:
 
 
 def out_channels(tracks: list[Track]) -> int:
+    """Stereo when any track is stereo or panned (a panned mono track must reach one side)."""
+    if any(t.pan != 0 for t in tracks):
+        return 2
     return max((t.doc.channels for t in tracks), default=1)
 
 
@@ -70,9 +73,12 @@ def extent(tracks: list[Track]) -> int:
     return max((t.end for t in tracks), default=0)
 
 
-def mix(tracks: list[Track], start: int = 0, end: int | None = None) -> np.ndarray:
-    """The audible tracks' frames [start, end) mixed; (channels, frames) float32."""
-    channels = out_channels(tracks)
+def mix(
+    tracks: list[Track], start: int = 0, end: int | None = None, channels: int | None = None
+) -> np.ndarray:
+    """The audible tracks' frames [start, end) mixed; (channels, frames) float32.
+    ``channels`` fixes the output (playback stays stereo while a slider moves)."""
+    channels = out_channels(tracks) if channels is None else channels
     end = length(tracks) if end is None else end
     frames = max(0, end - start)
     out = np.zeros((channels, frames), dtype=np.float32)
@@ -102,17 +108,18 @@ def changed(t: Track) -> bool:
 
 class LazyMix:
     """The mix of ``tracks`` [0, frames) as an array-like the player slices (``[:, a:b]``):
-    each slice is mixed when it is read, so playing never holds the whole mix."""
+    each slice is mixed when it is read, so playing never holds the whole mix. The tracks are
+    read as they are at that moment, so a volume / pan / mute / solo change is heard at once."""
 
-    def __init__(self, tracks: list[Track], frames: int) -> None:
+    def __init__(self, tracks: list[Track], frames: int, channels: int | None = None) -> None:
         self.tracks = tracks
-        self.shape = (out_channels(tracks), frames)
+        self.shape = (out_channels(tracks) if channels is None else channels, frames)
 
     def __getitem__(self, key: tuple[slice, slice]) -> np.ndarray:
         part = key[1]
         a = part.start or 0
         b = self.shape[1] if part.stop is None else min(part.stop, self.shape[1])
-        return mix(self.tracks, a, max(a, b))
+        return mix(self.tracks, a, max(a, b), self.shape[0])
 
 
 def total_samples(tracks: list[Track]) -> int:

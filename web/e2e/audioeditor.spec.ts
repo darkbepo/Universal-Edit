@@ -642,3 +642,27 @@ test("right-click on the waveform: the selection's actions, or play / paste here
   expect(after.duration).toBeCloseTo(4, 1);
   expect(after.dirty).toBe(true);
 });
+
+test("a track's volume and left / right are heard while it plays", async ({ page }) => {
+  await openEditor(page, [fx("tone.wav"), fx("tone.wav"), fx("tone.wav")]); // 9 s
+  await page.getByRole("slider", { name: "Volume", exact: true }).fill("0");
+  await page.getByRole("button", { name: "▶ Play" }).click();
+  await expect.poll(() => page.evaluate(() => window.__audio!.playing)).toBe(true);
+  // what is playing now: where it starts and the loudest sample of each side
+  const playing = () => page.evaluate(() => {
+    const p = (window as unknown as { __audio: { player: { origin: number; src: AudioBufferSourceNode } | null } }).__audio.player;
+    if (!p?.src.buffer) return null;
+    const b = p.src.buffer;
+    const peak = (c: number) => b.getChannelData(c).reduce((m, v) => Math.max(m, Math.abs(v)), 0);
+    return { origin: p.origin, peaks: Array.from({ length: b.numberOfChannels }, (_, c) => peak(c)) };
+  });
+  const loud = (await playing())!.peaks[0];
+  expect(loud).toBeGreaterThan(0.01);
+  await page.getByLabel("tone left / right").fill("-100");
+  await expect.poll(async () => (await playing())?.peaks[1]).toBe(0); // the right side went quiet
+  expect((await playing())!.origin).toBeGreaterThan(0); // from the play head, not from the start
+  await page.getByLabel("tone left / right").fill("0");
+  await page.getByLabel("tone volume").fill("-24");
+  await expect.poll(async () => (await playing())?.peaks[0]).toBeLessThan(loud * 0.07);
+  await page.evaluate(() => window.__audio!.stop());
+});

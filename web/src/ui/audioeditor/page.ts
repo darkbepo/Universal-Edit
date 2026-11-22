@@ -43,6 +43,7 @@ const LANE_ROOM = 1.25; // the lanes span the mix plus a quarter, so a track can
 const LANE_EMPTY_SECONDS = 10; // what the lanes span while every track is empty
 const DRAG_PX = 3; // moving less than this is a click
 const SNAP_PX = 6; // a start this close to 0:00 snaps to it
+const REMIX_MS = 60; // a track setting changed while playing: re-render the rest this soon
 /** The waveform's right-click menu on a selection (null = a line). */
 const SELECTION_MENU: ([Action | "play_sel", string] | null)[] = [
   ["play_sel", "Play selection"], null,
@@ -171,6 +172,7 @@ export class AudioEditorPage {
   private volumeSlider = h("input", { type: "range", class: "audio-volume", min: "0", max: "100", step: "1", ariaLabel: "Volume" });
   private volumeLabel = h("span", { class: "audio-volume-value muted" });
   private player: { src: AudioBufferSourceNode; origin: number; end: number; t0: number; paused: boolean } | null = null;
+  private remixTimer: number | null = null; // remixSoon's pending re-render
   private saveTarget: { name: string; format: string; bitrate: number; handle?: FileHandle } | null = null;
   private bitrate = 192;
   private tags: CarriedTags = EMPTY_TAGS; // song details of the opened files, written when saving
@@ -736,8 +738,22 @@ export class AudioEditorPage {
   private setTrack<K extends "gainDb" | "pan" | "mute" | "solo">(t: tracks.Track, key: K, value: tracks.Track[K]): void {
     if (t[key] === value) return;
     t[key] = value;
-    this.tracksRev++; // heard from the next Play
+    this.tracksRev++;
     this.update();
+    this.remixSoon();
+  }
+
+  /** A track setting changed while playing: render the rest again from the play head, so it
+   * is heard at once (the buffer holds the mix as it was). Batched: a slider fires per step. */
+  private remixSoon(): void {
+    if (!this.player || this.remixTimer !== null) return;
+    this.remixTimer = window.setTimeout(() => {
+      this.remixTimer = null;
+      const p = this.player, at = this.position();
+      if (!p || at === null) return;
+      if (at >= p.end) this.stop();
+      else this.play(at, p.end, p.paused);
+    }, REMIX_MS);
   }
 
   private setTracks(list: tracks.Track[], active: number): void {

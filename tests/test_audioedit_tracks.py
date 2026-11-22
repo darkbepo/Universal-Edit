@@ -110,3 +110,22 @@ def test_changed_and_lazy_mix() -> None:
     assert lazy.shape == (2, 10)
     assert np.array_equal(lazy[:, 2:7], tracks.mix([t, other], 2, 7))
     assert lazy[:, 8:20].shape == (2, 2)  # clipped at the end, like an array
+
+
+def test_a_panned_mono_track_makes_the_mix_stereo() -> None:
+    t = make([[0.5] * 4])
+    assert tracks.out_channels([t]) == 1
+    t.pan = 1.0
+    assert tracks.out_channels([t]) == 2
+    assert np.array_equal(tracks.mix([t]), np.array([[0.0] * 4, [0.5] * 4], np.float32))
+    assert tracks.mix([t], channels=1).shape == (1, 4)
+
+
+def test_lazy_mix_reads_the_tracks_as_they_are_now() -> None:
+    t = make([[0.5] * 10])
+    lazy = tracks.LazyMix([t], 10, channels=2)
+    assert lazy[:, 0:2].tolist() == [[0.5, 0.5], [0.5, 0.5]]
+    t.pan = -1.0
+    assert lazy[:, 0:2].tolist() == [[0.5, 0.5], [0.0, 0.0]]
+    t.mute = True
+    assert not lazy[:, 0:2].any()

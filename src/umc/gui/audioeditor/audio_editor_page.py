@@ -983,9 +983,11 @@ class AudioEditorPage(QWidget):
             self.view.update()
 
     def _play(self, start: int, end: int, paused: bool = False) -> None:
-        if self.mixing:  # mixed bit by bit as the player reads it (settings as they are now)
-            snapshot = [replace(t) for t in self.tracks]
-            samples = tr.LazyMix(snapshot, end)
+        if self.tracks:
+            # mixed bit by bit as the player reads it, from the tracks as they are at that
+            # moment: a volume / pan / mute / solo change is heard at once. Always stereo, so
+            # panning a mono track works while it plays (a mono track sounds the same).
+            samples = tr.LazyMix(list(self.tracks), end, channels=2)
             mixed = SimpleNamespace(rate=self.doc.rate, channels=samples.shape[0], samples=samples)
             why = self.player.play(mixed, start, end, paused)
         else:
@@ -1240,7 +1242,8 @@ class AudioEditorPage(QWidget):
         self.tracks_panel.set_tracks(tracks, active)
 
     def _on_tracks_changed(self) -> None:
-        """A volume / pan / mute / solo changed (allowed while busy; heard from the next Play)."""
+        """A volume / pan / mute / solo changed (allowed while busy; heard at once while playing:
+        the player mixes from the live tracks)."""
         self._tracks_rev += 1
         self._update_state()
 

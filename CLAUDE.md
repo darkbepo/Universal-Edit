@@ -1083,7 +1083,10 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       recording works on it unchanged; Play and Save use the mix when there are 2+ tracks
       (desktop plays a `tracks.LazyMix`, mixed bit by bit as the player reads). All tracks share the
       first one's rate (files added later are decoded at it) and one `MAX_SAMPLES`. Track
-      settings aren't undo steps. Desktop strip `gui/audioeditor/tracks_panel.py`; web
+      settings aren't undo steps, and are heard at once while playing: desktop always plays a
+      stereo `LazyMix` over the live tracks; the web re-renders the rest from the play head
+      (`remixSoon`, `REMIX_MS`). A panned track makes the mix stereo (`out_channels` /
+      `outChannels`), so a mono track can be panned. Desktop strip `gui/audioeditor/tracks_panel.py`; web
       `.audio-tracks` (`.audio-track[.active]`, `.audio-track-name`, labels "<name> volume" /
       "<name> left / right", "Mute <name>", "More for <name>" → menuitems "Rename…" / "Remove
       track", rename box "Track name"). Rows have fixed columns; picking a track only moves the
