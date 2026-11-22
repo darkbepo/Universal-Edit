@@ -79,6 +79,20 @@ def from_text(text: str, typed: bool) -> Cell:
     return text
 
 
+def guess(text: str) -> Cell:
+    """A value read from a file that only holds text (XML): typed like ``from_text`` when that
+    keeps exactly what it shows ("12" → a number, "true" → a bool, "" → null), else text."""
+    cell = from_text(text, True)
+    return cell if not isinstance(cell, Raw) and display(cell) == text else text
+
+
+def number_value(cell: Cell, typed: bool) -> float | None:
+    """The number a cell sorts by: a ``Num`` in JSON spelling, or (untyped) text that reads as
+    one. YAML spellings like 0x1F or .inf are numbers too but sort as text."""
+    text = cell.text if isinstance(cell, Num) else display(cell).strip(WS) if not typed else ""
+    return float(text) if NUMBER.fullmatch(text) else None
+
+
 def edit_text(cell: Cell, typed: bool) -> str:
     """What the edit box shows: ``from_text(edit_text(c), typed) == c`` (a ' is added to text
     that would otherwise turn into another kind)."""

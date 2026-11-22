@@ -3,7 +3,7 @@
 // plain snapshots.
 
 import { findAll, replaceAll as replaceText, type SearchOptions } from "../codeedit/search";
-import { type Cell, display, editText, fromText, isNum, MISSING, NUMBER, sameCell, strip } from "./cells";
+import { type Cell, display, editText, fromText, guess, MISSING, numberValue, sameCell } from "./cells";
 
 export type Row = readonly Cell[];
 export const MAX_CELLS = 1_000_000;
@@ -15,7 +15,8 @@ export interface Sheet {
   readonly columns: readonly string[];
   readonly rows: readonly Row[];
   readonly typed: boolean; // cells keep their kind (JSON …); false = every cell is text (CSV / TSV)
-  readonly header: boolean; // CSV / TSV: the first line holds the column names
+  readonly header: boolean; // CSV / TSV / XLSX: the first row holds the column names
+  readonly tree: boolean; // JSON / YAML / XML: columns are keys (named, unique; no header switch)
 }
 
 export interface DataDoc {
@@ -23,15 +24,15 @@ export interface DataDoc {
   readonly sheets: readonly Sheet[];
 }
 
-/** What a new cell holds. */
-export const blankOf = (sheet: Sheet): Cell => (sheet.typed ? MISSING : "");
+/** What a new cell holds: absent in a tree, empty in a spreadsheet, "" in CSV. */
+export const blankOf = (sheet: Sheet): Cell => (sheet.tree ? MISSING : sheet.typed ? null : "");
 
 const sameRow = (a: Row, b: Row) => a === b || (a.length === b.length && a.every((c, i) => sameCell(c, b[i])));
 
 /** The desktop's dataclass ==: unchanged rows are the same arrays, so it's quick. */
 export function sameSheet(a: Sheet, b: Sheet): boolean {
   if (a === b) return true;
-  if (a.name !== b.name || a.typed !== b.typed || a.header !== b.header) return false;
+  if (a.name !== b.name || a.typed !== b.typed || a.header !== b.header || a.tree !== b.tree) return false;
   if (a.columns.length !== b.columns.length || a.columns.some((c, i) => c !== b.columns[i])) return false;
   return a.rows.length === b.rows.length && a.rows.every((r, i) => sameRow(r, b.rows[i]));
 }
@@ -91,8 +92,8 @@ export function newColumnName(sheet: Sheet): string {
 }
 
 function checkName(sheet: Sheet, name: string, skip: number | null = null): void {
-  if (sheet.typed && !name) throw new EditError("A column needs a name.");
-  if (sheet.header && sheet.columns.some((n, i) => n === name && i !== skip)) {
+  if (sheet.tree && !name) throw new EditError("A column needs a name.");
+  if (sheet.tree && sheet.columns.some((n, i) => n === name && i !== skip)) {
     throw new EditError(`There is already a column called “${name}”.`);
   }
 }
@@ -124,14 +125,15 @@ export function renameColumn(sheet: Sheet, c: number, name: string): Sheet {
   return { ...sheet, columns: [...sheet.columns.slice(0, c), name, ...sheet.columns.slice(c + 1)] };
 }
 
-/** CSV / TSV: the first row becomes the column names, or the names become the first row. */
+/** CSV / TSV / XLSX: the first row becomes the column names, or the names become the first row. */
 export function setHeader(sheet: Sheet, on: boolean): Sheet {
-  if (sheet.typed || on === sheet.header) return sheet;
+  if (sheet.tree || on === sheet.header) return sheet;
   if (on) {
     const first = sheet.rows.length ? sheet.rows[0] : sheet.columns.map(() => "");
     return { ...sheet, header: true, columns: first.map(display), rows: sheet.rows.slice(1) };
   }
-  return { ...sheet, header: false, columns: sheet.columns.map(() => ""), rows: sheet.columns.length ? [sheet.columns, ...sheet.rows] : sheet.rows };
+  const firstRow: Row = sheet.columns.map((n) => (sheet.typed ? guess(n) : n));
+  return { ...sheet, header: false, columns: sheet.columns.map(() => ""), rows: sheet.columns.length ? [firstRow, ...sheet.rows] : sheet.rows };
 }
 
 // ---------------------------------------------------------------------------- sorting
@@ -145,9 +147,9 @@ function natural(text: string): Part[] {
 
 /** Numbers by value, then text in natural order (blanks are kept apart: always last). */
 export function sortKey(cell: Cell, typed: boolean): Key {
-  if (isNum(cell)) return [0, Number(cell.num), [], ""];
+  const value = numberValue(cell, typed);
+  if (value !== null) return [0, value, [], ""];
   const text = display(cell);
-  if (!typed && NUMBER.test(strip(text))) return [0, Number(strip(text)), [], ""];
   return [1, 0, natural(text), text];
 }
 

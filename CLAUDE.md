@@ -348,7 +348,8 @@ src/umc/
   audioedit/             # audio editor model (numpy, no Qt) — document.py (AudioDoc, splice
                          #   undo), ops.py, peaks.py (waveform columns), wav.py, io.py (open/save)
   dataedit/              # data editor model (no Qt) — cells.py, csvtext.py, jsontree.py,
-                         #   tree.py (table inside a tree), table.py (Sheet, edits), history, io
+                         #   xmltree.py, yamltree.py, xlsx.py, tree.py (table inside a tree),
+                         #   table.py (Sheet, edits), history, io
   subedit/               # subtitle editor model (no Qt) — formats.py (Cue, SubDoc, parse /
                          #   write, markup), edits.py, checks.py, history.py, io.py (bytes ↔ doc)
   codeedit/              # code editor model (no Qt) — languages.py (language table → web
@@ -1343,7 +1344,20 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
           `codeedit.textfile`; untouched = the bytes as read; `new_document` (hub tile) always
           writes. Limits 20 MB, 1 000 000 cells. History merge keys are strings ("cell:r:c") so
           the web's `===` matches.
-       2. YAML, XML, XLSX in the model. 3. Desktop page (add-on "data"). 4. Website page.
+       2. ✅ YAML, XML, XLSX in the model (both apps, same shared cases; Excel cases are stored
+          as part texts and zipped by each test). `xmltree`: own reader / writer (attributes
+          "@x", "#text", repeated children → list, leaf text typed by `cells.guess`); `yamltree`:
+          PyYAML `compose` ↔ `yaml` failsafe `parseAllDocuments` give raw text + quoting, our
+          `resolve` (YAML 1.1 bools, any YAML number → `Num` with its spelling; `number_value`
+          only sorts JSON spellings as numbers) and block writer (quotes only what `resolve`
+          would read differently; keys plain when safe); `xlsx`: own regex reader (prefixed
+          elements too, `_xHHHH_` escapes, 1900 / 1904 dates, date / time number formats),
+          saving = `changed_parts` (only changed sheets; untouched cell XML kept per place,
+          dimension updated, calcChain dropped). `Sheet.tree` (JSON / YAML / XML): unique
+          non-empty names, no header switch, blank = MISSING; spreadsheets blank = null and may
+          repeat names. `Opened.lost` lists what an edited save drops (comments …). XLSX can't
+          be made new (Save as goes through the converter).
+       3. Desktop page (add-on "data"). 4. Website page.
     The hub's tiles scroll in a short window (`EditorHub.scroll`); at 1280 × 800 all ten fit
     (tiles 84 px high, empty drop zone ≥ 200 px — `test_empty_window_is_one_big_drop_zone`).
 13. ✅ Light / dark mode switch (both apps; owner, Nov 2026): sun / moon button in the top bar,

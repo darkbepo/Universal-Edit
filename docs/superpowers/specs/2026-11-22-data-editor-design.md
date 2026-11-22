@@ -64,9 +64,15 @@ fills it.
 ## Steps (one plan each, ship gate after each)
 
 1. Model for CSV / TSV / JSON (both apps) + shared cases.
-2. YAML, XML and XLSX in the model (desktop PyYAML / ElementTree / openpyxl, web `yaml` /
-   fast-xml-parser / the converter's own XLSX reader; XLSX saving patches only the changed
-   cells of the original workbook so styles and untouched formulas stay).
+2. YAML, XML and XLSX in the model. As built: XML = our own reader / writer in both apps
+   (`xmltree`); YAML = each app's library reads only the structure (PyYAML `compose`, the
+   `yaml` package's failsafe schema) and our own `resolve` + block writer decide the rest
+   (`yamltree`; YAML 1.1 booleans like PyYAML, numbers keep their spelling); XLSX = our own
+   reader (`xlsx`: shared / inline strings, booleans, cached formula results, date-formatted
+   numbers as ISO text), saving rewrites only the changed sheets' `<sheetData>`: a cell that
+   still holds what was at its place keeps its XML (formula, style), a changed one keeps the
+   place's style, ISO text in a date place is stored as a date, `calcChain.xml` is dropped.
+   Comments / processing instructions / mixed XML order are listed in `Opened.lost`.
 3. Desktop page: add-on "data" (`umc.gui.dataeditor`: `QTableView` over a model reading the
    sheet, edit box, find bar, tabs), Edit + hub tile, self-test step.
 4. Website page `web/src/ui/dataeditor/` (virtual grid: only visible rows are in the DOM), loaded

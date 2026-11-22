@@ -10,6 +10,10 @@ import { History } from "../src/dataedit/history";
 import { DataError, newDocument, openBytes, toBytes } from "../src/dataedit/io";
 import { detectIndent, dumps, parse } from "../src/dataedit/jsontree";
 import * as table from "../src/dataedit/table";
+import * as xlsx from "../src/dataedit/xlsx";
+import * as xmltree from "../src/dataedit/xmltree";
+import * as yamltree from "../src/dataedit/yamltree";
+import { strToU8, unzipSync, zipSync } from "fflate";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const cases = JSON.parse(raw) as any;
@@ -40,6 +44,18 @@ function apply(sheet: table.Sheet, op: string, a: A): unknown {
 
 // the fixture's sheets have the same shape as ours (cells: {num} / {raw} / {missing: true})
 const plain = (x: unknown) => JSON.parse(JSON.stringify(x));
+
+/** A tree value as the fixture writes it: maps as {"map": [[key, value], …]}. */
+function encValue(v: unknown): unknown {
+  if (v instanceof Map) return { map: [...v].map(([k, x]) => [k, encValue(x)]) };
+  if (Array.isArray(v)) return v.map(encValue);
+  return plain(v);
+}
+function decValue(v: any): any {
+  if (Array.isArray(v)) return v.map(decValue); // (before "map" in v: arrays have a .map)
+  if (v && typeof v === "object" && "map" in v) return new Map(v.map.map(([k, x]: [string, unknown]) => [k, decValue(x)]));
+  return v;
+}
 
 describe("cells", () => {
   for (const c of cases.from_text) {
@@ -100,6 +116,13 @@ describe("edits", () => {
       }
     });
   }
+  for (const c of cases.sheet_edits) {
+    it(`spreadsheet ${c.op} ${JSON.stringify(c.args)}`, () => {
+      const base = cases.sheet_base as table.Sheet;
+      if (c.result?.error) expect(() => apply(base, c.op, c.args)).toThrow(new table.EditError(c.result.error));
+      else expect(plain(apply(base, c.op, c.args))).toEqual(c.result);
+    });
+  }
   it("letters", () => {
     for (const [i, name] of cases.letters) expect(table.letter(i)).toBe(name);
   });
@@ -125,6 +148,51 @@ describe("files", () => {
   }
 });
 
+describe("yaml", () => {
+  it("reads plain values", () => {
+    for (const [text, cell] of cases.yaml_resolve) expect(plain(yamltree.resolve(text)), text).toEqual(cell);
+  });
+  for (const c of cases.yaml_dump) {
+    it(`writes ${JSON.stringify(c.text.slice(0, 20))}`, () => {
+      expect(yamltree.dumps(decValue(c.value), c.indent)).toBe(c.text);
+      expect(encValue(yamltree.parse(c.text).root)).toEqual(c.value); // reads back
+    });
+  }
+});
+
+describe("xml", () => {
+  for (const c of cases.xml) {
+    it(c.text.slice(0, 30), () => {
+      const p = xmltree.parse(c.text);
+      expect(encValue(p.root)).toEqual(c.root);
+      expect([p.declaration, p.indent, p.lost]).toEqual([c.declaration, c.indent, c.lost]);
+      expect(xmltree.dumps(p.root, p.declaration, p.indent)).toBe(c.written);
+    });
+  }
+});
+
+describe("xlsx", () => {
+  it("dates", () => {
+    for (const [code, kind] of cases.date_kinds) expect(xlsx.formatKind(code), code).toBe(kind);
+    for (const [text, kind, d1904, shown] of cases.serials) expect(xlsx.serialText(text, kind, d1904), text).toBe(shown);
+    for (const [text, d1904, serial] of cases.typed_dates) expect(xlsx.textSerial(text, d1904), text).toBe(serial);
+  });
+  for (const c of cases.xlsx) {
+    it(c.name, () => {
+      const data = zipSync(Object.fromEntries(Object.entries(c.parts as Record<string, string>).map(([k, v]) => [k, strToU8(v)])));
+      const opened = openBytes(data, "xlsx");
+      expect(plain(opened.doc.sheets)).toEqual(c.doc);
+      let doc = opened.doc;
+      for (const [i, op, a] of c.steps) doc = table.withSheet(doc, i, apply(doc.sheets[i], op, a) as table.Sheet);
+      const saved = toBytes(opened, doc);
+      if (!c.steps.length) expect(saved).toBe(data);
+      const parts = unzipSync(saved);
+      expect(Object.fromEntries(Object.entries(parts).map(([k, v]) => [k, dec(v)]))).toEqual(c.saved);
+      expect(Object.keys(parts)).toEqual(Object.keys(c.saved));
+    });
+  }
+});
+
 // ------------------------------------------------------------------ the desktop's own tests
 describe("io", () => {
   it("saves untouched files byte for byte", () => {
@@ -136,7 +204,12 @@ describe("io", () => {
   });
 
   it("saves new tables even untouched", () => {
-    for (const [fmt, want] of [["csv", "column1,column2\n,\n"], ["json", "[\n  {}\n]\n"]]) {
+    for (const [fmt, want] of [
+      ["csv", "column1,column2\n,\n"],
+      ["json", "[\n  {}\n]\n"],
+      ["yaml", "- {}\n"],
+      ["xml", '<?xml version="1.0" encoding="UTF-8"?>\n<root>\n  <row/>\n</root>\n'],
+    ]) {
       const opened = newDocument(fmt, 2, 1);
       expect(dec(toBytes(opened, opened.doc))).toBe(want);
     }
@@ -144,7 +217,7 @@ describe("io", () => {
 
   it("refuses too many cells", () => {
     expect(() => openBytes(enc("a,b\n".repeat(500_001)), "csv")).toThrow("more than 1,000,000 cells");
-    const sheet: table.Sheet = { name: "s", columns: ["a"], rows: Array.from({ length: 1000 }, () => [""]), typed: false, header: true };
+    const sheet: table.Sheet = { name: "s", columns: ["a"], rows: Array.from({ length: 1000 }, () => [""]), typed: false, header: true, tree: false };
     expect(() => table.insertRows(sheet, 0, 1_000_000)).toThrow(table.EditError);
   });
 
@@ -157,5 +230,14 @@ describe("io", () => {
     expect(table.sameDoc(h.doc, opened.doc) && !h.dirty).toBe(true);
     expect(h.redo()).toBe("Type");
     expect(h.doc.sheets[0].rows).toEqual([["23"]]);
+  });
+});
+
+describe("lost parts", () => {
+  it("are listed", () => {
+    expect(openBytes(enc("a: 1  # note\n"), "yaml").lost).toEqual(["comments"]);
+    expect(openBytes(enc("url: http://x/#top\n"), "yaml").lost).toEqual([]);
+    expect(openBytes(enc("<a><!-- c --><b>1</b></a>"), "xml").lost).toEqual(["comments"]);
+    expect(() => openBytes(enc("a: 1\n---\nb: 2\n"), "yaml")).toThrow("several YAML documents");
   });
 });

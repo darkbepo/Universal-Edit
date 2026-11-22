@@ -10,7 +10,15 @@ from collections.abc import Iterable
 from dataclasses import dataclass, replace
 
 from umc.codeedit import search
-from umc.dataedit.cells import MISSING, NUMBER, WS, Cell, Num, display, edit_text, from_text
+from umc.dataedit.cells import (
+    MISSING,
+    Cell,
+    display,
+    edit_text,
+    from_text,
+    guess,
+    number_value,
+)
 
 Row = tuple[Cell, ...]
 MAX_CELLS = 1_000_000
@@ -26,12 +34,13 @@ class Sheet:
     columns: tuple[str, ...]
     rows: tuple[Row, ...]
     typed: bool  # cells keep their kind (JSON …); False = every cell is text (CSV / TSV)
-    header: bool = True  # CSV / TSV: the first line holds the column names
+    header: bool = True  # CSV / TSV / XLSX: the first row holds the column names
+    tree: bool = False  # JSON / YAML / XML: columns are keys (named, unique; no header switch)
 
     @property
     def blank(self) -> Cell:
-        """What a new cell holds."""
-        return MISSING if self.typed else ""
+        """What a new cell holds: absent in a tree, empty in a spreadsheet, "" in CSV."""
+        return MISSING if self.tree else None if self.typed else ""
 
 
 @dataclass(frozen=True)
@@ -92,9 +101,9 @@ def new_column_name(sheet: Sheet) -> str:
 
 
 def _check_name(sheet: Sheet, name: str, skip: int | None = None) -> None:
-    if sheet.typed and not name:
+    if sheet.tree and not name:
         raise EditError("A column needs a name.")
-    if sheet.header and any(n == name and i != skip for i, n in enumerate(sheet.columns)):
+    if sheet.tree and any(n == name and i != skip for i, n in enumerate(sheet.columns)):
         raise EditError(f"There is already a column called “{name}”.")
 
 
@@ -132,15 +141,21 @@ def rename_column(sheet: Sheet, c: int, name: str) -> Sheet:
 
 
 def set_header(sheet: Sheet, on: bool) -> Sheet:
-    """CSV / TSV: the first row becomes the column names, or the names become the first row."""
-    if sheet.typed or on == sheet.header:
+    """CSV / TSV / XLSX: the first row becomes the column names, or the names become the
+    first row."""
+    if sheet.tree or on == sheet.header:
         return sheet
     if on:
         first = sheet.rows[0] if sheet.rows else ("",) * len(sheet.columns)
-        return replace(sheet, header=True, columns=tuple(display(c) for c in first),
-                       rows=sheet.rows[1:])  # fmt: skip
-    return replace(sheet, header=False, columns=("",) * len(sheet.columns),
-                   rows=(sheet.columns, *sheet.rows) if sheet.columns else sheet.rows)  # fmt: skip
+        columns = tuple(display(c) for c in first)
+        return replace(sheet, header=True, columns=columns, rows=sheet.rows[1:])
+    first_row = tuple(guess(n) if sheet.typed else n for n in sheet.columns)
+    return replace(
+        sheet,
+        header=False,
+        columns=("",) * len(sheet.columns),
+        rows=(first_row, *sheet.rows) if sheet.columns else sheet.rows,
+    )
 
 
 # ---------------------------------------------------------------------------- sorting
@@ -157,11 +172,10 @@ def _natural(text: str) -> tuple[tuple[int, float, str], ...]:
 
 def sort_key(cell: Cell, typed: bool) -> tuple:
     """Numbers by value, then text in natural order; blanks are kept apart (always last)."""
-    if isinstance(cell, Num):
-        return (0, float(cell.text), (), "")
+    value = number_value(cell, typed)
+    if value is not None:
+        return (0, value, (), "")
     text = display(cell)
-    if not typed and NUMBER.fullmatch(text.strip(WS)):
-        return (0, float(text.strip(WS)), (), "")
     return (1, 0.0, _natural(text), text)
 
 

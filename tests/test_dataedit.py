@@ -4,12 +4,15 @@ cases: tests/fixtures/dataedit_cases.json, made by scripts/make_dataedit_cases.p
 from __future__ import annotations
 
 import json
+import re
+import zipfile
+from io import BytesIO
 from pathlib import Path
 
 import pytest
 
 from umc.codeedit.search import SearchError
-from umc.dataedit import cells, csvtext, io, jsontree, table
+from umc.dataedit import cells, csvtext, io, jsontree, table, xlsx, xmltree, yamltree
 from umc.dataedit.cells import MISSING, Num, Raw
 from umc.dataedit.history import History
 
@@ -26,7 +29,7 @@ def dec_cell(c):
 
 def dec_sheet(s) -> table.Sheet:
     rows = tuple(tuple(dec_cell(c) for c in r) for r in s["rows"])
-    return table.Sheet(s["name"], tuple(s["columns"]), rows, s["typed"], s["header"])
+    return table.Sheet(s["name"], tuple(s["columns"]), rows, s["typed"], s["header"], s["tree"])
 
 
 def enc_sheet(s: table.Sheet) -> dict:
@@ -43,7 +46,16 @@ def enc_sheet(s: table.Sheet) -> dict:
         "rows": [[enc(c) for c in r] for r in s.rows],
         "typed": s.typed,
         "header": s.header,
+        "tree": s.tree,
     }
+
+
+def dec_value(v):
+    if isinstance(v, dict) and "map" in v:
+        return {k: dec_value(x) for k, x in v["map"]}
+    if isinstance(v, list):
+        return [dec_value(x) for x in v]
+    return dec_cell(v)
 
 
 def apply(sheet: table.Sheet, op: str, a: dict):
@@ -105,6 +117,65 @@ def test_edits(case) -> None:
         assert apply(base, case["op"], case["args"]) == want
 
 
+@pytest.mark.parametrize("case", CASES["sheet_edits"], ids=lambda c: f"{c['op']}-{c['args']}")
+def test_spreadsheet_edits(case) -> None:
+    base = dec_sheet(CASES["sheet_base"])
+    want = case["result"]
+    if isinstance(want, dict) and "error" in want:
+        with pytest.raises(table.EditError, match=re.escape(want["error"])):
+            apply(base, case["op"], case["args"])
+    else:
+        assert apply(base, case["op"], case["args"]) == want
+
+
+def test_yaml_values() -> None:
+    for text, cell in CASES["yaml_resolve"]:
+        assert yamltree.resolve(text) == dec_cell(cell), text
+    for case in CASES["yaml_dump"]:
+        assert yamltree.dumps(dec_value(case["value"]), case["indent"]) == case["text"]
+        assert yamltree.parse(case["text"]).root == dec_value(case["value"])  # reads back
+
+
+@pytest.mark.parametrize("case", CASES["xml"], ids=lambda c: c["text"][:30])
+def test_xml(case) -> None:
+    p = xmltree.parse(case["text"])
+    assert p.root == dec_value(case["root"])
+    assert (p.declaration, p.indent, p.lost) == (case["declaration"], case["indent"], case["lost"])
+    assert xmltree.dumps(p.root, p.declaration, p.indent) == case["written"]
+
+
+def test_excel_dates() -> None:
+    for code, kind in CASES["date_kinds"]:
+        assert xlsx.format_kind(code) == kind, code
+    for text, kind, d1904, shown in CASES["serials"]:
+        assert xlsx.serial_text(text, kind, d1904) == shown, text
+    for text, d1904, serial in CASES["typed_dates"]:
+        assert xlsx.text_serial(text, d1904) == serial, text
+
+
+def make_zip(parts: dict[str, str]) -> bytes:
+    buf = BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        for name, text in parts.items():
+            zf.writestr(name, text.encode("utf-8"))
+    return buf.getvalue()
+
+
+@pytest.mark.parametrize("case", CASES["xlsx"], ids=lambda c: c["name"])
+def test_xlsx(case) -> None:
+    data = make_zip(case["parts"])
+    opened = io.open_bytes(data, "xlsx")
+    assert [enc_sheet(s) for s in opened.doc.sheets] == case["doc"]
+    doc = opened.doc
+    for i, op, a in case["steps"]:
+        doc = table.with_sheet(doc, i, getattr(table, op)(doc.sheets[i], **a))
+    saved = io.to_bytes(opened, doc)
+    if not case["steps"]:
+        assert saved == data
+    z = zipfile.ZipFile(BytesIO(saved))
+    assert {n: z.read(n).decode("utf-8") for n in z.namelist()} == case["saved"]
+
+
 def test_letters() -> None:
     for i, name in CASES["letters"]:
         assert table.letter(i) == name
@@ -150,7 +221,12 @@ def test_text_that_does_not_fit_the_encoding_is_refused() -> None:
 
 
 def test_new_tables_save_even_untouched() -> None:
-    for fmt, want in (("csv", "column1,column2\n,\n"), ("json", "[\n  {}\n]\n")):
+    for fmt, want in (
+        ("csv", "column1,column2\n,\n"),
+        ("json", "[\n  {}\n]\n"),
+        ("yaml", "- {}\n"),
+        ("xml", '<?xml version="1.0" encoding="UTF-8"?>\n<root>\n  <row/>\n</root>\n'),
+    ):
         opened = io.new_document(fmt, columns=2, rows=1)
         assert io.to_bytes(opened, opened.doc).decode() == want
 
@@ -171,3 +247,38 @@ def test_history_merges_typing_in_one_cell() -> None:
         h.push(table.with_sheet(h.doc, 0, sheet), "Type", merge="cell:0:0")
     assert h.dirty and h.undo() == "Type" and h.doc == opened.doc and not h.dirty
     assert h.redo() == "Type" and h.doc.sheets[0].rows == (("23",),)
+
+
+def test_excel_can_open_what_we_save() -> None:
+    import datetime
+
+    from openpyxl import Workbook, load_workbook
+    from openpyxl.styles import Font
+
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["name", "age", "born", "double"])
+    ws.append(["Ann", 3, datetime.date(2020, 1, 2), "=B2*2"])
+    ws.append(["Bob", 10.5, datetime.date(2021, 5, 6), "=B3*2"])
+    ws["A1"].font = Font(bold=True)
+    ws.column_dimensions["A"].width = 30
+    buf = BytesIO()
+    wb.save(buf)
+    opened = io.open_bytes(buf.getvalue(), "xlsx")
+    sheet = opened.doc.sheets[0]
+    assert sheet.rows[0][2] == "2020-01-02"
+    sheet = table.set_cell(table.set_cell(sheet, 0, 1, "4"), 1, 2, "2022-02-03")
+    saved = io.to_bytes(opened, table.with_sheet(opened.doc, 0, sheet))
+    back = load_workbook(BytesIO(saved))
+    ws2 = back.active
+    assert [c.value for c in ws2[2]] == ["Ann", 4, datetime.datetime(2020, 1, 2), "=B2*2"]
+    assert ws2["C3"].value == datetime.datetime(2022, 2, 3)
+    assert ws2["A1"].font.b and ws2.column_dimensions["A"].width == 30
+
+
+def test_lost_parts_are_listed() -> None:
+    assert io.open_bytes(b"a: 1  # note\n", "yaml").lost == ("comments",)
+    assert io.open_bytes(b"url: http://x/#top\n", "yaml").lost == ()
+    assert io.open_bytes(b"<a><!-- c --><b>1</b></a>", "xml").lost == ("comments",)
+    with pytest.raises(io.DataError, match="several YAML documents"):
+        io.open_bytes(b"a: 1\n---\nb: 2\n", "yaml")

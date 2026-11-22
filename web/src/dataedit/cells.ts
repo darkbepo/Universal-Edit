@@ -75,6 +75,20 @@ export function fromText(text: string, typed: boolean): Cell {
   return text;
 }
 
+/** A value read from a file that only holds text (XML): typed like fromText when that keeps
+ * exactly what it shows ("12" → a number, "true" → a bool, "" → null), else text. */
+export function guess(text: string): Cell {
+  const cell = fromText(text, true);
+  return !isRaw(cell) && display(cell) === text ? cell : text;
+}
+
+/** The number a cell sorts by: a Num in JSON spelling, or (untyped) text that reads as one.
+ * YAML spellings like 0x1F or .inf are numbers too but sort as text. */
+export function numberValue(cell: Cell, typed: boolean): number | null {
+  const text = isNum(cell) ? cell.num : !typed ? strip(display(cell)) : "";
+  return NUMBER.test(text) ? Number(text) : null;
+}
+
 /** What the edit box shows: fromText(editText(c), typed) equals c. */
 export function editText(cell: Cell, typed: boolean): string {
   if (typed && typeof cell === "string" && !sameCell(fromText(cell, true), cell)) return "'" + cell;
