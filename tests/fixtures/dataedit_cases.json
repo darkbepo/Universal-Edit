@@ -498,6 +498,127 @@
  ],
  "edits": [
   {
+   "op": "set_cells",
+   "args": {
+    "changes": [
+     [
+      0,
+      0,
+      "z"
+     ],
+     [
+      1,
+      1,
+      "7"
+     ],
+     [
+      9,
+      0,
+      "out"
+     ],
+     [
+      2,
+      2,
+      "Y"
+     ]
+    ]
+   },
+   "result": {
+    "name": "Sheet1",
+    "columns": [
+     "name",
+     "n",
+     "note"
+    ],
+    "rows": [
+     [
+      "z",
+      {
+       "num": "10"
+      },
+      {
+       "missing": true
+      }
+     ],
+     [
+      "a",
+      {
+       "num": "7"
+      },
+      "x"
+     ],
+     [
+      "c",
+      null,
+      "Y"
+     ],
+     [
+      "a10",
+      {
+       "num": "2.0"
+      },
+      ""
+     ]
+    ],
+    "typed": true,
+    "header": true,
+    "tree": true
+   }
+  },
+  {
+   "op": "set_cells",
+   "args": {
+    "changes": [
+     [
+      0,
+      0,
+      "b"
+     ]
+    ]
+   },
+   "result": {
+    "name": "Sheet1",
+    "columns": [
+     "name",
+     "n",
+     "note"
+    ],
+    "rows": [
+     [
+      "b",
+      {
+       "num": "10"
+      },
+      {
+       "missing": true
+      }
+     ],
+     [
+      "a",
+      {
+       "num": "2"
+      },
+      "x"
+     ],
+     [
+      "c",
+      null,
+      "Y"
+     ],
+     [
+      "a10",
+      {
+       "num": "2.0"
+      },
+      ""
+     ]
+    ],
+    "typed": true,
+    "header": true,
+    "tree": true
+   }
+  },
+  {
    "op": "sort_rows",
    "args": {
     "c": 0

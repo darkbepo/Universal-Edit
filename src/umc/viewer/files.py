@@ -14,7 +14,7 @@ from umc.core.detect import (
     canonical_ext,
     family_of_ext,
 )
-from umc.core.editors import EDITORS, EditorInfo
+from umc.core.editors import DATA_FIRST, EDITORS, EditorInfo
 from umc.doceditor.types import EDITABLE_DOCUMENT_EXTS
 
 # View kinds
@@ -115,10 +115,12 @@ def folder_items(path: Path) -> list[Path]:
 
 
 def editor_id_for(kind: str, path: Path) -> str | None:
-    """The editor Edit opens for ``path`` (of view ``kind``): subtitles go to the subtitle
-    editor; every other plain text file — TXT,
+    """The editor Edit opens for ``path`` (of view ``kind``): CSV / TSV / XLSX go to the data
+    editor, subtitles to the subtitle editor; every other plain text file — TXT,
     INI, logs, code, JSON, and ones with an unknown or no extension — goes to the code editor;
     only Markdown (it has formatting) goes to the document editor."""
+    if _ext_of_name(path.name) in DATA_FIRST:
+        return "data"
     if kind == TEXT:
         ext = _ext_of_name(path.name)
         if ext in SUBTITLE_EXTS:

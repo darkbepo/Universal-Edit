@@ -322,7 +322,7 @@ src/umc/
     icons.py, icon_data.py  # Tabler line icons rendered with QtSvg, tinted to the palette
     widgets/             # DropZone, FileQueue (painted rows, thumbnails off-thread),
                          #   FormatPicker (category cards + tiles), SideTabs (Convert to | Settings),
-                         #   SettingsPanel (auto form), FlowLayout
+                         #   SettingsPanel (auto form), FlowLayout, FindBar (subtitle + data)
     editor/              # image editor view: EditorPage (top bar, shortcuts, saving on a QThread),
                          #   EditorCanvas (zoom/pan, cached composite), ToolBar, LayersPanel, dialogs
     doceditor/           # document editor view: DocEditorPage (top bar, saving on a QThread),
@@ -339,7 +339,9 @@ src/umc/
     codeeditor/          # code editor (add-on "code"): CodeEditorPage (tabs, open/save on a
                          #   QThread, status bar), CodeView, ChunkedHighlighter, FindBar, shortcuts
     subtitleeditor/      # subtitle editor (add-on "subtitle"): SubtitleEditorPage (table, edit box,
-                         #   open/save on a QThread), CueModel, VideoPreview, FindBar, dialogs
+                         #   open/save on a QThread), CueModel, VideoPreview, dialogs
+    dataeditor/          # data editor (add-on "data"): DataEditorPage (grid, cell box, sheet
+                         #   tabs, open/save on a QThread), SheetModel, shortcuts
     launcher.py          # AppController: converter windows + the viewer; single_instance.py
     quick_convert.py     # the right-click Quick Convert window (queue, format picker)
   editor3d/              # 3D viewer model — mesh.py (load + measurements), camera.py (orbit); no Qt
@@ -1357,7 +1359,22 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
           non-empty names, no header switch, blank = MISSING; spreadsheets blank = null and may
           repeat names. `Opened.lost` lists what an edited save drops (comments …). XLSX can't
           be made new (Save as goes through the converter).
-       3. Desktop page (add-on "data"). 4. Website page.
+       3. ✅ Desktop page (add-on "data", `gui/dataeditor/`): `DataEditorPage` (top bar, tool row,
+          `_CellBox` edit box above the grid — Enter keeps, Shift+Enter new line, Esc puts back;
+          `QTableView` over `SheetModel`, cells with a line break aren't edited in place; sheet
+          tabs = `QTabBar`; open / save on a QThread like the subtitle editor), `shortcuts.py`
+          (`table` ones — Delete, Ctrl+C / X / V, F2 — are the grid's own keys, handled in its
+          event filter so the box and find bar keep theirs). Edit: `core/editors.DATA_FIRST`
+          (CSV / TSV / XLSX → data editor first, code editor under ▾) and `DATA_TOO` (JSON / YAML /
+          XML: code editor first, "Edit as table" under ▾); the viewer sends `DATA_FIRST` files
+          here too. Copy = TSV (`csvtext`), paste grows the sheet, one step (`table.set_cells`,
+          both apps). Save: same format = `io.to_bytes` (asks once when `Opened.lost`, offers
+          `utf8=True` when the encoding can't hold the text); Save as another format =
+          `dataedit/export.py` (plain values → the data converter's writers, table → tree
+          unflattens a.b) and the new file is opened. The find bar moved to
+          `gui/widgets/find_bar.py` (shared with the subtitle editor). Tile available on the
+          desktop (`WEB_LATER` = {"data"}); installer component + CI add-on list; self-test step.
+       4. Website page.
     The hub's tiles scroll in a short window (`EditorHub.scroll`); at 1280 × 800 all ten fit
     (tiles 84 px high, empty drop zone ≥ 200 px — `test_empty_window_is_one_big_drop_zone`).
 13. ✅ Light / dark mode switch (both apps; owner, Nov 2026): sun / moon button in the top bar,

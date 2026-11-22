@@ -466,6 +466,41 @@ def _subtitle_editor_check(d: Path) -> list[Path]:
     return [f, out]
 
 
+def _data_editor_check(d: Path) -> list[Path]:
+    """Data editor: the page loads (add-on), an untouched CSV saves byte for byte, an edited
+    workbook still opens in openpyxl with its formula, and YAML reads (PyYAML)."""
+    import importlib
+    import io as _io
+
+    from openpyxl import Workbook, load_workbook
+
+    from umc.dataedit import io, table
+
+    importlib.import_module("umc.gui.dataeditor.data_editor_page")
+    d.mkdir(parents=True, exist_ok=True)
+    f = d / "people.csv"
+    data = "name;age\r\nCafé;3\r\n".encode()
+    f.write_bytes(data)
+    opened = io.open_bytes(f.read_bytes(), "csv")
+    if io.to_bytes(opened, opened.doc) != data:
+        raise RuntimeError("saving an untouched CSV changed its bytes")
+    wb = Workbook()
+    wb.active.append(["n", "twice"])
+    wb.active.append([2, "=A2*2"])
+    buf = _io.BytesIO()
+    wb.save(buf)
+    opened = io.open_bytes(buf.getvalue(), "xlsx")
+    sheet = table.set_cell(opened.doc.sheets[0], 0, 0, "5")
+    out = d / "book.xlsx"
+    out.write_bytes(io.to_bytes(opened, table.with_sheet(opened.doc, 0, sheet)))
+    ws = load_workbook(out).active
+    if ws["A2"].value != 5 or ws["B2"].value != "=A2*2":
+        raise RuntimeError("an edited workbook lost its value or formula")
+    if io.open_bytes(b"- a: 1\n", "yaml").doc.sheets[0].rows[0][0].text != "1":
+        raise RuntimeError("YAML wasn't read")
+    return [f, out]
+
+
 def _code_editor_check(d: Path) -> list[Path]:
     """Code editor: the page loads (add-on + Pygments), a comment over several lines is coloured
     on every line, and an untouched CRLF file saves back byte for byte."""
@@ -683,6 +718,10 @@ def run(report: Path) -> int:
             (
                 "subtitle editor (save byte-exact, ASS styles kept)",
                 lambda: _subtitle_editor_check(d / "subedit"),
+            ),
+            (
+                "data editor (CSV byte-exact, XLSX formula kept, YAML)",
+                lambda: _data_editor_check(d / "dataedit"),
             ),
             ("music tags: mp3 title / track / cover", lambda: _music_tags_check(d / "music", out)),
             ("video details: mp4 title / date / turn", lambda: _video_details_check(d / "video")),

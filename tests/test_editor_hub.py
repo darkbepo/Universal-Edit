@@ -69,8 +69,8 @@ def test_tiles_shown_until_files_are_added(window, media):
     hub = window.hub
     assert hub.isVisible()
     enabled = [t for t, tile in hub.tiles.items() if tile.isEnabled()]
-    assert enabled == ["image", "video", "audio", "document", "code", "model", "subtitle"]
-    for soon in ("vector", "font", "data"):
+    assert enabled == ["image", "video", "audio", "document", "code", "model", "subtitle", "data"]
+    for soon in ("vector", "font"):
         assert not hub.tiles[soon].isEnabled() and not hub.tiles[soon].badge.isHidden()
     assert hub.tiles["video"].badge.isHidden()
     assert hub.tiles["document"].badge.isHidden()

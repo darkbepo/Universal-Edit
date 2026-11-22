@@ -66,7 +66,7 @@ def test_two_code_files_open_as_two_tabs(qtbot, window, tmp_path):
         (("a.txt",), ["code", "document"]),  # plain text: the plain editor first
         (("a.md",), ["document", "code"]),
         (("a.html",), ["code", "document"]),
-        (("a.json",), ["code"]),
+        (("a.json",), ["code", "data"]),  # the table editor under ▾
         (("a.docx",), ["document"]),
         (("a.css", "b.png"), []),
     ],

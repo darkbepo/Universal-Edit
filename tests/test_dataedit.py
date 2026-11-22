@@ -65,7 +65,10 @@ def apply(sheet: table.Sheet, op: str, a: dict):
     if op == "replace_all":
         new, n = table.replace_all(sheet, a["query"], a["replacement"], **o)
         return {"sheet": enc_sheet(new), "count": n}
-    return enc_sheet(getattr(table, op)(sheet, **{k: v for k, v in a.items() if k not in o}))
+    args = {k: v for k, v in a.items() if k not in o}
+    if op == "set_cells":
+        args["changes"] = [tuple(x) for x in args["changes"]]
+    return enc_sheet(getattr(table, op)(sheet, **args))
 
 
 @pytest.mark.parametrize("case", CASES["from_text"], ids=lambda c: f"{c['text']!r}-{c['typed']}")
@@ -216,8 +219,10 @@ def test_untouched_files_save_byte_for_byte_and_keep_their_encoding() -> None:
 def test_text_that_does_not_fit_the_encoding_is_refused() -> None:
     opened = io.open_bytes("a\ncaf\xe9\n".encode("cp1252"), "csv")
     sheet = table.set_cell(opened.doc.sheets[0], 0, 0, "日本")
+    doc = table.with_sheet(opened.doc, 0, sheet)
     with pytest.raises(ValueError, match="encoding"):
-        io.to_bytes(opened, table.with_sheet(opened.doc, 0, sheet))
+        io.to_bytes(opened, doc)
+    assert io.to_bytes(opened, doc, utf8=True) == "a\n日本\n".encode()
 
 
 def test_new_tables_save_even_untouched() -> None:

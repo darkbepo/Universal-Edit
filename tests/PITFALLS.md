@@ -25,3 +25,5 @@ tests (CLAUDE.md points here); add one line when a new kind of mistake costs you
   choose formats with `pick()`; never run two Playwright runs at once (they share port 4173).
 - Shared-case fixtures (`tests/fixtures/*_cases.json`) are regenerated only on purpose; check
   the old cases' values didn't change when you add new ones.
+- A `QTableView` cell editor commits its text *queued* after Enter: `qtbot.waitUntil` the new
+  value instead of asserting right after `keyClick` (a direct `model.setData` is immediate).

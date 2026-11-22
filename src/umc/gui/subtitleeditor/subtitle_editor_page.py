@@ -44,9 +44,9 @@ from umc.core.filemode import match_mode
 from umc.gui import theme
 from umc.gui.subtitleeditor.cue_model import CueModel
 from umc.gui.subtitleeditor.dialogs import ShiftDialog, SyncDialog, parse_ms
-from umc.gui.subtitleeditor.find_bar import FindBar
 from umc.gui.subtitleeditor.preview import VideoPreview
 from umc.gui.subtitleeditor.shortcuts import SHORTCUTS
+from umc.gui.widgets.find_bar import FindBar
 from umc.subedit import edits, formats, io
 from umc.subedit.checks import Problem, check
 from umc.subedit.formats import SubDoc, SubtitleError, clock

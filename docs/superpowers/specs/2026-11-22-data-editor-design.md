@@ -11,9 +11,10 @@ fills it.
 
 ## Goals
 
-- **Where:** the hub tile opens an empty editor ("New table" / "Open…"); Edit opens one data
-  file in it (JSON / XML / YAML / TSV / CSV also keep the code editor as the second choice under
-  Edit's ▾).
+- **Where:** the hub tile opens an empty editor ("New table" / "Open…"); Edit opens one CSV,
+  TSV or XLSX file in it (CSV / TSV keep the code editor as the second choice under Edit's ▾).
+  JSON / YAML / XML are usually configuration files, so Edit keeps the code editor first for
+  them and offers "Edit as table" under ▾ (decided while building step 3).
 - **Layout:** a grid (row numbers, column names as the header, one tab per sheet for XLSX),
   a formula-bar-like edit box above it showing the chosen cell's full text, a find bar.
 - **Editing:** type into a cell; add / delete rows and columns (above / below / left / right),

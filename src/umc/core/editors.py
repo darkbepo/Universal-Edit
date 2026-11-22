@@ -26,13 +26,18 @@ EDITORS: tuple[EditorInfo, ...] = (
     EditorInfo("vector", "Vector editor", "Edit shapes and paths in SVG drawings", "vector", False),
     EditorInfo("font", "Font editor", "Change letters, spacing and font names", "font", False),
     EditorInfo("subtitle", "Subtitle editor", "Fix subtitle text and timing", "subtitle", True),
-    EditorInfo("data", "Data editor", "Edit CSV, JSON, XML and spreadsheets", "table", False),
+    EditorInfo("data", "Data editor", "Edit CSV, JSON, XML and spreadsheets", "table", True),
 )
 
 COMING_SOON = "Coming soon"
 
 # Editors the website doesn't have yet: its tile stays "Coming soon" (available false there).
-WEB_LATER: frozenset[str] = frozenset()
+WEB_LATER: frozenset[str] = frozenset({"data"})
+
+# The data editor (a table): Edit opens these in it first …
+DATA_FIRST: frozenset[str] = frozenset({"csv", "tsv", "xlsx"})
+# … and offers it under Edit's ▾ for these (the code editor stays first: they're often configs).
+DATA_TOO: frozenset[str] = frozenset({"json", "yaml", "xml"})
 
 # Start-screen tile rows (owner, Nov 2026): as many tiles per row as fit, spread evenly over the
 # rows so no tile is left alone, each row centred; the tiles stretch to fill the width.

@@ -62,6 +62,7 @@ Name: "audio"; Description: "Audio editor"; Types: full
 Name: "video"; Description: "Video editor"; Types: full
 Name: "code"; Description: "Code editor"; Types: full
 Name: "subtitle"; Description: "Subtitle editor"; Types: full
+Name: "data"; Description: "Data editor"; Types: full
 
 [Tasks]
 Name: "contextmenu"; Description: "Add ""Quick Convert"" to the right-click menu (convert a file in one click)"; GroupDescription: "Windows:"
@@ -77,6 +78,7 @@ Source: "{#AddonsDir}\UniversalEdit-addon-audio-*.zip"; DestDir: "{tmp}\addons";
 Source: "{#AddonsDir}\UniversalEdit-addon-video-*.zip"; DestDir: "{tmp}\addons"; Components: video; Flags: deleteafterinstall
 Source: "{#AddonsDir}\UniversalEdit-addon-code-*.zip"; DestDir: "{tmp}\addons"; Components: code; Flags: deleteafterinstall
 Source: "{#AddonsDir}\UniversalEdit-addon-subtitle-*.zip"; DestDir: "{tmp}\addons"; Components: subtitle; Flags: deleteafterinstall
+Source: "{#AddonsDir}\UniversalEdit-addon-data-*.zip"; DestDir: "{tmp}\addons"; Components: data; Flags: deleteafterinstall
 
 [InstallDelete]
 ; files of an older version that a new one no longer has (the folder is ours alone)
@@ -111,7 +113,8 @@ var
 begin
   if not (WizardIsComponentSelected('image') or WizardIsComponentSelected('model') or
           WizardIsComponentSelected('audio') or WizardIsComponentSelected('video') or
-          WizardIsComponentSelected('code') or WizardIsComponentSelected('subtitle')) then
+          WizardIsComponentSelected('code') or WizardIsComponentSelected('subtitle') or
+          WizardIsComponentSelected('data')) then
     Exit;
   WizardForm.StatusLabel.Caption := 'Installing the editors…';
   if not Exec(ExpandConstant('{app}\UniversalEdit.exe'),

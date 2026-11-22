@@ -79,6 +79,25 @@ def set_cell(sheet: Sheet, r: int, c: int, text: str) -> Sheet:
     return replace(sheet, rows=(*sheet.rows[:r], new, *sheet.rows[r + 1 :]))
 
 
+def set_cells(sheet: Sheet, changes: Iterable[tuple[int, int, str]]) -> Sheet:
+    """Several cells typed at once (a paste, clearing a selection): one new sheet, each changed
+    row copied once. Cells outside the sheet are ignored."""
+    by_row: dict[int, dict[int, str]] = {}
+    for r, c, text in changes:
+        if 0 <= r < len(sheet.rows) and 0 <= c < len(sheet.columns):
+            by_row.setdefault(r, {})[c] = text
+    rows = list(sheet.rows)
+    changed = False
+    for r, cols in by_row.items():
+        row = list(rows[r])
+        for c, text in cols.items():
+            if text != edit_text(row[c], sheet.typed):
+                row[c] = from_text(text, sheet.typed)
+                changed = True
+        rows[r] = tuple(row)
+    return replace(sheet, rows=tuple(rows)) if changed else sheet
+
+
 # ---------------------------------------------------------------------------- rows
 def insert_rows(sheet: Sheet, at: int, count: int = 1) -> Sheet:
     at = max(0, min(at, len(sheet.rows)))

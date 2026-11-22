@@ -116,7 +116,7 @@ jobs:
       - name: Test the installer (silent install, check Windows integration, uninstall)
         run: |
           $p = Start-Process installer\UniversalEdit-setup.exe -Wait -PassThru -ArgumentList `
-                '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/TASKS="contextmenu,openwith"', '/COMPONENTS="main,image,model,audio,video,code,subtitle"', "/LOG=$PWD\install.log"
+                '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/TASKS="contextmenu,openwith"', '/COMPONENTS="main,image,model,audio,video,code,subtitle,data"', "/LOG=$PWD\install.log"
           if ($p.ExitCode -ne 0) { Get-Content install.log; exit 1 }
           $dir = "$env:LOCALAPPDATA\Programs\Universal Edit"
           if (-not (Test-Path "$dir\UniversalEdit.exe")) { throw "not installed in $dir" }
@@ -137,7 +137,7 @@ jobs:
           $choice = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.uetest\UserChoice'
           New-Item -Force $choice | Out-Null
           Set-ItemProperty $choice ProgId 'UniversalEdit.View.image'
-          foreach ($a in "image", "model", "audio", "video", "code", "subtitle") {
+          foreach ($a in "image", "model", "audio", "video", "code", "subtitle", "data") {
             if (-not (Test-Path "$env:LOCALAPPDATA\UniversalEdit\addons\$a\addon.json")) { throw "editor add-on $a not installed" }
           }
           Start-Process "$dir\unins000.exe" -Wait -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'

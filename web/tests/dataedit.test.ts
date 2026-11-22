@@ -38,6 +38,7 @@ function apply(sheet: table.Sheet, op: string, a: A): unknown {
     case "delete_rows": return table.deleteRows(sheet, a.indices);
     case "insert_rows": return table.insertRows(sheet, a.at, a.count ?? 1);
     case "set_header": return table.setHeader(sheet, a.on);
+    case "set_cells": return table.setCells(sheet, a.changes);
   }
   throw new Error(`unknown op ${op}`);
 }

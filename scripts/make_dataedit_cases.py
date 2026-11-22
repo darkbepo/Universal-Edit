@@ -249,6 +249,8 @@ SHEET_EDITS: list[tuple[str, dict]] = [
     ("sort_rows", {"c": 0, "descending": True}),
 ]
 EDITS: list[tuple[str, dict]] = [
+    ("set_cells", {"changes": [[0, 0, "z"], [1, 1, "7"], [9, 0, "out"], [2, 2, "Y"]]}),
+    ("set_cells", {"changes": [[0, 0, "b"]]}),
     ("sort_rows", {"c": 0}),
     ("sort_rows", {"c": 1}),
     ("sort_rows", {"c": 1, "descending": True}),

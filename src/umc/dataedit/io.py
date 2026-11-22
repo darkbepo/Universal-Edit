@@ -172,14 +172,15 @@ def text_of(opened: Opened, doc: DataDoc) -> str:
     return jsontree.dumps(root, opened.indent) + end
 
 
-def to_bytes(opened: Opened, doc: DataDoc) -> bytes:
-    """Raises ValueError("encoding") when the text doesn't fit the file's encoding (the page
-    then offers UTF-8: ``textfile.encode(…, encoding="utf-8")``)."""
-    if doc == opened.doc and not opened.new:
+def to_bytes(opened: Opened, doc: DataDoc, utf8: bool = False) -> bytes:
+    """Raises ValueError("encoding") when the text doesn't fit the file's encoding; the page
+    then asks and saves again with ``utf8`` (UTF-8, the file's BOM and line endings kept)."""
+    if doc == opened.doc and not opened.new and not utf8:
         return opened.file.raw if opened.book is None else opened.data
     if opened.book is not None:
         return xlsx.write(opened.book, doc.sheets)
-    return textfile.encode(opened.file, text_of(opened, doc))
+    encoding = "utf-8" if utf8 else None
+    return textfile.encode(opened.file, text_of(opened, doc), encoding=encoding)
 
 
 def new_document(fmt: str = "csv", columns: int = 3, rows: int = 20) -> Opened:

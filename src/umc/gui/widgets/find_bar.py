@@ -1,5 +1,6 @@
-"""Find & replace over the subtitles' text (the code editor's rules: match case, whole word,
-regular expression in Python's syntax). The page does the moving and replacing."""
+"""A find & replace bar (the code editor's rules: match case, whole word, regular expression in
+Python's syntax), shared by the subtitle and data editors. The page does the moving and
+replacing."""
 
 from __future__ import annotations
 
@@ -14,13 +15,13 @@ class FindBar(QFrame):
     replace_all = Signal()
     changed = Signal()  # the query or an option changed: count again
 
-    def __init__(self, parent=None) -> None:
+    def __init__(self, parent=None, placeholder: str = "Find in the subtitles") -> None:
         super().__init__(parent)
         self.setObjectName("FindBar")
         lay = QHBoxLayout(self)
         lay.setContentsMargins(12, 4, 12, 4)
         lay.setSpacing(6)
-        self.query = QLineEdit(placeholderText="Find in the subtitles")
+        self.query = QLineEdit(placeholderText=placeholder)
         self.query.setAccessibleName("Find")
         self.replacement = QLineEdit(placeholderText="Replace with")
         self.replacement.setAccessibleName("Replace with")

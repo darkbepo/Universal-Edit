@@ -152,12 +152,12 @@ export function textOf(opened: Opened, doc: DataDoc): string {
   return jsontree.dumps(root, opened.indent) + end;
 }
 
-/** Throws Error("encoding") when the text doesn't fit the file's encoding (the page then
- * offers UTF-8: textfile.encode(…, { encoding: "utf-8" })). */
-export function toBytes(opened: Opened, doc: DataDoc): Uint8Array {
-  if (sameDoc(doc, opened.doc) && !opened.isNew) return opened.book ? opened.data : opened.file.raw;
+/** Throws Error("encoding") when the text doesn't fit the file's encoding; the page then asks
+ * and saves again with `utf8` (UTF-8, the file's BOM and line endings kept). */
+export function toBytes(opened: Opened, doc: DataDoc, utf8 = false): Uint8Array {
+  if (sameDoc(doc, opened.doc) && !opened.isNew && !utf8) return opened.book ? opened.data : opened.file.raw;
   if (opened.book) return xlsx.write(opened.book, doc.sheets);
-  return textfile.encode(opened.file, textOf(opened, doc));
+  return textfile.encode(opened.file, textOf(opened, doc), utf8 ? { encoding: "utf-8" } : {});
 }
 
 /** An empty table to type into (the hub tile). */

@@ -96,6 +96,13 @@ ADDONS: dict[str, Addon] = {
         packages=(),
         entry="umc.gui.subtitleeditor.subtitle_editor_page",
     ),
+    "data": Addon(
+        "data",
+        "Data editor",
+        modules=("umc.gui.dataeditor",),  # the Qt-free model umc.dataedit stays in the app
+        packages=(),
+        entry="umc.gui.dataeditor.data_editor_page",
+    ),
 }
 
 _activated: set[str] = set()

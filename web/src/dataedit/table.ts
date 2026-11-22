@@ -71,6 +71,31 @@ export function setCell(sheet: Sheet, r: number, c: number, text: string): Sheet
   return { ...sheet, rows: [...sheet.rows.slice(0, r), next, ...sheet.rows.slice(r + 1)] };
 }
 
+/** Several cells typed at once (a paste, clearing a selection): one new sheet, each changed row
+ * copied once. Cells outside the sheet are ignored. */
+export function setCells(sheet: Sheet, changes: Iterable<[number, number, string]>): Sheet {
+  const byRow = new Map<number, Map<number, string>>();
+  for (const [r, c, text] of changes) {
+    if (r >= 0 && r < sheet.rows.length && c >= 0 && c < sheet.columns.length) {
+      if (!byRow.has(r)) byRow.set(r, new Map());
+      byRow.get(r)!.set(c, text);
+    }
+  }
+  const rows = [...sheet.rows];
+  let changed = false;
+  for (const [r, cols] of byRow) {
+    const row = [...rows[r]];
+    for (const [c, text] of cols) {
+      if (text !== editText(row[c], sheet.typed)) {
+        row[c] = fromText(text, sheet.typed);
+        changed = true;
+      }
+    }
+    rows[r] = row;
+  }
+  return changed ? { ...sheet, rows } : sheet;
+}
+
 // ---------------------------------------------------------------------------- rows
 export function insertRows(sheet: Sheet, at: number, count = 1): Sheet {
   at = Math.max(0, Math.min(at, sheet.rows.length));
