@@ -1,0 +1,2001 @@
+{
+ "base": {
+  "name": "Sheet1",
+  "columns": [
+   "name",
+   "n",
+   "note"
+  ],
+  "rows": [
+   [
+    "b",
+    {
+     "num": "10"
+    },
+    {
+     "missing": true
+    }
+   ],
+   [
+    "a",
+    {
+     "num": "2"
+    },
+    "x"
+   ],
+   [
+    "c",
+    null,
+    "Y"
+   ],
+   [
+    "a10",
+    {
+     "num": "2.0"
+    },
+    ""
+   ]
+  ],
+  "typed": true,
+  "header": true
+ },
+ "from_text": [
+  {
+   "text": "",
+   "typed": true,
+   "cell": null
+  },
+  {
+   "text": "",
+   "typed": false,
+   "cell": ""
+  },
+  {
+   "text": "null",
+   "typed": true,
+   "cell": null
+  },
+  {
+   "text": "null",
+   "typed": false,
+   "cell": "null"
+  },
+  {
+   "text": "true",
+   "typed": true,
+   "cell": true
+  },
+  {
+   "text": "true",
+   "typed": false,
+   "cell": "true"
+  },
+  {
+   "text": "false",
+   "typed": true,
+   "cell": false
+  },
+  {
+   "text": "false",
+   "typed": false,
+   "cell": "false"
+  },
+  {
+   "text": "12",
+   "typed": true,
+   "cell": {
+    "num": "12"
+   }
+  },
+  {
+   "text": "12",
+   "typed": false,
+   "cell": "12"
+  },
+  {
+   "text": "-0.5e3",
+   "typed": true,
+   "cell": {
+    "num": "-0.5e3"
+   }
+  },
+  {
+   "text": "-0.5e3",
+   "typed": false,
+   "cell": "-0.5e3"
+  },
+  {
+   "text": "01",
+   "typed": true,
+   "cell": "01"
+  },
+  {
+   "text": "01",
+   "typed": false,
+   "cell": "01"
+  },
+  {
+   "text": "1.",
+   "typed": true,
+   "cell": "1."
+  },
+  {
+   "text": "1.",
+   "typed": false,
+   "cell": "1."
+  },
+  {
+   "text": "'123",
+   "typed": true,
+   "cell": "123"
+  },
+  {
+   "text": "'123",
+   "typed": false,
+   "cell": "'123"
+  },
+  {
+   "text": "''",
+   "typed": true,
+   "cell": "'"
+  },
+  {
+   "text": "''",
+   "typed": false,
+   "cell": "''"
+  },
+  {
+   "text": "abc",
+   "typed": true,
+   "cell": "abc"
+  },
+  {
+   "text": "abc",
+   "typed": false,
+   "cell": "abc"
+  },
+  {
+   "text": "[1, 2]",
+   "typed": true,
+   "cell": {
+    "raw": "[1,2]"
+   }
+  },
+  {
+   "text": "[1, 2]",
+   "typed": false,
+   "cell": "[1, 2]"
+  },
+  {
+   "text": "{\"a\": 1}",
+   "typed": true,
+   "cell": {
+    "raw": "{\"a\":1}"
+   }
+  },
+  {
+   "text": "{\"a\": 1}",
+   "typed": false,
+   "cell": "{\"a\": 1}"
+  },
+  {
+   "text": "[1,",
+   "typed": true,
+   "cell": "[1,"
+  },
+  {
+   "text": "[1,",
+   "typed": false,
+   "cell": "[1,"
+  },
+  {
+   "text": "{}",
+   "typed": true,
+   "cell": {
+    "raw": "{}"
+   }
+  },
+  {
+   "text": "{}",
+   "typed": false,
+   "cell": "{}"
+  },
+  {
+   "text": " 5",
+   "typed": true,
+   "cell": " 5"
+  },
+  {
+   "text": " 5",
+   "typed": false,
+   "cell": " 5"
+  },
+  {
+   "text": "TRUE",
+   "typed": true,
+   "cell": "TRUE"
+  },
+  {
+   "text": "TRUE",
+   "typed": false,
+   "cell": "TRUE"
+  }
+ ],
+ "cells": [
+  {
+   "cell": "",
+   "display": "",
+   "edit": "'"
+  },
+  {
+   "cell": "123",
+   "display": "123",
+   "edit": "'123"
+  },
+  {
+   "cell": "true",
+   "display": "true",
+   "edit": "'true"
+  },
+  {
+   "cell": "null",
+   "display": "null",
+   "edit": "'null"
+  },
+  {
+   "cell": "'x",
+   "display": "'x",
+   "edit": "''x"
+  },
+  {
+   "cell": "[1]",
+   "display": "[1]",
+   "edit": "'[1]"
+  },
+  {
+   "cell": "plain",
+   "display": "plain",
+   "edit": "plain"
+  },
+  {
+   "cell": true,
+   "display": "true",
+   "edit": "true"
+  },
+  {
+   "cell": null,
+   "display": "",
+   "edit": ""
+  },
+  {
+   "cell": {
+    "num": "1.0"
+   },
+   "display": "1.0",
+   "edit": "1.0"
+  },
+  {
+   "cell": {
+    "raw": "[1,2]"
+   },
+   "display": "[1,2]",
+   "edit": "[1,2]"
+  },
+  {
+   "cell": {
+    "missing": true
+   },
+   "display": "",
+   "edit": ""
+  }
+ ],
+ "csv": [
+  {
+   "text": "a,b\n1,2\n",
+   "sep": ",",
+   "rows": [
+    [
+     "a",
+     "b"
+    ],
+    [
+     "1",
+     "2"
+    ]
+   ],
+   "quote_all": false,
+   "final_newline": true,
+   "written": "a,b\n1,2\n"
+  },
+  {
+   "text": "name;note\n\"Ann\";\"said \"\"hi\"\"\"\nBob;x\"y\n",
+   "sep": ";",
+   "rows": [
+    [
+     "name",
+     "note"
+    ],
+    [
+     "Ann",
+     "said \"hi\""
+    ],
+    [
+     "Bob",
+     "x\"y"
+    ]
+   ],
+   "quote_all": false,
+   "final_newline": true,
+   "written": "name;note\nAnn;\"said \"\"hi\"\"\"\nBob;\"x\"\"y\"\n"
+  },
+  {
+   "text": "\"x\",\"y\"\n\"1\",\"2\"",
+   "sep": ",",
+   "rows": [
+    [
+     "x",
+     "y"
+    ],
+    [
+     "1",
+     "2"
+    ]
+   ],
+   "quote_all": true,
+   "final_newline": false,
+   "written": "\"x\",\"y\"\n\"1\",\"2\""
+  },
+  {
+   "text": "one\ttwo\n1\t2\n",
+   "sep": "\t",
+   "rows": [
+    [
+     "one",
+     "two"
+    ],
+    [
+     "1",
+     "2"
+    ]
+   ],
+   "quote_all": false,
+   "final_newline": true,
+   "written": "one\ttwo\n1\t2\n"
+  },
+  {
+   "text": "a|b|c\n1|2|3\n4|5|6\n",
+   "sep": "|",
+   "rows": [
+    [
+     "a",
+     "b",
+     "c"
+    ],
+    [
+     "1",
+     "2",
+     "3"
+    ],
+    [
+     "4",
+     "5",
+     "6"
+    ]
+   ],
+   "quote_all": false,
+   "final_newline": true,
+   "written": "a|b|c\n1|2|3\n4|5|6\n"
+  },
+  {
+   "text": "\"line\nbreak\",b\n",
+   "sep": ",",
+   "rows": [
+    [
+     "line\nbreak",
+     "b"
+    ]
+   ],
+   "quote_all": false,
+   "final_newline": true,
+   "written": "\"line\nbreak\",b\n"
+  },
+  {
+   "text": "\"never closed,a\nb\n",
+   "sep": ",",
+   "rows": [
+    [
+     "never closed,a\nb"
+    ]
+   ],
+   "quote_all": true,
+   "final_newline": true,
+   "written": "\"never closed,a\nb\"\n"
+  },
+  {
+   "text": "\"a\"tail,b\n",
+   "sep": ",",
+   "rows": [
+    [
+     "atail",
+     "b"
+    ]
+   ],
+   "quote_all": false,
+   "final_newline": true,
+   "written": "atail,b\n"
+  },
+  {
+   "text": "a,b,c\n1\n\n2,3\n",
+   "sep": ",",
+   "rows": [
+    [
+     "a",
+     "b",
+     "c"
+    ],
+    [
+     "1"
+    ],
+    [
+     ""
+    ],
+    [
+     "2",
+     "3"
+    ]
+   ],
+   "quote_all": false,
+   "final_newline": true,
+   "written": "a,b,c\n1\n\n2,3\n"
+  },
+  {
+   "text": "single\n",
+   "sep": ",",
+   "rows": [
+    [
+     "single"
+    ]
+   ],
+   "quote_all": false,
+   "final_newline": true,
+   "written": "single\n"
+  },
+  {
+   "text": "",
+   "sep": ",",
+   "rows": [],
+   "quote_all": false,
+   "final_newline": false,
+   "written": ""
+  }
+ ],
+ "json": [
+  {
+   "text": "{\"b\": [1, {\"c\": []}], \"a\": {}}",
+   "indent": null,
+   "compact": "{\"b\":[1,{\"c\":[]}],\"a\":{}}",
+   "pretty": "{\n  \"b\": [\n    1,\n    {\n      \"c\": []\n    }\n  ],\n  \"a\": {}\n}"
+  },
+  {
+   "text": "[\n    1,\n    \"x\"\n]",
+   "indent": "    ",
+   "compact": "[1,\"x\"]",
+   "pretty": "[\n    1,\n    \"x\"\n]"
+  },
+  {
+   "text": "{\n\"a\": 1\n}",
+   "indent": "  ",
+   "compact": "{\"a\":1}",
+   "pretty": "{\n  \"a\": 1\n}"
+  },
+  {
+   "text": "5",
+   "indent": null,
+   "compact": "5",
+   "pretty": "5"
+  }
+ ],
+ "edits": [
+  {
+   "op": "sort_rows",
+   "args": {
+    "c": 0
+   },
+   "result": {
+    "name": "Sheet1",
+    "columns": [
+     "name",
+     "n",
+     "note"
+    ],
+    "rows": [
+     [
+      "a",
+      {
+       "num": "2"
+      },
+      "x"
+     ],
+     [
+      "a10",
+      {
+       "num": "2.0"
+      },
+      ""
+     ],
+     [
+      "b",
+      {
+       "num": "10"
+      },
+      {
+       "missing": true
+      }
+     ],
+     [
+      "c",
+      null,
+      "Y"
+     ]
+    ],
+    "typed": true,
+    "header": true
+   }
+  },
+  {
+   "op": "sort_rows",
+   "args": {
+    "c": 1
+   },
+   "result": {
+    "name": "Sheet1",
+    "columns": [
+     "name",
+     "n",
+     "note"
+    ],
+    "rows": [
+     [
+      "a",
+      {
+       "num": "2"
+      },
+      "x"
+     ],
+     [
+      "a10",
+      {
+       "num": "2.0"
+      },
+      ""
+     ],
+     [
+      "b",
+      {
+       "num": "10"
+      },
+      {
+       "missing": true
+      }
+     ],
+     [
+      "c",
+      null,
+      "Y"
+     ]
+    ],
+    "typed": true,
+    "header": true
+   }
+  },
+  {
+   "op": "sort_rows",
+   "args": {
+    "c": 1,
+    "descending": true
+   },
+   "result": {
+    "name": "Sheet1",
+    "columns": [
+     "name",
+     "n",
+     "note"
+    ],
+    "rows": [
+     [
+      "b",
+      {
+       "num": "10"
+      },
+      {
+       "missing": true
+      }
+     ],
+     [
+      "a",
+      {
+       "num": "2"
+      },
+      "x"
+     ],
+     [
+      "a10",
+      {
+       "num": "2.0"
+      },
+      ""
+     ],
+     [
+      "c",
+      null,
+      "Y"
+     ]
+    ],
+    "typed": true,
+    "header": true
+   }
+  },
+  {
+   "op": "sort_rows",
+   "args": {
+    "c": 2
+   },
+   "result": {
+    "name": "Sheet1",
+    "columns": [
+     "name",
+     "n",
+     "note"
+    ],
+    "rows": [
+     [
+      "a",
+      {
+       "num": "2"
+      },
+      "x"
+     ],
+     [
+      "c",
+      null,
+      "Y"
+     ],
+     [
+      "b",
+      {
+       "num": "10"
+      },
+      {
+       "missing": true
+      }
+     ],
+     [
+      "a10",
+      {
+       "num": "2.0"
+      },
+      ""
+     ]
+    ],
+    "typed": true,
+    "header": true
+   }
+  },
+  {
+   "op": "set_cell",
+   "args": {
+    "r": 0,
+    "c": 0,
+    "text": "b"
+   },
+   "result": {
+    "name": "Sheet1",
+    "columns": [
+     "name",
+     "n",
+     "note"
+    ],
+    "rows": [
+     [
+      "b",
+      {
+       "num": "10"
+      },
+      {
+       "missing": true
+      }
+     ],
+     [
+      "a",
+      {
+       "num": "2"
+      },
+      "x"
+     ],
+     [
+      "c",
+      null,
+      "Y"
+     ],
+     [
+      "a10",
+      {
+       "num": "2.0"
+      },
+      ""
+     ]
+    ],
+    "typed": true,
+    "header": true
+   }
+  },
+  {
+   "op": "set_cell",
+   "args": {
+    "r": 2,
+    "c": 1,
+    "text": ""
+   },
+   "result": {
+    "name": "Sheet1",
+    "columns": [
+     "name",
+     "n",
+     "note"
+    ],
+    "rows": [
+     [
+      "b",
+      {
+       "num": "10"
+      },
+      {
+       "missing": true
+      }
+     ],
+     [
+      "a",
+      {
+       "num": "2"
+      },
+      "x"
+     ],
+     [
+      "c",
+      null,
+      "Y"
+     ],
+     [
+      "a10",
+      {
+       "num": "2.0"
+      },
+      ""
+     ]
+    ],
+    "typed": true,
+    "header": true
+   }
+  },
+  {
+   "op": "insert_column",
+   "args": {
+    "at": 9
+   },
+   "result": {
+    "name": "Sheet1",
+    "columns": [
+     "name",
+     "n",
+     "note",
+     "column4"
+    ],
+    "rows": [
+     [
+      "b",
+      {
+       "num": "10"
+      },
+      {
+       "missing": true
+      },
+      {
+       "missing": true
+      }
+     ],
+     [
+      "a",
+      {
+       "num": "2"
+      },
+      "x",
+      {
+       "missing": true
+      }
+     ],
+     [
+      "c",
+      null,
+      "Y",
+      {
+       "missing": true
+      }
+     ],
+     [
+      "a10",
+      {
+       "num": "2.0"
+      },
+      "",
+      {
+       "missing": true
+      }
+     ]
+    ],
+    "typed": true,
+    "header": true
+   }
+  },
+  {
+   "op": "insert_column",
+   "args": {
+    "at": 0,
+    "name": "n"
+   },
+   "result": {
+    "error": "There is already a column called \u201cn\u201d."
+   }
+  },
+  {
+   "op": "insert_column",
+   "args": {
+    "at": 0,
+    "name": ""
+   },
+   "result": {
+    "error": "A column needs a name."
+   }
+  },
+  {
+   "op": "rename_column",
+   "args": {
+    "c": 0,
+    "name": "note"
+   },
+   "result": {
+    "error": "There is already a column called \u201cnote\u201d."
+   }
+  },
+  {
+   "op": "rename_column",
+   "args": {
+    "c": 0,
+    "name": "title"
+   },
+   "result": {
+    "name": "Sheet1",
+    "columns": [
+     "title",
+     "n",
+     "note"
+    ],
+    "rows": [
+     [
+      "b",
+      {
+       "num": "10"
+      },
+      {
+       "missing": true
+      }
+     ],
+     [
+      "a",
+      {
+       "num": "2"
+      },
+      "x"
+     ],
+     [
+      "c",
+      null,
+      "Y"
+     ],
+     [
+      "a10",
+      {
+       "num": "2.0"
+      },
+      ""
+     ]
+    ],
+    "typed": true,
+    "header": true
+   }
+  },
+  {
+   "op": "delete_rows",
+   "args": {
+    "indices": [
+     0,
+     2
+    ]
+   },
+   "result": {
+    "name": "Sheet1",
+    "columns": [
+     "name",
+     "n",
+     "note"
+    ],
+    "rows": [
+     [
+      "a",
+      {
+       "num": "2"
+      },
+      "x"
+     ],
+     [
+      "a10",
+      {
+       "num": "2.0"
+      },
+      ""
+     ]
+    ],
+    "typed": true,
+    "header": true
+   }
+  },
+  {
+   "op": "insert_rows",
+   "args": {
+    "at": 99,
+    "count": 1
+   },
+   "result": {
+    "name": "Sheet1",
+    "columns": [
+     "name",
+     "n",
+     "note"
+    ],
+    "rows": [
+     [
+      "b",
+      {
+       "num": "10"
+      },
+      {
+       "missing": true
+      }
+     ],
+     [
+      "a",
+      {
+       "num": "2"
+      },
+      "x"
+     ],
+     [
+      "c",
+      null,
+      "Y"
+     ],
+     [
+      "a10",
+      {
+       "num": "2.0"
+      },
+      ""
+     ],
+     [
+      {
+       "missing": true
+      },
+      {
+       "missing": true
+      },
+      {
+       "missing": true
+      }
+     ]
+    ],
+    "typed": true,
+    "header": true
+   }
+  },
+  {
+   "op": "set_header",
+   "args": {
+    "on": false
+   },
+   "result": {
+    "name": "Sheet1",
+    "columns": [
+     "name",
+     "n",
+     "note"
+    ],
+    "rows": [
+     [
+      "b",
+      {
+       "num": "10"
+      },
+      {
+       "missing": true
+      }
+     ],
+     [
+      "a",
+      {
+       "num": "2"
+      },
+      "x"
+     ],
+     [
+      "c",
+      null,
+      "Y"
+     ],
+     [
+      "a10",
+      {
+       "num": "2.0"
+      },
+      ""
+     ]
+    ],
+    "typed": true,
+    "header": true
+   }
+  },
+  {
+   "op": "find",
+   "args": {
+    "query": "a",
+    "case": false,
+    "whole_word": false,
+    "regex": false
+   },
+   "result": [
+    [
+     1,
+     0
+    ],
+    [
+     3,
+     0
+    ]
+   ]
+  },
+  {
+   "op": "find",
+   "args": {
+    "query": "^\\d+$",
+    "case": false,
+    "whole_word": false,
+    "regex": true
+   },
+   "result": [
+    [
+     0,
+     1
+    ],
+    [
+     1,
+     1
+    ]
+   ]
+  },
+  {
+   "op": "find",
+   "args": {
+    "query": "(",
+    "case": false,
+    "whole_word": false,
+    "regex": true
+   },
+   "result": {
+    "error": "That pattern isn't valid: missing ), unterminated subpattern"
+   }
+  },
+  {
+   "op": "replace_all",
+   "args": {
+    "query": "2",
+    "replacement": "3",
+    "case": true,
+    "whole_word": false,
+    "regex": false
+   },
+   "result": {
+    "sheet": {
+     "name": "Sheet1",
+     "columns": [
+      "name",
+      "n",
+      "note"
+     ],
+     "rows": [
+      [
+       "b",
+       {
+        "num": "10"
+       },
+       {
+        "missing": true
+       }
+      ],
+      [
+       "a",
+       {
+        "num": "3"
+       },
+       "x"
+      ],
+      [
+       "c",
+       null,
+       "Y"
+      ],
+      [
+       "a10",
+       {
+        "num": "3.0"
+       },
+       ""
+      ]
+     ],
+     "typed": true,
+     "header": true
+    },
+    "count": 2
+   }
+  },
+  {
+   "op": "replace_all",
+   "args": {
+    "query": "(\\w)",
+    "replacement": "[\\1]",
+    "case": true,
+    "whole_word": false,
+    "regex": true
+   },
+   "result": {
+    "sheet": {
+     "name": "Sheet1",
+     "columns": [
+      "name",
+      "n",
+      "note"
+     ],
+     "rows": [
+      [
+       "[b]",
+       "[1][0]",
+       {
+        "missing": true
+       }
+      ],
+      [
+       "[a]",
+       {
+        "raw": "[2]"
+       },
+       "[x]"
+      ],
+      [
+       "[c]",
+       null,
+       "[Y]"
+      ],
+      [
+       "[a][1][0]",
+       "[2].[0]",
+       ""
+      ]
+     ],
+     "typed": true,
+     "header": true
+    },
+    "count": 13
+   }
+  }
+ ],
+ "letters": [
+  [
+   0,
+   "A"
+  ],
+  [
+   25,
+   "Z"
+  ],
+  [
+   26,
+   "AA"
+  ],
+  [
+   51,
+   "AZ"
+  ],
+  [
+   52,
+   "BA"
+  ],
+  [
+   701,
+   "ZZ"
+  ],
+  [
+   702,
+   "AAA"
+  ]
+ ],
+ "files": [
+  {
+   "name": "csv untouched",
+   "ext": "csv",
+   "text": "\ufeffname;age\r\n\"Ann\";3\r\nBob;10\r\n",
+   "steps": [],
+   "doc": [
+    {
+     "name": "Sheet1",
+     "columns": [
+      "name",
+      "age"
+     ],
+     "rows": [
+      [
+       "Ann",
+       "3"
+      ],
+      [
+       "Bob",
+       "10"
+      ]
+     ],
+     "typed": false,
+     "header": true
+    }
+   ],
+   "saved": "\ufeffname;age\r\n\"Ann\";3\r\nBob;10\r\n"
+  },
+  {
+   "name": "csv sort numbers",
+   "ext": "csv",
+   "text": "name;age\r\nAnn;3\r\nBob;10\r\nCy;2\r\nDee;\r\n",
+   "steps": [
+    [
+     "sort_rows",
+     {
+      "c": 1
+     }
+    ]
+   ],
+   "doc": [
+    {
+     "name": "Sheet1",
+     "columns": [
+      "name",
+      "age"
+     ],
+     "rows": [
+      [
+       "Ann",
+       "3"
+      ],
+      [
+       "Bob",
+       "10"
+      ],
+      [
+       "Cy",
+       "2"
+      ],
+      [
+       "Dee",
+       ""
+      ]
+     ],
+     "typed": false,
+     "header": true
+    }
+   ],
+   "saved": "name;age\r\nCy;2\r\nAnn;3\r\nBob;10\r\nDee;\r\n"
+  },
+  {
+   "name": "csv natural sort, descending",
+   "ext": "csv",
+   "text": "item\nitem10\nItem2\nitem1\nb\n",
+   "steps": [
+    [
+     "sort_rows",
+     {
+      "c": 0,
+      "descending": true
+     }
+    ]
+   ],
+   "doc": [
+    {
+     "name": "Sheet1",
+     "columns": [
+      "item"
+     ],
+     "rows": [
+      [
+       "item10"
+      ],
+      [
+       "Item2"
+      ],
+      [
+       "item1"
+      ],
+      [
+       "b"
+      ]
+     ],
+     "typed": false,
+     "header": true
+    }
+   ],
+   "saved": "item\nitem10\nItem2\nitem1\nb\n"
+  },
+  {
+   "name": "csv quote all kept",
+   "ext": "csv",
+   "text": "\"a\",\"b\"\n\"1\",\"2\"\n",
+   "steps": [
+    [
+     "set_cell",
+     {
+      "r": 0,
+      "c": 1,
+      "text": "x,y"
+     }
+    ]
+   ],
+   "doc": [
+    {
+     "name": "Sheet1",
+     "columns": [
+      "a",
+      "b"
+     ],
+     "rows": [
+      [
+       "1",
+       "2"
+      ]
+     ],
+     "typed": false,
+     "header": true
+    }
+   ],
+   "saved": "\"a\",\"b\"\n\"1\",\"x,y\"\n"
+  },
+  {
+   "name": "csv header off and on",
+   "ext": "csv",
+   "text": "a,b\n1,2\n",
+   "steps": [
+    [
+     "set_header",
+     {
+      "on": false
+     }
+    ],
+    [
+     "insert_rows",
+     {
+      "at": 0
+     }
+    ],
+    [
+     "set_cell",
+     {
+      "r": 0,
+      "c": 0,
+      "text": "new"
+     }
+    ]
+   ],
+   "doc": [
+    {
+     "name": "Sheet1",
+     "columns": [
+      "a",
+      "b"
+     ],
+     "rows": [
+      [
+       "1",
+       "2"
+      ]
+     ],
+     "typed": false,
+     "header": true
+    }
+   ],
+   "saved": "new,\na,b\n1,2\n"
+  },
+  {
+   "name": "csv columns",
+   "ext": "csv",
+   "text": "a,b\n1,2\n",
+   "steps": [
+    [
+     "insert_column",
+     {
+      "at": 1
+     }
+    ],
+    [
+     "rename_column",
+     {
+      "c": 0,
+      "name": "first"
+     }
+    ],
+    [
+     "delete_columns",
+     {
+      "indices": [
+       2
+      ]
+     }
+    ],
+    [
+     "set_cell",
+     {
+      "r": 0,
+      "c": 1,
+      "text": "multi\nline"
+     }
+    ]
+   ],
+   "doc": [
+    {
+     "name": "Sheet1",
+     "columns": [
+      "a",
+      "b"
+     ],
+     "rows": [
+      [
+       "1",
+       "2"
+      ]
+     ],
+     "typed": false,
+     "header": true
+    }
+   ],
+   "saved": "first,column3\n1,\"multi\nline\"\n"
+  },
+  {
+   "name": "tsv",
+   "ext": "tsv",
+   "text": "a\tb\n1\t2",
+   "steps": [
+    [
+     "delete_rows",
+     {
+      "indices": [
+       0
+      ]
+     }
+    ],
+    [
+     "insert_rows",
+     {
+      "at": 0,
+      "count": 2
+     }
+    ]
+   ],
+   "doc": [
+    {
+     "name": "Sheet1",
+     "columns": [
+      "a",
+      "b"
+     ],
+     "rows": [
+      [
+       "1",
+       "2"
+      ]
+     ],
+     "typed": false,
+     "header": true
+    }
+   ],
+   "saved": "a\tb\n\t\n\t"
+  },
+  {
+   "name": "csv replace",
+   "ext": "csv",
+   "text": "a,b\ncat,dog\nCat,catalog\n",
+   "steps": [
+    [
+     "replace_all",
+     {
+      "query": "cat",
+      "replacement": "bird",
+      "case": false,
+      "whole_word": true,
+      "regex": false
+     }
+    ]
+   ],
+   "doc": [
+    {
+     "name": "Sheet1",
+     "columns": [
+      "a",
+      "b"
+     ],
+     "rows": [
+      [
+       "cat",
+       "dog"
+      ],
+      [
+       "Cat",
+       "catalog"
+      ]
+     ],
+     "typed": false,
+     "header": true
+    }
+   ],
+   "saved": "a,b\nbird,dog\nbird,catalog\n"
+  },
+  {
+   "name": "json numbers keep their spelling",
+   "ext": "json",
+   "text": "[\n  {\"name\": \"A\", \"n\": 1.0, \"big\": 12345678901234567890},\n  {\"name\": \"B\", \"n\": 2e3}\n]\n",
+   "steps": [
+    [
+     "set_cell",
+     {
+      "r": 1,
+      "c": 0,
+      "text": "Bee"
+     }
+    ]
+   ],
+   "doc": [
+    {
+     "name": "Sheet1",
+     "columns": [
+      "name",
+      "n",
+      "big"
+     ],
+     "rows": [
+      [
+       "A",
+       {
+        "num": "1.0"
+       },
+       {
+        "num": "12345678901234567890"
+       }
+      ],
+      [
+       "B",
+       {
+        "num": "2e3"
+       },
+       {
+        "missing": true
+       }
+      ]
+     ],
+     "typed": true,
+     "header": true
+    }
+   ],
+   "saved": "[\n  {\n    \"name\": \"A\",\n    \"n\": 1.0,\n    \"big\": 12345678901234567890\n  },\n  {\n    \"name\": \"Bee\",\n    \"n\": 2e3\n  }\n]\n"
+  },
+  {
+   "name": "json wrapper kept",
+   "ext": "json",
+   "text": "{\"library\": {\"name\": \"x\", \"book\": [{\"t\": \"A\", \"a\": {\"x\": 1}}, {\"t\": \"B\", \"tags\": [1, 2]}]}}",
+   "steps": [
+    [
+     "set_cell",
+     {
+      "r": 1,
+      "c": 1,
+      "text": "7"
+     }
+    ],
+    [
+     "set_cell",
+     {
+      "r": 0,
+      "c": 2,
+      "text": "[3, 4]"
+     }
+    ]
+   ],
+   "doc": [
+    {
+     "name": "Sheet1",
+     "columns": [
+      "t",
+      "a.x",
+      "tags"
+     ],
+     "rows": [
+      [
+       "A",
+       {
+        "num": "1"
+       },
+       {
+        "missing": true
+       }
+      ],
+      [
+       "B",
+       {
+        "missing": true
+       },
+       {
+        "raw": "[1,2]"
+       }
+      ]
+     ],
+     "typed": true,
+     "header": true
+    }
+   ],
+   "saved": "{\"library\":{\"name\":\"x\",\"book\":[{\"t\":\"A\",\"a\":{\"x\":1},\"tags\":[3,4]},{\"t\":\"B\",\"a\":{\"x\":7},\"tags\":[1,2]}]}}"
+  },
+  {
+   "name": "json typing",
+   "ext": "json",
+   "text": "[\n\t{\"a\": \"1\", \"b\": true}\n]\n",
+   "steps": [
+    [
+     "set_cell",
+     {
+      "r": 0,
+      "c": 1,
+      "text": "'true"
+     }
+    ],
+    [
+     "insert_rows",
+     {
+      "at": 1
+     }
+    ],
+    [
+     "set_cell",
+     {
+      "r": 1,
+      "c": 0,
+      "text": "null"
+     }
+    ],
+    [
+     "insert_column",
+     {
+      "at": 2,
+      "name": "c.d"
+     }
+    ],
+    [
+     "set_cell",
+     {
+      "r": 1,
+      "c": 2,
+      "text": "x"
+     }
+    ]
+   ],
+   "doc": [
+    {
+     "name": "Sheet1",
+     "columns": [
+      "a",
+      "b"
+     ],
+     "rows": [
+      [
+       "1",
+       true
+      ]
+     ],
+     "typed": true,
+     "header": true
+    }
+   ],
+   "saved": "[\n\t{\n\t\t\"a\": \"1\",\n\t\t\"b\": \"true\"\n\t},\n\t{\n\t\t\"a\": null,\n\t\t\"c\": {\n\t\t\t\"d\": \"x\"\n\t\t}\n\t}\n]\n"
+  },
+  {
+   "name": "json plain values",
+   "ext": "json",
+   "text": "{\"tags\": [\"b\", \"a\", 3]}\n",
+   "steps": [
+    [
+     "sort_rows",
+     {
+      "c": 0
+     }
+    ]
+   ],
+   "doc": [
+    {
+     "name": "Sheet1",
+     "columns": [
+      "value"
+     ],
+     "rows": [
+      [
+       "b"
+      ],
+      [
+       "a"
+      ],
+      [
+       {
+        "num": "3"
+       }
+      ]
+     ],
+     "typed": true,
+     "header": true
+    }
+   ],
+   "saved": "{\"tags\":[3,\"a\",\"b\"]}\n"
+  },
+  {
+   "name": "json one object",
+   "ext": "json",
+   "text": "{\"name\": \"Ann\", \"age\": 3, \"keys\": {\"10\": 1, \"2\": 2}}\n",
+   "steps": [
+    [
+     "set_cell",
+     {
+      "r": 0,
+      "c": 1,
+      "text": "4"
+     }
+    ]
+   ],
+   "doc": [
+    {
+     "name": "Sheet1",
+     "columns": [
+      "name",
+      "age",
+      "keys.10",
+      "keys.2"
+     ],
+     "rows": [
+      [
+       "Ann",
+       {
+        "num": "3"
+       },
+       {
+        "num": "1"
+       },
+       {
+        "num": "2"
+       }
+      ]
+     ],
+     "typed": true,
+     "header": true
+    }
+   ],
+   "saved": "{\"name\":\"Ann\",\"age\":4,\"keys\":{\"10\":1,\"2\":2}}\n"
+  },
+  {
+   "name": "json lone value",
+   "ext": "json",
+   "text": "\"just text\"",
+   "steps": [
+    [
+     "set_cell",
+     {
+      "r": 0,
+      "c": 0,
+      "text": "other"
+     }
+    ]
+   ],
+   "doc": [
+    {
+     "name": "Sheet1",
+     "columns": [
+      "value"
+     ],
+     "rows": [
+      [
+       "just text"
+      ]
+     ],
+     "typed": true,
+     "header": true
+    }
+   ],
+   "saved": "\"other\""
+  },
+  {
+   "name": "json escapes",
+   "ext": "json",
+   "text": "[{\"s\": \"a\\u0001\\\"b\\\\ \\u00e9 \\ud83d\\ude00 \\ud800 \\/\", \"n\": 1}]",
+   "steps": [
+    [
+     "set_cell",
+     {
+      "r": 0,
+      "c": 1,
+      "text": "2"
+     }
+    ]
+   ],
+   "doc": [
+    {
+     "name": "Sheet1",
+     "columns": [
+      "s",
+      "n"
+     ],
+     "rows": [
+      [
+       "a\u0001\"b\\ \u00e9 \ud83d\ude00 \ud800 /",
+       {
+        "num": "1"
+       }
+      ]
+     ],
+     "typed": true,
+     "header": true
+    }
+   ],
+   "saved": "[{\"s\":\"a\\u0001\\\"b\\\\ \u00e9 \ud83d\ude00 \\ud800 /\",\"n\":2}]"
+  },
+  {
+   "name": "json new text",
+   "ext": "json",
+   "text": "[{\"s\": \"x\"}]",
+   "steps": [
+    [
+     "set_cell",
+     {
+      "r": 0,
+      "c": 0,
+      "text": "tab\there"
+     }
+    ]
+   ],
+   "doc": [
+    {
+     "name": "Sheet1",
+     "columns": [
+      "s"
+     ],
+     "rows": [
+      [
+       "x"
+      ]
+     ],
+     "typed": true,
+     "header": true
+    }
+   ],
+   "saved": "[{\"s\":\"tab\\there\"}]"
+  },
+  {
+   "name": "json empty file",
+   "ext": "json",
+   "text": "",
+   "steps": [
+    [
+     "insert_column",
+     {
+      "at": 0,
+      "name": "a"
+     }
+    ],
+    [
+     "insert_rows",
+     {
+      "at": 0
+     }
+    ],
+    [
+     "set_cell",
+     {
+      "r": 0,
+      "c": 0,
+      "text": "1"
+     }
+    ]
+   ],
+   "doc": [
+    {
+     "name": "Sheet1",
+     "columns": [],
+     "rows": [],
+     "typed": true,
+     "header": true
+    }
+   ],
+   "saved": "[{\"a\":1}]\n"
+  },
+  {
+   "name": "json duplicate key",
+   "ext": "json",
+   "text": "[{\"a\": 1, \"b\": 2, \"a\": 3}]",
+   "steps": [
+    [
+     "set_cell",
+     {
+      "r": 0,
+      "c": 1,
+      "text": "5"
+     }
+    ]
+   ],
+   "doc": [
+    {
+     "name": "Sheet1",
+     "columns": [
+      "a",
+      "b"
+     ],
+     "rows": [
+      [
+       {
+        "num": "3"
+       },
+       {
+        "num": "2"
+       }
+      ]
+     ],
+     "typed": true,
+     "header": true
+    }
+   ],
+   "saved": "[{\"a\":3,\"b\":5}]"
+  }
+ ],
+ "errors": [
+  {
+   "ext": "json",
+   "text": "{\"a\": 1,}",
+   "error": "This JSON has a mistake on line 1, column 9: Trailing comma."
+  },
+  {
+   "ext": "json",
+   "text": "[1, 2",
+   "error": "This JSON has a mistake on line 1, column 6: Missing comma or closing bracket."
+  },
+  {
+   "ext": "xml",
+   "text": "<a/>",
+   "error": "The data editor can't open .xml files yet."
+  },
+  {
+   "ext": "csv",
+   "text": "a\u0000b",
+   "error": "This isn't a text file."
+  }
+ ]
+}

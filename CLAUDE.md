@@ -347,6 +347,8 @@ src/umc/
                          #   history, address line), waveform.py, preview.py; no Qt
   audioedit/             # audio editor model (numpy, no Qt) — document.py (AudioDoc, splice
                          #   undo), ops.py, peaks.py (waveform columns), wav.py, io.py (open/save)
+  dataedit/              # data editor model (no Qt) — cells.py, csvtext.py, jsontree.py,
+                         #   tree.py (table inside a tree), table.py (Sheet, edits), history, io
   subedit/               # subtitle editor model (no Qt) — formats.py (Cue, SubDoc, parse /
                          #   write, markup), edits.py, checks.py, history.py, io.py (bytes ↔ doc)
   codeedit/              # code editor model (no Qt) — languages.py (language table → web
@@ -1320,8 +1322,28 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
        self-test step. Web `ui/subtitleeditor/page.ts`: virtual list (only visible `.sub-row`s,
        `ROW_PX`), `<video>` + `.sub-caption`, `window.__subeditor` with `?e2e` (`showAt(ms)`
        because headless Chromium may not decode the clip); e2e `e2e/subtitleeditor.spec.ts`.
-    4. Data editor (`data`): CSV / TSV / JSON / XML / YAML / XLSX as an editable table (add /
-       remove rows and columns, sort, find), saved back through the data converter.
+    4. Data editor (`data`, both apps; spec `docs/superpowers/specs/2026-11-22-data-editor-design.md`):
+       CSV / TSV / JSON / XML / YAML / XLSX as an editable table (add / remove rows and columns,
+       sort, find), saved back in the same format (Save as through the data converter).
+       1. ✅ Model for CSV / TSV / JSON: `dataedit/` ↔ `web/src/dataedit/` (line-by-line ports;
+          shared cases `tests/fixtures/dataedit_cases.json`, `python scripts/make_dataedit_cases.py`
+          on purpose only — written with \u escapes, the web reads it with `?raw`). `cells`: CSV
+          cells are text; typed cells (JSON …) are text / bool / null / `Num` (number keeping its
+          spelling) / `Raw` (list or `{}` as compact JSON) / `MISSING` (key absent: not saved as
+          null); `from_text` / `fromText` = typing rules (number, true / false / null, JSON, a
+          leading ' forces text), `edit_text(c)` round-trips. `csvtext`: own RFC 4180 reader /
+          writer + separator sniffing (same results in both apps; keeps quote-all style).
+          `jsontree`: values through the code editor's `scan_json` (objects are Maps on the web —
+          a plain object reorders "10" / "2"), written back with the file's indentation, lone
+          surrogates / controls as lower-case \u. `tree`: the table inside the tree (the data
+          converter's `as_table` rules, with the path kept so the rest of the file is put back),
+          `a.b` flattening. `table`: frozen `Sheet` / `DataDoc` + pure edits (set cell, rows,
+          columns, rename, sort = numbers by value then natural text, blanks last, stable;
+          header switch, find / replace with `codeedit.search` rules). `io`: through
+          `codeedit.textfile`; untouched = the bytes as read; `new_document` (hub tile) always
+          writes. Limits 20 MB, 1 000 000 cells. History merge keys are strings ("cell:r:c") so
+          the web's `===` matches.
+       2. YAML, XML, XLSX in the model. 3. Desktop page (add-on "data"). 4. Website page.
     The hub's tiles scroll in a short window (`EditorHub.scroll`); at 1280 × 800 all ten fit
     (tiles 84 px high, empty drop zone ≥ 200 px — `test_empty_window_is_one_big_drop_zone`).
 13. ✅ Light / dark mode switch (both apps; owner, Nov 2026): sun / moon button in the top bar,
