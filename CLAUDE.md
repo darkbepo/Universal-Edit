@@ -1307,6 +1307,17 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
     turn comes, both apps, like the other editors (set `available` True, add-on on desktop):
     1. Vector editor (`vector`): select / move / reshape SVG shapes and paths, fill / stroke,
        text, layers (groups); saves SVG, exports PDF / PNG through the vector converter.
+       Spec `docs/superpowers/specs/2026-11-24-vector-editor-design.md` (4 steps).
+       1. ✅ Model basics: `vectoredit/` ↔ `web/src/vectoredit/` (line-by-line ports): `xmlsrc`
+          (own XML reader keeping each node's source text; the writer re-emits untouched nodes
+          as written and rebuilds only changed start tags, so a save changes nothing else;
+          refuses entity declarations, unknown entities, nesting past 256), `geom` (`num` =
+          ≤ 3 decimals from integers so both apps write the same characters; `Matrix`,
+          `parse_transform` / `format_transform`, `Box`), `pathdata` (all path commands →
+          absolute M / L / C / Q / A / Z, stops at the first mistake like browsers; arcs → cubics;
+          tight bounds from curve extrema). Shared cases `tests/fixtures/vectoredit_cases.json`
+          (`python scripts/make_vectoredit_cases.py`, on purpose only). Only `[ \t\r\n]` count as
+          whitespace in the regexes (Python's and JavaScript's `\s` differ).
     2. Font editor (`font`): font names / metadata, letter spacing (side bearings, kerning
        pairs), glyph preview; fontTools on the desktop, HarfBuzz / own tables on the web.
     3. ✅ Subtitle editor (`subtitle`, both apps; spec
@@ -1565,6 +1576,7 @@ LibreOffice-wasm). The owner hands the project over at this point; the next phas
    `examples/`, into a staging folder, `gswin64c --version` must run, else the bundled
    `vcredist_x64.exe` (Microsoft-signed) is run quietly once, then it replaces the old copy.
    No admin rights, registry or PATH changes. Tests build small installers (`tests/nsis_sample.py`).
+   Live run 24 Nov 2026 (gs 10.06.0): ✅ unpacked and converted an EPS on windows-latest.
 5. **Keep the Actions list short (owner's rule):** after your pushes have finished their runs (and
    you've read any failure logs you need), run `python scripts/prune_ci_runs.py` (dry run), then
    `python scripts/prune_ci_runs.py --yes`. It keeps the newest 3 runs of every workflow plus the
