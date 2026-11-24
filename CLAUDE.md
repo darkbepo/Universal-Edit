@@ -413,6 +413,7 @@ src/umc/
     installer.py         # one-click download + verify + install of LibreOffice / Pandoc (Windows)
     archive.py           # ZIP (pyzipper) / 7Z (py7zr) / TAR / RAR (bsdtar) read + write, safe extraction
     ghostscript.py       # EPS/PS via Ghostscript (-dSAFER), found or one-click installed
+    nsis.py              # reads the files out of an NSIS installer (Ghostscript's can't run silently)
     calibre.py           # Kindle MOBI/AZW3 via Calibre's ebook-convert, found or one-click installed
     libredwg.py          # AutoCAD DWG → DXF via LibreDWG's dwg2dxf, found or one-click installed
     tessdata.py          # OCR language files: bundled English, pinned SHA-256 downloads
@@ -625,9 +626,9 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
    11. ✅ Vector (family "vector": svg, eps, ps, ai): → `svg|eps|ps`, `vec:pdf|png|jpg|webp|tiff`;
       PDF → `pages:svg`; images → `trace:svg`. Desktop `converters/vector.py` goes through PDF:
       SVG / modern AI via PyMuPDF (`tools/pdf.py`), EPS / PS / old AI via Ghostscript
-      (`tools/ghostscript.py`, always `-dSAFER`; one-click NSIS install, signed by Artifex, may need
-      UAC once — covered by `test-installers.yml`), tracing with vtracer (MIT). Web: MuPDF.js has
-      no SVG reader, so SVG → images uses resvg-wasm (MPL-2.0, DejaVu font); AI and PDF via MuPDF
+      (`tools/ghostscript.py`, always `-dSAFER`; one-click = the Artifex-signed NSIS installer
+      unpacked by `tools/nsis.py`, not run — covered by `test-installers.yml`), tracing with vtracer (MIT).
+      Web: MuPDF.js has no SVG reader, so SVG → images uses resvg-wasm (MPL-2.0, DejaVu font); AI and PDF via MuPDF
       (DocumentWriter "svg"/"pdf"); colour tracing = ImageMagick quantize + vectortracer's binary
       tracer per colour, stacked (vectortracer has no colour mode). EPS/PS, SVG → PDF/SVG desktop only.
    12. ✅ PDF → Word keeping layout (desktop): pdf2docx (MIT; builds on PyMuPDF, wrapped in
@@ -1555,12 +1556,15 @@ LibreOffice-wasm). The owner hands the project over at this point; the next phas
    (`tests/test_installer_live.py`, real downloads on windows-latest) — run it after touching
    `tools/installer.py` (input "only" = a pytest -k filter, e.g. `ghostscript`). Status of the
    last runs (19 Nov 2026): LibreOffice, Pandoc, Calibre, LibreDWG ✅ (dwg2dxf writes handle 0,
-   which ezdxf refuses: `cad.fix_zero_handles` renumbers them). **Ghostscript ❌ — the silent NSIS
-   install (`gsNNNNNw64.exe /S /D=…`) writes nothing at all, in `/D` or Program Files, and never
-   exits** (so `InstallSettled` can't help; error details now list the folder). Likely a dialog
-   that silent mode doesn't answer. Next: try it the way Chocolatey does (`Start-Process -Wait`),
-   or unpack it with 7-Zip instead of running it (a new tool download — ask the owner). Until
-   then EPS/PS work with a manually installed Ghostscript (on PATH or the standard folders).
+   which ezdxf refuses: `cad.fix_zero_handles` renumbers them). Ghostscript: its NSIS
+   installer can't run silently — `.onInit` begins with `SetSilent normal`, so `/S` is ignored and
+   it waits on an invisible welcome page (19 Nov runs: nothing written, never exits). Since 24 Nov
+   it isn't run at all: `tools/nsis.py` reads the files out of the signed installer (NSIS 3
+   Unicode, solid LZMA; follows `SetOutPath` / `StrCpy` / `File` and keeps only what lands under
+   `$INSTDIR`; checked byte for byte against 7-Zip on gs10060w64.exe), minus `doc/` and
+   `examples/`, into a staging folder, `gswin64c --version` must run, else the bundled
+   `vcredist_x64.exe` (Microsoft-signed) is run quietly once, then it replaces the old copy.
+   No admin rights, registry or PATH changes. Tests build small installers (`tests/nsis_sample.py`).
 5. **Keep the Actions list short (owner's rule):** after your pushes have finished their runs (and
    you've read any failure logs you need), run `python scripts/prune_ci_runs.py` (dry run), then
    `python scripts/prune_ci_runs.py --yes`. It keeps the newest 3 runs of every workflow plus the
@@ -1606,7 +1610,4 @@ line here, exactly like the converter features.
 - Code signing for the .exe (owner's decision; SignPath.io is free for open source) — the real fix
   for antivirus false positives.
 - Item 12 ideas: presets, batch queue, PWA/offline.
-- Ghostscript one-click install (backlog, owner Nov 2026): the silent NSIS setup writes nothing and
-  never exits on windows-latest (see "How every change is verified" item 4). EPS / PS work with a
-  manually installed Ghostscript until then.
 

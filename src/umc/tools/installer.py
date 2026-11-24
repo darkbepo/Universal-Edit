@@ -10,6 +10,8 @@ Both are installed *privately* into the app's tools folder (see :func:`paths.too
   nothing outside our folder. We then run a real test conversion. If that copy can't run
   (e.g. a missing Visual C++ runtime), we fall back to a normal install (``msiexec /i``),
   for which Windows shows its usual "allow changes" prompt once.
+* **Ghostscript** — the signed NSIS installer from Artifex's GitHub release. It can't run
+  silently, so its files are read out of it (:mod:`umc.tools.nsis`) into our folder.
 
 No Qt here: progress goes through a ``progress(fraction, message)`` callback.
 """
@@ -25,7 +27,6 @@ import shutil
 import sys
 import tempfile
 import threading
-import time
 import urllib.request
 import zipfile
 from collections.abc import Callable
@@ -34,7 +35,7 @@ from pathlib import Path
 from umc import __version__
 from umc.core.errors import ConversionCancelled, ConversionError
 from umc.core.paths import tools_dir
-from umc.tools import process
+from umc.tools import nsis, process
 
 log = logging.getLogger(__name__)
 
@@ -358,110 +359,92 @@ def pick_ghostscript_asset(release: dict) -> tuple[str, str, str | None]:
     )
 
 
-class InstallSettled:
-    """True once an NSIS install into ``folder`` looks complete: ``bin/gswin64c.exe`` and an
-    uninstaller exist and no file has changed for ``quiet`` seconds.
-
-    Ghostscript's silent installer sometimes copies everything and then never exits (seen on
-    windows-latest); with this the app stops waiting for it.
-    """
-
-    def __init__(self, folder: Path, quiet: float = 15.0, clock=time.monotonic) -> None:
-        self.folder, self.quiet, self.clock = folder, quiet, clock
-        self._last: tuple[int, int, float] | None = None
-        self._since = 0.0
-
-    def _snapshot(self) -> tuple[int, int, float] | None:
-        if not (self.folder / "bin" / "gswin64c.exe").is_file():
-            return None
-        if not any(self.folder.glob("unins*.exe")):
-            return None
-        count = size = 0
-        newest = 0.0
-        for p in self.folder.rglob("*"):
-            try:
-                st = p.stat()
-            except OSError:
-                return None
-            count += 1
-            size += st.st_size
-            newest = max(newest, st.st_mtime)
-        return count, size, newest
-
-    def __call__(self) -> bool:
-        now, snap = self.clock(), self._snapshot()
-        if snap is None or snap != self._last:
-            self._last, self._since = snap, now
-            return False
-        return now - self._since >= self.quiet
+GS_KEEP_OUT = ("doc/", "examples/")  # manuals and samples: ~20 MB nobody here needs
+VC_REDIST = "vcredist_x64.exe"
+VC_PUBLISHER = "Microsoft Corporation"
 
 
-def _run_ghostscript_setup(
-    exe: Path, args: str, target: Path, cancel_event: threading.Event
-) -> None:
-    """Run the NSIS installer (elevated through PowerShell if it asks for admin rights).
-    A failure's details say what the installer left in ``target`` (for the log)."""
+def _gs_wanted(path: str) -> bool:
+    return not path.startswith(GS_KEEP_OUT) and path != VC_REDIST
+
+
+def _gs_runs(exe: str, cancel_event: threading.Event) -> str | None:
+    """None when ``gswin64c --version`` works, else what went wrong (for the log)."""
     try:
-        try:
-            process.run(
-                f'"{exe}" {args}',
-                cancel_event=cancel_event,
-                timeout=900,
-                error_message="Ghostscript couldn't be installed.",
-                finished_early=InstallSettled(target),
-            )
-        except OSError as exc:  # 740 = the installer needs admin rights: ask Windows to elevate
-            if getattr(exc, "winerror", None) != 740:
-                raise
-            # If this one settles early, only PowerShell is stopped: the elevated installer can't
-            # be killed from here and may linger (holding the downloaded file).
-            ps = f"Start-Process -FilePath '{exe}' -ArgumentList '{args}' -Verb RunAs -Wait"
-            process.run(
-                ["powershell", "-NoProfile", "-Command", ps],
-                cancel_event=cancel_event,
-                timeout=900,
-                error_message="Ghostscript couldn't be installed. "
-                "If Windows asked for permission, please allow it.",
-                finished_early=InstallSettled(target),
-            )
+        process.run(
+            [exe, "--version"],
+            cancel_event=cancel_event,
+            timeout=60,
+            error_message="Ghostscript doesn't start.",
+        )
     except ConversionCancelled:
         raise
-    except ConversionError as exc:
-        report = folder_report(target)
-        log.error("Ghostscript setup failed; %s", report)
-        raise InstallError(str(exc), details=f"{exc.details or ''}\n{report}".strip()) from exc
+    except (ConversionError, OSError) as exc:
+        return f"{exc} {getattr(exc, 'details', '') or ''}".strip()
+    return None
 
 
-def folder_report(folder: Path, limit: int = 15) -> str:
-    """A short description of what's in ``folder`` (newest files first), for error details."""
-    if not folder.exists():
-        return f"{folder}: missing"
-    files = []
-    for p in folder.rglob("*"):
-        with contextlib.suppress(OSError):
-            if p.is_file():
-                files.append(
-                    (p.stat().st_mtime, p.relative_to(folder).as_posix(), p.stat().st_size)
-                )
-    files.sort(reverse=True)
-    lines = [f"{folder}: {len(files)} files, {sum(f[2] for f in files)} bytes"]
-    lines += [f"  {name} ({size} bytes)" for _t, name, size in files[:limit]]
-    return "\n".join(lines)
+def _run_maybe_elevated(
+    exe: Path, args: str, cancel_event: threading.Event, error_message: str
+) -> None:
+    """Run ``exe args``; if Windows says it needs admin rights (error 740), ask for them."""
+    try:
+        process.run(
+            f'"{exe}" {args}', cancel_event=cancel_event, timeout=900, error_message=error_message
+        )
+    except OSError as exc:
+        if getattr(exc, "winerror", None) != 740:
+            raise
+        ps = f"Start-Process -FilePath '{exe}' -ArgumentList '{args}' -Verb RunAs -Wait"
+        process.run(
+            ["powershell", "-NoProfile", "-Command", ps],
+            cancel_event=cancel_event,
+            timeout=900,
+            error_message=f"{error_message} If Windows asked for permission, please allow it.",
+        )
+
+
+def _install_vc_runtime(
+    info: nsis.Installer, downloads: Path, cancel_event: threading.Event
+) -> None:
+    """Ghostscript needs Microsoft's Visual C++ runtime (most PCs have it). Its installer ships
+    the official one: unpack it, check Microsoft's signature, run it quietly (one UAC prompt)."""
+    folder = Path(tempfile.mkdtemp(prefix="umc-vc-", dir=downloads))
+    try:
+        nsis.extract(info, folder, cancel_event=cancel_event, only=lambda p: p == VC_REDIST)
+        redist = folder / VC_REDIST
+        if not redist.is_file():
+            raise InstallError("Ghostscript needs the Microsoft Visual C++ runtime.")
+        verify_authenticode(redist, VC_PUBLISHER)
+        try:
+            _run_maybe_elevated(
+                redist,
+                "/install /quiet /norestart",
+                cancel_event,
+                "The Microsoft Visual C++ runtime couldn't be installed.",
+            )
+        except ConversionError as exc:  # 3010 = "restart needed", 1638 = a newer one is there
+            log.warning("VC++ runtime setup: %s %s", exc, exc.details)
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
 
 
 def install_ghostscript(progress: Progress, cancel_event: threading.Event) -> str:
-    """Silent NSIS install into the private tools folder. Windows may ask for permission once."""
-    from umc.tools import ghostscript
+    """Unpack the signed Ghostscript installer into the private tools folder.
 
+    The installer itself can't run silently (see :mod:`umc.tools.nsis`), so its files are read
+    out of it: no admin rights, nothing written outside our folder, no PATH or registry changes.
+    """
     root = tools_dir()
     _check_space(root, GS_SPACE_BYTES, "Ghostscript")
     progress(0.0, "Finding the latest Ghostscript…")
     with _get(GS_LATEST) as resp:
         version, url, sha = pick_ghostscript_asset(json.load(resp))
     downloads = root / "downloads"
-    downloads.mkdir(exist_ok=True)
+    downloads.mkdir(parents=True, exist_ok=True)
     exe = downloads / url.rsplit("/", 1)[1]
     target = root / "ghostscript"
+    staging = root / ".umc-ghostscript-new"
     try:
         download(
             url,
@@ -473,25 +456,50 @@ def install_ghostscript(progress: Progress, cancel_event: threading.Event) -> st
         )
         progress(0.72, "Checking the installer's signature…")
         verify_authenticode(exe, GS_PUBLISHER)
-        progress(0.75, "Installing Ghostscript — please allow it if Windows asks…")
+        progress(0.75, "Unpacking Ghostscript…")
+        try:
+            info = nsis.read(exe)
+            shutil.rmtree(staging, ignore_errors=True)
+            nsis.extract(
+                info,
+                staging,
+                cancel_event=cancel_event,
+                only=_gs_wanted,
+                progress=lambda f: progress(0.75 + 0.2 * f, "Unpacking Ghostscript…"),
+            )
+        except nsis.NsisError as exc:
+            raise InstallError(
+                "Ghostscript couldn't be unpacked. Please install it from ghostscript.com "
+                "and press “I've installed it — check again”.",
+                details=f"{exc} {exc.details or ''}".strip(),
+            ) from exc
+        new_exe = staging / "bin" / "gswin64c.exe"
+        if not new_exe.is_file():
+            raise InstallError("Ghostscript was downloaded but gswin64c.exe wasn't in it.")
+        progress(0.96, "Checking that Ghostscript works…")
+        problem = _gs_runs(str(new_exe), cancel_event)
+        if problem:
+            log.warning("Ghostscript doesn't start (%s): installing the VC++ runtime", problem)
+            progress(0.96, "Installing the Microsoft Visual C++ runtime — please allow it…")
+            _install_vc_runtime(info, downloads, cancel_event)
+            problem = _gs_runs(str(new_exe), cancel_event)
+            if problem:
+                raise InstallError("Ghostscript was installed but doesn't start.", details=problem)
         shutil.rmtree(target, ignore_errors=True)
-        if target.exists():  # leftovers would look like a finished install to InstallSettled
+        if target.exists():
             raise InstallError(
                 "The old Ghostscript copy couldn't be removed. Close programs that use it "
                 "(or restart the computer) and try again."
             )
-        # NSIS: /S = silent, /D= must be last and unquoted.
-        args = f"/S /D={target}"
-        _run_ghostscript_setup(exe, args, target, cancel_event)
-        found = ghostscript.gs_path()
-        if found is None:
-            raise InstallError("Ghostscript was installed but gswin64c.exe wasn't found.")
+        staging.rename(target)
+        found = str(target / "bin" / "gswin64c.exe")
         record_version("Ghostscript", version)
         progress(1.0, f"Ghostscript {version} installed.")
         return found
     finally:
-        with contextlib.suppress(OSError):  # a lingering installer may still hold it;
-            exe.unlink(missing_ok=True)  # core/cleanup.py removes it later
+        shutil.rmtree(staging, ignore_errors=True)
+        with contextlib.suppress(OSError):
+            exe.unlink(missing_ok=True)
 
 
 # --------------------------------------------------------------------------- Calibre

@@ -233,30 +233,6 @@ def test_pick_libredwg_and_ghostscript_assets():
     assert installer.pick_libredwg_asset(dwg) == ("0.13.3", "z", None)
 
 
-def test_install_settled_waits_for_a_quiet_complete_folder(tmp_path):
-    from umc.tools.installer import InstallSettled
-
-    now = [0.0]
-    settled = InstallSettled(tmp_path, quiet=15, clock=lambda: now[0])
-    assert not settled()  # nothing there yet
-    (tmp_path / "bin").mkdir()
-    (tmp_path / "bin" / "gswin64c.exe").write_bytes(b"x")
-    now[0] = 100
-    assert not settled()  # no uninstaller yet: still copying
-    (tmp_path / "uninstgs.exe").write_bytes(b"u")
-    now[0] = 101
-    assert not settled()  # first complete look starts the quiet period
-    now[0] = 110
-    assert not settled()
-    (tmp_path / "lib.ps").write_bytes(b"more")  # a file arrives: start over
-    now[0] = 112
-    assert not settled()
-    now[0] = 126
-    assert not settled()
-    now[0] = 127.5
-    assert settled()
-
-
 def test_run_stops_a_program_whose_work_is_done(tmp_path):
     import sys
     import time
@@ -296,63 +272,84 @@ def _alive(pid: int) -> bool:
     return True
 
 
-def _fake_ghostscript(tools, monkeypatch, run):
+def _fake_ghostscript(tools, monkeypatch, runs):
+    """A Ghostscript download = a small NSIS installer; ``runs`` answers each start check."""
     import contextlib
     import io
 
-    from umc.tools import ghostscript, process
+    from tests.nsis_sample import build
+
+    def fake_download(url, dest, **kw):
+        build(
+            [
+                ("dir", "$INSTDIR"),
+                ("file", "bin\\gswin64c.exe", b"gs"),
+                ("file", "lib\\ps2pdf.bat", b"bat"),
+                ("file", "doc\\Ghostscript.pdf", b"manual"),
+                ("file", "vcredist_x64.exe", b"redist"),
+            ],
+            dest,
+        )
 
     monkeypatch.setattr(installer, "_get", lambda url: contextlib.nullcontext(io.BytesIO(b"{}")))
     monkeypatch.setattr(
         installer, "pick_ghostscript_asset", lambda rel: ("10.9", "http://x/gs1090w64.exe", "ab")
     )
-    monkeypatch.setattr(installer, "download", lambda url, dest, **kw: dest.write_bytes(b"MZ"))
-    monkeypatch.setattr(installer, "verify_authenticode", lambda exe, pub: None)
-    monkeypatch.setattr(process, "run", run)
-    target = tools / "ghostscript"
-    monkeypatch.setattr(
-        ghostscript,
-        "gs_path",
-        lambda: (
-            str(target / "bin" / "gswin64c.exe")
-            if (target / "bin" / "gswin64c.exe").is_file()
-            else None
-        ),
-    )
-    return target
+    monkeypatch.setattr(installer, "download", fake_download)
+    signed = []
+    monkeypatch.setattr(installer, "verify_authenticode", lambda exe, pub: signed.append(pub))
+    answers = iter(runs)
+    monkeypatch.setattr(installer, "_gs_runs", lambda exe, cancel: next(answers))
+    return tools / "ghostscript", signed
 
 
-def test_install_ghostscript_watches_for_a_settled_folder(tools, monkeypatch):
-    seen = {}
-
-    def run(cmd, **kw):  # the installer copies its files; the run ends "early"
-        target = tools / "ghostscript"
-        (target / "bin").mkdir(parents=True)
-        (target / "bin" / "gswin64c.exe").write_bytes(b"gs")
-        (target / "uninstgs.exe").write_bytes(b"u")
-        seen["settled"] = kw["finished_early"]
-        return ""
-
-    target = _fake_ghostscript(tools, monkeypatch, run)
+def test_install_ghostscript_unpacks_the_installer(tools, monkeypatch):
+    target, signed = _fake_ghostscript(tools, monkeypatch, [None])
     exe = installer.install_ghostscript(lambda f, m: None, threading.Event())
     assert exe == str(target / "bin" / "gswin64c.exe")
-    assert isinstance(seen["settled"], installer.InstallSettled)
-    assert seen["settled"].folder == target
+    assert (target / "bin" / "gswin64c.exe").read_bytes() == b"gs"
+    assert (target / "lib" / "ps2pdf.bat").is_file()
+    assert not (target / "doc").exists() and not (target / "vcredist_x64.exe").exists()
+    assert signed == [installer.GS_PUBLISHER]
     assert installer.installed_version("Ghostscript") == "10.9"
-    assert not list((tools / "downloads").glob("*.exe"))
+    assert not list((tools / "downloads").iterdir())
+    assert not (tools / ".umc-ghostscript-new").exists()
+
+
+def test_install_ghostscript_adds_the_vc_runtime_when_needed(tools, monkeypatch):
+    target, signed = _fake_ghostscript(tools, monkeypatch, ["DLL missing", None])
+    ran = []
+
+    def run(exe, args, cancel, message):
+        ran.append((exe.name, exe.read_bytes(), args))
+
+    monkeypatch.setattr(installer, "_run_maybe_elevated", run)
+    installer.install_ghostscript(lambda f, m: None, threading.Event())
+    assert ran == [("vcredist_x64.exe", b"redist", "/install /quiet /norestart")]
+    assert signed == [installer.GS_PUBLISHER, installer.VC_PUBLISHER]
+    assert (target / "bin" / "gswin64c.exe").is_file()
+    assert not list((tools / "downloads").iterdir())
+
+
+def test_install_ghostscript_keeps_the_old_copy_when_the_new_one_fails(tools, monkeypatch):
+    target, _signed = _fake_ghostscript(tools, monkeypatch, ["broken", "still broken"])
+    monkeypatch.setattr(installer, "_run_maybe_elevated", lambda *a: None)
+    (target / "bin").mkdir(parents=True)
+    (target / "bin" / "gswin64c.exe").write_bytes(b"old")
+    with pytest.raises(installer.InstallError, match="doesn't start"):
+        installer.install_ghostscript(lambda f, m: None, threading.Event())
+    assert (target / "bin" / "gswin64c.exe").read_bytes() == b"old"
+    assert not (tools / ".umc-ghostscript-new").exists()
 
 
 def test_install_ghostscript_refuses_when_the_old_copy_stays(tools, monkeypatch):
-    target = _fake_ghostscript(tools, monkeypatch, lambda cmd, **kw: "")
+    target, _signed = _fake_ghostscript(tools, monkeypatch, [None])
     (target / "bin").mkdir(parents=True)
-    monkeypatch.setattr(installer.shutil, "rmtree", lambda *a, **k: None)
+    real_rmtree = installer.shutil.rmtree
+    monkeypatch.setattr(
+        installer.shutil,
+        "rmtree",
+        lambda path, **kw: None if path == target else real_rmtree(path, **kw),
+    )
     with pytest.raises(installer.InstallError, match="old Ghostscript"):
         installer.install_ghostscript(lambda f, m: None, threading.Event())
-
-
-def test_folder_report_lists_newest_files(tmp_path):
-    assert installer.folder_report(tmp_path / "nope").endswith("missing")
-    (tmp_path / "bin").mkdir()
-    (tmp_path / "bin" / "gswin64c.exe").write_bytes(b"abc")
-    report = installer.folder_report(tmp_path)
-    assert "1 files, 3 bytes" in report and "bin/gswin64c.exe (3 bytes)" in report

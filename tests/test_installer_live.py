@@ -81,13 +81,7 @@ def test_install_ghostscript_and_convert(tmp_path):
     try:
         exe = installer.install_ghostscript(_progress, threading.Event())
     except ConversionError as exc:
-        import subprocess
-        from pathlib import Path
-
-        default = installer.folder_report(Path(r"C:\Program Files\gs"))  # /D= ignored?
-        tasks = subprocess.run(["tasklist"], capture_output=True, text=True).stdout
-        running = "\n".join(line for line in tasks.splitlines() if "gs" in line.lower())
-        pytest.fail(f"{exc}\nDETAILS: {exc.details}\n{default}\nRUNNING:\n{running}")
+        pytest.fail(f"{exc}\nDETAILS: {exc.details}")
     print("gs:", exe, flush=True)
     assert ghostscript.gs_path() == exe
     eps = tmp_path / "t.eps"
