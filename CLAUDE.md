@@ -1318,6 +1318,21 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
           tight bounds from curve extrema). Shared cases `tests/fixtures/vectoredit_cases.json`
           (`python scripts/make_vectoredit_cases.py`, on purpose only). Only `[ \t\r\n]` count as
           whitespace in the regexes (Python's and JavaScript's `\s` differ).
+       2. ✅ Model edits (both apps, same shared cases): `shapes` (bounds per kind — text estimated
+          at 0.6 em per character, a sizeless `<use>` takes its target's box through `find`;
+          `style_get` / `style_set` change a property where it was written: `style` wins, new
+          ones go into `style` if there is one, else an attribute; `transformed` rewrites the
+          geometry of untransformed simple shapes when the change stays axis-aligned, else folds
+          it into `transform` — a move adds to a leading `translate(…)` so `rotate(…)` stays
+          readable), `doc` (`VectorDoc`; paths = element-child indexes, comments don't count;
+          `items` for the layers list, `hit` / `in_box` look through Inkscape layers and pick a
+          group as a whole; edits `move`, `resize`, `transform`, `set_style`, `set_hidden`,
+          `rename`, `delete` (web `remove`), `duplicate`, `reorder` (elements trade slots, the
+          whitespace stays), `group` / `ungroup` (transform, inherited style and opacity pushed
+          down), `add`, `new_shape`, `set_text`, `set_attr`; an edit that changes nothing returns
+          the same document, so `History` and `io.to_bytes` compare by identity), `history`
+          (merge keys like the data editor), `io` (`codeedit.textfile`; `.svgz` gunzipped in
+          pieces with a 20 MB stop, saved gzipped; `new_document(w, h, unit)`).
     2. Font editor (`font`): font names / metadata, letter spacing (side bearings, kerning
        pairs), glyph preview; fontTools on the desktop, HarfBuzz / own tables on the web.
     3. ✅ Subtitle editor (`subtitle`, both apps; spec

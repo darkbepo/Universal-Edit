@@ -8,10 +8,12 @@ the web port must read, change and write SVG exactly alike. Regenerate only on p
 
 from __future__ import annotations
 
+import gzip
 import json
 from pathlib import Path
 
-from umc.vectoredit import geom, pathdata, xmlsrc
+from umc.vectoredit import doc as vdoc
+from umc.vectoredit import geom, io, pathdata, shapes, xmlsrc
 
 OUT = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "vectoredit_cases.json"
 
@@ -149,6 +151,214 @@ def box(b: geom.Box | None):
     return None if b is None else [b.x0, b.y0, b.x1, b.y1]
 
 
+DRAWING = """<?xml version="1.0"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" width="200" height="100" viewBox="0 0 400 200">
+  <!-- a comment that must survive -->
+  <defs><linearGradient id="g1"/></defs>
+  <rect id="r1" x="10" y="10" width="50" height="20" rx="4" style="fill:red;stroke:#000"/>
+  <g id="grp" transform="translate(100 0)" fill="blue" opacity="0.5">
+    <circle id="c1" cx="10" cy="10" r="5"/>
+    <path d="M0 0 L10 10"/>
+  </g>
+  <text id="t1" x="5" y="90" font-size="20">Hi <tspan>there</tspan></text>
+  <g id="layer1" inkscape:groupmode="layer" inkscape:label="Layer 1">
+    <ellipse id="e1" cx="300" cy="100" rx="20" ry="10" transform="rotate(30 300 100)"/>
+    <polygon points="200,150 220,150 210,170" fill="green"/>
+    <line x1="0" y1="190" x2="50" y2="195" stroke="black"/>
+    <use href="#r1" x="0" y="100"/>
+  </g>
+</svg>
+"""
+
+SIMPLE = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect x="1" y="1" width="2" height="2"/></svg>'
+EMPTY = '<svg xmlns="http://www.w3.org/2000/svg">\n</svg>\n'
+
+# [source, [op, ...]] → result text (or the error message)
+EDITS = [
+    (DRAWING, [["move", [[1], [2]], 5, 5]]),
+    (DRAWING, [["move", [[2, 0]], 1, 2]]),
+    (DRAWING, [["move", [[4, 0], [4, 1], [4, 2], [4, 3]], -10, 2.5]]),
+    (DRAWING, [["move", [[3]], 3, 4]]),
+    (DRAWING, [["resize", [[1]], [0, 0, 100, 40]]]),
+    (DRAWING, [["resize", [[2]], [100, 0, 130, 30]]]),
+    (DRAWING, [["resize", [[1], [4, 2]], [0, 0, 10, 10]]]),
+    (DRAWING, [["resize", [[1]], [0, 0, 0, 10]]]),
+    (DRAWING, [["style", [[1], [2]], "fill", "#00f"]]),
+    (DRAWING, [["style", [[1]], "stroke", None], ["style", [[1]], "fill", None]]),
+    (DRAWING, [["style", [[2, 1]], "stroke-width", "2"]]),
+    (DRAWING, [["hide", [[1]], True]]),
+    (DRAWING, [["hide", [[1]], True], ["hide", [[1]], False]]),
+    (DRAWING, [["rename", [1], "box"]]),
+    (DRAWING, [["rename", [1], "grp"]]),
+    (DRAWING, [["rename", [1], "two words"]]),
+    (DRAWING, [["rename", [1], ""]]),
+    (DRAWING, [["delete", [[2, 1], [1]]]]),
+    (DRAWING, [["delete", [[2], [2, 0]]]]),
+    (DRAWING, [["duplicate", [[1], [3]]]]),
+    (DRAWING, [["duplicate", [[2]]]]),
+    (DRAWING, [["reorder", [1], "front"]]),
+    (DRAWING, [["reorder", [1], "forward"]]),
+    (DRAWING, [["reorder", [4], "back"]]),
+    (DRAWING, [["reorder", [0], "backward"]]),
+    (DRAWING, [["group", [[1], [3]]]]),
+    (DRAWING, [["group", [[1], [2, 0]]]]),
+    (DRAWING, [["ungroup", [2]]]),
+    (DRAWING, [["ungroup", [1]]]),
+    (DRAWING, [["text", [3], "a<b & c"]]),
+    (DRAWING, [["text", [1], "x"]]),
+    (DRAWING, [["attr", [2, 1], "d", "M1 1 L2 2"]]),
+    (DRAWING, [["transform", [[1]], [0, 1, -1, 0, 0, 0]]]),
+    (DRAWING, [["add", "rect", [1, 2, 11, 22], [["fill", "red"]], []]]),
+    (DRAWING, [["add", "line", [0, 0, 10, 10], [], [4]]]),
+    (
+        EMPTY,
+        [
+            ["add", "ellipse", [0, 0, 10, 20], [["fill", "#123456"]], []],
+            ["add", "line", [0, 0, 10, 20], [], []],
+        ],
+    ),
+    (SIMPLE, [["add", "rect", [5, 5, 6, 6], [], []]]),
+    (SIMPLE, [["delete", [[0]]]]),
+    (SIMPLE, [["delete", [[]]]]),
+    (SIMPLE, [["move", [], 1, 1]]),
+    (SIMPLE, [["move", [[7]], 1, 1]]),
+]
+
+HITS = [
+    (DRAWING, 20, 20, [], 0),
+    (DRAWING, 105, 8, [], 0),
+    (DRAWING, 105, 8, [2], 0),
+    (DRAWING, 205, 155, [], 0),
+    (DRAWING, 399, 1, [], 0),
+    (DRAWING, 62, 31, [], 0),
+    (DRAWING, 62, 31, [], 3),
+]
+BOXES = [
+    (DRAWING, [0, 0, 120, 40], []),
+    (DRAWING, [0, 0, 400, 200], []),
+    (DRAWING, [0, 0, 400, 200], [4]),
+]
+CANVASES = [
+    DRAWING,
+    SIMPLE,
+    EMPTY,
+    '<svg xmlns="http://www.w3.org/2000/svg" width="50" viewBox="0 0 100 50"/>',
+    '<svg xmlns="http://www.w3.org/2000/svg" height="10px" viewBox="0 0 100 50"/>',
+    '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="34"/>',
+    '<svg xmlns="http://www.w3.org/2000/svg" width="5cm" viewBox="0 0 0 10"/>',
+]
+STYLES = [
+    ('<rect fill="red" style="fill: blue ; stroke:green"/>', "fill"),
+    ('<rect fill="red" style="stroke:green"/>', "fill"),
+    ('<rect style="stroke:green"/>', "opacity"),
+    ('<rect style=";;bad;x:1"/>', "x"),
+]
+STYLE_SETS = [
+    ('<rect fill="red" style="fill: blue ; stroke:green"/>', "fill", "#fff"),
+    ('<rect fill="red" style="stroke:green"/>', "fill", "#fff"),
+    ('<rect style="stroke:green"/>', "fill", "#fff"),
+    ("<rect/>", "fill", "#fff"),
+    ('<rect fill="red" style="fill:blue"/>', "fill", None),
+    ('<rect style="fill:blue"/>', "fill", None),
+]
+OPEN_BAD = [b"", b"\x00\x01binary", b"<html/>", b"<svg>", b"\x1f\x8bnot gzip"]
+
+
+def run_ops(src: str, ops: list) -> str:
+    d = vdoc.parse(src)
+    try:
+        for op in ops:
+            name, args = op[0], op[1:]
+            paths = lambda v: [tuple(p) for p in v]  # noqa: E731
+            if name == "move":
+                d = vdoc.move(d, paths(args[0]), args[1], args[2])
+            elif name == "resize":
+                d = vdoc.resize(d, paths(args[0]), geom.Box(*args[1]))
+            elif name == "style":
+                d = vdoc.set_style(d, paths(args[0]), args[1], args[2])
+            elif name == "hide":
+                d = vdoc.set_hidden(d, paths(args[0]), args[1])
+            elif name == "rename":
+                d = vdoc.rename(d, tuple(args[0]), args[1])
+            elif name == "delete":
+                d = vdoc.delete(d, paths(args[0]))
+            elif name == "duplicate":
+                d, _ = vdoc.duplicate(d, paths(args[0]))
+            elif name == "reorder":
+                d, _ = vdoc.reorder(d, tuple(args[0]), args[1])
+            elif name == "group":
+                d, _ = vdoc.group(d, paths(args[0]))
+            elif name == "ungroup":
+                d, _ = vdoc.ungroup(d, tuple(args[0]))
+            elif name == "text":
+                d = vdoc.set_text(d, tuple(args[0]), args[1])
+            elif name == "attr":
+                d = vdoc.set_attr(d, tuple(args[0]), args[1], args[2])
+            elif name == "transform":
+                d = vdoc.transform(d, paths(args[0]), geom.Matrix(*args[1]))
+            elif name == "add":
+                el = vdoc.new_shape(
+                    args[0], geom.Box(*args[1]), [tuple(s) for s in args[2]], vdoc.ids(d)
+                )
+                d, _ = vdoc.add(d, el, tuple(args[3]))
+            else:
+                raise SystemExit(name)
+    except vdoc.VectorError as e:
+        return "error: " + str(e)
+    return vdoc.write(d)
+
+
+def step2(cases: dict) -> None:
+    d = vdoc.parse(DRAWING)
+    cases["items"] = [
+        {
+            "path": list(i.path),
+            "kind": i.kind,
+            "name": i.name,
+            "depth": i.depth,
+            "hidden": i.hidden,
+            "container": i.container,
+            "bounds": box(vdoc.bounds(d, i.path)),
+        }
+        for i in vdoc.items(d)
+    ]
+    cases["edits"] = [{"src": src, "ops": ops, "out": run_ops(src, ops)} for src, ops in EDITS]
+    cases["hits"] = []
+    for src, x, y, inside, pad in HITS:
+        p = vdoc.hit(vdoc.parse(src), x, y, tuple(inside), pad)
+        cases["hits"].append([x, y, inside, pad, None if p is None else list(p)])
+    cases["in_box"] = [
+        [b, inside, [list(p) for p in vdoc.in_box(vdoc.parse(src), geom.Box(*b), tuple(inside))]]
+        for src, b, inside in BOXES
+    ]
+    cases["canvases"] = []
+    for src in CANVASES:
+        w, h, v = vdoc.canvas(vdoc.parse(src))
+        cases["canvases"].append([src, w, h, box(v)])
+    cases["style_get"] = [
+        [src, n, shapes.style_get(xmlsrc.parse(src).root, n)] for src, n in STYLES
+    ]
+    cases["style_set"] = [
+        [src, n, v, xmlsrc.write_node(shapes.style_set(xmlsrc.parse(src).root, n, v))]
+        for src, n, v in STYLE_SETS
+    ]
+    cases["new_text"] = [
+        [w, h, u, io.new_text(w, h, u)]
+        for w, h, u in ((210, 297, "mm"), (1920, 1080, "px"), (0.5, 2.25, "in"))
+    ]
+    bad = []
+    for data in OPEN_BAD:
+        try:
+            io.open_bytes(data)
+        except vdoc.VectorError as e:
+            bad.append([data.decode("latin-1"), str(e)])
+        else:
+            raise SystemExit(f"should fail: {data!r}")
+    cases["open_bad"] = bad
+    gz = gzip.compress(SIMPLE.encode(), mtime=0)
+    cases["svgz"] = {"latin1": gz.decode("latin-1"), "text": SIMPLE}
+
+
 def main() -> None:
     cases: dict = {"numbers": [[x, geom.num(x)] for x in NUMBERS], "matrices": MATRICES}
     cases["transforms"] = []
@@ -201,6 +411,7 @@ def main() -> None:
         cases["xml_edits"].append(
             {"src": src, "edits": edits, "out": xmlsrc.write(doc.with_root(root))}
         )
+    step2(cases)
     OUT.write_text(json.dumps(cases, indent=1, ensure_ascii=True) + "\n", encoding="utf-8")
     print(f"wrote {OUT}")
 

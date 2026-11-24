@@ -1019,5 +1019,1218 @@
    ],
    "out": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 1 1\"/>"
   }
- ]
+ ],
+ "items": [
+  {
+   "path": [
+    1
+   ],
+   "kind": "rect",
+   "name": "r1",
+   "depth": 0,
+   "hidden": false,
+   "container": false,
+   "bounds": [
+    10.0,
+    10.0,
+    60.0,
+    30.0
+   ]
+  },
+  {
+   "path": [
+    2
+   ],
+   "kind": "g",
+   "name": "grp",
+   "depth": 0,
+   "hidden": false,
+   "container": true,
+   "bounds": [
+    100.0,
+    0.0,
+    115.0,
+    15.0
+   ]
+  },
+  {
+   "path": [
+    2,
+    0
+   ],
+   "kind": "circle",
+   "name": "c1",
+   "depth": 1,
+   "hidden": false,
+   "container": false,
+   "bounds": [
+    105.0,
+    5.0,
+    115.0,
+    15.0
+   ]
+  },
+  {
+   "path": [
+    2,
+    1
+   ],
+   "kind": "path",
+   "name": "path",
+   "depth": 1,
+   "hidden": false,
+   "container": false,
+   "bounds": [
+    100.0,
+    0.0,
+    110.0,
+    10.0
+   ]
+  },
+  {
+   "path": [
+    3
+   ],
+   "kind": "text",
+   "name": "t1",
+   "depth": 0,
+   "hidden": false,
+   "container": false,
+   "bounds": [
+    5.0,
+    74.0,
+    101.0,
+    94.0
+   ]
+  },
+  {
+   "path": [
+    4
+   ],
+   "kind": "g",
+   "name": "Layer 1",
+   "depth": 0,
+   "hidden": false,
+   "container": true,
+   "bounds": [
+    0.0,
+    81.3397459621556,
+    322.3205080756888,
+    195.0
+   ]
+  },
+  {
+   "path": [
+    4,
+    0
+   ],
+   "kind": "ellipse",
+   "name": "e1",
+   "depth": 1,
+   "hidden": false,
+   "container": false,
+   "bounds": [
+    277.67949192431126,
+    81.3397459621556,
+    322.3205080756888,
+    118.66025403784437
+   ]
+  },
+  {
+   "path": [
+    4,
+    1
+   ],
+   "kind": "polygon",
+   "name": "polygon",
+   "depth": 1,
+   "hidden": false,
+   "container": false,
+   "bounds": [
+    200.0,
+    150.0,
+    220.0,
+    170.0
+   ]
+  },
+  {
+   "path": [
+    4,
+    2
+   ],
+   "kind": "line",
+   "name": "line",
+   "depth": 1,
+   "hidden": false,
+   "container": false,
+   "bounds": [
+    0.0,
+    190.0,
+    50.0,
+    195.0
+   ]
+  },
+  {
+   "path": [
+    4,
+    3
+   ],
+   "kind": "use",
+   "name": "use",
+   "depth": 1,
+   "hidden": false,
+   "container": false,
+   "bounds": [
+    10.0,
+    110.0,
+    60.0,
+    130.0
+   ]
+  }
+ ],
+ "edits": [
+  {
+   "src": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n",
+   "ops": [
+    [
+     "move",
+     [
+      [
+       1
+      ],
+      [
+       2
+      ]
+     ],
+     5,
+     5
+    ]
+   ],
+   "out": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"15\" y=\"15\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(105 5)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n"
+  },
+  {
+   "src": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n",
+   "ops": [
+    [
+     "move",
+     [
+      [
+       2,
+       0
+      ]
+     ],
+     1,
+     2
+    ]
+   ],
+   "out": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"11\" cy=\"12\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n"
+  },
+  {
+   "src": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n",
+   "ops": [
+    [
+     "move",
+     [
+      [
+       4,
+       0
+      ],
+      [
+       4,
+       1
+      ],
+      [
+       4,
+       2
+      ],
+      [
+       4,
+       3
+      ]
+     ],
+     -10,
+     2.5
+    ]
+   ],
+   "out": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"translate(-10 2.5) rotate(30 300 100)\"/>\n    <polygon points=\"190,152.5 210,152.5 200,172.5\" fill=\"green\"/>\n    <line x1=\"-10\" y1=\"192.5\" x2=\"40\" y2=\"197.5\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"-10\" y=\"102.5\"/>\n  </g>\n</svg>\n"
+  },
+  {
+   "src": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n",
+   "ops": [
+    [
+     "move",
+     [
+      [
+       3
+      ]
+     ],
+     3,
+     4
+    ]
+   ],
+   "out": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"8\" y=\"94\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n"
+  },
+  {
+   "src": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n",
+   "ops": [
+    [
+     "resize",
+     [
+      [
+       1
+      ]
+     ],
+     [
+      0,
+      0,
+      100,
+      40
+     ]
+    ]
+   ],
+   "out": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"0\" y=\"0\" width=\"100\" height=\"40\" rx=\"8\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n"
+  },
+  {
+   "src": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n",
+   "ops": [
+    [
+     "resize",
+     [
+      [
+       2
+      ]
+     ],
+     [
+      100,
+      0,
+      130,
+      30
+     ]
+    ]
+   ],
+   "out": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"matrix(2 0 0 2 100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n"
+  },
+  {
+   "src": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n",
+   "ops": [
+    [
+     "resize",
+     [
+      [
+       1
+      ],
+      [
+       4,
+       2
+      ]
+     ],
+     [
+      0,
+      0,
+      10,
+      10
+     ]
+    ]
+   ],
+   "out": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"1.667\" y=\"0\" width=\"8.333\" height=\"1.081\" rx=\"0.667\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"9.73\" x2=\"8.333\" y2=\"10\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n"
+  },
+  {
+   "src": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n",
+   "ops": [
+    [
+     "resize",
+     [
+      [
+       1
+      ]
+     ],
+     [
+      0,
+      0,
+      0,
+      10
+     ]
+    ]
+   ],
+   "out": "error: Width and height must be more than 0."
+  },
+  {
+   "src": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n",
+   "ops": [
+    [
+     "style",
+     [
+      [
+       1
+      ],
+      [
+       2
+      ]
+     ],
+     "fill",
+     "#00f"
+    ]
+   ],
+   "out": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:#00f;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"#00f\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n"
+  },
+  {
+   "src": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n",
+   "ops": [
+    [
+     "style",
+     [
+      [
+       1
+      ]
+     ],
+     "stroke",
+     null
+    ],
+    [
+     "style",
+     [
+      [
+       1
+      ]
+     ],
+     "fill",
+     null
+    ]
+   ],
+   "out": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n"
+  },
+  {
+   "src": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n",
+   "ops": [
+    [
+     "style",
+     [
+      [
+       2,
+       1
+      ]
+     ],
+     "stroke-width",
+     "2"
+    ]
+   ],
+   "out": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\" stroke-width=\"2\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n"
+  },
+  {
+   "src": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n",
+   "ops": [
+    [
+     "hide",
+     [
+      [
+       1
+      ]
+     ],
+     true
+    ]
+   ],
+   "out": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000;display:none\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n"
+  },
+  {
+   "src": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n",
+   "ops": [
+    [
+     "hide",
+     [
+      [
+       1
+      ]
+     ],
+     true
+    ],
+    [
+     "hide",
+     [
+      [
+       1
+      ]
+     ],
+     false
+    ]
+   ],
+   "out": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n"
+  },
+  {
+   "src": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n",
+   "ops": [
+    [
+     "rename",
+     [
+      1
+     ],
+     "box"
+    ]
+   ],
+   "out": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"box\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n"
+  },
+  {
+   "src": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n",
+   "ops": [
+    [
+     "rename",
+     [
+      1
+     ],
+     "grp"
+    ]
+   ],
+   "out": "error: \u201cgrp\u201d is already used."
+  },
+  {
+   "src": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n",
+   "ops": [
+    [
+     "rename",
+     [
+      1
+     ],
+     "two words"
+    ]
+   ],
+   "out": "error: A name starts with a letter and has no spaces."
+  },
+  {
+   "src": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n",
+   "ops": [
+    [
+     "rename",
+     [
+      1
+     ],
+     ""
+    ]
+   ],
+   "out": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n"
+  },
+  {
+   "src": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n",
+   "ops": [
+    [
+     "delete",
+     [
+      [
+       2,
+       1
+      ],
+      [
+       1
+      ]
+     ]
+    ]
+   ],
+   "out": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n"
+  },
+  {
+   "src": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n",
+   "ops": [
+    [
+     "delete",
+     [
+      [
+       2
+      ],
+      [
+       2,
+       0
+      ]
+     ]
+    ]
+   ],
+   "out": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n"
+  },
+  {
+   "src": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n",
+   "ops": [
+    [
+     "duplicate",
+     [
+      [
+       1
+      ],
+      [
+       3
+      ]
+     ]
+    ]
+   ],
+   "out": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <rect id=\"r2\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <text id=\"t2\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n"
+  },
+  {
+   "src": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n",
+   "ops": [
+    [
+     "duplicate",
+     [
+      [
+       2
+      ]
+     ]
+    ]
+   ],
+   "out": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <g id=\"grp1\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c2\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n"
+  },
+  {
+   "src": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n",
+   "ops": [
+    [
+     "reorder",
+     [
+      1
+     ],
+     "front"
+    ]
+   ],
+   "out": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n</svg>\n"
+  },
+  {
+   "src": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n",
+   "ops": [
+    [
+     "reorder",
+     [
+      1
+     ],
+     "forward"
+    ]
+   ],
+   "out": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n"
+  },
+  {
+   "src": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n",
+   "ops": [
+    [
+     "reorder",
+     [
+      4
+     ],
+     "back"
+    ]
+   ],
+   "out": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n</svg>\n"
+  },
+  {
+   "src": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n",
+   "ops": [
+    [
+     "reorder",
+     [
+      0
+     ],
+     "backward"
+    ]
+   ],
+   "out": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n"
+  },
+  {
+   "src": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n",
+   "ops": [
+    [
+     "group",
+     [
+      [
+       1
+      ],
+      [
+       3
+      ]
+     ]
+    ]
+   ],
+   "out": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <g id=\"group1\">\n    <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n    <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  </g>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n"
+  },
+  {
+   "src": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n",
+   "ops": [
+    [
+     "group",
+     [
+      [
+       1
+      ],
+      [
+       2,
+       0
+      ]
+     ]
+    ]
+   ],
+   "out": "error: Pick things that sit in the same group."
+  },
+  {
+   "src": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n",
+   "ops": [
+    [
+     "ungroup",
+     [
+      2
+     ]
+    ]
+   ],
+   "out": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <circle id=\"c1\" cx=\"110\" cy=\"10\" r=\"5\" fill=\"blue\" opacity=\"0.5\"/>\n  <path d=\"M100 0 L110 10\" fill=\"blue\" opacity=\"0.5\"/>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n"
+  },
+  {
+   "src": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n",
+   "ops": [
+    [
+     "ungroup",
+     [
+      1
+     ]
+    ]
+   ],
+   "out": "error: Only a group can be ungrouped."
+  },
+  {
+   "src": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n",
+   "ops": [
+    [
+     "text",
+     [
+      3
+     ],
+     "a<b & c"
+    ]
+   ],
+   "out": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">a&lt;b &amp; c</text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n"
+  },
+  {
+   "src": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n",
+   "ops": [
+    [
+     "text",
+     [
+      1
+     ],
+     "x"
+    ]
+   ],
+   "out": "error: Only text can be typed into."
+  },
+  {
+   "src": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n",
+   "ops": [
+    [
+     "attr",
+     [
+      2,
+      1
+     ],
+     "d",
+     "M1 1 L2 2"
+    ]
+   ],
+   "out": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M1 1 L2 2\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n"
+  },
+  {
+   "src": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n",
+   "ops": [
+    [
+     "transform",
+     [
+      [
+       1
+      ]
+     ],
+     [
+      0,
+      1,
+      -1,
+      0,
+      0,
+      0
+     ]
+    ]
+   ],
+   "out": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\" transform=\"matrix(0 1 -1 0 0 0)\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n"
+  },
+  {
+   "src": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n",
+   "ops": [
+    [
+     "add",
+     "rect",
+     [
+      1,
+      2,
+      11,
+      22
+     ],
+     [
+      [
+       "fill",
+       "red"
+      ]
+     ],
+     []
+    ]
+   ],
+   "out": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n  <rect id=\"rect1\" x=\"1\" y=\"2\" width=\"10\" height=\"20\" style=\"fill:red\"/>\n</svg>\n"
+  },
+  {
+   "src": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n",
+   "ops": [
+    [
+     "add",
+     "line",
+     [
+      0,
+      0,
+      10,
+      10
+     ],
+     [],
+     [
+      4
+     ]
+    ]
+   ],
+   "out": "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n    <line id=\"line1\" x1=\"0\" y1=\"0\" x2=\"10\" y2=\"10\"/>\n  </g>\n</svg>\n"
+  },
+  {
+   "src": "<svg xmlns=\"http://www.w3.org/2000/svg\">\n</svg>\n",
+   "ops": [
+    [
+     "add",
+     "ellipse",
+     [
+      0,
+      0,
+      10,
+      20
+     ],
+     [
+      [
+       "fill",
+       "#123456"
+      ]
+     ],
+     []
+    ],
+    [
+     "add",
+     "line",
+     [
+      0,
+      0,
+      10,
+      20
+     ],
+     [],
+     []
+    ]
+   ],
+   "out": "<svg xmlns=\"http://www.w3.org/2000/svg\">\n  <ellipse id=\"ellipse1\" cx=\"5\" cy=\"10\" rx=\"5\" ry=\"10\" style=\"fill:#123456\"/>\n  <line id=\"line1\" x1=\"0\" y1=\"0\" x2=\"10\" y2=\"20\"/>\n</svg>\n"
+  },
+  {
+   "src": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><rect x=\"1\" y=\"1\" width=\"2\" height=\"2\"/></svg>",
+   "ops": [
+    [
+     "add",
+     "rect",
+     [
+      5,
+      5,
+      6,
+      6
+     ],
+     [],
+     []
+    ]
+   ],
+   "out": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><rect x=\"1\" y=\"1\" width=\"2\" height=\"2\"/><rect id=\"rect1\" x=\"5\" y=\"5\" width=\"1\" height=\"1\"/></svg>"
+  },
+  {
+   "src": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><rect x=\"1\" y=\"1\" width=\"2\" height=\"2\"/></svg>",
+   "ops": [
+    [
+     "delete",
+     [
+      [
+       0
+      ]
+     ]
+    ]
+   ],
+   "out": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"></svg>"
+  },
+  {
+   "src": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><rect x=\"1\" y=\"1\" width=\"2\" height=\"2\"/></svg>",
+   "ops": [
+    [
+     "delete",
+     [
+      []
+     ]
+    ]
+   ],
+   "out": "error: The drawing itself can't be changed this way."
+  },
+  {
+   "src": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><rect x=\"1\" y=\"1\" width=\"2\" height=\"2\"/></svg>",
+   "ops": [
+    [
+     "move",
+     [],
+     1,
+     1
+    ]
+   ],
+   "out": "error: Nothing is selected."
+  },
+  {
+   "src": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><rect x=\"1\" y=\"1\" width=\"2\" height=\"2\"/></svg>",
+   "ops": [
+    [
+     "move",
+     [
+      [
+       7
+      ]
+     ],
+     1,
+     1
+    ]
+   ],
+   "out": "error: That part of the drawing isn't there any more."
+  }
+ ],
+ "hits": [
+  [
+   20,
+   20,
+   [],
+   0,
+   [
+    1
+   ]
+  ],
+  [
+   105,
+   8,
+   [],
+   0,
+   [
+    2
+   ]
+  ],
+  [
+   105,
+   8,
+   [
+    2
+   ],
+   0,
+   [
+    2,
+    1
+   ]
+  ],
+  [
+   205,
+   155,
+   [],
+   0,
+   [
+    4,
+    1
+   ]
+  ],
+  [
+   399,
+   1,
+   [],
+   0,
+   null
+  ],
+  [
+   62,
+   31,
+   [],
+   0,
+   null
+  ],
+  [
+   62,
+   31,
+   [],
+   3,
+   [
+    1
+   ]
+  ]
+ ],
+ "in_box": [
+  [
+   [
+    0,
+    0,
+    120,
+    40
+   ],
+   [],
+   [
+    [
+     1
+    ],
+    [
+     2
+    ]
+   ]
+  ],
+  [
+   [
+    0,
+    0,
+    400,
+    200
+   ],
+   [],
+   [
+    [
+     1
+    ],
+    [
+     2
+    ],
+    [
+     3
+    ],
+    [
+     4,
+     0
+    ],
+    [
+     4,
+     1
+    ],
+    [
+     4,
+     2
+    ],
+    [
+     4,
+     3
+    ]
+   ]
+  ],
+  [
+   [
+    0,
+    0,
+    400,
+    200
+   ],
+   [
+    4
+   ],
+   [
+    [
+     4,
+     0
+    ],
+    [
+     4,
+     1
+    ],
+    [
+     4,
+     2
+    ],
+    [
+     4,
+     3
+    ]
+   ]
+  ]
+ ],
+ "canvases": [
+  [
+   "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"200\" height=\"100\" viewBox=\"0 0 400 200\">\n  <!-- a comment that must survive -->\n  <defs><linearGradient id=\"g1\"/></defs>\n  <rect id=\"r1\" x=\"10\" y=\"10\" width=\"50\" height=\"20\" rx=\"4\" style=\"fill:red;stroke:#000\"/>\n  <g id=\"grp\" transform=\"translate(100 0)\" fill=\"blue\" opacity=\"0.5\">\n    <circle id=\"c1\" cx=\"10\" cy=\"10\" r=\"5\"/>\n    <path d=\"M0 0 L10 10\"/>\n  </g>\n  <text id=\"t1\" x=\"5\" y=\"90\" font-size=\"20\">Hi <tspan>there</tspan></text>\n  <g id=\"layer1\" inkscape:groupmode=\"layer\" inkscape:label=\"Layer 1\">\n    <ellipse id=\"e1\" cx=\"300\" cy=\"100\" rx=\"20\" ry=\"10\" transform=\"rotate(30 300 100)\"/>\n    <polygon points=\"200,150 220,150 210,170\" fill=\"green\"/>\n    <line x1=\"0\" y1=\"190\" x2=\"50\" y2=\"195\" stroke=\"black\"/>\n    <use href=\"#r1\" x=\"0\" y=\"100\"/>\n  </g>\n</svg>\n",
+   200.0,
+   100.0,
+   [
+    0.0,
+    0.0,
+    400.0,
+    200.0
+   ]
+  ],
+  [
+   "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><rect x=\"1\" y=\"1\" width=\"2\" height=\"2\"/></svg>",
+   100.0,
+   100.0,
+   [
+    0.0,
+    0.0,
+    100.0,
+    100.0
+   ]
+  ],
+  [
+   "<svg xmlns=\"http://www.w3.org/2000/svg\">\n</svg>\n",
+   300.0,
+   150.0,
+   [
+    0,
+    0,
+    300.0,
+    150.0
+   ]
+  ],
+  [
+   "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"50\" viewBox=\"0 0 100 50\"/>",
+   50.0,
+   25.0,
+   [
+    0.0,
+    0.0,
+    100.0,
+    50.0
+   ]
+  ],
+  [
+   "<svg xmlns=\"http://www.w3.org/2000/svg\" height=\"10px\" viewBox=\"0 0 100 50\"/>",
+   20.0,
+   10.0,
+   [
+    0.0,
+    0.0,
+    100.0,
+    50.0
+   ]
+  ],
+  [
+   "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"12\" height=\"34\"/>",
+   12.0,
+   34.0,
+   [
+    0,
+    0,
+    12.0,
+    34.0
+   ]
+  ],
+  [
+   "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"5cm\" viewBox=\"0 0 0 10\"/>",
+   300.0,
+   150.0,
+   [
+    0,
+    0,
+    300.0,
+    150.0
+   ]
+  ]
+ ],
+ "style_get": [
+  [
+   "<rect fill=\"red\" style=\"fill: blue ; stroke:green\"/>",
+   "fill",
+   "blue"
+  ],
+  [
+   "<rect fill=\"red\" style=\"stroke:green\"/>",
+   "fill",
+   "red"
+  ],
+  [
+   "<rect style=\"stroke:green\"/>",
+   "opacity",
+   null
+  ],
+  [
+   "<rect style=\";;bad;x:1\"/>",
+   "x",
+   "1"
+  ]
+ ],
+ "style_set": [
+  [
+   "<rect fill=\"red\" style=\"fill: blue ; stroke:green\"/>",
+   "fill",
+   "#fff",
+   "<rect style=\"fill:#fff;stroke:green\"/>"
+  ],
+  [
+   "<rect fill=\"red\" style=\"stroke:green\"/>",
+   "fill",
+   "#fff",
+   "<rect fill=\"#fff\" style=\"stroke:green\"/>"
+  ],
+  [
+   "<rect style=\"stroke:green\"/>",
+   "fill",
+   "#fff",
+   "<rect style=\"stroke:green;fill:#fff\"/>"
+  ],
+  [
+   "<rect/>",
+   "fill",
+   "#fff",
+   "<rect fill=\"#fff\"/>"
+  ],
+  [
+   "<rect fill=\"red\" style=\"fill:blue\"/>",
+   "fill",
+   null,
+   "<rect/>"
+  ],
+  [
+   "<rect style=\"fill:blue\"/>",
+   "fill",
+   null,
+   "<rect/>"
+  ]
+ ],
+ "new_text": [
+  [
+   210,
+   297,
+   "mm",
+   "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"210mm\" height=\"297mm\" viewBox=\"0 0 210 297\">\n</svg>\n"
+  ],
+  [
+   1920,
+   1080,
+   "px",
+   "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1920\" height=\"1080\" viewBox=\"0 0 1920 1080\">\n</svg>\n"
+  ],
+  [
+   0.5,
+   2.25,
+   "in",
+   "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"0.5in\" height=\"2.25in\" viewBox=\"0 0 0.5 2.25\">\n</svg>\n"
+  ]
+ ],
+ "open_bad": [
+  [
+   "",
+   "This isn't a readable SVG file: No root element."
+  ],
+  [
+   "\u0000\u0001binary",
+   "This file isn't text, so it can't be an SVG drawing."
+  ],
+  [
+   "<html/>",
+   "This XML file isn't an SVG drawing."
+  ],
+  [
+   "<svg>",
+   "This isn't a readable SVG file: <svg> is never closed."
+  ],
+  [
+   "\u001f\u008bnot gzip",
+   "This compressed SVG (.svgz) is damaged."
+  ]
+ ],
+ "svgz": {
+  "latin1": "\u001f\u008b\b\u0000\u0000\u0000\u0000\u0000\u0002\u00ff\u001d\u008cK\n\u00800\fD\u00af\u0012r\u0000\u0013\u00ebN\u00da.\u00bc\u008a\u0096\u00b6\u00e0\u000f\r\u00a6\u00de\u00de\u00da\u00c5\f\u008f\u00e11\u00f6~\"\u0094m\u00ddo\u0087I\u00e4\u001c\u0089T\u00b5\u00d3\u00a1;\u00aeH\u0086\u0099\u00a9\u001a\bO\u000e:\u001d\u00c5!\u0003C\u00cf-\u00e8\u00ed\u0015f\u0081\u00ba\u00f6\bok\u00cd\u008b$\u0087\u0006!\u0085\u001c\u0093\u00fcH\u00de\u00fe'\u00fe\u0003\u0089\u00f9Srl\u0000\u0000\u0000",
+  "text": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><rect x=\"1\" y=\"1\" width=\"2\" height=\"2\"/></svg>"
+ }
 }

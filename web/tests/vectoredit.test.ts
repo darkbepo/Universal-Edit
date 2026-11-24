@@ -94,3 +94,147 @@ describe("geometry", () => {
     expect(close([b.x0, b.y0, b.x1, b.y1], [-20, 0, 0, 10])).toBe(true);
   });
 });
+
+// ------------------------------------------------------------------ step 2: shapes, edits, io
+
+import * as vdoc from "../src/vectoredit/doc";
+import { History } from "../src/vectoredit/history";
+import * as vio from "../src/vectoredit/io";
+import * as shapes from "../src/vectoredit/shapes";
+import { gunzipSync } from "fflate";
+
+const DRAWING: string = cases.edits[0].src;
+const latin1 = (s: string) => Uint8Array.from(s, (c) => c.charCodeAt(0));
+const utf8 = (s: string) => new TextEncoder().encode(s);
+const text = (b: Uint8Array) => new TextDecoder().decode(b);
+
+function runOps(src: string, ops: any[]): string {
+  let d = vdoc.parse(src);
+  try {
+    for (const [name, ...a] of ops) {
+      if (name === "move") d = vdoc.move(d, a[0], a[1], a[2]);
+      else if (name === "resize") d = vdoc.resize(d, a[0], new Box(a[1][0], a[1][1], a[1][2], a[1][3]));
+      else if (name === "style") d = vdoc.setStyle(d, a[0], a[1], a[2]);
+      else if (name === "hide") d = vdoc.setHidden(d, a[0], a[1]);
+      else if (name === "rename") d = vdoc.rename(d, a[0], a[1]);
+      else if (name === "delete") d = vdoc.remove(d, a[0]);
+      else if (name === "duplicate") d = vdoc.duplicate(d, a[0])[0];
+      else if (name === "reorder") d = vdoc.reorder(d, a[0], a[1])[0];
+      else if (name === "group") d = vdoc.group(d, a[0])[0];
+      else if (name === "ungroup") d = vdoc.ungroup(d, a[0])[0];
+      else if (name === "text") d = vdoc.setText(d, a[0], a[1]);
+      else if (name === "attr") d = vdoc.setAttr(d, a[0], a[1], a[2]);
+      else if (name === "transform") d = vdoc.transform(d, a[0], new Matrix(...(a[1] as [number, number, number, number, number, number])));
+      else if (name === "add") {
+        const el = vdoc.newShape(a[0], new Box(a[1][0], a[1][1], a[1][2], a[1][3]), a[2], vdoc.ids(d));
+        d = vdoc.add(d, el, a[3])[0];
+      } else throw new Error(name);
+    }
+  } catch (e) {
+    if (e instanceof vdoc.VectorError) return "error: " + e.message;
+    throw e;
+  }
+  return vdoc.write(d);
+}
+
+const boxList = (b: Box | null) => (b === null ? null : [b.x0, b.y0, b.x1, b.y1]);
+
+describe("vector document", () => {
+  it("lists items with their bounds", () => {
+    const d = vdoc.parse(DRAWING);
+    const got = vdoc.items(d);
+    expect(got.length).toBe(cases.items.length);
+    got.forEach((item, i) => {
+      const want = cases.items[i];
+      expect([item.path, item.kind, item.name, item.depth, item.hidden, item.container]).toEqual([
+        want.path, want.kind, want.name, want.depth, want.hidden, want.container,
+      ]);
+      expect(close(boxList(vdoc.bounds(d, item.path)), want.bounds)).toBe(true);
+    });
+  });
+
+  it.each((cases.edits as any[]).map((c, i) => [i, c]))("edit %i", (_i, c) => {
+    expect(runOps(c.src, c.ops)).toBe(c.out);
+  });
+
+  it("hits and rubber bands", () => {
+    const d = vdoc.parse(DRAWING);
+    for (const [x, y, inside, pad, want] of cases.hits) expect(vdoc.hit(d, x, y, inside, pad)).toEqual(want);
+    for (const [b, inside, want] of cases.in_box) {
+      expect(vdoc.inBox(d, new Box(b[0], b[1], b[2], b[3]), inside)).toEqual(want);
+    }
+  });
+
+  it.each((cases.canvases as any[]).map((c, i) => [i, c]))("canvas %i", (_i, [src, w, h, view]) => {
+    const [gw, gh, gv] = vdoc.canvas(vdoc.parse(src));
+    expect(close([gw, gh, gv.x0, gv.y0, gv.x1, gv.y1], [w, h, ...view])).toBe(true);
+  });
+
+  it("reads and writes styles", () => {
+    for (const [src, name, want] of cases.style_get) expect(shapes.styleGet(xmlsrc.parse(src).root, name)).toBe(want);
+    for (const [src, name, value, want] of cases.style_set) {
+      expect(xmlsrc.writeNode(shapes.styleSet(xmlsrc.parse(src).root, name, value))).toBe(want);
+    }
+  });
+
+  it("opens and saves files", () => {
+    for (const [w, h, unit, want] of cases.new_text) {
+      expect(vio.newText(w, h, unit)).toBe(want);
+      const opened = vio.newDocument(w, h, unit);
+      expect(text(vio.toBytes(opened, opened.doc))).toBe(want);
+    }
+    for (const [data, message] of cases.open_bad) {
+      expect(() => vio.openBytes(latin1(data))).toThrow(message);
+    }
+    const gz = latin1(cases.svgz.latin1);
+    const opened = vio.openBytes(gz);
+    expect(opened.gz).toBe(true);
+    expect(vdoc.write(opened.doc)).toBe(cases.svgz.text);
+    expect(vio.toBytes(opened, opened.doc)).toBe(opened.data);
+    const moved = vdoc.move(opened.doc, [[0]], 1, 0);
+    expect(text(gunzipSync(vio.toBytes(opened, moved)))).toContain('x="2"');
+  });
+
+  it("keeps encodings, BOMs and line endings", () => {
+    const body = utf8(DRAWING.replaceAll("\n", "\r\n"));
+    const data = new Uint8Array([0xef, 0xbb, 0xbf, ...body]);
+    const opened = vio.openBytes(data);
+    expect(vio.toBytes(opened, opened.doc)).toBe(data);
+    const out = vio.toBytes(opened, vdoc.move(opened.doc, [[1]], 1, 0));
+    expect([...out.subarray(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
+    expect(text(out)).toContain("\r\n");
+    expect(text(out)).toContain('x="11"');
+    const cp = latin1('<svg xmlns="http://www.w3.org/2000/svg"><text>caf\xe9</text></svg>');
+    const latin = vio.openBytes(cp);
+    const snow = vdoc.setText(latin.doc, [0], "☃");
+    expect(() => vio.toBytes(latin, snow)).toThrow("encoding");
+    expect(text(vio.toBytes(latin, snow, true))).toContain("☃");
+  });
+
+  it("merges history steps and tracks saving", () => {
+    const d0 = vdoc.parse(DRAWING);
+    const h = new History(d0);
+    expect(h.dirty).toBe(false);
+    const d1 = vdoc.move(d0, [[1]], 1, 0);
+    h.push(d1, "Move", "nudge");
+    h.push(vdoc.move(d1, [[1]], 1, 0), "Move", "nudge");
+    expect(h.dirty && h.canUndo).toBe(true);
+    expect(h.undo()).toBe("Move");
+    expect(h.doc).toBe(d0);
+    expect(h.dirty).toBe(false);
+    expect(h.redo()).toBe("Move");
+    expect(vdoc.write(h.doc)).toContain('x="12"');
+    h.markSaved();
+    expect(h.dirty).toBe(false);
+    h.push(h.doc, "Nothing");
+    expect(h.version).toBe(4);
+  });
+});
+
+describe("vector files", () => {
+  it("stops unpacking an oversized .svgz", async () => {
+    const { gzipSync } = await import("fflate");
+    const bomb = gzipSync(new Uint8Array(vio.MAX_OPEN_BYTES + 10));
+    expect(() => vio.openBytes(bomb)).toThrow("too big");
+  });
+});
