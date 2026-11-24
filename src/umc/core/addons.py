@@ -103,6 +103,13 @@ ADDONS: dict[str, Addon] = {
         packages=(),
         entry="umc.gui.dataeditor.data_editor_page",
     ),
+    "vector": Addon(
+        "vector",
+        "Vector editor",
+        modules=("umc.gui.vectoreditor",),  # the Qt-free model umc.vectoredit stays in the app
+        packages=(),
+        entry="umc.gui.vectoreditor.vector_editor_page",
+    ),
 }
 
 _activated: set[str] = set()

@@ -357,6 +357,69 @@ def step2(cases: dict) -> None:
     cases["open_bad"] = bad
     gz = gzip.compress(SIMPLE.encode(), mtime=0)
     cases["svgz"] = {"latin1": gz.decode("latin-1"), "text": SIMPLE}
+    step3(cases)
+
+
+NODE_PATHS = [
+    "M0 0 L10 0 C10 5 5 10 0 10 Z",
+    "M0 0 Q5 10 10 0 L20 0",
+    "M0 0 A5 5 0 0 1 10 0",
+    "M0 0 L1 1 M5 5 L6 6",
+]
+TO_PATH = [
+    '<rect x="1" y="2" width="10" height="20" id="a" fill="red"/>',
+    '<rect x="0" y="0" width="10" height="20" rx="2"/>',
+    '<rect x="0" y="0" width="10" height="20" ry="30"/>',
+    '<circle cx="5" cy="5" r="5" style="fill:blue"/>',
+    '<ellipse cx="5" cy="5" rx="5" ry="2"><title>x</title></ellipse>',
+    '<line x1="0" y1="0" x2="3" y2="4"/>',
+    '<polyline points="0,0 1,0 1,1"/>',
+    '<polygon points="0,0 1,0 1,1"/>',
+    '<svg:rect x="0" y="0" width="1" height="1"/>',
+    '<path d="M0 0"/>',
+    "<text>a</text>",
+    '<rect width="0" height="1"/>',
+]
+COPY_SRC = '<svg xmlns="http://www.w3.org/2000/svg">\n  <g transform="translate(5 5)"><rect id="r1" x="0" y="0" width="1" height="1"/></g>\n</svg>\n'
+
+
+def seg_list(segs):
+    return [list(s) for s in segs]
+
+
+def step3(cases: dict) -> None:
+    nodes = []
+    for d in NODE_PATHS:
+        segs = pathdata.parse(d)
+        pts = pathdata.points(segs)
+        entry = {"d": d, "points": [list(p) for p in pts], "moved": [], "deleted": [], "split": []}
+        for i, slot, x, y in pts:
+            entry["moved"].append(pathdata.write(pathdata.move_point(segs, i, slot, x + 1, y - 2)))
+        for i, s in enumerate(segs):
+            if s[0] != "Z":
+                entry["deleted"].append(pathdata.write(pathdata.delete_point(segs, i)))
+            if s[0] not in ("M", "Z"):
+                entry["split"].append(pathdata.write(pathdata.split(segs, i)))
+        nodes.append(entry)
+    cases["nodes"] = nodes
+    out = []
+    for src in TO_PATH:
+        r = shapes.to_path(xmlsrc.parse(src).root)
+        out.append([src, None if r is None else xmlsrc.write_node(r)])
+    cases["to_path"] = out
+    d = vdoc.parse(COPY_SRC)
+    text = vdoc.copy_text(d, [(0, 0)])
+    d2, ps = vdoc.paste_text(d, text, 10, 0)
+    d3, ps3 = vdoc.paste_text(d2, DRAWING, 0, 0, (0,))
+    cases["copy"] = {
+        "src": COPY_SRC,
+        "text": text,
+        "pasted": vdoc.write(d2),
+        "paths": [list(p) for p in ps],
+        "drawing_into_group": vdoc.write(d3),
+        "drawing_paths": [list(p) for p in ps3],
+        "to_path_doc": vdoc.write(vdoc.to_path(vdoc.parse(DRAWING), [(1,), (2,), (4, 1)])),
+    }
 
 
 def main() -> None:

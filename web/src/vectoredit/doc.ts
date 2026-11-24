@@ -3,6 +3,7 @@
 // root); every edit returns a new document and only the changed elements lose their source text.
 
 import { Box, IDENTITY, Matrix, num, scale, translate } from "./geom";
+import * as pathdata from "./pathdata";
 import * as shapes from "./shapes";
 import { CONTAINERS, HIDDEN, SHAPES, kind, trim } from "./shapes";
 import * as xmlsrc from "./xmlsrc";
@@ -471,4 +472,47 @@ export function newShape(kindIn: "rect" | "ellipse" | "line", box: Box, style: s
   const attrs: xmlsrc.Attr[] = [["id", ident], ...geo.map(([k, v]): xmlsrc.Attr => [k, num(v)])];
   if (style.length) attrs.push(["style", shapes.writeStyle(style)]);
   return xmlsrc.element(kindIn, attrs);
+}
+
+/** Turn simple shapes into paths (so their points can be moved); others are left. */
+export function toPath(docIn: VectorDoc, paths: Path[]): VectorDoc {
+  let doc = docIn;
+  for (const p of check(doc, paths)) {
+    const neu = shapes.toPath(get(doc, p));
+    if (neu !== null) doc = replaceAt(doc, p, neu);
+  }
+  return doc;
+}
+
+/** A path's points changed by the Node tool. */
+export function setPath(doc: VectorDoc, path: Path, segs: pathdata.Seg[]): VectorDoc {
+  const el = get(doc, path);
+  if (kind(el) !== "path") throw new VectorError("Only paths have points to move.");
+  return replaceAt(doc, path, el.set("d", pathdata.write(segs)));
+}
+
+export const SVG_NS = "http://www.w3.org/2000/svg";
+
+/** The elements as a small SVG file (their groups' transforms applied), for the clipboard. */
+export function copyText(doc: VectorDoc, paths: Path[]): string {
+  const parts = check(doc, paths).map((p) => "  " + xmlsrc.writeNode(shapes.transformed(get(doc, p), parentMatrix(doc, p))));
+  return `<svg xmlns="${SVG_NS}">\n` + parts.join("\n") + "\n</svg>\n";
+}
+
+/** Add the drawable parts of an SVG text on top of `parent`, moved by (dx, dy), with ids that
+ * don't clash. Returns their paths. */
+export function pasteText(docIn: VectorDoc, text: string, dx = 0, dy = 0, parent: Path = []): [VectorDoc, Path[]] {
+  let doc = docIn;
+  const source = parse(text);
+  const taken = ids(doc);
+  const out: Path[] = [];
+  for (const src of source.root.elements) {
+    if (!editable(src)) continue;
+    const el = shapes.transformed(reid(src, taken), translate(dx, dy));
+    const [d, p] = add(doc, el, parent);
+    doc = d;
+    out.push(p);
+  }
+  if (!out.length) throw new VectorError("There's nothing to paste.");
+  return [doc, out];
 }

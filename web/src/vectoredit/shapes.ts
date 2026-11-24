@@ -3,6 +3,7 @@
 
 import { Box, IDENTITY, Matrix, formatTransform, num, parseTransform } from "./geom";
 import * as pathdata from "./pathdata";
+import * as xmlsrc from "./xmlsrc";
 import type { Element } from "./xmlsrc";
 
 export const SHAPES = ["rect", "circle", "ellipse", "line", "polyline", "polygon", "path", "text", "image", "use"];
@@ -292,4 +293,88 @@ export function transformed(el: Element, m: Matrix): Element {
     }
   }
   return fold(el, m);
+}
+
+/** The outline of a simple shape as path data (absolute), or null if it has no outline. */
+export function pathData(el: Element): string | null {
+  const k = kind(el);
+  if (k === "path") return el.get("d") || "";
+  if (k === "rect") {
+    const b = localBounds(el);
+    if (b === null) return null;
+    let rx = length(el.get("rx"));
+    let ry = length(el.get("ry"));
+    rx = rx === null ? ry : rx;
+    ry = ry === null ? rx : ry;
+    const rrx = Math.min(Math.max(rx || 0, 0), b.width / 2);
+    const rry = Math.min(Math.max(ry || 0, 0), b.height / 2);
+    let segs: pathdata.Seg[];
+    if (rrx === 0 || rry === 0) {
+      segs = [["M", b.x0, b.y0], ["L", b.x1, b.y0], ["L", b.x1, b.y1], ["L", b.x0, b.y1], ["Z"]];
+    } else {
+      const arc = (x: number, y: number): pathdata.Seg => ["A", rrx, rry, 0, 0, 1, x, y];
+      segs = [
+        ["M", b.x0 + rrx, b.y0], ["L", b.x1 - rrx, b.y0], arc(b.x1, b.y0 + rry),
+        ["L", b.x1, b.y1 - rry], arc(b.x1 - rrx, b.y1), ["L", b.x0 + rrx, b.y1],
+        arc(b.x0, b.y1 - rry), ["L", b.x0, b.y0 + rry], arc(b.x0 + rrx, b.y0), ["Z"],
+      ];
+    }
+    return pathdata.write(segs);
+  }
+  if (k === "circle" || k === "ellipse") {
+    const b = localBounds(el);
+    if (b === null) return null;
+    const rx = b.width / 2;
+    const ry = b.height / 2;
+    const cy = (b.y0 + b.y1) / 2;
+    const arc = (x: number, y: number): pathdata.Seg => ["A", rx, ry, 0, 1, 0, x, y];
+    return pathdata.write([["M", b.x0, cy], arc(b.x1, cy), arc(b.x0, cy), ["Z"]]);
+  }
+  if (k === "line") {
+    const vals = ["x1", "y1", "x2", "y2"].map((a) => length(el.get(a, "0")));
+    if (vals.includes(null)) return null;
+    const v = vals as number[];
+    return pathdata.write([["M", v[0], v[1]], ["L", v[2], v[3]]]);
+  }
+  if (k === "polyline" || k === "polygon") {
+    const pts = points(el);
+    if (!pts.length) return null;
+    const segs: pathdata.Seg[] = [["M", ...pts[0]], ...pts.slice(1).map((p): pathdata.Seg => ["L", ...p])];
+    if (k === "polygon") segs.push(["Z"]);
+    return pathdata.write(segs);
+  }
+  return null;
+}
+
+export const GEOMETRY: Record<string, string[]> = {
+  rect: ["x", "y", "width", "height", "rx", "ry"],
+  circle: ["cx", "cy", "r"],
+  ellipse: ["cx", "cy", "rx", "ry"],
+  line: ["x1", "y1", "x2", "y2"],
+  polyline: ["points"],
+  polygon: ["points"],
+};
+
+/** The same shape as a `<path>` (its other attributes kept, in order), or null. */
+export function toPath(el: Element): Element | null {
+  const k = kind(el);
+  if (k === "path") return el;
+  const d = pathData(el);
+  if (d === null) return null;
+  const prefix = el.name.slice(0, el.name.length - k.length);
+  const drop = GEOMETRY[k];
+  const attrs: xmlsrc.Attr[] = [];
+  let placed = false;
+  for (const [name, value] of el.attrs) {
+    if (drop.includes(name)) {
+      if (!placed) {
+        attrs.push(["d", d]);
+        placed = true;
+      }
+      continue;
+    }
+    attrs.push([name, value]);
+  }
+  if (!placed) attrs.push(["d", d]);
+  return xmlsrc.element(prefix + "path", attrs, [...el.children]);
 }

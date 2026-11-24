@@ -14,7 +14,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from umc.vectoredit import shapes, xmlsrc
+from umc.vectoredit import pathdata, shapes, xmlsrc
 from umc.vectoredit.geom import IDENTITY, Box, Matrix, num, scale, translate
 from umc.vectoredit.shapes import CONTAINERS, HIDDEN, SHAPES, kind
 from umc.vectoredit.xmlsrc import Element, Node, Text
@@ -519,3 +519,51 @@ def new_shape(kind_: str, box: Box, style: list[tuple[str, str]], taken: set[str
     if style:
         attrs.append(("style", shapes.write_style(style)))
     return xmlsrc.element(kind_, attrs)
+
+
+def to_path(doc: VectorDoc, paths: list[Path]) -> VectorDoc:
+    """Turn simple shapes into paths (so their points can be moved); others are left."""
+    for p in _check(doc, paths):
+        new = shapes.to_path(get(doc, p))
+        if new is not None:
+            doc = replace_at(doc, p, new)
+    return doc
+
+
+def set_path(doc: VectorDoc, path: Path, segs: list) -> VectorDoc:
+    """A path's points changed by the Node tool (``segs`` as pathdata parses them)."""
+    el = get(doc, path)
+    if kind(el) != "path":
+        raise VectorError("Only paths have points to move.")
+    return replace_at(doc, path, el.set("d", pathdata.write(segs)))
+
+
+SVG_NS = "http://www.w3.org/2000/svg"
+
+
+def copy_text(doc: VectorDoc, paths: list[Path]) -> str:
+    """The elements as a small SVG file (their groups' transforms applied), for the clipboard."""
+    parts = []
+    for p in _check(doc, paths):
+        el = shapes.transformed(get(doc, p), parent_matrix(doc, p))
+        parts.append("  " + xmlsrc.write_node(el))
+    return f'<svg xmlns="{SVG_NS}">\n' + "\n".join(parts) + "\n</svg>\n"
+
+
+def paste_text(
+    doc: VectorDoc, text: str, dx: float = 0.0, dy: float = 0.0, parent: Path = ()
+) -> tuple[VectorDoc, list[Path]]:
+    """Add the drawable parts of an SVG text (what ``copy_text`` made, or any SVG) on top of
+    ``parent``, moved by (dx, dy), with ids that don't clash. Returns their paths."""
+    source = parse(text)
+    taken = ids(doc)
+    out: list[Path] = []
+    for el in source.root.elements:
+        if not editable(el):
+            continue
+        el = shapes.transformed(_reid(el, taken), translate(dx, dy))
+        doc, p = add(doc, el, parent)
+        out.append(p)
+    if not out:
+        raise VectorError("There's nothing to paste.")
+    return doc, out

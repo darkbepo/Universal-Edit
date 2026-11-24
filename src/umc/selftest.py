@@ -466,6 +466,32 @@ def _subtitle_editor_check(d: Path) -> list[Path]:
     return [f, out]
 
 
+def _vector_editor_check(d: Path) -> list[Path]:
+    """Vector editor: the page loads (add-on, QtSvg), an untouched SVG saves byte for byte, a
+    moved shape is rewritten alone, and the drawing exports to PDF."""
+    import importlib
+
+    from umc.vectoredit import doc as vdoc
+    from umc.vectoredit import export, io
+
+    importlib.import_module("umc.gui.vectoreditor.vector_editor_page")
+    d.mkdir(parents=True, exist_ok=True)
+    data = (
+        b'<?xml version="1.0"?>\n<!-- kept -->\n<svg xmlns="http://www.w3.org/2000/svg" '
+        b'viewBox="0 0 100 50">\n  <rect x="1" y="2" width="30" height="20" fill="red"/>\n</svg>\n'
+    )
+    opened = io.open_bytes(data)
+    if io.to_bytes(opened, opened.doc) != data:
+        raise RuntimeError("saving an untouched SVG changed its bytes")
+    moved = io.to_bytes(opened, vdoc.move(opened.doc, [(0,)], 5, 0))
+    if b'x="6"' not in moved or b"<!-- kept -->" not in moved:
+        raise RuntimeError(f"moving a shape wrote {moved!r}")
+    pdf = export.export_file(vdoc.move(opened.doc, [(0,)], 5, 0), d / "drawing.pdf", "pdf")
+    if not pdf.read_bytes().startswith(b"%PDF"):
+        raise RuntimeError("the exported PDF isn't a PDF")
+    return [pdf]
+
+
 def _data_editor_check(d: Path) -> list[Path]:
     """Data editor: the page loads (add-on), an untouched CSV saves byte for byte, an edited
     workbook still opens in openpyxl with its formula, and YAML reads (PyYAML)."""
@@ -722,6 +748,10 @@ def run(report: Path) -> int:
             (
                 "data editor (CSV byte-exact, XLSX formula kept, YAML)",
                 lambda: _data_editor_check(d / "dataedit"),
+            ),
+            (
+                "vector editor (SVG byte-exact, one shape moved, PDF export)",
+                lambda: _vector_editor_check(d / "vectoredit"),
             ),
             ("music tags: mp3 title / track / cover", lambda: _music_tags_check(d / "music", out)),
             ("video details: mp4 title / date / turn", lambda: _video_details_check(d / "video")),

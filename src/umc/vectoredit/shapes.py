@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 
-from umc.vectoredit import pathdata
+from umc.vectoredit import pathdata, xmlsrc
 from umc.vectoredit.geom import IDENTITY, Box, Matrix, format_transform, num, parse_transform
 from umc.vectoredit.xmlsrc import Element
 
@@ -304,3 +304,86 @@ def transformed(el: Element, m: Matrix) -> Element:
                 x, y = m.apply((xs or [0.0])[0], (ys or [0.0])[0])
                 return _set_nums(el, {"x": x, "y": y})
     return _fold(el, m)
+
+
+def path_data(el: Element) -> str | None:
+    """The outline of a simple shape as path data (absolute), or None if it has no outline."""
+    k = kind(el)
+    if k == "path":
+        return el.get("d") or ""
+    if k == "rect":
+        b = local_bounds(el)
+        if b is None:
+            return None
+        rx, ry = length(el.get("rx")), length(el.get("ry"))
+        rx = ry if rx is None else rx
+        ry = rx if ry is None else ry
+        rx = min(max(rx or 0.0, 0.0), b.width / 2)
+        ry = min(max(ry or 0.0, 0.0), b.height / 2)
+        if rx == 0 or ry == 0:
+            segs = [("M", b.x0, b.y0), ("L", b.x1, b.y0), ("L", b.x1, b.y1), ("L", b.x0, b.y1),
+                    ("Z",)]  # fmt: skip
+        else:
+            arc = ("A", rx, ry, 0.0, 0.0, 1.0)
+            segs = [
+                ("M", b.x0 + rx, b.y0), ("L", b.x1 - rx, b.y0), (*arc, b.x1, b.y0 + ry),
+                ("L", b.x1, b.y1 - ry), (*arc, b.x1 - rx, b.y1), ("L", b.x0 + rx, b.y1),
+                (*arc, b.x0, b.y1 - ry), ("L", b.x0, b.y0 + ry), (*arc, b.x0 + rx, b.y0), ("Z",),
+            ]  # fmt: skip
+        return pathdata.write(segs)
+    if k in ("circle", "ellipse"):
+        b = local_bounds(el)
+        if b is None:
+            return None
+        rx, ry = b.width / 2, b.height / 2
+        cy = (b.y0 + b.y1) / 2
+        arc = ("A", rx, ry, 0.0, 1.0, 0.0)
+        return pathdata.write([("M", b.x0, cy), (*arc, b.x1, cy), (*arc, b.x0, cy), ("Z",)])
+    if k == "line":
+        vals = [length(el.get(a, "0")) for a in ("x1", "y1", "x2", "y2")]
+        if None in vals:
+            return None
+        return pathdata.write([("M", vals[0], vals[1]), ("L", vals[2], vals[3])])  # type: ignore[list-item]
+    if k in ("polyline", "polygon"):
+        pts = _points(el)
+        if not pts:
+            return None
+        segs: list = [("M", *pts[0]), *(("L", *p) for p in pts[1:])]
+        if k == "polygon":
+            segs.append(("Z",))
+        return pathdata.write(segs)
+    return None
+
+
+GEOMETRY = {
+    "rect": ("x", "y", "width", "height", "rx", "ry"),
+    "circle": ("cx", "cy", "r"),
+    "ellipse": ("cx", "cy", "rx", "ry"),
+    "line": ("x1", "y1", "x2", "y2"),
+    "polyline": ("points",),
+    "polygon": ("points",),
+}
+
+
+def to_path(el: Element) -> Element | None:
+    """The same shape as a ``<path>`` (its other attributes kept, in order), or None."""
+    k = kind(el)
+    if k == "path":
+        return el
+    d = path_data(el)
+    if d is None:
+        return None
+    prefix = el.name[: len(el.name) - len(k)]  # "svg:" stays "svg:"
+    drop = GEOMETRY[k]
+    attrs = []
+    placed = False
+    for name, value in el.attrs:
+        if name in drop:
+            if not placed:
+                attrs.append(("d", d))
+                placed = True
+            continue
+        attrs.append((name, value))
+    if not placed:
+        attrs.append(("d", d))
+    return xmlsrc.element(prefix + "path", attrs, el.children)

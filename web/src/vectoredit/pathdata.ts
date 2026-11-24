@@ -328,3 +328,107 @@ export function bounds(segs: Seg[]): Box | null {
 }
 
 export { Matrix };
+
+// ------------------------------------------------------------------------------- nodes
+
+/** A point the Node tool can drag: [segment index, slot, x, y]; slot "end" = the segment's end
+ * point (a node), "c1" / "c2" = a curve's first / second control point (a Q's one is "c1"). */
+export type Point = [number, "end" | "c1" | "c2", number, number];
+
+export function points(segs: Seg[]): Point[] {
+  const out: Point[] = [];
+  segs.forEach((s, i) => {
+    const v = s.slice(1) as number[];
+    if (s[0] === "C") out.push([i, "c1", v[0], v[1]], [i, "c2", v[2], v[3]], [i, "end", v[4], v[5]]);
+    else if (s[0] === "Q") out.push([i, "c1", v[0], v[1]], [i, "end", v[2], v[3]]);
+    else if (s[0] !== "Z") out.push([i, "end", v[v.length - 2], v[v.length - 1]]);
+  });
+  return out;
+}
+
+function withPoint(s: Seg, slot: string, x: number, y: number): Seg {
+  const v = s.slice(1) as number[];
+  if (slot === "end") {
+    v[v.length - 2] = x;
+    v[v.length - 1] = y;
+  } else if (slot === "c1") {
+    v[0] = x;
+    v[1] = y;
+  } else {
+    v[2] = x;
+    v[3] = y;
+  }
+  return [s[0], ...v];
+}
+
+/** `segs` with one point moved; a node takes its two curve handles along. */
+export function movePoint(segs: Seg[], index: number, slot: string, x: number, y: number): Seg[] {
+  const out = [...segs];
+  const s = out[index];
+  if (slot !== "end") {
+    if ((s[0] !== "C" && s[0] !== "Q") || (slot === "c2" && s[0] !== "C")) throw new RangeError("no such handle");
+    out[index] = withPoint(s, slot, x, y);
+    return out;
+  }
+  if (s[0] === "Z") throw new RangeError("no such point");
+  const dx = x - (s[s.length - 2] as number);
+  const dy = y - (s[s.length - 1] as number);
+  out[index] = withPoint(s, "end", x, y);
+  if (s[0] === "C") out[index] = withPoint(out[index], "c2", (s[3] as number) + dx, (s[4] as number) + dy);
+  if (index + 1 < out.length && out[index + 1][0] === "C") {
+    const n = out[index + 1];
+    out[index + 1] = withPoint(n, "c1", (n[1] as number) + dx, (n[2] as number) + dy);
+  }
+  return out;
+}
+
+/** Remove the node that ends segment `index` (see pathdata.py). */
+export function deletePoint(segs: Seg[], index: number): Seg[] {
+  const s = segs[index];
+  if (s[0] === "Z") throw new RangeError("no such point");
+  const out = [...segs];
+  if (s[0] === "M") {
+    const nxt = index + 1;
+    if (nxt < out.length && out[nxt][0] !== "M" && out[nxt][0] !== "Z") {
+      const n = out[nxt];
+      out[nxt] = ["M", n[n.length - 2] as number, n[n.length - 1] as number];
+    }
+  }
+  out.splice(index, 1);
+  const cleaned: Seg[] = [];
+  out.forEach((seg, i) => {
+    if (seg[0] === "M" && (i + 1 >= out.length || out[i + 1][0] === "M" || out[i + 1][0] === "Z")) return;
+    if (seg[0] === "Z" && (!cleaned.length || cleaned[cleaned.length - 1][0] === "M" || cleaned[cleaned.length - 1][0] === "Z")) return;
+    cleaned.push(seg);
+  });
+  return cleaned;
+}
+
+/** Add a node inside segment `index` (at `t`), keeping the curve's shape. */
+export function split(segs: Seg[], index: number, t = 0.5): Seg[] {
+  const s = segs[index];
+  if (s[0] === "M" || s[0] === "Z") throw new RangeError("no segment there");
+  let p: Pos = [0, 0, 0, 0];
+  for (const seg of segs.slice(0, index)) p = advance(seg, p);
+  const [x0, y0] = p;
+  const v = s.slice(1) as number[];
+  const before = segs.slice(0, index);
+  const after = segs.slice(index + 1);
+  if (s[0] === "L") return [...before, ["L", x0 + (v[0] - x0) * t, y0 + (v[1] - y0) * t], s, ...after];
+  if (s[0] === "A") return [...before, ...arcToCubics(x0, y0, v[0], v[1], v[2], v[3], v[4], v[5], v[6]), ...after];
+  const lerp = (u: number[], w: number[]) => [u[0] + (w[0] - u[0]) * t, u[1] + (w[1] - u[1]) * t];
+  if (s[0] === "Q") {
+    const a = lerp([x0, y0], [v[0], v[1]]);
+    const b = lerp([v[0], v[1]], [v[2], v[3]]);
+    const m = lerp(a, b);
+    return [...before, ["Q", ...a, ...m] as Seg, ["Q", ...b, v[2], v[3]] as Seg, ...after];
+  }
+  const q = [[x0, y0], [v[0], v[1]], [v[2], v[3]], [v[4], v[5]]];
+  const a = lerp(q[0], q[1]);
+  const b = lerp(q[1], q[2]);
+  const c = lerp(q[2], q[3]);
+  const d = lerp(a, b);
+  const e = lerp(b, c);
+  const f = lerp(d, e);
+  return [...before, ["C", ...a, ...d, ...f] as Seg, ["C", ...e, ...c, ...q[3]] as Seg, ...after];
+}

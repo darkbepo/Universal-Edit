@@ -238,3 +238,41 @@ describe("vector files", () => {
     expect(() => vio.openBytes(bomb)).toThrow("too big");
   });
 });
+
+describe("nodes, paths and the clipboard", () => {
+  it.each((cases.nodes as any[]).map((c) => [c.d, c]))("%s", (_d, c) => {
+    const segs = pathdata.parse(c.d);
+    const pts = pathdata.points(segs);
+    expect(pts).toEqual(c.points);
+    expect(pts.map(([i, slot, x, y]) => pathdata.write(pathdata.movePoint(segs, i, slot, x + 1, y - 2)))).toEqual(c.moved);
+    const deleted: string[] = [];
+    const splits: string[] = [];
+    segs.forEach((s, i) => {
+      if (s[0] !== "Z") deleted.push(pathdata.write(pathdata.deletePoint(segs, i)));
+      if (s[0] !== "M" && s[0] !== "Z") splits.push(pathdata.write(pathdata.split(segs, i)));
+    });
+    expect(deleted).toEqual(c.deleted);
+    expect(splits).toEqual(c.split);
+  });
+
+  it("turns shapes into paths", () => {
+    for (const [src, want] of cases.to_path) {
+      const r = shapes.toPath(xmlsrc.parse(src).root);
+      expect(r === null ? null : xmlsrc.writeNode(r)).toBe(want);
+    }
+    expect(vdoc.write(vdoc.toPath(vdoc.parse(DRAWING), [[1], [2], [4, 1]]))).toBe(cases.copy.to_path_doc);
+  });
+
+  it("copies and pastes", () => {
+    const c = cases.copy;
+    const d = vdoc.parse(c.src);
+    const text = vdoc.copyText(d, [[0, 0]]);
+    expect(text).toBe(c.text);
+    const [d2, ps] = vdoc.pasteText(d, text, 10, 0);
+    expect(vdoc.write(d2)).toBe(c.pasted);
+    expect(ps).toEqual(c.paths);
+    const [d3, ps3] = vdoc.pasteText(d2, DRAWING, 0, 0, [0]);
+    expect(vdoc.write(d3)).toBe(c.drawing_into_group);
+    expect(ps3).toEqual(c.drawing_paths);
+  });
+});

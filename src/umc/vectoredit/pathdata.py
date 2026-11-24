@@ -295,3 +295,112 @@ def _cubic_points(
 ) -> list[tuple[float, float]]:
     ts = [1.0] + _cubic_extrema(x0, x1, x2, x3) + _cubic_extrema(y0, y1, y2, y3)
     return [(_cubic_at(x0, x1, x2, x3, t), _cubic_at(y0, y1, y2, y3, t)) for t in ts]
+
+
+# ------------------------------------------------------------------------------- nodes
+
+# A point the Node tool can drag: (segment index, slot, x, y); slot "end" = the segment's end
+# point (a node), "c1" / "c2" = a curve's first / second control point (a Q's one is "c1").
+Point = tuple[int, str, float, float]
+
+
+def points(segs: list[Seg]) -> list[Point]:
+    out: list[Point] = []
+    for i, s in enumerate(segs):
+        if s[0] == "C":
+            out += [(i, "c1", s[1], s[2]), (i, "c2", s[3], s[4]), (i, "end", s[5], s[6])]
+        elif s[0] == "Q":
+            out += [(i, "c1", s[1], s[2]), (i, "end", s[3], s[4])]
+        elif s[0] != "Z":
+            out.append((i, "end", s[-2], s[-1]))
+    return out
+
+
+def _with_point(s: Seg, slot: str, x: float, y: float) -> Seg:
+    v = list(s[1:])
+    if slot == "end":
+        v[-2], v[-1] = x, y
+    elif slot == "c1":
+        v[0], v[1] = x, y
+    else:  # c2 (cubics only)
+        v[2], v[3] = x, y
+    return (s[0], *v)
+
+
+def move_point(segs: list[Seg], index: int, slot: str, x: float, y: float) -> list[Seg]:
+    """``segs`` with one point moved. A node takes its two curve handles along (the incoming
+    one on its own segment, the outgoing one on the next), so the curve keeps its shape."""
+    out = list(segs)
+    s = out[index]
+    if slot != "end":
+        if s[0] not in ("C", "Q") or (slot == "c2" and s[0] != "C"):
+            raise ValueError("no such handle")
+        out[index] = _with_point(s, slot, x, y)
+        return out
+    if s[0] == "Z":
+        raise ValueError("no such point")
+    dx, dy = x - s[-2], y - s[-1]
+    out[index] = _with_point(s, "end", x, y)
+    if s[0] == "C":
+        out[index] = _with_point(out[index], "c2", s[3] + dx, s[4] + dy)
+    if index + 1 < len(out) and out[index + 1][0] == "C":
+        n = out[index + 1]
+        out[index + 1] = _with_point(n, "c1", n[1] + dx, n[2] + dy)
+    return out
+
+
+def delete_point(segs: list[Seg], index: int) -> list[Seg]:
+    """Remove the node that ends segment ``index``; the path then goes straight from the node
+    before to the one after (a curve keeps its outgoing handle). Fewer than two nodes left in
+    a part = that part is removed."""
+    s = segs[index]
+    if s[0] == "Z":
+        raise ValueError("no such point")
+    out = list(segs)
+    if s[0] == "M":
+        nxt = index + 1
+        if nxt < len(out) and out[nxt][0] not in ("M", "Z"):
+            out[nxt] = ("M", out[nxt][-2], out[nxt][-1])
+        del out[index]
+    else:
+        del out[index]
+    # drop parts that are only a move (and its Z)
+    cleaned: list[Seg] = []
+    for i, seg in enumerate(out):
+        if seg[0] == "M" and (i + 1 >= len(out) or out[i + 1][0] in ("M", "Z")):
+            continue
+        if seg[0] == "Z" and (not cleaned or cleaned[-1][0] in ("M", "Z")):
+            continue
+        cleaned.append(seg)
+    return cleaned
+
+
+def split(segs: list[Seg], index: int, t: float = 0.5) -> list[Seg]:
+    """Add a node inside segment ``index`` (at ``t``), keeping the curve's shape; an arc is
+    turned into curves first."""
+    s = segs[index]
+    if s[0] in ("M", "Z"):
+        raise ValueError("no segment there")
+    x0 = y0 = sx = sy = 0.0
+    for seg in segs[:index]:
+        x0, y0, sx, sy = _advance(seg, x0, y0, sx, sy)
+    if s[0] == "L":
+        mid = ("L", x0 + (s[1] - x0) * t, y0 + (s[2] - y0) * t)
+        return [*segs[:index], mid, s, *segs[index + 1 :]]
+    if s[0] == "A":
+        return [*segs[:index], *arc_to_cubics(x0, y0, *s[1:]), *segs[index + 1 :]]
+    if s[0] == "Q":
+        (x1, y1), (x2, y2) = (s[1], s[2]), (s[3], s[4])
+        a = (x0 + (x1 - x0) * t, y0 + (y1 - y0) * t)
+        b = (x1 + (x2 - x1) * t, y1 + (y2 - y1) * t)
+        m = (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
+        return [*segs[:index], ("Q", *a, *m), ("Q", *b, x2, y2), *segs[index + 1 :]]
+    p = [(x0, y0), (s[1], s[2]), (s[3], s[4]), (s[5], s[6])]
+
+    def lerp(u, v):
+        return (u[0] + (v[0] - u[0]) * t, u[1] + (v[1] - u[1]) * t)
+
+    a, b, c = lerp(p[0], p[1]), lerp(p[1], p[2]), lerp(p[2], p[3])
+    d, e = lerp(a, b), lerp(b, c)
+    f = lerp(d, e)
+    return [*segs[:index], ("C", *a, *d, *f), ("C", *e, *c, *p[3]), *segs[index + 1 :]]

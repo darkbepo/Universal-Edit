@@ -23,7 +23,7 @@ EDITORS: tuple[EditorInfo, ...] = (
     EditorInfo("document", "Document editor", "Write and format documents", "document", True),
     EditorInfo("code", "Code editor", "Quick edits to code and text files", "code", True),
     EditorInfo("model", "3D viewer", "Look at and measure 3D models", "cube", True),
-    EditorInfo("vector", "Vector editor", "Edit shapes and paths in SVG drawings", "vector", False),
+    EditorInfo("vector", "Vector editor", "Edit shapes and paths in SVG drawings", "vector", True),
     EditorInfo("font", "Font editor", "Change letters, spacing and font names", "font", False),
     EditorInfo("subtitle", "Subtitle editor", "Fix subtitle text and timing", "subtitle", True),
     EditorInfo("data", "Data editor", "Edit CSV, JSON, XML and spreadsheets", "table", True),
@@ -32,7 +32,7 @@ EDITORS: tuple[EditorInfo, ...] = (
 COMING_SOON = "Coming soon"
 
 # Editors the website doesn't have yet: its tile stays "Coming soon" (available false there).
-WEB_LATER: frozenset[str] = frozenset()
+WEB_LATER: frozenset[str] = frozenset({"vector"})
 
 # The data editor (a table): Edit opens these in it first …
 DATA_FIRST: frozenset[str] = frozenset({"csv", "tsv", "xlsx"})
@@ -61,3 +61,7 @@ def hub_tile_width(rows: list[int], width: float, gap: int = TILE_GAP) -> float:
     """Every tile's width: the longest row fills ``width``."""
     most = max(rows, default=1)
     return max(1.0, (width - gap * (most - 1)) / most)
+
+
+# The vector editor opens these (Edit offers the code editor too, under ▾).
+VECTOR_EXTS: frozenset[str] = frozenset({"svg", "svgz"})

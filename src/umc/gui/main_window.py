@@ -191,6 +191,7 @@ class MainWindow(QMainWindow):
         self.code_editor = None  # CodeEditorPage, created on first use
         self.subtitle_editor = None  # SubtitleEditorPage, created on first use
         self.data_editor = None  # DataEditorPage, created on first use
+        self.vector_editor = None  # VectorEditorPage, created on first use
         self._convert_size = None
 
         # ---------------------------------------------------------- body: two columns
@@ -531,6 +532,8 @@ class MainWindow(QMainWindow):
             return "subtitle"
         if self._data_ext() in editors.DATA_FIRST:
             return "data"
+        if len(self.files) == 1 and self.files[0].ext in editors.VECTOR_EXTS:
+            return "vector"
         choices = self._text_edit_choices()
         return choices[0] if choices else None
 
@@ -578,6 +581,8 @@ class MainWindow(QMainWindow):
         if kind in ("code", "document"):
             choices = self._text_edit_choices()
             return [*choices, "data"] if self._data_ext() in editors.DATA_TOO else choices
+        if kind == "vector":
+            return ["vector", *self._text_edit_choices()]  # SVG is text: the code editor too
         if kind == "subtitle" and len(self.files) == 1:
             return ["subtitle", *self._text_edit_choices()]  # the code editor can open it too
         return [kind]
@@ -590,6 +595,7 @@ class MainWindow(QMainWindow):
             "document": "Edit as document",
             "subtitle": "Edit as subtitles",
             "data": "Edit as table",
+            "vector": "Edit as drawing",
         }
         for kind in self.edit_choices():
             menu.addAction(labels.get(kind, kind), lambda k=kind: self.enter_edit(k))
@@ -608,6 +614,8 @@ class MainWindow(QMainWindow):
             tip = "Open the subtitles in the subtitle editor (with the video, if added)"
         elif kind == "data":
             tip = "Open the table in the data editor"
+        elif kind == "vector":
+            tip = "Open the drawing in the vector editor"
         elif kind == "code":
             tip = "Open the files in the code editor"
         elif kind == "document":
@@ -668,6 +676,14 @@ class MainWindow(QMainWindow):
                 self.video_editor.back_requested.connect(self.leave_edit)
                 self.stack.addWidget(self.video_editor)
             return self.video_editor
+        if kind == "vector":
+            if self.vector_editor is None:
+                from umc.gui.vectoreditor.vector_editor_page import VectorEditorPage
+
+                self.vector_editor = VectorEditorPage()
+                self.vector_editor.back_requested.connect(self.leave_edit)
+                self.stack.addWidget(self.vector_editor)
+            return self.vector_editor
         if kind == "data":
             if self.data_editor is None:
                 from umc.gui.dataeditor.data_editor_page import DataEditorPage
@@ -749,6 +765,13 @@ class MainWindow(QMainWindow):
             self._check_mode_button()
             return
         page = self._page(kind)
+        if kind == "vector":
+            if page.open_paths([self.files[0].path]):
+                self._show_page(page)
+                page.canvas.setFocus()
+            else:
+                self._check_mode_button()
+            return
         if kind == "data":
             if page.open_paths([self.files[0].path]):
                 self._show_page(page)
@@ -863,6 +886,13 @@ class MainWindow(QMainWindow):
             page.open_empty()
             self._show_page(page)
             page.view.setFocus()
+            return True
+        if kind == "vector":
+            page = self._page("vector")
+            if not page.open_empty():  # size not chosen, unsaved changes kept, or saving
+                return False
+            self._show_page(page)
+            page.canvas.setFocus()
             return True
         return False  # not available yet
 
@@ -1200,6 +1230,8 @@ class MainWindow(QMainWindow):
             self.subtitle_editor.shutdown()
         if self.data_editor is not None:
             self.data_editor.shutdown()
+        if self.vector_editor is not None:
+            self.vector_editor.shutdown()
         if self.editor is not None:
             self.editor.stop_background_removal()
         if self.viewer3d is not None:

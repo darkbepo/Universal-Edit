@@ -342,6 +342,8 @@ src/umc/
                          #   open/save on a QThread), CueModel, VideoPreview, dialogs
     dataeditor/          # data editor (add-on "data"): DataEditorPage (grid, cell box, sheet
                          #   tabs, open/save on a QThread), SheetModel, shortcuts
+    vectoreditor/        # vector editor (add-on "vector"): VectorEditorPage, VectorCanvas
+                         #   (QSvgRenderer + overlays), LayersPanel, AppearancePanel, shortcuts
     launcher.py          # AppController: converter windows + the viewer; single_instance.py
     quick_convert.py     # the right-click Quick Convert window (queue, format picker)
   editor3d/              # 3D viewer model — mesh.py (load + measurements), camera.py (orbit); no Qt
@@ -352,6 +354,8 @@ src/umc/
   dataedit/              # data editor model (no Qt) — cells.py, csvtext.py, jsontree.py,
                          #   xmltree.py, yamltree.py, xlsx.py, tree.py (table inside a tree),
                          #   table.py (Sheet, edits), history, io
+  vectoredit/            # vector editor model (no Qt) — xmlsrc.py (source-keeping XML), geom.py,
+                         #   pathdata.py, shapes.py, doc.py (VectorDoc + edits), history, io, export
   subedit/               # subtitle editor model (no Qt) — formats.py (Cue, SubDoc, parse /
                          #   write, markup), edits.py, checks.py, history.py, io.py (bytes ↔ doc)
   codeedit/              # code editor model (no Qt) — languages.py (language table → web
@@ -1333,6 +1337,24 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
           the same document, so `History` and `io.to_bytes` compare by identity), `history`
           (merge keys like the data editor), `io` (`codeedit.textfile`; `.svgz` gunzipped in
           pieces with a 20 MB stop, saved gzipped; `new_document(w, h, unit)`).
+       3. ✅ Desktop page (add-on "vector", `gui/vectoreditor/`): `VectorEditorPage` (top bar Open /
+          New… (size presets, `NewDrawingDialog`) / Undo / Redo / ? / Export… / Save as / Save;
+          tool rail; open / save / export on a QThread like the data editor), `VectorCanvas`
+          (QSvgRenderer draws the whole document into a cached image keyed by document identity
+          + view; overlays painted on top; a gesture only previews (`preview` document) and
+          reports the result through `edited`; drags snap to `step()` = 1 at 100 %, 0.1 zoomed
+          in, 10 zoomed out, so files get tidy numbers), `panels.LayersPanel` (QTreeWidget,
+          topmost first, rebuilt only when the parts change) and `AppearancePanel` (fill /
+          outline / width / opacity / position + size / text; all through page methods),
+          `shortcuts.py` (`canvas` keys handled in the page's event filter, so the panel boxes
+          keep theirs). Model additions in both apps (shared cases): `pathdata.points` /
+          `move_point` (a node takes its handles along) / `delete_point` / `split`,
+          `shapes.path_data` / `to_path`, `doc.to_path` / `set_path` / `copy_text` /
+          `paste_text` (clipboard = plain SVG text: Qt owns it, so quitting is safe).
+          `vectoredit/export.py` (desktop) = the vector converter on a temp SVG. Edit: one SVG /
+          SVGZ (`editors.VECTOR_EXTS`; the code editor under ▾); the viewer's Edit too. Tile
+          available on the desktop (`WEB_LATER` keeps the website's "Coming soon" until step 4);
+          installer component + CI add-on list; self-test step "vector editor".
     2. Font editor (`font`): font names / metadata, letter spacing (side bearings, kerning
        pairs), glyph preview; fontTools on the desktop, HarfBuzz / own tables on the web.
     3. ✅ Subtitle editor (`subtitle`, both apps; spec

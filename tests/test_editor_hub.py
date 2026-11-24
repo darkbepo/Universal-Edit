@@ -69,8 +69,10 @@ def test_tiles_shown_until_files_are_added(window, media):
     hub = window.hub
     assert hub.isVisible()
     enabled = [t for t, tile in hub.tiles.items() if tile.isEnabled()]
-    assert enabled == ["image", "video", "audio", "document", "code", "model", "subtitle", "data"]
-    for soon in ("vector", "font"):
+    assert enabled == [
+        "image", "video", "audio", "document", "code", "model", "vector", "subtitle", "data",
+    ]  # fmt: skip
+    for soon in ("font",):
         assert not hub.tiles[soon].isEnabled() and not hub.tiles[soon].badge.isHidden()
     assert hub.tiles["video"].badge.isHidden()
     assert hub.tiles["document"].badge.isHidden()
@@ -320,7 +322,7 @@ def test_coming_soon_badges_are_never_cut_off(qtbot, window, width, font):
     app.setStyleSheet(theme.stylesheet())  # its padding is what made the badge too wide
     try:
         window.resize(width, 900)
-        qtbot.waitUntil(lambda: window.hub.tiles["vector"].width() > 0, timeout=3000)
+        qtbot.waitUntil(lambda: window.hub.tiles["font"].width() > 0, timeout=3000)
         for _ in range(5):
             QApplication.processEvents()
         for tile in window.hub.tiles.values():
@@ -333,10 +335,10 @@ def test_coming_soon_badges_are_never_cut_off(qtbot, window, width, font):
         window.resize(1920, 900)
         for _ in range(5):
             QApplication.processEvents()
-        vector = window.hub.tiles["vector"]
-        room = vector.text_room() - vector.title.sizeHint().width() - vector._head.spacing()
-        if vector.badge_width("Coming soon") <= room:  # the font leaves room for all of it
-            assert vector.badge.isVisible() and vector.badge.text() == "Coming soon"
+        soon = window.hub.tiles["font"]
+        room = soon.text_room() - soon.title.sizeHint().width() - soon._head.spacing()
+        if soon.badge_width("Coming soon") <= room:  # the font leaves room for all of it
+            assert soon.badge.isVisible() and soon.badge.text() == "Coming soon"
     finally:
         app.setStyleSheet(before)
         app.setFont(before_font)

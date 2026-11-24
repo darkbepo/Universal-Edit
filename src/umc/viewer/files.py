@@ -14,7 +14,7 @@ from umc.core.detect import (
     canonical_ext,
     family_of_ext,
 )
-from umc.core.editors import DATA_FIRST, EDITORS, EditorInfo
+from umc.core.editors import DATA_FIRST, EDITORS, VECTOR_EXTS, EditorInfo
 from umc.doceditor.types import EDITABLE_DOCUMENT_EXTS
 
 # View kinds
@@ -121,6 +121,8 @@ def editor_id_for(kind: str, path: Path) -> str | None:
     only Markdown (it has formatting) goes to the document editor."""
     if _ext_of_name(path.name) in DATA_FIRST:
         return "data"
+    if _ext_of_name(path.name) in VECTOR_EXTS:
+        return "vector"
     if kind == TEXT:
         ext = _ext_of_name(path.name)
         if ext in SUBTITLE_EXTS:

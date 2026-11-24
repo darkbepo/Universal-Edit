@@ -252,3 +252,49 @@ def test_oversized_svgz_is_refused():
     bomb = gzip.compress(bytes(io.MAX_OPEN_BYTES + 10))
     with pytest.raises(vdoc.VectorError, match="too big"):
         io.open_bytes(bomb)
+
+
+# ------------------------------------------------------------------ nodes, paths, clipboard
+
+
+@pytest.mark.parametrize("case", CASES["nodes"], ids=lambda c: c["d"])
+def test_nodes(case):
+    segs = pathdata.parse(case["d"])
+    pts = pathdata.points(segs)
+    assert [list(p) for p in pts] == case["points"]
+    moved = [pathdata.write(pathdata.move_point(segs, i, s, x + 1, y - 2)) for i, s, x, y in pts]
+    assert moved == case["moved"]
+    deleted = [
+        pathdata.write(pathdata.delete_point(segs, i)) for i, s in enumerate(segs) if s[0] != "Z"
+    ]
+    assert deleted == case["deleted"]
+    splits = [
+        pathdata.write(pathdata.split(segs, i))
+        for i, s in enumerate(segs)
+        if s[0] not in ("M", "Z")
+    ]
+    assert splits == case["split"]
+    with pytest.raises(ValueError):
+        pathdata.move_point(segs, 0, "c1", 0, 0)
+
+
+def test_shapes_become_paths():
+    for src, want in CASES["to_path"]:
+        r = shapes.to_path(xmlsrc.parse(src).root)
+        assert (None if r is None else xmlsrc.write_node(r)) == want
+    done = vdoc.to_path(vdoc.parse(DRAWING), [(1,), (2,), (4, 1)])
+    assert vdoc.write(done) == CASES["copy"]["to_path_doc"]
+
+
+def test_copy_and_paste():
+    c = CASES["copy"]
+    d = vdoc.parse(c["src"])
+    text = vdoc.copy_text(d, [(0, 0)])
+    assert text == c["text"]
+    d2, ps = vdoc.paste_text(d, text, 10, 0)
+    assert vdoc.write(d2) == c["pasted"] and [list(p) for p in ps] == c["paths"]
+    d3, ps3 = vdoc.paste_text(d2, DRAWING, 0, 0, (0,))
+    assert vdoc.write(d3) == c["drawing_into_group"]
+    assert [list(p) for p in ps3] == c["drawing_paths"]
+    with pytest.raises(vdoc.VectorError, match="nothing to paste"):
+        vdoc.paste_text(d, '<svg xmlns="http://www.w3.org/2000/svg"><defs/></svg>')
