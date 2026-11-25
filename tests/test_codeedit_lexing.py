@@ -94,3 +94,34 @@ def test_every_language_lexes():
     for lang in LANGUAGES:
         spans, state = LineLexer(lang.id).lex("a = 1 // x", 0)
         assert isinstance(spans, list) and isinstance(state, int), lang.id
+
+
+def _colour_lines(language: str, text: str) -> list[list[tuple[str, str]]]:
+    lexer = LineLexer(language)
+    state, out = 0, []
+    for line in text.split("\n"):
+        spans, state = lexer.lex(line, state)
+        out.append([(s.kind, line[s.start : s.start + s.length]) for s in spans])
+    return out
+
+
+def test_script_and_style_blocks_are_coloured_line_by_line():
+    from umc.codeedit.lexing import embedded_language
+
+    lines = _colour_lines(
+        "html",
+        "<script>\n  // note\n  const x = `a\n  b` + 42;\n</script>\n"
+        '<style lang="scss">\n  .a { color: red; }\n</style>\n<!-- <script> -->\n<b>x</b>',
+    )
+    assert lines[1] == [("comment", "// note")]
+    assert ("keyword", "const") in lines[2] and ("string", "`a") in lines[2]
+    assert ("string", "  b`") in lines[3] and ("number", "42") in lines[3]  # still the string
+    assert lines[4] == [("tag", "script")]
+    assert ("function", ".a") in lines[6]
+    assert lines[8] == [("comment", "<!-- <script> -->")]  # a commented-out tag opens nothing
+    assert lines[9] == [("tag", "b"), ("tag", "b")]
+    vue = _colour_lines("vue", '<script setup lang="ts">\nlet n: number = 1\n</script>')
+    assert ("keyword", "let") in vue[1]
+    assert embedded_language("script", ' lang="ts"') == "typescript"
+    assert embedded_language("style", " lang='sass'") == "scss"
+    assert embedded_language("script", ' type="module"') == "javascript"

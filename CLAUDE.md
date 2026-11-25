@@ -1273,9 +1273,11 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
          an edit's re-colouring stops after `CHUNK_LINES` blocks and the timer does the rest;
          text is read with `code_view.raw_text` (`toPlainText()` turns no-break spaces into
          spaces); after saving, the chosen encoding / line endings are kept, not re-guessed;
-         "Don't save" on leaving closes the tabs. Known limit: `<script>` / `<style>` blocks
-         inside HTML / Vue / Svelte aren't coloured (Pygments' HTML lexer pops those states
-         at each line end when lexing line by line).
+         "Don't save" on leaving closes the tabs. `<script>` / `<style>` blocks inside HTML /
+         Vue / Svelte (`lexing.EMBEDS`): Pygments' HTML lexer only colours them when the closing
+         tag is in the same text, so `LineLexer` carries an embedded state (tag, language, that
+         language's own state; `embedded_language` reads `lang="ts"` / `lang="scss"`) and lexes
+         the block with a nested `LineLexer` until the closing tag.
       3. ✅ Website editor (plan `docs/superpowers/plans/2026-11-14-code-editor-step3-web.md`):
          CodeMirror 6 (MIT) in `web/src/ui/codeeditor/` (page, findbar, setup, shortcuts), loaded
          on demand from `ui/app.ts` (`ensureCodeEditor`); one `EditorView`, an `EditorState` per

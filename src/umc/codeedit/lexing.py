@@ -9,6 +9,7 @@ kinds, or any trouble, fall back to lexing the line on its own."""
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
 from dataclasses import dataclass
 
@@ -131,16 +132,39 @@ def _spans(tokens: Iterator[tuple[int, _TokenType, str]] | list, limit: int) -> 
     return spans
 
 
-_ROOT: tuple[tuple[str, ...], bool] = (("root",), False)
+# (Pygments stack, inside a block comment?, embedded block or None); see LineLexer
+_ROOT: tuple = (("root",), False, None)
+# Languages whose <script> / <style> blocks are coloured as JavaScript / CSS line by line:
+# Pygments' HTML lexer only colours them when the closing tag is in the same text.
+EMBEDS = frozenset({"html", "vue", "svelte"})
+_OPEN = re.compile(r"<\s*(script|style)\b([^>]*)>", re.IGNORECASE)
+_CLOSE = {
+    "script": re.compile(r"<\s*/\s*script\s*>", re.IGNORECASE),
+    "style": re.compile(r"<\s*/\s*style\s*>", re.IGNORECASE),
+}
+
+
+def embedded_language(tag: str, attrs: str) -> str:
+    """The language of a <script> / <style> block from its attributes (lang="ts", type=…)."""
+    a = attrs.lower()
+    if tag == "style":
+        return "scss" if re.search(r"lang\s*=\s*[\"']?s[ac]ss", a) else "css"
+    if re.search(r"lang\s*=\s*[\"']?ts|typescript", a):
+        return "typescript"
+    return "javascript"
+
+
 MAX_LINE_CHARS = 5000  # longer lines (minified code) are left uncoloured: lexing them freezes
 
 
 class LineLexer:
     """Lexes one line at a time; ``lex(line, state)`` → (spans, state after the line).
 
-    A state is (Pygments stack, inside a block comment?). The second part exists because many
-    Pygments lexers match a block comment (``/* … */``, ``<!-- … -->``) with one regex, which a
-    single line can't satisfy; the language table's ``block_comment`` marks are followed here."""
+    A state is (Pygments stack, inside a block comment?, embedded block). The second part exists
+    because many Pygments lexers match a block comment (``/* … */``, ``<!-- … -->``) with one
+    regex, which a single line can't satisfy; the language table's ``block_comment`` marks are
+    followed here. The third is (tag, language, that language's state) while inside a
+    ``<script>`` / ``<style>`` block of HTML / Vue / Svelte (``EMBEDS``), else None."""
 
     def __init__(self, language_id: str) -> None:
         lang = next((lang for lang in LANGUAGES if lang.id == language_id), PLAIN)
@@ -153,10 +177,17 @@ class LineLexer:
         self.keeps_state = isinstance(self.lexer, RegexLexer) and not isinstance(
             self.lexer, ExtendedRegexLexer
         )
-        self._states: list[tuple[tuple[str, ...], bool]] = [_ROOT]
-        self._ids: dict[tuple[tuple[str, ...], bool], int] = {_ROOT: 0}
+        self._states: list[tuple] = [_ROOT]
+        self._ids: dict[tuple, int] = {_ROOT: 0}
+        self.embeds = lang.id in EMBEDS
+        self._inner: dict[str, LineLexer] = {}
 
-    def _state_id(self, state: tuple[tuple[str, ...], bool]) -> int:
+    def _inner_lexer(self, language_id: str) -> LineLexer:
+        if language_id not in self._inner:
+            self._inner[language_id] = LineLexer(language_id)
+        return self._inner[language_id]
+
+    def _state_id(self, state: tuple) -> int:
         if state not in self._ids:
             self._ids[state] = len(self._states)
             self._states.append(state)
@@ -196,23 +227,70 @@ class LineLexer:
             return [], 0
         if len(line) > MAX_LINE_CHARS:  # minified files: no colours, state carried as it is
             return [], state
-        stack, in_comment = self._states[state] if 0 <= state < len(self._states) else _ROOT
+        stack, in_comment, embed = self._states[state] if 0 <= state < len(self._states) else _ROOT
+        if embed is not None:
+            tag, language, inner_state = embed
+            inner = self._inner_lexer(language)
+            close = _CLOSE[tag].search(line)
+            if close is None:
+                spans, after = inner.lex(line, inner_state)
+                return spans, self._state_id((("root",), False, (tag, language, after)))
+            head, _after = inner.lex(line[: close.start()], inner_state)
+            tail, tail_state = self._lex_outer(line[close.start() :], ("root",), False)
+            offset = close.start()
+            spans = head + [Span(s.start + offset, s.length, s.kind) for s in tail]
+            return spans, tail_state
+        spans, new_state = self._lex_outer(line, stack, in_comment)
+        return spans, new_state
+
+    def _lex_outer(
+        self, line: str, stack: tuple[str, ...], in_comment: bool
+    ) -> tuple[list[Span], int]:
         spans: list[Span] = []
         offset = 0
         if in_comment:
             end = line.find(self.block[1]) if self.block else 0
             if end < 0:
-                return ([Span(0, len(line), "comment")] if line else []), state
+                return ([Span(0, len(line), "comment")] if line else []), self._state_id(
+                    (stack, True, None)
+                )
             offset = end + len(self.block[1])
             spans.append(Span(0, offset, "comment"))
         rest = line[offset:]
+        start_stack = stack
         code, stack = self._lex_code(rest, stack)
         cut = self._open_comment(rest, code)
         if cut is not None:
             # the state after the code before the comment (what follows "/*" isn't code)
-            _spans_before, stack = self._lex_code(rest[:cut], self._states[state][0])
+            _spans_before, stack = self._lex_code(rest[:cut], start_stack)
             code = [s for s in code if s.start < cut]
             code = [Span(s.start, min(s.length, cut - s.start), s.kind) for s in code]
             code.append(Span(cut, len(rest) - cut, "comment"))
         spans += [Span(s.start + offset, s.length, s.kind) for s in code]
-        return spans, self._state_id((stack, cut is not None))
+        if cut is None and self.embeds:
+            opened = self._open_embed(line, spans)
+            if opened is not None:
+                return opened
+        return spans, self._state_id((stack, cut is not None, None))
+
+    def _open_embed(self, line: str, spans: list[Span]) -> tuple[list[Span], int] | None:
+        """A <script> / <style> opened on this line and not closed: what follows the tag is
+        that language, and so are the next lines (until the closing tag)."""
+        for m in _OPEN.finditer(line):
+            tag = m.group(1).lower()
+            inside = any(
+                s.kind == "comment" and s.start <= m.start() < s.start + s.length for s in spans
+            )
+            if inside or _CLOSE[tag].search(line, m.end()):
+                continue
+            language = embedded_language(tag, m.group(2))
+            inner = self._inner_lexer(language)
+            rest, after = inner.lex(line[m.end() :], 0)
+            kept = [
+                Span(s.start, min(s.length, m.end() - s.start), s.kind)
+                for s in spans
+                if s.start < m.end()
+            ]
+            moved = [Span(s.start + m.end(), s.length, s.kind) for s in rest]
+            return kept + moved, self._state_id((("root",), False, (tag, language, after)))
+        return None
