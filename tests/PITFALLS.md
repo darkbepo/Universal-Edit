@@ -27,3 +27,6 @@ tests (CLAUDE.md points here); add one line when a new kind of mistake costs you
   the old cases' values didn't change when you add new ones.
 - A `QTableView` cell editor commits its text *queued* after Enter: `qtbot.waitUntil` the new
   value instead of asserting right after `keyClick` (a direct `model.setData` is immediate).
+- e2e under a shell with no `LANG` (some containers): Chromium drops files given to
+  `setInputFiles` by a path with non-ASCII letters (test output folders are named after the test,
+  e.g. "Find file…"), so the page never sees them. Run with `LANG=C.UTF-8 LC_ALL=C.UTF-8`; CI has it.

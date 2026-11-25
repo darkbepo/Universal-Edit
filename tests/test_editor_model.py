@@ -56,7 +56,12 @@ def test_new_document_and_bounds():
 
 # ------------------------------------------------------------------ history
 
-from umc.editor.history import History, LayerListCommand, PatchCommand, snapshot_layers  # noqa: E402
+from umc.editor.history import (  # noqa: E402
+    History,
+    LayerListCommand,
+    PatchCommand,
+    snapshot_layers,
+)
 
 
 def _paint(doc, x, y, color=(255, 0, 0, 255)):

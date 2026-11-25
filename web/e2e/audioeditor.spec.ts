@@ -686,7 +686,7 @@ test("Save project keeps the tracks separate and opens again", async ({ page }) 
   expect(await page.evaluate(() => (window.__audio as unknown as Page2).dirty)).toBe(false);
   // open it again in a fresh page through the editor's own Open
   await openEditor(page, [fx("beep.mp3")]);
-  await page.locator('.audio-editor input[type="file"]').setInputFiles({ name: "tone.umcaudio", mimeType: "application/zip", buffer: readFileSync(path) });
+  await page.locator('.audio-editor input[type="file"][multiple]').setInputFiles({ name: "tone.umcaudio", mimeType: "application/zip", buffer: readFileSync(path) });
   await expect(page.locator(".audio-editor .msg")).toContainText("Opened the project “tone.umcaudio”");
   const t = await page.evaluate(() => (window.__audio as unknown as Page2).tracks.map((x) => [x.name, x.gainDb, x.offset]));
   expect(t).toEqual([["tone", -6, 4410]]);

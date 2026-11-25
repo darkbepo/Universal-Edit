@@ -1863,7 +1863,7 @@ export class AudioEditorPage {
       zoom_in: ready, zoom_out: ready, zoom_sel: sel, fit: ready, spectrogram: !!doc,
       home: playable, end: playable, play: playable, stop: this.playing, record: !!this.rec || !this.busy,
       undo: ready && doc!.canUndo(), redo: ready && doc!.canRedo(),
-      save: playable, save_as: playable, open: !this.busy, back: true,
+      save: playable, save_as: playable, save_project: playable, open: !this.busy, back: true,
     };
     for (const [key, b] of this.buttons) b.disabled = !enabled[key];
     // switching / adding / removing tracks waits while busy; mixing settings don't

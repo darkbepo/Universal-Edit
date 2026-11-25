@@ -702,6 +702,7 @@ class AudioEditorPage(QWidget):
         self.redo_button.setToolTip(f"Redo {doc.redo_label()} (Ctrl+Y)" if ready else "Redo")
         self.save_button.setEnabled(ready and length > 0)
         self.save_as_button.setEnabled(ready and length > 0)
+        self.project_button.setEnabled(ready and length > 0)
         self.tracks_panel.setVisible(doc is not None)
         self.tracks_panel.set_enabled(not self.busy)
         self.open_button.setEnabled(not self.busy)
