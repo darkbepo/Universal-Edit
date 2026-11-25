@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import data from "../../tests/fixtures/logo3d_cases.json";
 import { OrbitCamera, type Vec3 } from "../src/editor3d/camera";
 import {
-  area, badge, defaultMode, footprint, logoMesh, LogoError, mask, placement, shape, shapeArea, trace,
+  area, badge, defaultMode, MIN_WALL_MM, plateOutline, footprint, logoMesh, LogoError, mask, placement, shape, shapeArea, trace,
   volume, type Detail, type MaskMode, type Mesh, type PlateKind, type Ring,
 } from "../src/editor3d/logo";
 import type { ViewModel } from "../src/editor3d/mesh";
@@ -132,6 +132,32 @@ describe("shared cases", () => {
 });
 
 describe("meshes", () => {
+  it("busy shapes: closed, same triangles and volume as the desktop", () => {
+    for (const c of data.busy) {
+      const s = shape(traced(c.rows, c.detail as Detail), 30);
+      const m = logoMesh(s, 2);
+      expect(watertight(m), `${c.seed} ${c.detail}`).toBe(true);
+      expect(m.faces.length / 3).toBe(c.triangles);
+      close(volume(m), c.volume);
+      close(shapeArea(s), c.area);
+    }
+  });
+
+  it("the keychain hole keeps a wall, however thin the logo and margin", () => {
+    const s = shape(traced(["#".repeat(60), "#".repeat(60)]), 40); // 40 × 1.3 mm
+    for (const plate of ["rectangle", "rounded"] as const)
+      for (const margin of [0, 0.5, 1, 3, 10]) {
+        const [outer, hole] = plateOutline(s, margin, plate, true);
+        const ox = outer.map((q) => q[0]), oy = outer.map((q) => q[1]);
+        const hx = hole!.map((q) => q[0]), hy = hole!.map((q) => q[1]);
+        expect(Math.min(...hx) - Math.min(...ox)).toBeGreaterThanOrEqual(MIN_WALL_MM - 1e-9);
+        expect(Math.min(...hy) - Math.min(...oy)).toBeGreaterThanOrEqual(MIN_WALL_MM - 1e-9);
+        expect(Math.max(...oy) - Math.max(...hy)).toBeGreaterThanOrEqual(MIN_WALL_MM - 1e-9);
+        const [plateMesh, logoPart] = badge(s, 2, plate, margin, 2, true);
+        expect(watertight(plateMesh) && watertight(logoPart), `${plate} ${margin}`).toBe(true);
+      }
+  });
+
   it("a logo is a closed solid whose volume is area × thickness", () => {
     const s = shape(traced(data.trace.find((t) => t.name === "letters")!.rows), 50);
     const m = logoMesh(s, 3);
@@ -189,6 +215,9 @@ describe("scene", () => {
     expect(m.triangles).toBe(12 + lg.meshes.reduce((t, mm) => t + mm.faces.length / 3, 0));
     close(m.size[2], 10);
     expect(m.volumeMm3!).toBeGreaterThan(16000);
+    const onTop = buildLogo(picture(), { ...DEFAULT_SETTINGS, width: 20, thickness: 2 }, [0, 0, 10], [0, 0, 1], base, [2, 3]);
+    const sq = shape(traced(ringRows), 20);
+    close(combined(withLogo(emptyScene(base), onTop))!.volumeMm3!, 16000 + shapeArea(sq) * 2); // the sunk part once
     expect(combined(without(sc, 0))).toBe(base);
   });
 

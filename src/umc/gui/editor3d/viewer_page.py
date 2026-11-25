@@ -62,6 +62,7 @@ SAVE_FILTERS = {
     "glb": "GLB (*.glb)",
 }
 REBUILD_MS = 250  # after the last setting change
+_CURRENT = object()  # save_as: the file shown
 
 
 @dataclass
@@ -78,6 +79,7 @@ class _Edit:
     logo: S.Logo | None = None
     preview: ViewModel | None = None
     problem: str = ""
+    apply_when_traced: bool = False  # Apply was pressed while tracing
 
 
 def _shape_key(pic: S.Picture, s: S.LogoSettings) -> tuple:
@@ -345,11 +347,24 @@ class ViewerPage(QWidget):
         if paths:
             self.files_chosen.emit(paths)
 
+    def _select_current(self) -> None:
+        """Show the current file in the file box again (without reloading it)."""
+        if self.current in self.files:
+            self.file_box.blockSignals(True)
+            self.file_box.setCurrentIndex(self.files.index(self.current))
+            self.file_box.blockSignals(False)
+
     def _on_file_chosen(self, index: int) -> None:
         if 0 <= index < len(self.files):
             self.show_file(self.files[index])
 
     def show_file(self, f: DetectedFile) -> None:
+        if self.editing is not None:
+            # a model dropped while a logo is being made: it waits in the list
+            self._select_current()
+            if f != self.current:
+                self.message.setText(f"Apply or cancel the logo first, then choose {f.name} above.")
+            return
         self._end_edit()
         self.current = f
         model = self.models.get(f.path)
@@ -662,6 +677,7 @@ class ViewerPage(QWidget):
             shp, preview = result
             self.logo_panel.set_preview(preview, pic.w, pic.h)
             if isinstance(shp, L.LogoError):
+                e.apply_when_traced = False
                 e.shape, e.shape_key, e.logo, e.preview = None, None, None, None
                 e.problem = str(shp)
                 self.logo_panel.set_note(e.problem)
@@ -671,9 +687,13 @@ class ViewerPage(QWidget):
                 return
             e.shape, e.shape_key = shp, key
             self._place()
+            if e.apply_when_traced:
+                e.apply_when_traced = False
+                self.apply_logo()
 
         def failed(_msg: str) -> None:
             if self.editing is e:
+                e.apply_when_traced = False
                 self.logo_panel.set_note("Couldn't make a logo from this picture.")
                 self.logo_built.emit()
 
@@ -786,6 +806,7 @@ class ViewerPage(QWidget):
             return
         self._rebuild_timer.stop()
         if self._rebuild_timer_pending():
+            e.apply_when_traced = True  # applied as soon as the trace is back
             return
         if e.logo is None:
             self.logo_panel.set_note(e.problem or (
@@ -798,8 +819,8 @@ class ViewerPage(QWidget):
         self._push(scene)
 
     def _rebuild_timer_pending(self) -> bool:
-        """Settings changed since the last build: build now; Apply needs another click only
-        if that has to trace (it answers on a worker thread)."""
+        """Settings changed since the last build: build now. True when that has to trace (it
+        answers on a worker thread)."""
         e = self.editing
         if e is None or e.picture is None:
             return False
@@ -849,12 +870,15 @@ class ViewerPage(QWidget):
         box.exec()
         return made.get(box.clickedButton(), "cancel")
 
-    def save_as(self) -> bool:
-        """Ask where, then write the model with its logos on a worker thread."""
-        h = self.history
+    def save_as(self, key: Path | None | object = _CURRENT) -> bool:
+        """Ask where, then write a file's model with its logos on a worker thread (``key``:
+        whose — by default the one shown; None = the empty viewer's badge)."""
+        if key is _CURRENT:
+            key = self.key
+        h = self.histories.get(key)
         if h is None or not h.scene.logos or self.editing is not None or self.saving:
             return False
-        src = self.current.path if self.current is not None else None
+        src = key
         folder = src.parent if src is not None else Path.home()
         path = self.ask_save_path(folder / S.default_save_name(src, "3mf"))
         if not path:
@@ -885,7 +909,10 @@ class ViewerPage(QWidget):
         def done(saved_path: str) -> None:
             self.saving = False
             h.saved = scene
-            self.message.setText(f"Saved {Path(saved_path).name}.")
+            self.message.setText(
+                f"Saved {Path(saved_path).name} — the model and its logos as one object, "
+                "centred on the print bed as shown here."
+            )
             self._sync_buttons()
             self.saved.emit(saved_path)
 
@@ -934,18 +961,14 @@ class ViewerPage(QWidget):
             if answer == "cancel":
                 return False
             if answer == "save":
-                if key != self.key:
-                    match = next((f for f in self.files if f.path == key), None)
-                    if match is None:
-                        return False
-                    self.file_box.setCurrentIndex(self.files.index(match))
-                if not self.save_as():
+                if not self.save_as(key):
                     return False
                 self.wait_saved()
                 if h.dirty:
                     return False
         for h in self.histories.values():
-            h.mark_saved()
+            h.revert()  # "Don't save": the logos go
+        self._refresh()
         return True
 
     def wait_idle(self, ms: int = 30000) -> None:

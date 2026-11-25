@@ -74,6 +74,17 @@ def picture(w: int, h: int, fill) -> bytes:
     return bytes(out)
 
 
+def blocky(seed: int, n: int = 14, k: int = 3) -> list[str]:
+    """Random blocks scaled up k× (Python's own seeded generator: the same in every version).
+    Holes and outer edges often lie on one line here — the case that once left gaps."""
+    import random
+
+    rnd = random.Random(seed)
+    bits = [[rnd.random() < 0.55 for _ in range(n)] for _ in range(n)]
+    size = n * k
+    return ["".join("#" if bits[y // k][x // k] else "." for x in range(size)) for y in range(size)]
+
+
 def main() -> None:
     cases: dict = {
         "mask": [],
@@ -160,6 +171,16 @@ def main() -> None:
                     "parts": [mesh_facts(p) for p in parts],
                 }
             )
+
+    cases["busy"] = []
+    for seed in range(12):
+        rows = blocky(seed)
+        for detail in logo.DETAIL:
+            s = logo.shape(logo.trace(grid(rows), detail), 30.0)
+            m = logo.logo_mesh(s, 2.0)
+            cases["busy"].append({"seed": seed, "rows": rows, "detail": detail,
+                                  "triangles": len(m.faces), "volume": r6(m.volume),
+                                  "area": r6(s.area)})  # fmt: skip
 
     for normal in ([0, 0, 1], [0, 0, -1], [0, -1, 0], [1, 0, 0], [1, 1, 1], [0.3, -0.2, 0.9]):
         for rot in (0.0, 30.0, -90.0):

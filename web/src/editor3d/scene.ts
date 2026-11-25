@@ -3,7 +3,7 @@
 // No DOM, no three.js.
 import type { Vec3 } from "./camera";
 import {
-  badge, HOLE_RADIUS_MM, LogoError, placedLogo, placement, positions, shapeFromPicture, transform, footprint, SINK_MM, volume,
+  badge, LogoError, plateOutline, shapeArea, placedLogo, placement, positions, shapeFromPicture, transform, footprint, SINK_MM, volume,
   type Detail, type MaskMode, type Mesh, type PlateKind, type Shape,
 } from "./logo";
 import type { ModelStats, ViewModel } from "./mesh";
@@ -54,6 +54,7 @@ export interface Logo {
   height: number;
   dropped: number;
   overhang: number;
+  overlap: number; // mm³ inside the model / plate (sunk in), so the volume counts it once
 }
 
 export const shapeOf = (pic: Picture, s: LogoSettings) =>
@@ -66,8 +67,10 @@ export function buildLogo(
 ): Logo {
   shp ??= shapeOf(pic, s);
   let over = 0;
+  let sunk = 0;
   let meshes: Mesh[];
   if (s.where === "face") {
+    sunk = s.sink;
     if (!point || !normal) throw new LogoError("Click a flat face of the model to place the logo.");
     meshes = [placedLogo(shp, s.thickness, point, normal, s.rotation, s.sink)];
     if (base && faceTris?.length) {
@@ -76,19 +79,20 @@ export function buildLogo(
     }
   } else {
     const parts = badge(shp, s.thickness, s.plate, s.margin, s.plate_thickness, s.hole);
+    if (s.plate !== "none") sunk = Math.min(SINK_MM, s.plate_thickness / 2);
     let x = 0;
     if (base) {
       let hi = -Infinity;
       for (let i = 0; i < base.positions.length; i += 3) hi = Math.max(hi, base.positions[i]);
       let left = shp.width / 2; // how far the badge reaches left of its centre
-      if (s.plate !== "none") left += s.margin + (s.hole ? 2 * HOLE_RADIUS_MM + s.margin : 0);
+      if (s.plate !== "none") left = -Math.min(...plateOutline(shp, s.margin, s.plate, s.hole)[0].map(([px]) => px));
       x = hi + BADGE_GAP_MM + left;
     }
     const m = placement([x, 0, 0], [0, 0, 1], s.rotation, 0);
     meshes = parts.map((p) => transform(p, m));
     point = normal = null;
   }
-  return { picture: pic, settings: s, point, normal, meshes, width: shp.width, height: shp.height, dropped: shp.dropped, overhang: over };
+  return { picture: pic, settings: s, point, normal, meshes, width: shp.width, height: shp.height, dropped: shp.dropped, overhang: over, overlap: shapeArea(shp) * sunk };
 }
 
 export interface Scene {
@@ -143,7 +147,10 @@ export function combined(sc: Scene, name = ""): ViewModel | null {
   let total: number | null = null;
   if (watertight) {
     total = base?.volumeMm3 ?? 0;
-    for (const lg of sc.logos) for (const m of lg.meshes) total += Math.abs(volume(m));
+    for (const lg of sc.logos) {
+      for (const m of lg.meshes) total += Math.abs(volume(m));
+      total -= lg.overlap;
+    }
   }
   const stats: ModelStats = {
     triangles: pos.length / 9,
@@ -210,5 +217,11 @@ export class History {
   }
   markSaved(): void {
     this.saved = this.scene;
+  }
+  /** Back to what was last saved (or opened), forgetting undo / redo. */
+  revert(): void {
+    this.scene = this.saved;
+    this.undoStack = [];
+    this.redoStack = [];
   }
 }

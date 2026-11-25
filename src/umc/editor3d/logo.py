@@ -26,6 +26,7 @@ MIN_FEATURE_MM = 0.4  # ... and loops smaller than a 0.4 mm square (a nozzle's w
 SADDLE_NUDGE = 0.05  # px: corners where two parts touch are moved apart this much
 SINK_MM = 0.2  # how far a placed logo goes into the surface, so slicers merge them
 HOLE_RADIUS_MM = 2.5  # keychain hole
+MIN_WALL_MM = 1.0  # plate left all round the keychain hole
 CORNER_SEGMENTS = 8  # per rounded plate corner
 HOLE_SEGMENTS = 32
 
@@ -344,19 +345,75 @@ class Mesh:
 
 
 def _triangulate(poly: Polygon) -> list[tuple[int, int, int]]:
-    """Cap triangles (indices into outer + holes, in that order), counter-clockwise."""
+    """Cap triangles (indices into outer + holes, in that order), counter-clockwise, meeting
+    the walls exactly: earcut leaves zero-area triangles where a hole's edge and an outer
+    edge lie on one line, and the triangles beside them then span a corner point (the walls
+    have a corner there, the cap doesn't). Those are dropped and such triangles are split at
+    the corner points they span."""
     import mapbox_earcut
 
     rings = [poly.outer, *poly.holes]
     pts = np.array([p for r in rings for p in r], dtype=np.float64)
     ends = np.cumsum([len(r) for r in rings]).astype(np.uint32)
     idx = mapbox_earcut.triangulate_float64(pts, ends).reshape(-1, 3).tolist()
-    out = []
+    xy = pts.tolist()
+    scale = max((abs(v) for p in xy for v in p), default=1.0) or 1.0
+    eps = scale * 1e-9
+    tris: list[tuple[int, int, int]] = []
     for a, b, c in idx:
-        (ax, ay), (bx, by), (cx, cy) = pts[a], pts[b], pts[c]
-        if (bx - ax) * (cy - ay) - (by - ay) * (cx - ax) < 0:
-            b, c = c, b
-        out.append((a, b, c))
+        (ax, ay), (bx, by), (cx, cy) = xy[a], xy[b], xy[c]
+        area2 = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax)
+        if abs(area2) <= eps * scale:  # zero area: nothing to cover
+            continue
+        tris.append((a, c, b) if area2 < 0 else (a, b, c))
+    return _split_at(tris, xy, eps)
+
+
+def _split_at(tris, xy: list, eps: float) -> list[tuple[int, int, int]]:
+    """Split every triangle whose edge passes over a corner point (a fan from the opposite
+    corner) until none does. Corners on a pixel row / column share an exact y / x, so level
+    and upright edges look them up; sloping edges check every corner."""
+    pts = np.array(xy, dtype=np.float64).reshape(-1, 2)
+    rows: dict[float, list[tuple[float, int]]] = {}
+    cols: dict[float, list[tuple[float, int]]] = {}
+    for i, (x, y) in enumerate(xy):
+        rows.setdefault(y, []).append((x, i))
+        cols.setdefault(x, []).append((y, i))
+    for d in (rows, cols):
+        for v in d.values():
+            v.sort()
+
+    def inside(u: int, v: int) -> list[int]:
+        """Corners strictly inside edge u → v, in order from u."""
+        (ax, ay), (bx, by) = xy[u], xy[v]
+        if ay == by or ax == bx:
+            line, k0, k1 = (rows[ay], ax, bx) if ay == by else (cols[ax], ay, by)
+            lo, hi = min(k0, k1), max(k0, k1)
+            found = [(k, i) for k, i in line if lo < k < hi]
+            found.sort(reverse=k0 > k1)
+            return [i for _k, i in found]
+        dx, dy = bx - ax, by - ay
+        length = math.sqrt(dx * dx + dy * dy)
+        rx, ry = pts[:, 0] - ax, pts[:, 1] - ay
+        t = (rx * dx + ry * dy) / (length * length)
+        near = np.abs(dx * ry - dy * rx) <= eps * length
+        on = np.nonzero(near & (t * length > eps) & (t * length < length - eps))[0]
+        return [int(i) for i in on[np.argsort(t[on], kind="stable")]]
+
+    todo = list(tris)
+    out: list[tuple[int, int, int]] = []
+    while todo:
+        tri = todo.pop()
+        for k in range(3):
+            on = inside(tri[k], tri[(k + 1) % 3])
+            if on:
+                seq = [tri[k], *on, tri[(k + 1) % 3]]
+                w = tri[(k + 2) % 3]
+                todo += [(seq[i], seq[i + 1], w) for i in range(len(seq) - 1)]
+                break
+        else:
+            out.append(tri)
+    out.reverse()
     return out
 
 
@@ -408,8 +465,13 @@ def plate_outline(
     y0, y1 = -s.height / 2 - margin, s.height / 2 + margin
     ring_hole = None
     if hole:
-        x0 -= 2 * HOLE_RADIUS_MM + margin
-        ring_hole = _circle(x0 + margin + HOLE_RADIUS_MM, 0.0, HOLE_RADIUS_MM, HOLE_SEGMENTS, True)
+        # at least MIN_WALL_MM of plate all round the hole, however thin the logo / margin
+        wall = max(margin, MIN_WALL_MM)
+        x0 -= 2 * HOLE_RADIUS_MM + wall
+        grow = (2 * HOLE_RADIUS_MM + 2 * MIN_WALL_MM - (y1 - y0)) / 2
+        if grow > 0:
+            y0, y1 = y0 - grow, y1 + grow
+        ring_hole = _circle(x0 + wall + HOLE_RADIUS_MM, 0.0, HOLE_RADIUS_MM, HOLE_SEGMENTS, True)
     if kind == "rounded":
         r = min(max(margin, 1.0), (x1 - x0) / 2, (y1 - y0) / 2)
         outer: Ring = []

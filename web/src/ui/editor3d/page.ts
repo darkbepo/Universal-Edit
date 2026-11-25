@@ -6,7 +6,7 @@ import * as THREE from "three";
 import { VIEW_TARGET } from "../../converters/model3d";
 import type { InputFile } from "../../core/types";
 import { OrbitCamera, FOV, type Vec3 } from "../../editor3d/camera";
-import { LogoError, mask, MAX_SIDE, shape, trace, defaultMode, type Shape } from "../../editor3d/logo";
+import { LogoError, MAX_SIDE, defaultMode, type Shape } from "../../editor3d/logo";
 import { describe, gridSpec, type ModelStats, type ViewModel } from "../../editor3d/mesh";
 import { flatFace, hit, ray } from "../../editor3d/pick";
 import {
@@ -16,6 +16,7 @@ import {
 import { JobCancelled, type ConversionClient } from "../../worker/client";
 import { backLabel } from "../back";
 import { FACE_HINT, LogoPanel } from "./logopanel";
+import type { TraceAnswer, TraceRequest } from "./traceworker";
 
 const h = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> & { class?: string } = {}, ...children: (Node | string)[]) => {
   const el = document.createElement(tag);
@@ -49,6 +50,8 @@ interface Edit {
   logo: Logo | null;
   preview: Float32Array | null; // the logo's triangles, drawn in the accent colour
   problem: string;
+  tracing: number; // id of the trace being waited for (0: none)
+  applyWhenTraced: boolean; // Apply was pressed while tracing
 }
 
 const shapeKey = (pic: Picture, s: LogoSettings) => JSON.stringify([pic.name, pic.w, pic.h, s.mode, s.threshold, s.invert, s.detail, s.width]);
@@ -150,6 +153,8 @@ export class ViewerPage {
   private press: { x: number; y: number; moved: boolean; button: number } | null = null;
   private grabbing = false;
   private grabOffset: Vec3 = [0, 0, 0]; // logo point − where the drag started on its plane
+  private tracer: Worker | null = null;
+  private traceId = 0;
 
   constructor(private opts: ViewerOptions) {
     const btn = (label: string, title: string, fn: () => void, cls = "btn small") => {
@@ -214,6 +219,7 @@ export class ViewerPage {
     this.installControls();
     this.resizeObserver = new ResizeObserver(() => this.requestRender());
     this.resizeObserver.observe(this.canvasHost);
+    window.addEventListener("beforeunload", this.onUnload);
     if (location.search.includes("e2e")) (window as unknown as { __viewer3d: ViewerPage }).__viewer3d = this;
   }
 
@@ -239,10 +245,19 @@ export class ViewerPage {
 
   maybeLeave(): boolean {
     this.cancelLogo();
-    if (this.dirty && !window.confirm("Discard the logos you haven't saved?")) return false;
-    for (const hs of this.histories.values()) hs.markSaved();
+    if (!this.dirty) return true;
+    if (!window.confirm("Discard the logos you haven't saved?")) return false;
+    for (const hs of this.histories.values()) hs.revert(); // the logos go
+    this.showScene();
     return true;
   }
+
+  private readonly onUnload = (e: BeforeUnloadEvent) => {
+    if (this.dirty) {
+      e.preventDefault();
+      e.returnValue = "";
+    }
+  };
 
   private back(): void {
     if (this.maybeLeave()) this.opts.onBack();
@@ -280,6 +295,12 @@ export class ViewerPage {
   }
 
   async showFile(f: InputFile): Promise<void> {
+    if (this.editing) {
+      // a model dropped while a logo is being made: it waits in the list
+      this.fileBox.selectedIndex = this.current ? this.files.indexOf(this.current) : -1;
+      if (f !== this.current) this.message.textContent = `Apply or cancel the logo first, then choose ${f.name} above.`;
+      return;
+    }
     this.endEdit();
     this.current = f;
     this.fileBox.selectedIndex = this.files.indexOf(f);
@@ -716,7 +737,7 @@ export class ViewerPage {
   startLogo(index: number | null = null): void {
     const hs = this.history;
     if (!hs || this.editing || this.saving) return;
-    const e: Edit = { index, picture: null, point: null, normal: null, faceTris: null, shape: null, shapeKey: "", logo: null, preview: null, problem: "" };
+    const e: Edit = { index, picture: null, point: null, normal: null, faceTris: null, shape: null, shapeKey: "", logo: null, preview: null, problem: "", tracing: 0, applyWhenTraced: false };
     const p = this.logoPanel;
     p.setHasModel(Boolean(hs.scene.base));
     if (index === null) {
@@ -781,32 +802,53 @@ export class ViewerPage {
     if (!e?.picture) return;
     const s = this.logoPanel.settings();
     const key = shapeKey(e.picture, s);
-    if (!e.shape || e.shapeKey !== key) {
-      const pic = e.picture;
-      const m = mask(pic.rgba, pic.w, pic.h, s.mode, s.threshold, s.invert);
-      const rgb = new THREE.Color(cssColor("--text", "#1c1f26"));
-      const preview = new Uint8ClampedArray(pic.w * pic.h * 4);
-      for (let i = 0; i < m.length; i++)
-        if (m[i]) preview.set([rgb.r * 255, rgb.g * 255, rgb.b * 255, 255], i * 4);
-      this.logoPanel.setPreview(preview, pic.w, pic.h);
-      try {
-        e.shape = shape(trace(m, pic.w, pic.h, s.detail), s.width);
-        e.shapeKey = key;
-      } catch (err) {
-        if (!(err instanceof LogoError)) throw err;
-        Object.assign(e, { shape: null, shapeKey: "", logo: null, preview: null, problem: err.message });
-        this.logoPanel.setNote(err.message);
-        this.logoPanel.setSize(0, 0);
-        this.showScene();
-        return;
-      }
+    if (e.shape && e.shapeKey === key) {
+      this.place();
+      return;
     }
+    if (e.tracing && e.shapeKey === key) return; // already on its way
+    // trace off the page (a busy picture takes a moment)
+    const pic = e.picture;
+    const rgb = new THREE.Color(cssColor("--text", "#1c1f26"));
+    const id = (e.tracing = ++this.traceId);
+    this.logoPanel.setNote("Tracing the picture…");
+    if (!this.tracer) {
+      this.tracer = new Worker(new URL("./traceworker.ts", import.meta.url), { type: "module" });
+      this.tracer.onmessage = (m: MessageEvent<TraceAnswer>) => this.onTraced(m.data);
+    }
+    const request: TraceRequest = {
+      id, rgba: pic.rgba.slice(), w: pic.w, h: pic.h, mode: s.mode, threshold: s.threshold, invert: s.invert,
+      detail: s.detail, width: s.width, colour: [Math.round(rgb.r * 255), Math.round(rgb.g * 255), Math.round(rgb.b * 255)],
+    };
+    this.tracer.postMessage(request, [request.rgba.buffer]);
+    e.shapeKey = key;
+    e.shape = null;
+  }
+
+  private onTraced(a: TraceAnswer): void {
+    const e = this.editing;
+    if (!e || a.id !== e.tracing || !e.picture) return; // an older request, or the edit ended
+    e.tracing = 0;
+    this.logoPanel.setPreview(a.preview, e.picture.w, e.picture.h);
+    if (!a.shape) {
+      Object.assign(e, { shape: null, shapeKey: "", logo: null, preview: null, problem: a.error, applyWhenTraced: false });
+      this.logoPanel.setNote(a.error);
+      this.logoPanel.setSize(0, 0);
+      this.showScene();
+      return;
+    }
+    e.shape = a.shape;
     this.place();
+    if (e.applyWhenTraced) {
+      e.applyWhenTraced = false;
+      this.applyLogo();
+    }
   }
 
   /** Extrude + place the traced shape (quick: no tracing). */
   private place(): void {
     const e = this.editing!;
+    if (!e.shape) return;
     const s = this.logoPanel.settings();
     Object.assign(e, { logo: null, preview: null, problem: "" });
     this.logoPanel.setSize(e.shape!.width, e.shape!.height);
@@ -898,8 +940,12 @@ export class ViewerPage {
     clearTimeout(this.rebuildTimer);
     if (e.picture) {
       const s = this.logoPanel.settings();
-      if (!e.shape || e.shapeKey !== shapeKey(e.picture, s)) this.rebuild();
-      else if (!e.logo || !sameSettings(e.logo.settings, s)) this.place();
+      if (e.shapeKey !== shapeKey(e.picture, s)) this.rebuild();
+      if (e.tracing) {
+        e.applyWhenTraced = true; // applied as soon as the trace is back
+        return;
+      }
+      if (e.shape && (!e.logo || !sameSettings(e.logo.settings, s))) this.place();
     }
     if (!e.logo) {
       this.logoPanel.setNote(e.problem || (e.picture ? FACE_HINT : "Choose a picture first."));
@@ -918,6 +964,7 @@ export class ViewerPage {
 
   private endEdit(): void {
     clearTimeout(this.rebuildTimer);
+    this.traceId++; // answers still on their way are dropped
     if (!this.editing) return;
     this.editing = null;
     this.setOverlay(null);
@@ -971,7 +1018,7 @@ export class ViewerPage {
       const dialog = h("dialog", { class: "logo-save-dialog" },
         h("h2", {}, "Save as"),
         h("label", {}, "Format ", select),
-        h("p", { class: "muted small" }, "The model and its logos are saved as one object, in millimetres."));
+        h("p", { class: "muted small" }, "The model and its logos are saved as one object, in millimetres, centred on the print bed as shown here."));
       const done = (v: SaveExt | null) => {
         dialog.close();
         dialog.remove();
