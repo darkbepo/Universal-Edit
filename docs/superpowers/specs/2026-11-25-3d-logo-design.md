@@ -28,12 +28,12 @@ for the slicer.
     *light parts* (brightness threshold, slider 1–254, default 128); "Invert".
   - Detail: Smooth / Normal / Fine (simplification tolerance); tiny specks (< 0.5 % of the area,
     or below the printable 0.4 mm) are dropped, the count is shown ("3 tiny bits left out").
-  - Size: width in mm (height follows the aspect ratio; a lock to type both), thickness in mm
+  - Size: width in mm (height follows the aspect ratio and is shown), thickness in mm
     (default 2 mm; 0.2 – 50).
   - Stand-alone only — base plate: none / rectangle / rounded rectangle, margin (mm), plate
     thickness (mm), optional hanging hole (keychain) in a corner.
   - On a model: "Click a flat face to place the logo"; then drag on that face to move it,
-    rotation (−180…180°, snaps to 15° with Shift), "Sink into surface" (default 0.2 mm, so the
+    rotation (−180…180°, 15° steps on the arrows), "Sink into surface" (default 0.2 mm, so the
     slicer merges the logo with the part).
   - Buttons: Apply (the logo becomes a part of the model, one undo step), Cancel.
 - **Undo / redo** (Ctrl+Z / Ctrl+Y) for adding, moving and removing logos; a "Remove logo" in
@@ -92,6 +92,6 @@ for the slicer.
 ## Steps (one at a time, ship gate each)
 
 1. ✅ Model in both apps (`logo`, `pick`) with the shared cases.
-2. Desktop: logo panel, placing, undo, Save as; README table rows; self-test step.
+2. ✅ Desktop: logo panel, placing, undo, Save as; README table rows; self-test step.
 3. Website: the same page features; e2e.
 4. Later: engraving (boolean cut), then text logos.

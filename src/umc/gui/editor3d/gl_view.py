@@ -45,6 +45,7 @@ GL_FLOAT = 0x1406
 
 STYLES = ("shaded", "edges", "wireframe")
 ORBIT_DEG_PER_PX = 0.4
+CLICK_SLOP_PX = 3  # a press that moves less than this is a click, not a drag
 
 MESH_VS = """
 #version 120
@@ -123,6 +124,9 @@ def _qmatrix(m: np.ndarray) -> QMatrix4x4:
 class ModelGLView(QOpenGLWidget):
     camera_changed = Signal()
     gl_failed = Signal()  # initializeGL couldn't set OpenGL up (``failed`` says why)
+    clicked = Signal(float, float)  # a left click that didn't drag (widget pixels)
+    grab_moved = Signal(float, float)  # dragging what ``grab_test`` accepted
+    grab_released = Signal()
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -140,12 +144,27 @@ class ModelGLView(QOpenGLWidget):
         self._drag: tuple[QPointF, Qt.MouseButton, Qt.KeyboardModifier] | None = None
         self._mesh_prog: QOpenGLShaderProgram | None = None
         self._line_prog: QOpenGLShaderProgram | None = None
+        self.overlay: ViewModel | None = None  # the logo being placed, in the accent colour
+        self._overlay_dirty = False
+        # (x, y) → True when a left press there should drag the overlay instead of orbiting
+        self.grab_test = None
+        self._press: QPointF | None = None
+        self._moved = False
+        self._grabbing = False
 
     # ------------------------------------------------------------ public
-    def set_model(self, model: ViewModel | None) -> None:
+    def set_model(self, model: ViewModel | None, fit: bool = True) -> None:
         self.model = model
         self._dirty = True
-        self.fit()
+        if fit:
+            self.fit()
+        else:
+            self.update()
+
+    def set_overlay(self, model: ViewModel | None) -> None:
+        self.overlay = model
+        self._overlay_dirty = True
+        self.update()
 
     def set_style(self, style: str) -> None:
         if style not in STYLES:
@@ -162,8 +181,10 @@ class ModelGLView(QOpenGLWidget):
         self.fit()
 
     def fit(self) -> None:
-        if self.model is not None:
-            lo, hi = self.model.bounds
+        shown = [m for m in (self.model, self.overlay) if m is not None]
+        if shown:
+            lo = np.min([m.bounds[0] for m in shown], axis=0)
+            hi = np.max([m.bounds[1] for m in shown], axis=0)
             self.camera.fit(lo, hi, self.width() / max(self.height(), 1))
         self.camera_changed.emit()
         self.update()
@@ -253,6 +274,10 @@ class ModelGLView(QOpenGLWidget):
         f.glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
         if self._dirty:
             self._upload_all()
+        if self._overlay_dirty:
+            o = self.overlay
+            self._upload("overlay", o.triangle_buffer() if o is not None else None)
+            self._overlay_dirty = False
         mvp = _qmatrix(self.mvp())
         f.glEnable(GL_DEPTH_TEST)
         f.glEnable(GL_BLEND)
@@ -277,6 +302,19 @@ class ModelGLView(QOpenGLWidget):
             f.glPolygonOffset(1.0, 1.0)
             self._draw(prog, "mesh", GL_TRIANGLES, 24, True)
             f.glDisable(GL_POLYGON_OFFSET_FILL)
+            prog.release()
+        if self.overlay is not None:
+            prog = self._mesh_prog
+            prog.bind()
+            prog.setUniformValue("mvp", mvp)
+            accent = QColor(p["accent"])
+            prog.setUniformValue("color", QVector3D(accent.redF(), accent.greenF(), accent.blueF()))
+            cam = self.camera
+            key = cam.direction() * 0.8 + cam.up() * 0.45 + cam.right() * -0.35
+            prog.setUniformValue("light", QVector3D(*(key / np.linalg.norm(key)).tolist()))
+            fill = cam.direction() * 0.5 + cam.right() * 0.8
+            prog.setUniformValue("fill", QVector3D(*(fill / np.linalg.norm(fill)).tolist()))
+            self._draw(prog, "overlay", GL_TRIANGLES, 24, True)
             prog.release()
 
         prog = self._line_prog
@@ -315,14 +353,30 @@ class ModelGLView(QOpenGLWidget):
 
     # ------------------------------------------------------------ mouse
     def mousePressEvent(self, event) -> None:  # noqa: N802
-        self._drag = (event.position(), event.button(), event.modifiers())
-        self.setCursor(Qt.CursorShape.ClosedHandCursor)
+        pos = event.position()
+        self._press, self._moved = pos, False
+        left = event.button() == Qt.MouseButton.LeftButton and not (
+            event.modifiers() & Qt.KeyboardModifier.ShiftModifier
+        )
+        self._grabbing = bool(left and self.grab_test and self.grab_test(pos.x(), pos.y()))
+        self._drag = (pos, event.button(), event.modifiers())
+        self.setCursor(
+            Qt.CursorShape.SizeAllCursor if self._grabbing else Qt.CursorShape.ClosedHandCursor
+        )
 
     def mouseMoveEvent(self, event) -> None:  # noqa: N802
         if self._drag is None:
             return
         last, button, mods = self._drag
         pos = event.position()
+        if self._press is not None and not self._moved:
+            d = pos - self._press
+            self._moved = abs(d.x()) + abs(d.y()) >= CLICK_SLOP_PX
+        if self._grabbing:
+            self._drag = (pos, button, mods)
+            if self._moved:
+                self.grab_moved.emit(pos.x(), pos.y())
+            return
         dx, dy = pos.x() - last.x(), pos.y() - last.y()
         self._drag = (pos, button, mods)
         panning = button in (Qt.MouseButton.RightButton, Qt.MouseButton.MiddleButton) or bool(
@@ -336,8 +390,14 @@ class ModelGLView(QOpenGLWidget):
         self.update()
 
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802
-        self._drag = None
+        drag, self._drag = self._drag, None
         self.unsetCursor()
+        grabbing, self._grabbing = self._grabbing, False
+        if grabbing and self._moved:
+            self.grab_released.emit()
+        elif drag is not None and drag[1] == Qt.MouseButton.LeftButton and not self._moved:
+            pos = event.position()
+            self.clicked.emit(pos.x(), pos.y())
 
     def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802
         self.fit()
