@@ -172,6 +172,32 @@ def main() -> None:
                 }
             )
 
+    # do these rings cross / touch (themselves or each other)? shape() then keeps the raw ones
+    square = [(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)]
+    hole = [(2.0, 2.0), (2.0, 8.0), (8.0, 8.0), (8.0, 2.0)]
+    meet_sets = {
+        "nested": [square, hole],
+        "hole touches outline": [square, [(0.0, 5.0), (3.0, 8.0), (3.0, 2.0)]],
+        "hole crosses outline": [square, [(-1.0, 5.0), (3.0, 8.0), (3.0, 2.0)]],
+        "bow tie": [[(0.0, 0.0), (10.0, 10.0), (10.0, 0.0), (0.0, 10.0)]],
+        "pinched": [[(0.0, 0.0), (10.0, 0.0), (5.0, 5.0), (10.0, 10.0), (0.0, 10.0), (5.0, 5.0)]],
+        "two holes touch": [square, [(2.0, 2.0), (2.0, 5.0), (5.0, 5.0), (5.0, 2.0)],
+                            [(5.0, 5.0), (5.0, 8.0), (8.0, 8.0), (8.0, 5.0)]],
+        "collinear apart": [[(0.0, 0.0), (4.0, 0.0), (4.0, 1.0), (0.0, 1.0)],
+                            [(5.0, 0.0), (5.0, 1.0), (9.0, 1.0), (9.0, 0.0)]],
+        "single": [square],
+    }  # fmt: skip
+    cases["meet"] = [{"name": k, "rings": [[list(p) for p in r] for r in v],
+                      "meets": logo._rings_meet(v)} for k, v in meet_sets.items()]  # fmt: skip
+    raw_hole = [(0.5, 5.0), (3.0, 8.0), (3.0, 2.0)]
+    fallback = logo.shape([square, [(0.0, 5.0), (3.0, 8.0), (3.0, 2.0)]], 10.0,
+                          raw=[square, raw_hole])  # fmt: skip
+    cases["fallback"] = {
+        "rings": [[list(p) for p in square], [[0.0, 5.0], [3.0, 8.0], [3.0, 2.0]]],
+        "raw": [[list(p) for p in square], [list(p) for p in raw_hole]],
+        "holes": [ring6(h) for h in fallback.polygons[0].holes],
+    }
+
     cases["busy"] = []
     for seed in range(12):
         rows = blocky(seed)

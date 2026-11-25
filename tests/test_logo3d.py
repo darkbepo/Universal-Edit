@@ -255,3 +255,48 @@ def test_scene_volume_counts_sunk_parts_once():
     badge = S.build_logo(pic, S.LogoSettings(where="badge", width=10, plate="rectangle"))
     plate_area = (10 + 6) ** 2
     assert S.Scene(None, (badge,)).combined().volume_mm3 == pytest.approx(plate_area * 2 + 100 * 2)
+
+
+def test_rings_meet_shared_cases():
+    data = json.loads(CASES.read_text())
+    for c in data["meet"]:
+        rings = [[tuple(p) for p in r] for r in c["rings"]]
+        assert logo._rings_meet(rings) == c["meets"], c["name"]
+
+
+def test_simplified_rings_that_cross_fall_back_to_the_pixels():
+    """Simplifying once made a hole touch its outline ("%&@#" at 20 px) and an outline cross
+    itself (a blurred blob): the walls then shared an edge or cut each other."""
+    from PIL import Image, ImageDraw, ImageFilter, ImageFont
+
+    im = Image.new("L", (100, 40), 0)
+    ImageDraw.Draw(im).text((5, 5), "%&@#", fill=255, font=ImageFont.load_default(size=20))
+    pictures = [(np.asarray(im) > 128).astype(np.uint8)]
+    rng = np.random.default_rng(2)
+    for t in range(56):
+        size = int(rng.integers(64, 300))
+        noise = rng.random((size, size)) * 255
+        blur = Image.fromarray(noise.astype(np.uint8)).filter(
+            ImageFilter.GaussianBlur(rng.uniform(2, 8))
+        )
+        if t == 55:
+            a = np.asarray(blur)
+            pictures.append((a > np.median(a)).astype(np.uint8))
+    for m in pictures:
+        s = logo.shape_of_mask(m, "smooth", 40)
+        for poly in s.polygons:
+            assert not logo._rings_meet([poly.outer, *poly.holes])
+        mesh = logo.logo_mesh(s, 2)
+        assert _closed(mesh) and mesh.volume == pytest.approx(s.area * 2)
+
+
+def test_prepared_shape_places_quickly():
+    """Cap triangles are made once (``prepare``, off the UI thread); a drag only places."""
+    import time
+
+    m = np.kron(np.random.default_rng(7).random((40, 40)) < 0.5, np.ones((10, 10), np.uint8))
+    s = logo.prepare(logo.shape_of_mask(m.astype(np.uint8), "normal", 80))
+    assert all(p.caps is not None for p in s.polygons)
+    t = time.perf_counter()
+    mesh = logo.placed_logo(s, 2, (0, 0, 10), (0, 0, 1), 30)
+    assert time.perf_counter() - t < 0.2 and _closed(mesh)

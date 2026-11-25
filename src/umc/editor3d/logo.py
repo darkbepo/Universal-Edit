@@ -211,6 +211,12 @@ def trace(m: np.ndarray, detail: str = "normal") -> list[Ring]:
     """Closed outlines in pixel units with y up (outer rings counter-clockwise, holes
     clockwise): the pixel-edge corners where the boundary turns, simplified (a staircase
     becomes a slope, square corners stay square)."""
+    return [ring for ring, _raw in trace_both(m, detail)]
+
+
+def trace_both(m: np.ndarray, detail: str = "normal") -> list[tuple[Ring, Ring]]:
+    """``trace``, with each ring's unsimplified corners next to it (``shape`` falls back to
+    them where simplifying made a hole touch its outline)."""
     h = m.shape[0]
     tol = DETAIL[detail]
     rings = []
@@ -232,11 +238,12 @@ def trace(m: np.ndarray, detail: str = "normal") -> list[Ring]:
                 corners.append((cx, h - cy))
             else:
                 corners.append((float(x), float(h - y)))
+        raw = _drop_flat(corners)
         ring = _drop_flat(_simplify(corners, tol))
         if len(ring) < 3 or area(ring) == 0:  # simplified away: a tiny shape, keep it whole
-            ring = _drop_flat(corners)
+            ring = raw
         if len(ring) >= 3 and area(ring) != 0:
-            rings.append(ring)
+            rings.append((ring, raw))
     return rings
 
 
@@ -260,6 +267,8 @@ def inside(pt: Point, ring: Ring) -> bool:
 class Polygon:
     outer: Ring
     holes: list[Ring] = field(default_factory=list)
+    # cap triangles, made once (``prepare``): moving / turning a logo only transforms it
+    caps: list[tuple[int, int, int]] | None = field(default=None, compare=False, repr=False)
 
 
 @dataclass
@@ -274,9 +283,16 @@ class Shape:
         return sum(area(p.outer) + sum(area(h) for h in p.holes) for p in self.polygons)
 
 
-def shape(rings: list[Ring], width_mm: float, height_mm: float | None = None) -> Shape:
+def shape(
+    rings: list[Ring],
+    width_mm: float,
+    height_mm: float | None = None,
+    raw: list[Ring] | None = None,
+) -> Shape:
     """Scale the traced rings to ``width_mm`` (height follows unless given), centre them on
-    (0, 0), leave out specks and nest the holes in their outer rings."""
+    (0, 0), leave out specks and nest the holes in their outer rings. With ``raw`` (the
+    unsimplified rings, same order), a polygon whose simplified rings touch or cross uses
+    those instead (else the walls would share an edge or cut each other)."""
     if not rings:
         raise LogoError("The picture has no clear shape — try another “Shape from” setting.")
     xs = [x for r in rings for x, _ in r]
@@ -288,6 +304,10 @@ def shape(rings: list[Ring], width_mm: float, height_mm: float | None = None) ->
     sy = sx if height_mm is None else height_mm / (y1 - y0)
     cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
     scaled = [[((x - cx) * sx, (y - cy) * sy) for x, y in r] for r in rings]
+    unsimplified = (
+        [[((x - cx) * sx, (y - cy) * sy) for x, y in r] for r in raw] if raw is not None else None
+    )
+    plain = {id(r): i for i, r in enumerate(scaled)}  # simplified ring → its index
     total = sum(area(r) for r in scaled if area(r) > 0)
     limit = max(total * SPECK_FRACTION, MIN_FEATURE_MM * MIN_FEATURE_MM)
     outers: list[Ring] = []
@@ -314,9 +334,62 @@ def shape(rings: list[Ring], width_mm: float, height_mm: float | None = None) ->
             dropped += 1
         else:
             polygons[best].holes.append(hole)
+    if unsimplified is not None:
+        for p in polygons:
+            if _rings_meet([p.outer, *p.holes]):
+                p.outer = unsimplified[plain[id(p.outer)]]
+                p.holes = [unsimplified[plain[id(h)]] for h in p.holes]
     xs = [x for p in polygons for x, _ in p.outer]
     ys = [y for p in polygons for _, y in p.outer]
     return Shape(polygons, max(xs) - min(xs), max(ys) - min(ys), dropped)
+
+
+def _rings_meet(rings: list[Ring]) -> bool:
+    """Does any ring cross or touch itself (edges that aren't neighbours), or another ring?
+    Only edges whose x ranges overlap are compared (sorted by their left end)."""
+    a0 = np.concatenate([np.array(r, dtype=np.float64).reshape(-1, 2) for r in rings])
+    a1 = np.concatenate(
+        [np.roll(np.array(r, dtype=np.float64).reshape(-1, 2), -1, axis=0) for r in rings]
+    )
+    ring = np.concatenate([np.full(len(r), k) for k, r in enumerate(rings)])
+    local = np.concatenate([np.arange(len(r)) for r in rings])
+    size = np.concatenate([np.full(len(r), len(r)) for r in rings])
+    lo, hi = np.minimum(a0, a1), np.maximum(a0, a1)
+    order = np.argsort(lo[:, 0], kind="stable")
+    left = lo[order, 0]
+    first = np.searchsorted(left, lo[:, 0], side="left")
+    last = np.searchsorted(left, hi[:, 0], side="right")
+    n = len(a0)
+    step = 4096
+    for s0 in range(0, n, step):  # bounded memory on huge pictures
+        idx = np.arange(s0, min(s0 + step, n))
+        counts = last[idx] - first[idx]
+        if not counts.sum():
+            continue
+        i = np.repeat(idx, counts)
+        offset = np.arange(len(i)) - np.repeat(np.cumsum(counts) - counts, counts)
+        j = order[np.repeat(first[idx], counts) + offset]
+        d = np.abs(local[i] - local[j])
+        same = ring[i] == ring[j]
+        keep = (i != j) & ~(same & ((d == 1) | (d == size[i] - 1)))
+        keep &= (hi[i, 1] >= lo[j, 1]) & (lo[i, 1] <= hi[j, 1])
+        i, j = i[keep], j[keep]
+        if not len(i):
+            continue
+        p, q, r, t = a0[i], a1[i], a0[j], a1[j]
+        hit = (_orient(p, q, r) * _orient(p, q, t) <= 0) & (
+            _orient(r, t, p) * _orient(r, t, q) <= 0
+        )
+        if hit.any():  # collinear pairs count too: their boxes overlap, so they share a point
+            return True
+    return False
+
+
+def _orient(o, a, b):
+    v = (a[..., 0] - o[..., 0]) * (b[..., 1] - o[..., 1]) - (a[..., 1] - o[..., 1]) * (
+        b[..., 0] - o[..., 0]
+    )
+    return np.sign(v)
 
 
 def shape_from_picture(
@@ -329,7 +402,19 @@ def shape_from_picture(
     invert: bool = False,
     detail: str = "normal",
 ) -> Shape:
-    return shape(trace(mask(rgba, w, h, mode, threshold, invert), detail), width_mm)
+    return shape_of_mask(mask(rgba, w, h, mode, threshold, invert), detail, width_mm)
+
+
+def shape_of_mask(m: np.ndarray, detail: str, width_mm: float) -> Shape:
+    both = trace_both(m, detail)
+    return shape([r for r, _ in both], width_mm, raw=[raw for _, raw in both])
+
+
+def prepare(s: Shape) -> Shape:
+    """Make the cap triangles now (a worker thread), so placing / dragging is quick."""
+    for p in s.polygons:
+        _caps(p)
+    return s
 
 
 # ----------------------------------------------------------------------------- meshes
@@ -342,6 +427,12 @@ class Mesh:
     def volume(self) -> float:
         t = self.vertices[self.faces]
         return float(np.einsum("ij,ij->i", t[:, 0], np.cross(t[:, 1], t[:, 2])).sum() / 6)
+
+
+def _caps(poly: Polygon) -> list[tuple[int, int, int]]:
+    if poly.caps is None:
+        poly.caps = _triangulate(poly)
+    return poly.caps
 
 
 def _triangulate(poly: Polygon) -> list[tuple[int, int, int]]:
@@ -372,8 +463,12 @@ def _triangulate(poly: Polygon) -> list[tuple[int, int, int]]:
 def _split_at(tris, xy: list, eps: float) -> list[tuple[int, int, int]]:
     """Split every triangle whose edge passes over a corner point (a fan from the opposite
     corner) until none does. Corners on a pixel row / column share an exact y / x, so level
-    and upright edges look them up; sloping edges check every corner."""
+    and upright edges look them up; sloping edges check the corners within their x range."""
+    import bisect
+
     pts = np.array(xy, dtype=np.float64).reshape(-1, 2)
+    by_x = np.argsort(pts[:, 0], kind="stable")
+    xs = pts[by_x, 0]
     rows: dict[float, list[tuple[float, int]]] = {}
     cols: dict[float, list[tuple[float, int]]] = {}
     for i, (x, y) in enumerate(xy):
@@ -382,23 +477,41 @@ def _split_at(tris, xy: list, eps: float) -> list[tuple[int, int, int]]:
     for d in (rows, cols):
         for v in d.values():
             v.sort()
+    seen: dict[tuple[int, int], list[int]] = {}
 
     def inside(u: int, v: int) -> list[int]:
         """Corners strictly inside edge u → v, in order from u."""
+        if (v, u) in seen:
+            return seen[(v, u)][::-1]
+        if (u, v) not in seen:
+            seen[(u, v)] = _inside(u, v)
+        return seen[(u, v)]
+
+    def _inside(u: int, v: int) -> list[int]:
         (ax, ay), (bx, by) = xy[u], xy[v]
         if ay == by or ax == bx:
             line, k0, k1 = (rows[ay], ax, bx) if ay == by else (cols[ax], ay, by)
             lo, hi = min(k0, k1), max(k0, k1)
-            found = [(k, i) for k, i in line if lo < k < hi]
+            start = bisect.bisect_right(line, (lo, len(xy)))
+            found = []
+            for k, i in line[start:]:
+                if k >= hi:
+                    break
+                found.append((k, i))
             found.sort(reverse=k0 > k1)
             return [i for _k, i in found]
         dx, dy = bx - ax, by - ay
         length = math.sqrt(dx * dx + dy * dy)
-        rx, ry = pts[:, 0] - ax, pts[:, 1] - ay
+        lo = np.searchsorted(xs, min(ax, bx) - eps, side="left")
+        hi = np.searchsorted(xs, max(ax, bx) + eps, side="right")
+        idx = by_x[lo:hi]
+        if not len(idx):
+            return []
+        rx, ry = pts[idx, 0] - ax, pts[idx, 1] - ay
         t = (rx * dx + ry * dy) / (length * length)
         near = np.abs(dx * ry - dy * rx) <= eps * length
         on = np.nonzero(near & (t * length > eps) & (t * length < length - eps))[0]
-        return [int(i) for i in on[np.argsort(t[on], kind="stable")]]
+        return [int(idx[i]) for i in on[np.argsort(t[on], kind="stable")]]
 
     todo = list(tris)
     out: list[tuple[int, int, int]] = []
@@ -427,7 +540,7 @@ def extrude(polygons: list[Polygon], bottom: float, top: float) -> Mesh:
         base = len(verts)
         for z in (bottom, top):
             verts.extend((x, y, z) for r in rings for x, y in r)
-        for a, b, c in _triangulate(poly):
+        for a, b, c in _caps(poly):
             faces.append((base + n + a, base + n + b, base + n + c))  # top, facing up
             faces.append((base + a, base + c, base + b))  # bottom, facing down
         start = 0

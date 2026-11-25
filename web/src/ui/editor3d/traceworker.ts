@@ -1,7 +1,7 @@
 // Traces a logo picture off the page (the desktop does it on a worker thread): mask → outlines
-// → shape, plus the silhouette for the panel's preview. One request at a time per page; the page
+// → shape (with its cap triangles), plus the silhouette for the panel's preview. One request at a time per page; the page
 // drops answers to requests it no longer wants.
-import { LogoError, mask, shape, trace, type Detail, type MaskMode, type Shape } from "../../editor3d/logo";
+import { LogoError, mask, prepare, shapeOfMask, type Detail, type MaskMode, type Shape } from "../../editor3d/logo";
 
 export interface TraceRequest {
   id: number;
@@ -32,7 +32,8 @@ self.onmessage = (e: MessageEvent<TraceRequest>) => {
     const m = mask(r.rgba, r.w, r.h, r.mode, r.threshold, r.invert);
     const [cr, cg, cb] = r.colour;
     for (let i = 0; i < m.length; i++) if (m[i]) preview.set([cr, cg, cb, 255], i * 4);
-    found = shape(trace(m, r.w, r.h, r.detail), r.width);
+    // cap triangles made here too, so placing / dragging on the page stays quick
+    found = prepare(shapeOfMask(m, r.w, r.h, r.detail, r.width));
   } catch (err) {
     error = err instanceof LogoError ? err.message : "Couldn't make a logo from this picture.";
     if (!(err instanceof LogoError)) console.error(err);

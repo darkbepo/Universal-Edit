@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import data from "../../tests/fixtures/logo3d_cases.json";
 import { OrbitCamera, type Vec3 } from "../src/editor3d/camera";
 import {
-  area, badge, defaultMode, MIN_WALL_MM, plateOutline, footprint, logoMesh, LogoError, mask, placement, shape, shapeArea, trace,
+  area, badge, defaultMode, MIN_WALL_MM, placedLogo, plateOutline, prepare, ringsMeet, shapeOfMask, footprint, logoMesh, LogoError, mask, placement, shape, shapeArea, trace,
   volume, type Detail, type MaskMode, type Mesh, type PlateKind, type Ring,
 } from "../src/editor3d/logo";
 import type { ViewModel } from "../src/editor3d/mesh";
@@ -128,6 +128,33 @@ describe("shared cases", () => {
       const s = shape(traced(data.trace.find((t) => t.name === "ring")!.rows), c.width);
       expect(overhang(footprint(s, point, face.normal, 15), pos, face)).toBe(c.overhang);
     }
+  });
+});
+
+describe("rings that touch or cross", () => {
+  it("ringsMeet: the shared cases", () => {
+    for (const c of data.meet) expect(ringsMeet(c.rings as Ring[]), c.name).toBe(c.meets);
+  });
+
+  it("shape falls back to the unsimplified rings where they would touch", () => {
+    const f = data.fallback;
+    const s = shape(f.rings as Ring[], 10, null, f.raw as Ring[]);
+    expect(s.polygons[0].holes.length).toBe(f.holes.length);
+    s.polygons[0].holes.forEach((h, i) => closeAll(h.flat(), f.holes[i].flat()));
+  });
+
+  it("a busy picture: a sealed mesh, and placing it again is quick", () => {
+    const n = 400;
+    const m = new Uint8Array(n * n);
+    let seed = 7;
+    const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+    const cells = Array.from({ length: 40 * 40 }, () => rnd() < 0.5);
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) m[y * n + x] = cells[Math.floor(y / 10) * 40 + Math.floor(x / 10)] ? 1 : 0;
+    const s = prepare(shapeOfMask(m, n, n, "normal", 80));
+    const t = performance.now();
+    const mesh = placedLogo(s, 2, [0, 0, 10], [0, 0, 1], 30);
+    expect(performance.now() - t).toBeLessThan(200);
+    expect(watertight(mesh)).toBe(true);
   });
 });
 
