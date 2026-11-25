@@ -243,6 +243,7 @@ def live_text_layer(
         visible=old.visible,
         mask=old.mask if keep_mask else None,
         fx=old.fx,
+        blend=old.blend,
     )
 
 

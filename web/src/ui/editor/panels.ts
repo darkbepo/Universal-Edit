@@ -1,4 +1,5 @@
 // Tool bar (left), colour swatches, tool settings and the layers list (right).
+import { MODES as BLEND_MODES } from "../../editor/blend";
 import { EFFECTS, type FxKey } from "../../editor/layerfx";
 import RAIL from "../../editor/rail.json";
 import { ICONS as TABLER } from "../icon_data";
@@ -320,6 +321,7 @@ export class LayersPanel {
   readonly list = h("ul", { class: "layers", ariaLabel: "Layers" });
   private opacity = h("input", { type: "range", min: "0", max: "100", ariaLabel: "Layer opacity" });
   private opacityOut = h("output");
+  private blend = h("select", { ariaLabel: "Blend mode", title: "How the layer mixes with the layers below it" });
   private buttons: Record<"add" | "duplicate" | "delete" | "merge", HTMLButtonElement>;
   private doc: EditorDoc | null = null;
   private anchor: number | null = null; // where a Shift+click range starts (layer index)
@@ -352,6 +354,11 @@ export class LayersPanel {
       const value = +this.opacity.value / 100;
       this.run((d) => ops.setOpacityLayers(d, selectedIndices(d), value));
     });
+    for (const [mode, label] of BLEND_MODES) this.blend.append(new Option(label, mode));
+    this.blend.addEventListener("change", () => {
+      const mode = this.blend.value;
+      this.run((d) => ops.setBlendLayers(d, selectedIndices(d), mode));
+    });
     this.list.title = "Double-click a name to rename · drag to reorder · Ctrl+click or Shift+click to select several · right-click for more";
     this.list.addEventListener("pointermove", (e) => this.pointerMove(e));
     this.list.addEventListener("pointerup", (e) => this.pointerUp(e));
@@ -366,6 +373,7 @@ export class LayersPanel {
       h("div", { class: "section" }, "Layers"),
       this.list,
       h("label", { class: "opacity-row" }, "Opacity ", this.opacity, this.opacityOut),
+      h("label", { class: "opacity-row blend-row" }, "Blend ", this.blend),
       h("div", { class: "layer-buttons" }, this.buttons.add, this.buttons.duplicate, this.buttons.delete, this.buttons.merge));
   }
 
@@ -528,6 +536,7 @@ export class LayersPanel {
     const active = doc.layers[doc.active];
     this.opacity.value = String(Math.round(active.opacity * 100));
     this.opacityOut.textContent = `${this.opacity.value} %`;
+    this.blend.value = active.blend ?? "normal";
     const chosen = selectedIndices(doc);
     const many = chosen.length > 1;
     this.buttons.delete.disabled = chosen.length >= doc.layers.length;

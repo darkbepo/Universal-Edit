@@ -1,5 +1,6 @@
 // The editor document: canvas size plus a stack of layers (index 0 = bottom).
 // Port of src/umc/editor/document.py. No DOM here — runs in node tests too.
+import { blendPixel } from "./blend";
 import { anyFx, fxBounds, fxRegion } from "./layerfx";
 import { Rect } from "./geometry";
 import { layerBounds, makeLayer, type Layer } from "./layer";
@@ -81,13 +82,17 @@ export function pasteboard(doc: EditorDoc, step = 1, budget = PASTEBOARD_BUDGET)
 }
 
 /** Paint `src` (part.width × part.height, straight alpha) at `part` over `out` (rect `r`). */
-function overRegion(out: Uint8ClampedArray, r: Rect, src: Uint8ClampedArray, part: Rect, op: number): void {
+function overRegion(out: Uint8ClampedArray, r: Rect, src: Uint8ClampedArray, part: Rect, op: number, mode = "normal"): void {
   for (let y = part.y0; y < part.y1; y++) {
     let si = (y - part.y0) * part.width * 4;
     let di = ((y - r.y0) * r.width + (part.x0 - r.x0)) * 4;
     for (let x = part.x0; x < part.x1; x++, si += 4, di += 4) {
       const sa = (src[si + 3] / 255) * op;
       if (sa <= 0) continue;
+      if (mode !== "normal") {
+        blendPixel(out, di, src[si], src[si + 1], src[si + 2], sa, mode);
+        continue;
+      }
       const da = out[di + 3] / 255;
       const oa = sa + da * (1 - sa);
       const k = da * (1 - sa);
@@ -108,7 +113,7 @@ export function composite(doc: EditorDoc, rect?: Rect, override?: Map<number, Ui
     if (!layer.visible || layer.opacity <= 0) return;
     if (anyFx(layer.fx)) {
       const fxPart = fxBounds(layer).intersect(r);
-      if (!fxPart.empty) overRegion(out, r, fxRegion(layer, fxPart, override?.get(i) ?? layer.data), fxPart, layer.opacity);
+      if (!fxPart.empty) overRegion(out, r, fxRegion(layer, fxPart, override?.get(i) ?? layer.data), fxPart, layer.opacity, layer.blend ?? "normal");
       return;
     }
     const part = layerBounds(layer).intersect(r);
@@ -116,12 +121,17 @@ export function composite(doc: EditorDoc, rect?: Rect, override?: Map<number, Ui
     const src = override?.get(i) ?? layer.data;
     const op = layer.opacity;
     const mask = layer.mask && layer.mask.length === src.length ? layer.mask : null;
+    const mode = layer.blend ?? "normal";
     for (let y = part.y0; y < part.y1; y++) {
       let si = ((y - layer.y) * layer.width + (part.x0 - layer.x)) * 4;
       let di = ((y - r.y0) * r.width + (part.x0 - r.x0)) * 4;
       for (let x = part.x0; x < part.x1; x++, si += 4, di += 4) {
         const sa = (src[si + 3] / 255) * op * (mask ? mask[si] / 255 : 1);
         if (sa <= 0) continue;
+        if (mode !== "normal") {
+          blendPixel(out, di, src[si], src[si + 1], src[si + 2], sa, mode);
+          continue;
+        }
         const da = out[di + 3] / 255;
         const oa = sa + da * (1 - sa);
         const k = da * (1 - sa);

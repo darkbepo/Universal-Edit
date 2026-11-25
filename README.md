@@ -245,6 +245,7 @@ remove a background in one click. Save as any picture format, or as a layered `.
 | Feature | Desktop app | Website |
 |---|:---:|:---:|
 | Basics: layers (opacity, hide, reorder, merge), brush, eraser, fill, colour picker, shapes, text, crop, resize, rotate / flip, undo | ✅ | ✅ |
+| **Blend modes** per layer: Normal, Multiply, Screen, Overlay, Darken, Lighten, Colour dodge, Colour burn, Hard light, Soft light, Difference, Exclusion · merging keeps the look · saved in .ora files the way GIMP and Krita read them | ✅ | ✅ |
 | Layers: select several (Ctrl / Shift+click), drag to reorder, ▲▼ arrows on each layer, right-click menu (duplicate, delete, merge, move to top / bottom, show / hide); Alt+click an eye shows only that layer | ✅ | ✅ |
 | Crop: a small bar next to the crop rectangle (or a rectangle selection) shows the size with Apply crop / Cancel (Crop to selection / Deselect) | ✅ | ✅ |
 | Clipboard: copy (Ctrl+C), copy what you see (Ctrl+Shift+C), cut, paste as a new layer — back in place, or centred for pictures from other programs | ✅ | ✅ (copying into other programs needs a browser that allows it) |

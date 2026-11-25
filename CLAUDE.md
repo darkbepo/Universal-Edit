@@ -669,7 +669,13 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       brightness / contrast, undo / redo (patches of the changed rect, 500 MB cap). Saves `.ora`
       (layers; also readable by the converter) or any image format through `ImageConverter`.
       Layer objects are replaced, never changed in place, so undo can share them (history.py).
-      Not yet: lasso / magic wand, blend modes, filters, hue / saturation / curves.
+      Not yet (then): lasso / magic wand, blend modes, filters, hue / saturation / curves — all
+      since done; blend modes Nov 2026: `editor/blend.py` ↔ `blend.ts` (the 12 separable W3C
+      modes; `Layer.blend`, "normal" = the old source-over; `composite`, merges and fx regions
+      go through `blend_over` / `blendPixel`; ORA `composite-op="svg:…"`; `ops.set_blend_layers` /
+      `setBlendLayers` = one undo step; "Blend" combo / select under the opacity slider;
+      shared pixels `tests/fixtures/blend_cases.json`, `python scripts/make_blend_cases.py`, web
+      within 1). Text / shape redraws keep a layer's blend.
    3. ✅ Image editor on the website — spec `docs/superpowers/specs/2026-11-11-web-image-editor-design.md`:
       same tools and shortcuts. Model in `web/src/editor/` (port of `src/umc/editor/`, RGBA
       `Uint8ClampedArray` layers; Canvas 2D only behind the `Rasterizer` / `PngCodec` interfaces in

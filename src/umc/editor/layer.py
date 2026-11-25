@@ -26,6 +26,8 @@ class Layer:
     shape: Any = None
     # Live layer effects (layerfx.LayerFx: shadow, glow, outline, colour overlay); None = none.
     fx: Any = None
+    # How the layer mixes with what's below it (blend.MODES id).
+    blend: str = "normal"
 
     def __post_init__(self) -> None:
         if self.image.mode != "RGBA":

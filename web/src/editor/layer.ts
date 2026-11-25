@@ -23,6 +23,8 @@ export interface Layer {
   readonly shape?: unknown;
   /** Live layer effects (layerfx.ts LayerFx: shadow, glow, outline, colour overlay); null = none. */
   readonly fx?: LayerFx | null;
+  /** How the layer mixes with what's below it (blend.ts MODES id); absent = normal. */
+  readonly blend?: string;
 }
 
 /** Test hook: the largest crop made (in pixels) — lets tests prove strokes don't copy whole layers. */

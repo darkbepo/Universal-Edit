@@ -10,7 +10,7 @@ from dataclasses import replace
 
 from PIL import Image
 
-from umc.editor import layerfx
+from umc.editor import blend, layerfx
 from umc.editor.document import Document, check_size, with_opacity
 from umc.editor.geometry import Rect
 from umc.editor.history import (
@@ -304,9 +304,8 @@ def merge_down(doc: Document) -> Command | None:
     img = Image.new("RGBA", (box.width, box.height))
     for la in (lower, upper):
         if la is lower or la.visible:
-            img.alpha_composite(
-                with_opacity(la.pixels(), la.opacity), (la.x - box.x0, la.y - box.y0)
-            )
+            src = with_opacity(la.pixels(), la.opacity)
+            blend.blend_over(img, src, (la.x - box.x0, la.y - box.y0), la.blend)
     merged = Layer(lower.name, img, box.x0, box.y0, 1.0, lower.visible)
     layers = list(doc.layers)
     layers[i - 1 : i + 1] = [merged]
@@ -328,7 +327,8 @@ def merge_layers(doc: Document, indices) -> Command | None:
         box = box.union(la.bounds)
     img = Image.new("RGBA", (box.width, box.height))
     for la in shown:
-        img.alpha_composite(with_opacity(la.pixels(), la.opacity), (la.x - box.x0, la.y - box.y0))
+        src = with_opacity(la.pixels(), la.opacity)
+        blend.blend_over(img, src, (la.x - box.x0, la.y - box.y0), la.blend)
     top = group[-1]
     merged = Layer(top.name, img, box.x0, box.y0, 1.0, any(la.visible for la in group))
     gone = set(chosen)
@@ -411,6 +411,18 @@ def rename_layer(doc: Document, index: int, name: str) -> Command | None:
     if not name or name == doc.layers[index].name:
         return None
     return _replace(doc, index, "Rename layer", replace(doc.layers[index], name=name))
+
+
+def set_blend_layers(doc: Document, indices, mode: str) -> Command | None:
+    """How the chosen layers mix with what's below them (``blend.MODES`` ids)."""
+    if mode not in blend.IDS:
+        return None
+    new = {
+        i: replace(doc.layers[i], blend=mode)
+        for i in _clean(doc, indices)
+        if doc.layers[i].blend != mode
+    }
+    return _replace_many(doc, new, "Blend mode") if new else None
 
 
 def set_opacity(doc: Document, index: int, opacity: float) -> Command | None:

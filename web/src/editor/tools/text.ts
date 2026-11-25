@@ -180,6 +180,7 @@ export function liveTextLayer(doc: EditorDoc, raster: Rasterizer, spec: TextSpec
     visible: old.visible,
     mask: keepMask ? old.mask : null,
     fx: old.fx,
+    blend: old.blend,
   });
 }
 

@@ -1,6 +1,7 @@
 // Whole-image operations, layer-list operations and adjustments (port of src/umc/editor/ops.py).
 // Each applies its change and returns the Command to push (null when nothing changed). Layers
 // are replaced, never changed in place — see history.ts.
+import { blendPixel, IDS as BLEND_IDS } from "./blend";
 import { checkSize, docBounds, EditorError, type EditorDoc } from "./document";
 import { fullMask } from "./selection";
 import { Rect } from "./geometry";
@@ -292,8 +293,14 @@ function flatten(layers: Layer[]): { data: Uint8ClampedArray; box: Rect } {
   const data = new Uint8ClampedArray(box.width * box.height * 4);
   for (const l of group) {
     const px = layerPixels(l); // the mask is baked into a merge
+    const mode = l.blend ?? "normal";
     for (let y = 0; y < l.height; y++)
-      for (let x = 0; x < l.width; x++) overPixel(data, ((l.y - box.y0 + y) * box.width + (l.x - box.x0 + x)) * 4, px, (y * l.width + x) * 4, l.opacity);
+      for (let x = 0; x < l.width; x++) {
+        const i = ((l.y - box.y0 + y) * box.width + (l.x - box.x0 + x)) * 4;
+        const j = (y * l.width + x) * 4;
+        if (mode === "normal") overPixel(data, i, px, j, l.opacity);
+        else blendPixel(data, i, px[j], px[j + 1], px[j + 2], (px[j + 3] / 255) * l.opacity, mode);
+      }
   }
   return { data, box };
 }
@@ -388,6 +395,14 @@ export function renameLayer(doc: EditorDoc, index: number, name: string): Comman
   const n = name.trim();
   if (!n || n === doc.layers[index].name) return null;
   return replace(doc, index, "Rename layer", withProps(doc.layers[index], { name: n }));
+}
+
+/** How the chosen layers mix with what's below them (blend.ts MODES ids). */
+export function setBlendLayers(doc: EditorDoc, indices: Iterable<number>, mode: string): Command | null {
+  if (!BLEND_IDS.includes(mode)) return null;
+  const updated = new Map<number, Layer>();
+  for (const i of clean(doc, indices)) if ((doc.layers[i].blend ?? "normal") !== mode) updated.set(i, withProps(doc.layers[i], { blend: mode }));
+  return updated.size ? replaceMany(doc, updated, "Blend mode") : null;
 }
 
 export function setOpacity(doc: EditorDoc, index: number, opacity: number): Command | null {

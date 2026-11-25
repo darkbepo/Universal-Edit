@@ -439,6 +439,7 @@ def shape_layer(
             visible=old.visible,
             mask=replaced_mask(old, x, y, img.size),
             fx=old.fx,
+            blend=old.blend,
         )
     return layer
 

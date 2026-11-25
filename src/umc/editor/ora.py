@@ -14,6 +14,7 @@ from PIL import Image
 
 from umc.core.errors import ConversionError
 from umc.core.filemode import match_mode
+from umc.editor import blend
 from umc.editor.document import Document, check_size
 from umc.editor.layer import Layer
 
@@ -152,6 +153,7 @@ def write_ora(doc: Document, path: Path) -> None:
             y=str(layer.y),
             opacity=f"{layer.opacity:.4f}",
             visibility="visible" if layer.visible else "hidden",
+            **({"composite-op": blend.ora_op(layer.blend)} if layer.blend != "normal" else {}),
             **({"selected": "true"} if doc.layers.index(layer) == doc.active else {}),
             # our own extra: how a text layer was made, so it stays editable (others ignore it)
             **({TEXT_ATTR: json.dumps(layer.text.to_dict())} if keep and layer.text else {}),
@@ -218,6 +220,7 @@ def read_ora(path: Path) -> Document:
                     text=_text_spec(el.get(TEXT_ATTR)),
                     shape=_shape_spec(el.get(SHAPE_ATTR)),
                     fx=_layer_fx(el.get(FX_ATTR)),
+                    blend=blend.from_ora(el.get("composite-op")),
                 )
                 checked = el.get(CHECKED_ATTR) == "1"
                 if checked and (layer.text is not None or layer.shape is not None):

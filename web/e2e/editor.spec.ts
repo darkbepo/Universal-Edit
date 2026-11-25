@@ -1175,3 +1175,13 @@ test("layer effects: a window adds a drop shadow live, one undo step, with an fx
   await expect.poll(fx).toBeNull(); // the whole run was one step
   await expect(page.locator(".layers .fx-badge")).toHaveCount(0);
 });
+
+test("the Blend menu sets the layer's blend mode, one undo step", async ({ page }) => {
+  await openEditor(page);
+  await page.getByLabel("Blend mode").selectOption("multiply");
+  const blends = () => page.evaluate(() => (window.__editor as unknown as { doc: { layers: { blend?: string }[] } }).doc.layers.map((l) => l.blend ?? "normal"));
+  expect(await blends()).toEqual(["normal", "multiply"]);
+  await page.keyboard.press("Control+z");
+  expect(await blends()).toEqual(["normal", "normal"]);
+  await expect(page.getByLabel("Blend mode")).toHaveValue("normal");
+});

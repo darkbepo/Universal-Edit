@@ -23,6 +23,7 @@ from PySide6.QtGui import QColor, QDragLeaveEvent, QIcon, QPainter, QPixmap, QPo
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
+    QComboBox,
     QGridLayout,
     QHBoxLayout,
     QLabel,
@@ -39,7 +40,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from umc.editor import layerfx, ops
+from umc.editor import blend, layerfx, ops
 from umc.editor.document import Document
 from umc.gui import theme
 from umc.gui.editor.canvas import pil_to_qimage
@@ -298,6 +299,17 @@ class LayersPanel(QWidget):
         op.addWidget(self.opacity_label)
         lay.addLayout(op)
 
+        mode_row = QHBoxLayout()
+        mode_row.addWidget(QLabel("Blend"))
+        self.blend = QComboBox()
+        self.blend.setAccessibleName("Blend mode")
+        self.blend.setToolTip("How the layer mixes with the layers below it")
+        for mode, label in blend.MODES:
+            self.blend.addItem(label, mode)
+        self.blend.activated.connect(self._on_blend)
+        mode_row.addWidget(self.blend, 1)
+        lay.addLayout(mode_row)
+
         grid = QGridLayout()
         grid.setSpacing(6)
 
@@ -345,6 +357,7 @@ class LayersPanel(QWidget):
             self.list.currentRow() == self._index_to_row(doc.active)
             and self.selected_rows() == {self._index_to_row(i) for i in doc.selected_indices}
             and self.opacity.value() == round(doc.active_layer.opacity * 100)
+            and self.blend.currentData() == doc.active_layer.blend
         )
 
     def refresh(self, doc: Document) -> None:
@@ -402,6 +415,9 @@ class LayersPanel(QWidget):
         self.opacity.setValue(round(layer.opacity * 100))
         self.opacity.blockSignals(False)
         self.opacity_label.setText(f"{round(layer.opacity * 100)} %")
+        self.blend.blockSignals(True)
+        self.blend.setCurrentIndex(max(0, self.blend.findData(layer.blend)))
+        self.blend.blockSignals(False)
         n, many = len(doc.layers), len(doc.selected_indices) > 1
         self.delete_button.setEnabled(len(doc.selected_indices) < n)
         self.merge_button.setText("Merge layers" if many else "Merge down")
@@ -611,6 +627,12 @@ class LayersPanel(QWidget):
         self.opacity_label.setText(f"{value} %")
         if not self.opacity.isSliderDown():
             self._on_opacity()
+
+    def _on_blend(self, _index: int) -> None:
+        if self._updating or self.doc is None:
+            return
+        mode = self.blend.currentData()
+        self._run(lambda d: ops.set_blend_layers(d, d.selected_indices, mode))
 
     def _on_opacity(self) -> None:
         if self._updating or self.doc is None:

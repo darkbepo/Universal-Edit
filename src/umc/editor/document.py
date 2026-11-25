@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from PIL import Image, ImageChops
 
 from umc.core.errors import ConversionError
-from umc.editor import layerfx
+from umc.editor import blend, layerfx
 from umc.editor.geometry import Rect
 from umc.editor.layer import Layer
 
@@ -109,7 +109,7 @@ class Document:
     def composite(
         self, rect: Rect | None = None, *, override: dict | None = None, clip: bool = True
     ) -> Image.Image:
-        """Flatten the visible layers (normal blending, layer opacity).
+        """Flatten the visible layers (each layer's blend mode and opacity).
 
         ``override`` maps a layer index to a replacement image (used for live previews).
         ``clip=False`` lets ``rect`` reach past the canvas (the pasteboard).
@@ -131,7 +131,7 @@ class Document:
                 part = Rect(lb.x0 - m, lb.y0 - m, lb.x1 + m, lb.y1 + m).intersect(rect)
                 if not part.empty:
                     src = with_opacity(layerfx.region(layer, part, image), layer.opacity)
-                    out.alpha_composite(src, (part.x0 - rect.x0, part.y0 - rect.y0))
+                    blend.blend_over(out, src, (part.x0 - rect.x0, part.y0 - rect.y0), layer.blend)
                 continue
             part = lb.intersect(rect)
             if part.empty:
@@ -141,5 +141,5 @@ class Document:
             if layer.mask is not None and layer.mask.size == image.size:
                 src.putalpha(ImageChops.multiply(src.getchannel("A"), layer.mask.crop(box)))
             src = with_opacity(src, layer.opacity)
-            out.alpha_composite(src, (part.x0 - rect.x0, part.y0 - rect.y0))
+            blend.blend_over(out, src, (part.x0 - rect.x0, part.y0 - rect.y0), layer.blend)
         return out

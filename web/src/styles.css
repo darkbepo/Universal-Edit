@@ -526,6 +526,7 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 .opacity-row { display: flex; align-items: center; gap: 8px; }
 .opacity-row input { flex: 1; accent-color: var(--accent); }
 .opacity-row output { min-width: 44px; text-align: right; }
+.blend-row select { flex: 1; min-width: 0; }
 .layer-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .editor-status { display: flex; justify-content: space-between; gap: 12px; padding: 6px 14px; background: var(--surface); border-top: 1px solid var(--border); color: var(--muted); font-size: 13px; }
 .editor-status .msg.error { color: var(--danger); }

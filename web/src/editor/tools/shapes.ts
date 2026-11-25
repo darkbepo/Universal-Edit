@@ -372,7 +372,7 @@ export function shapeLayer(raster: Rasterizer, name: string, spec: ShapeSpec, ol
   const local: ShapeSpec = { ...spec, points: [p[0] - d.x, p[1] - d.y, p[2] - d.x, p[3] - d.y] };
   const layer = makeLayer(name, d.width, d.height, new Uint8ClampedArray(d.data), { x: d.x, y: d.y, shape: local });
   if (!old) return layer;
-  return withProps(layer, { opacity: old.opacity, visible: old.visible, mask: replacedMask(old, d.x, d.y, d.width, d.height), fx: old.fx });
+  return withProps(layer, { opacity: old.opacity, visible: old.visible, mask: replacedMask(old, d.x, d.y, d.width, d.height), fx: old.fx, blend: old.blend });
 }
 
 export function canvasPoints(layer: Layer): [number, number, number, number] {

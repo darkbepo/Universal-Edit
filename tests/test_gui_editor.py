@@ -474,6 +474,20 @@ def test_opacity_slider_changes_all_selected(four, qtbot):
     assert all(la.opacity == 1.0 for la in pg.doc.layers)
 
 
+def test_blend_menu_changes_all_selected(four, qtbot):
+    pg = four
+    _click_row(qtbot, pg, 0)
+    _click_row(qtbot, pg, 3, Qt.KeyboardModifier.ControlModifier)
+    i = pg.layers.blend.findData("multiply")
+    pg.layers.blend.setCurrentIndex(i)
+    pg.layers.blend.activated.emit(i)
+    assert [la.blend for la in pg.doc.layers] == ["multiply", "normal", "normal", "multiply"]
+    assert pg.layers.blend.currentData() == "multiply"
+    pg.canvas.undo()
+    assert all(la.blend == "normal" for la in pg.doc.layers)
+    assert pg.layers.blend.currentData() == "normal"
+
+
 # ------------------------------------------------------------------ crop / selection bar
 
 

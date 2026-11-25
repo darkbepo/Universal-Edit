@@ -2,6 +2,7 @@
 // (src/umc/editor/ora.py) and GIMP / Krita read.
 import { anchorOf, liveTextLayer, makeSpec, type TextSpec } from "./tools/text";
 import { canvasPoints, shapeLayer, type ShapeSpec } from "./tools/shapes";
+import { fromOra, oraOp } from "./blend";
 import { fxFromDict } from "./layerfx";
 import { strFromU8, strToU8, unzipSync, zipSync, type Zippable } from "fflate";
 import { checkSize, composite, EditorError, type EditorDoc } from "./document";
@@ -123,7 +124,7 @@ export async function writeOra(doc: EditorDoc, png: PngCodec, raster?: Rasterize
     files[src] = [await png.encode(layerPixels(l), l.width, l.height), { level: 0 }]; // ORA has no masks: baked in
     const keep = keepsRecipe(l, doc, raster);
     entries.push(
-      `<layer name="${esc(l.name)}" src="${src}" x="${l.x}" y="${l.y}" opacity="${l.opacity.toFixed(4)}" visibility="${l.visible ? "visible" : "hidden"}"${i === doc.active ? ' selected="true"' : ""}${keep && l.text ? ` umc-text="${esc(JSON.stringify(l.text))}"` : ""}${keep && l.shape ? ` umc-shape="${esc(JSON.stringify(l.shape))}"` : ""}${keep && raster ? ' umc-checked="1"' : ""}${l.fx ? ` umc-fx="${esc(JSON.stringify(l.fx))}"` : ""}/>`, // our extras: text / shapes stay editable, effects stay live
+      `<layer name="${esc(l.name)}" src="${src}" x="${l.x}" y="${l.y}" opacity="${l.opacity.toFixed(4)}" visibility="${l.visible ? "visible" : "hidden"}"${(l.blend ?? "normal") !== "normal" ? ` composite-op="${oraOp(l.blend!)}"` : ""}${i === doc.active ? ' selected="true"' : ""}${keep && l.text ? ` umc-text="${esc(JSON.stringify(l.text))}"` : ""}${keep && l.shape ? ` umc-shape="${esc(JSON.stringify(l.shape))}"` : ""}${keep && raster ? ' umc-checked="1"' : ""}${l.fx ? ` umc-fx="${esc(JSON.stringify(l.fx))}"` : ""}/>`, // our extras: text / shapes stay editable, effects stay live
     );
   }
   const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<image version="0.0.3" w="${doc.width}" h="${doc.height}"><stack>${entries.join("")}</stack></image>`;
@@ -204,6 +205,7 @@ export async function readOra(bytes: Uint8Array, png: PngCodec, name = "file", r
       text: parseText(a["umc-text"]),
       shape: parseShape(a["umc-shape"]),
       fx: parseFx(a["umc-fx"]),
+      ...(fromOra(a["composite-op"]) !== "normal" ? { blend: fromOra(a["composite-op"]) } : {}),
     });
     // only recipes checked against their pixels when saved (older files: the pixels win, as is)
     const fixed = raster && a["umc-checked"] === "1" && (layer.text || layer.shape) ? fromRecipe(layer, { width, height, layers: [], active: 0, selection: null, dirty: false }, raster) : layer;
