@@ -44,6 +44,7 @@
     "@resvg/resvg-wasm": "^2.6.2",
     "dejavu-fonts-ttf": "^2.37.3",
     "dxf": "^5.3.1",
+    "earcut": "^3.0.2",
     "fast-xml-parser": "^5.12.0",
     "fflate": "^0.8.3",
     "harfbuzzjs": "^1.6.4",

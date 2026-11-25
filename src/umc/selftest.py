@@ -407,6 +407,30 @@ def _viewer3d_check(d: Path) -> list[Path]:
     return [path]
 
 
+def _logo3d_check(d: Path) -> list[Path]:
+    """3D logo: a picture traced, triangulated (mapbox_earcut is packaged) and extruded into a
+    closed solid, written as STL."""
+    import numpy as np
+
+    from umc.editor3d import logo
+
+    m = np.zeros((40, 60), np.uint8)
+    m[5:35, 5:55] = 1
+    m[15:25, 15:25] = 0
+    s = logo.shape(logo.trace(m), 50)
+    parts = logo.badge(s, 2, "rounded", 3, 2, True)
+    expected = s.area * (2 + logo.SINK_MM)
+    if len(parts) != 2 or abs(parts[1].volume - expected) > 1e-6 * expected:
+        raise RuntimeError(f"unexpected logo: {len(parts)} parts, volume {parts[-1].volume}")
+    import trimesh
+
+    d.mkdir(parents=True, exist_ok=True)
+    out = d / "logo.stl"
+    mesh = trimesh.util.concatenate([trimesh.Trimesh(p.vertices, p.faces) for p in parts])
+    out.write_bytes(mesh.export(file_type="stl"))
+    return [out]
+
+
 def _audio_editor_check(d: Path) -> list[Path]:
     """Audio editor: open (FFmpeg → float WAV), cut, fade, save as MP3, and Qt Multimedia's
     audio output classes are packaged."""
@@ -729,6 +753,7 @@ def run(report: Path) -> int:
             ("editor add-ons installed and loading", lambda: _addons_check(d / "addons")),
             ("document editor", lambda: _doc_editor_check(d / "doceditor")),
             ("3D viewer (model + Qt OpenGL)", lambda: _viewer3d_check(d / "viewer3d")),
+            ("3D logo (trace, earcut, extrude)", lambda: _logo3d_check(d / "logo3d")),
             (
                 "audio editor (open, cut, fade, save as mp3)",
                 lambda: _audio_editor_check(d / "audioedit"),

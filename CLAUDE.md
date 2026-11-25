@@ -925,6 +925,18 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       page `ui/editor3d/page.ts` (three.js WebGL, models read in the worker by the hidden
       `model3d-view` converter → `mesh.bin` + `info.json`; `window.__viewer3d` with `?e2e`).
       Next: basic editing for 3D printing (plan in the session handoff / owner's go-ahead).
+      Logos (owner, Nov 2026; spec `docs/superpowers/specs/2026-11-25-3d-logo-design.md`): a
+      picture → a raised logo, alone (base plate, keychain hole) or on a flat face of a model;
+      one silhouette, no colours. Step 1 ✅ model: `editor3d/logo.py` ↔ `logo.ts` (mask →
+      `trace` = pixel-edge corners walked with a right-turn rule, Douglas–Peucker, corners where
+      parts touch diagonally moved `SADDLE_NUDGE` apart (else a zero-width shared edge) →
+      `shape` (mm, holes nested, specks dropped) → `extrude` / `badge` (earcut: desktop
+      `mapbox_earcut`, web `earcut`, both ISC) → `placement` / `placed_logo`), `editor3d/pick.py`
+      ↔ `pick.ts` (`ray`, `hit`, `flat_face`, `overhang`). Shared cases
+      `tests/fixtures/logo3d_cases.json` (`python scripts/make_logo3d_cases.py`, on purpose
+      only); earcut's triangle order may differ between the two, so cases compare counts /
+      areas / volumes. trimesh's `is_watertight` accepts edges shared by 4 triangles — the
+      tests count edges themselves. Self-test step "3D logo". Next: step 2 (desktop page).
    9. ✅ Start screen = hub (both apps; order and the four "Coming soon" tiles: roadmap 16): editor tiles under the empty drop zone, listed in
       `core/editors.py` / `web/src/core/editors.ts` (same order and text; `available` False =
       greyed "Coming soon"); tests/test_editor_hub.py
