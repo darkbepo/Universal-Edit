@@ -975,6 +975,13 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       list. Apply while a trace runs applies when it's back (`apply_when_traced` /
       `applyWhenTraced`). Web: tracing runs in `ui/editor3d/traceworker.ts` (a module Worker);
       `beforeunload` while unsaved. A logo has 2+ shapes but counts as one part.
+      Second review: `trace_both` / `traceBoth` keep each ring's unsimplified corners and
+      `shape(…, raw)` uses them for a polygon whose simplified rings touch or cross (incl. a
+      ring crossing itself) — `_rings_meet` / `ringsMeet` = a sweep over edges sorted by left x
+      (shared cases "meet" / "fallback"). Cap triangles are made once per shape (`prepare` on the
+      desktop trace thread / in the web trace worker; `Polygon.caps`), so drags only transform;
+      `_split_at` checks sloping edges against corners within their x range only. The web trace
+      worker's `onerror` clears the stuck "Tracing…" state.
    9. ✅ Start screen = hub (both apps; order and the four "Coming soon" tiles: roadmap 16): editor tiles under the empty drop zone, listed in
       `core/editors.py` / `web/src/core/editors.ts` (same order and text; `available` False =
       greyed "Coming soon"); tests/test_editor_hub.py

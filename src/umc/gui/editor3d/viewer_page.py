@@ -92,7 +92,8 @@ def _trace_job(pic: S.Picture, s: S.LogoSettings, colour: tuple[int, int, int]):
     rgba = np.zeros((pic.h, pic.w, 4), np.uint8)
     rgba[m == 1] = (*colour, 255)
     try:
-        shp: L.Shape | L.LogoError = L.shape(L.trace(m, s.detail), s.width)
+        # cap triangles made here too, so placing / dragging on the UI thread stays quick
+        shp: L.Shape | L.LogoError = L.prepare(L.shape_of_mask(m, s.detail, s.width))
     except L.LogoError as exc:
         shp = exc
     return shp, rgba.tobytes()

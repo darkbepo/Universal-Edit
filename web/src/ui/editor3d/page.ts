@@ -815,6 +815,18 @@ export class ViewerPage {
     if (!this.tracer) {
       this.tracer = new Worker(new URL("./traceworker.ts", import.meta.url), { type: "module" });
       this.tracer.onmessage = (m: MessageEvent<TraceAnswer>) => this.onTraced(m.data);
+      // the worker couldn't load or died: say so, and start a new one next time
+      this.tracer.onerror = this.tracer.onmessageerror = (ev: Event) => {
+        ev.preventDefault?.();
+        this.tracer?.terminate();
+        this.tracer = null;
+        const ed = this.editing;
+        if (ed?.tracing) {
+          Object.assign(ed, { tracing: 0, applyWhenTraced: false, shape: null, shapeKey: "", logo: null, preview: null, problem: "Couldn't trace the picture — try again." });
+          this.logoPanel.setNote(ed.problem);
+          this.setOverlay(null);
+        }
+      };
     }
     const request: TraceRequest = {
       id, rgba: pic.rgba.slice(), w: pic.w, h: pic.h, mode: s.mode, threshold: s.threshold, invert: s.invert,

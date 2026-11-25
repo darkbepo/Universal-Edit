@@ -188,8 +188,14 @@ export function area(ring: Ring): number {
 
 /** Closed outlines in pixel units, y up (outer rings counter-clockwise, holes clockwise). */
 export function trace(m: ArrayLike<number>, w: number, h: number, detail: Detail = "normal"): Ring[] {
+  return traceBoth(m, w, h, detail).map(([ring]) => ring);
+}
+
+/** ``trace``, with each ring's unsimplified corners next to it (``shape`` falls back to them
+ * where simplifying made rings touch or cross). */
+export function traceBoth(m: ArrayLike<number>, w: number, h: number, detail: Detail = "normal"): [Ring, Ring][] {
   const tol = DETAIL[detail];
-  const rings: Ring[] = [];
+  const rings: [Ring, Ring][] = [];
   const [all, saddles] = loops(m, w, h);
   for (const loop of all) {
     const n = loop.length;
@@ -207,9 +213,10 @@ export function trace(m: ArrayLike<number>, w: number, h: number, detail: Detail
         corners.push([cx, h - cy]);
       } else corners.push([x, h - y]);
     }
+    const raw = dropFlat(corners);
     let ring = dropFlat(simplify(corners, tol));
-    if (ring.length < 3 || area(ring) === 0) ring = dropFlat(corners);
-    if (ring.length >= 3 && area(ring) !== 0) rings.push(ring);
+    if (ring.length < 3 || area(ring) === 0) ring = raw;
+    if (ring.length >= 3 && area(ring) !== 0) rings.push([ring, raw]);
   }
   return rings;
 }
@@ -229,6 +236,8 @@ export function inside([x, y]: Point, ring: Ring): boolean {
 export interface Polygon {
   outer: Ring;
   holes: Ring[];
+  /** Cap triangles, made once (``prepare``): moving / turning a logo only transforms it. */
+  caps?: [number, number, number][];
 }
 
 export interface Shape {
@@ -243,7 +252,9 @@ export const shapeArea = (s: Shape) => s.polygons.reduce((t, p) => t + area(p.ou
 const min = (v: number[]) => v.reduce((a, b) => (b < a ? b : a), Infinity);
 const max = (v: number[]) => v.reduce((a, b) => (b > a ? b : a), -Infinity);
 
-export function shape(rings: Ring[], widthMm: number, heightMm: number | null = null): Shape {
+/** See logo.py ``shape``; with ``raw`` (unsimplified rings, same order) a polygon whose rings
+ * touch or cross uses those instead. */
+export function shape(rings: Ring[], widthMm: number, heightMm: number | null = null, raw: Ring[] | null = null): Shape {
   if (!rings.length) throw new LogoError(NO_SHAPE);
   const xs = rings.flatMap((r) => r.map((p) => p[0]));
   const ys = rings.flatMap((r) => r.map((p) => p[1]));
@@ -253,6 +264,8 @@ export function shape(rings: Ring[], widthMm: number, heightMm: number | null = 
   const sy = heightMm === null ? sx : heightMm / (y1 - y0);
   const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
   const scaled: Ring[] = rings.map((r) => r.map(([x, y]) => [(x - cx) * sx, (y - cy) * sy] as Point));
+  const unsimplified = raw ? raw.map((r) => r.map(([x, y]) => [(x - cx) * sx, (y - cy) * sy] as Point)) : null;
+  const plain = new Map(scaled.map((r, i) => [r, i]));
   let total = 0;
   for (const r of scaled) if (area(r) > 0) total += area(r);
   const limit = Math.max(total * SPECK_FRACTION, MIN_FEATURE_MM * MIN_FEATURE_MM);
@@ -275,17 +288,74 @@ export function shape(rings: Ring[], widthMm: number, heightMm: number | null = 
     if (best < 0) dropped++;
     else polygons[best].holes.push(hole);
   }
+  if (unsimplified)
+    for (const p of polygons)
+      if (ringsMeet([p.outer, ...p.holes])) {
+        p.outer = unsimplified[plain.get(p.outer)!];
+        p.holes = p.holes.map((h) => unsimplified[plain.get(h)!]);
+      }
   const px = polygons.flatMap((p) => p.outer.map((q) => q[0]));
   const py = polygons.flatMap((p) => p.outer.map((q) => q[1]));
   return { polygons, width: max(px) - min(px), height: max(py) - min(py), dropped };
+}
+
+const orient = (ox: number, oy: number, ax: number, ay: number, bx: number, by: number) =>
+  Math.sign((ax - ox) * (by - oy) - (ay - oy) * (bx - ox));
+
+/** Does any ring cross or touch itself (edges that aren't neighbours), or another ring? Only
+ * edges whose x ranges overlap are compared (sorted by their left end). */
+export function ringsMeet(rings: Ring[]): boolean {
+  const e: { ax: number; ay: number; bx: number; by: number; lx: number; hx: number; ly: number; hy: number; ring: number; local: number; size: number }[] = [];
+  rings.forEach((r, k) => r.forEach(([ax, ay], i) => {
+    const [bx, by] = r[(i + 1) % r.length];
+    e.push({ ax, ay, bx, by, lx: Math.min(ax, bx), hx: Math.max(ax, bx), ly: Math.min(ay, by), hy: Math.max(ay, by), ring: k, local: i, size: r.length });
+  }));
+  const order = e.map((_, i) => i).sort((a, b) => e[a].lx - e[b].lx || a - b);
+  const left = order.map((i) => e[i].lx);
+  const firstAtLeast = (v: number) => {
+    let lo = 0, hi = left.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (left[mid] < v) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
+  };
+  for (let i = 0; i < e.length; i++) {
+    const a = e[i];
+    for (let k = firstAtLeast(a.lx); k < order.length && left[k] <= a.hx; k++) {
+      const j = order[k];
+      if (j === i) continue;
+      const b = e[j];
+      const d = Math.abs(a.local - b.local);
+      if (a.ring === b.ring && (d === 1 || d === a.size - 1)) continue;
+      if (a.hy < b.ly || a.ly > b.hy) continue;
+      if (orient(a.ax, a.ay, a.bx, a.by, b.ax, b.ay) * orient(a.ax, a.ay, a.bx, a.by, b.bx, b.by) <= 0 &&
+        orient(b.ax, b.ay, b.bx, b.by, a.ax, a.ay) * orient(b.ax, b.ay, b.bx, b.by, a.bx, a.by) <= 0) return true;
+    }
+  }
+  return false;
 }
 
 export function shapeFromPicture(
   rgba: ArrayLike<number>, w: number, h: number, widthMm: number,
   mode: MaskMode = "alpha", threshold = 128, invert = false, detail: Detail = "normal",
 ): Shape {
-  return shape(trace(mask(rgba, w, h, mode, threshold, invert), w, h, detail), widthMm);
+  return shapeOfMask(mask(rgba, w, h, mode, threshold, invert), w, h, detail, widthMm);
 }
+
+export function shapeOfMask(m: ArrayLike<number>, w: number, h: number, detail: Detail, widthMm: number): Shape {
+  const both = traceBoth(m, w, h, detail);
+  return shape(both.map(([r]) => r), widthMm, null, both.map(([, raw]) => raw));
+}
+
+/** Make the cap triangles now (the trace worker), so placing / dragging is quick. */
+export function prepare(s: Shape): Shape {
+  for (const p of s.polygons) caps(p);
+  return s;
+}
+
+const caps = (p: Polygon) => (p.caps ??= triangulate(p));
 
 // ------------------------------------------------------------------------------ meshes
 export interface Mesh {
@@ -345,7 +415,27 @@ function splitAt(tris: [number, number, number][], xy: Point[], eps: number): [n
   });
   const byKey = (p: [number, number], q: [number, number]) => p[0] - q[0] || p[1] - q[1];
   for (const m of [rows, cols]) for (const v of m.values()) v.sort(byKey);
+  const byX = xy.map((_, i) => i).sort((a, b) => xy[a][0] - xy[b][0] || a - b);
+  const xs = byX.map((i) => xy[i][0]);
+  const firstAtLeast = (v: number) => {
+    let lo = 0, hi = xs.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (xs[mid] < v) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
+  };
+  const seen = new Map<string, number[]>();
   const inside = (u: number, v: number): number[] => {
+    const back = seen.get(`${v},${u}`);
+    if (back) return [...back].reverse();
+    const key = `${u},${v}`;
+    let found = seen.get(key);
+    if (!found) seen.set(key, (found = inside0(u, v)));
+    return found;
+  };
+  const inside0 = (u: number, v: number): number[] => {
     const [ax, ay] = xy[u], [bx, by] = xy[v];
     if (ay === by || ax === bx) {
       const [line, k0, k1] = ay === by ? [rows.get(ay)!, ax, bx] : [cols.get(ax)!, ay, by];
@@ -357,11 +447,13 @@ function splitAt(tris: [number, number, number][], xy: Point[], eps: number): [n
     const dx = bx - ax, dy = by - ay;
     const length = Math.sqrt(dx * dx + dy * dy);
     const hits: [number, number][] = [];
-    xy.forEach(([px, py], i) => {
-      const rx = px - ax, ry = py - ay;
+    const hiX = Math.max(ax, bx) + eps;
+    for (let k = firstAtLeast(Math.min(ax, bx) - eps); k < xs.length && xs[k] <= hiX; k++) {
+      const i = byX[k];
+      const rx = xy[i][0] - ax, ry = xy[i][1] - ay;
       const t = (rx * dx + ry * dy) / (length * length);
       if (Math.abs(dx * ry - dy * rx) <= eps * length && t * length > eps && t * length < length - eps) hits.push([t, i]);
-    });
+    }
     hits.sort((p, q) => p[0] - q[0]);
     return hits.map(([, i]) => i);
   };
@@ -392,7 +484,7 @@ export function extrude(polygons: Polygon[], bottom: number, top: number): Mesh 
     const n = rings.reduce((t, r) => t + r.length, 0);
     const base = verts.length / 3;
     for (const z of [bottom, top]) for (const r of rings) for (const [x, y] of r) verts.push(x, y, z);
-    for (const [a, b, c] of triangulate(poly)) {
+    for (const [a, b, c] of caps(poly)) {
       faces.push(base + n + a, base + n + b, base + n + c);
       faces.push(base + a, base + c, base + b);
     }
