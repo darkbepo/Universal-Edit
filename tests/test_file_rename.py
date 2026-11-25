@@ -36,7 +36,7 @@ def test_clean_name_accepts(typed, expected):
         ("", "Type a name"),
         ("a/b.txt", "can't contain /"),
         ('a"b?.txt', "can't contain \" ?"),
-        ("a\nb.txt", "a line break"),
+        ("a\nb.txt", "line breaks or tabs"),
         ("notes.", "end with a dot"),
         ("notes.pdf", "Keep the file's extension (.txt)"),
         ("con.txt", "Windows doesn't allow"),
@@ -195,3 +195,19 @@ def test_card_shows_problems_and_changes_nothing(qtbot, window, tmp_path):
     assert "Write the date like" in form.note.text()
     assert a.exists() and a.stat().st_mtime == before
     assert [f.path for f in window.files] == [a]
+
+
+def test_names_match_the_shared_cases():
+    """The website's port (web/src/properties/fileinfo.ts) checks the same file."""
+    import json
+
+    from umc.properties.fileinfo import FileError, clean_name
+
+    cases = Path(__file__).parent / "fixtures" / "fileinfo_cases.json"
+    for text, old, name, error in json.loads(cases.read_text(encoding="utf-8")):
+        if error is None:
+            assert clean_name(text, Path(old)) == name
+        else:
+            with pytest.raises(FileError) as e:
+                clean_name(text, Path(old))
+            assert str(e.value) == error

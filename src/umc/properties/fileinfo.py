@@ -19,6 +19,7 @@ BAD_CHARS = '<>:"/\\|?*'
 RESERVED = {"con", "prn", "aux", "nul", *(f"com{i}" for i in range(1, 10)),
             *(f"lpt{i}" for i in range(1, 10))}  # fmt: skip
 FIRST_YEAR, LAST_YEAR = 1980, 2099
+WHITESPACE = " \t\n\r\x0b\x0c"
 
 
 class FileError(Exception):
@@ -33,12 +34,14 @@ def suffix_of(name: str) -> str:
 
 def clean_name(text: str, old: Path) -> str:
     """The new file name for ``old`` (unchanged = ``old.name``); raises FileError."""
-    name = text.strip()
+    name = text.strip(WHITESPACE)  # the same set on the website (fileinfo.ts)
     if not name:
         raise FileError("Type a name for the file.")
-    if bad := sorted({c for c in name if c in BAD_CHARS or ord(c) < 32}):
-        shown = " ".join("a line break" if ord(c) < 32 else c for c in bad)
-        raise FileError(f"A file name can't contain {shown}.")
+    shown = sorted({c for c in name if c in BAD_CHARS})
+    if any(ord(c) < 32 for c in name):
+        shown.append("line breaks or tabs")
+    if shown:
+        raise FileError(f"A file name can't contain {' '.join(shown)}.")
     if name in (".", "..") or name.endswith("."):
         raise FileError("A file name can't end with a dot.")
     old_ext = suffix_of(old.name)

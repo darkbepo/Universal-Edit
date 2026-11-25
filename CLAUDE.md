@@ -1183,6 +1183,12 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       `apply` renames — never over another file — and sets mtime keeping atime), card
       `gui/properties/file_form.py` under every file's details card; the panel renames on the GUI
       thread (refused while a details save runs) and `file_renamed` swaps the queue entry.
+      Website (Nov 2026): a "Name" card in `ui/properties.ts` (`.name-card`, input "File name",
+      buttons "Rename" / "Download with this name", `.name-note`): `properties/fileinfo.ts`
+      `cleanName` is a port of `clean_name` (shared cases `tests/fixtures/fileinfo_cases.json`,
+      `python scripts/make_fileinfo_cases.py`; both strip only ASCII whitespace); the queue's
+      `InputFile` gets a renamed `File` (like the photo form), so conversions use the new name.
+      A browser can't rename on disk or set the date, and the card says so.
    15. Orbiting drop-zone badges (both apps): file-type badges (icon + type, own colour,
       dimmed to 62 %) on six tilted rings around the empty drop zone's text (two tipped nearly
       upright so badges also travel up and down; they're 0.56 the size to stay inside), smaller /

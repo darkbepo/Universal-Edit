@@ -523,3 +523,23 @@ test.describe("change document details", () => {
     await expect(page.locator(".df-form")).toBeHidden();
   });
 });
+
+test("the Name card renames the file in the queue and downloads it with the new name", async ({ page }) => {
+  await page.goto("./");
+  await add(page, ["notes.txt"]);
+  await page.getByRole("button", { name: "Properties", exact: true }).click();
+  const box = page.getByLabel("File name");
+  await expect(box).toHaveValue("notes.txt");
+  await box.fill("bad/name");
+  await page.getByRole("button", { name: "Rename", exact: true }).click();
+  await expect(page.locator(".name-note")).toContainText("can't contain /");
+  await box.fill("shopping list");
+  await page.getByRole("button", { name: "Rename", exact: true }).click();
+  await expect(box).toHaveValue("shopping list.txt");
+  await expect(page.locator(".queue li").first()).toContainText("shopping list.txt");
+  const download = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download with this name" }).click();
+  const d = await download;
+  expect(d.suggestedFilename()).toBe("shopping list.txt");
+  expect(readFileSync(await d.path())).toEqual(readFileSync(`${FIXTURES}notes.txt`));
+});

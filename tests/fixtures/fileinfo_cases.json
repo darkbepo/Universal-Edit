@@ -1,0 +1,164 @@
+[
+ [
+  "holiday",
+  "photo.jpg",
+  "holiday.jpg",
+  null
+ ],
+ [
+  "holiday.jpg",
+  "photo.jpg",
+  "holiday.jpg",
+  null
+ ],
+ [
+  "Holiday.JPG",
+  "photo.jpg",
+  "Holiday.JPG",
+  null
+ ],
+ [
+  "  spaced name  ",
+  "photo.jpg",
+  "spaced name.jpg",
+  null
+ ],
+ [
+  "holiday.png",
+  "photo.jpg",
+  null,
+  "Keep the file's extension (.jpg): changing it doesn't change what's inside. Use Convert to make another type."
+ ],
+ [
+  "",
+  "photo.jpg",
+  null,
+  "Type a name for the file."
+ ],
+ [
+  "   ",
+  "photo.jpg",
+  null,
+  "Type a name for the file."
+ ],
+ [
+  "a/b",
+  "photo.jpg",
+  null,
+  "A file name can't contain /."
+ ],
+ [
+  "bad<>:\"|?*",
+  "photo.jpg",
+  null,
+  "A file name can't contain \" * : < > ? |."
+ ],
+ [
+  "a\tb",
+  "x.txt",
+  null,
+  "A file name can't contain line breaks or tabs."
+ ],
+ [
+  "a\nb\rc",
+  "x.txt",
+  null,
+  "A file name can't contain line breaks or tabs."
+ ],
+ [
+  "..",
+  "x.txt",
+  null,
+  "A file name can't end with a dot."
+ ],
+ [
+  "name.",
+  "x.txt",
+  null,
+  "A file name can't end with a dot."
+ ],
+ [
+  "con",
+  "x.txt",
+  null,
+  "Windows doesn't allow a file called \u201ccon.txt\u201d."
+ ],
+ [
+  "LPT1.txt",
+  "x.txt",
+  null,
+  "Windows doesn't allow a file called \u201cLPT1.txt\u201d."
+ ],
+ [
+  "com10",
+  "x.txt",
+  "com10.txt",
+  null
+ ],
+ [
+  "notes",
+  "notes",
+  "notes",
+  null
+ ],
+ [
+  "notes.txt",
+  "notes",
+  null,
+  "Keep the file's extension (no extension): changing it doesn't change what's inside. Use Convert to make another type."
+ ],
+ [
+  ".gitignore",
+  ".gitignore",
+  ".gitignore",
+  null
+ ],
+ [
+  "other",
+  ".gitignore",
+  "other",
+  null
+ ],
+ [
+  "my file.tar gz",
+  "a.txt",
+  "my file.tar gz.txt",
+  null
+ ],
+ [
+  "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "a.txt",
+  null,
+  "The name is too long (at most 255 characters)."
+ ],
+ [
+  "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "a.txt",
+  null,
+  "The name is too long (at most 255 characters)."
+ ],
+ [
+  "caf\u00e9 \u2603",
+  "a.txt",
+  "caf\u00e9 \u2603.txt",
+  null
+ ],
+ [
+  "\u00a0nbsp\u00a0",
+  "a.txt",
+  "\u00a0nbsp\u00a0.txt",
+  null
+ ],
+ [
+  "v1.2",
+  "a.txt",
+  null,
+  "Keep the file's extension (.txt): changing it doesn't change what's inside. Use Convert to make another type."
+ ],
+ [
+  "v1.2.txt",
+  "a.txt",
+  "v1.2.txt",
+  null
+ ]
+]

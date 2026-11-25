@@ -1081,3 +1081,9 @@ body.no-select { user-select: none; -webkit-user-select: none; }
   .vec-tool { width: 34px; height: 34px; }
   .vector-editor .editor-status { flex-wrap: wrap; }
 }
+/* Properties: the Name card (the website can only rename in the queue / download) */
+.name-card input[type="text"] { width: 100%; margin: 4px 0 8px; }
+.name-card .row { display: flex; gap: 6px; flex-wrap: wrap; }
+.name-card .name-note { margin: 6px 0 0; }
+.name-card .name-note.error { color: var(--danger); }
+.name-card .name-note:empty { display: none; }
