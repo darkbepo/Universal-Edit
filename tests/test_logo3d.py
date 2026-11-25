@@ -189,3 +189,69 @@ def test_badge_stands_clear_of_the_model():
         lg = S.build_logo(pic, s, base=base)
         left = min(m.vertices[:, 0].min() for m in lg.meshes)
         assert left == pytest.approx(20 + S.BADGE_GAP_MM)
+
+
+def _closed(m: logo.Mesh) -> bool:
+    """Every edge in exactly one triangle each way (trimesh's own check lets 4 share one)."""
+    from collections import Counter
+
+    key = [tuple(v) for v in m.vertices.tolist()]
+    edges = Counter((key[f[k]], key[f[(k + 1) % 3]]) for f in m.faces.tolist() for k in range(3))
+    return all(n == 1 and edges[(b, a)] == 1 for (a, b), n in edges.items())
+
+
+def test_busy_shapes_are_closed():
+    """Holes and outer edges on one straight line once left gaps in the caps."""
+    for c in json.loads(CASES.read_text())["busy"]:
+        s = logo.shape(logo.trace(grid(c["rows"]), c["detail"]), 30)
+        m = logo.logo_mesh(s, 2)
+        assert _closed(m), (c["seed"], c["detail"])
+        assert m.volume == pytest.approx(s.area * 2)
+
+
+@pytest.mark.parametrize("text", ["%&@#", "BOB 808", "Hello World"])
+def test_text_logos_are_closed(text):
+    from PIL import Image, ImageDraw, ImageFont
+
+    im = Image.new("L", (900, 160), 0)
+    ImageDraw.Draw(im).text((5, 5), text, fill=255, font=ImageFont.load_default(110))
+    m = (np.array(im) > 128).astype(np.uint8)
+    for detail in logo.DETAIL:
+        s = logo.shape(logo.trace(m, detail), 40)
+        mesh = logo.logo_mesh(s, 2)
+        assert _closed(mesh), detail
+        assert mesh.volume == pytest.approx(s.area * 2)
+
+
+@pytest.mark.parametrize("margin", [0.0, 0.5, 1.0, 3.0, 10.0])
+@pytest.mark.parametrize("plate", ["rectangle", "rounded"])
+def test_keychain_hole_keeps_a_wall(margin, plate):
+    """A thin wordmark with no margin once had the hole cut through the plate's edge."""
+    s = logo.shape(logo.trace(grid(["#" * 60] * 2)), 40)  # 40 × 1.3 mm
+    outer, hole = logo.plate_outline(s, margin, plate, True)
+    ox = [p[0] for p in outer]
+    oy = [p[1] for p in outer]
+    hx = [p[0] for p in hole]
+    hy = [p[1] for p in hole]
+    w = logo.MIN_WALL_MM
+    assert min(hx) - min(ox) >= w - 1e-9 and min(hy) - min(oy) >= w - 1e-9
+    assert max(oy) - max(hy) >= w - 1e-9
+    plate_mesh, logo_part = logo.badge(s, 2, plate, margin, 2, True)
+    assert _closed(plate_mesh) and _closed(logo_part)
+    expected = abs(logo.area(outer)) - abs(logo.area(hole))
+    assert plate_mesh.volume == pytest.approx(expected * 2)
+
+
+def test_scene_volume_counts_sunk_parts_once():
+    from umc.editor3d import scene as S
+    from umc.editor3d.mesh import ViewModel
+
+    v, f = _box()
+    base = ViewModel("box", v, f, watertight=True, volume_mm3=16000.0)
+    pic = S.Picture("ring.png", bytes([0, 0, 0, 255] * 16), 4, 4)
+    lg = S.build_logo(pic, S.LogoSettings(width=10, thickness=2), (0, 0, 10), (0, 0, 1), base)
+    m = S.Scene(base, (lg,)).combined()
+    assert m.volume_mm3 == pytest.approx(16000 + 100 * 2)
+    badge = S.build_logo(pic, S.LogoSettings(where="badge", width=10, plate="rectangle"))
+    plate_area = (10 + 6) ** 2
+    assert S.Scene(None, (badge,)).combined().volume_mm3 == pytest.approx(plate_area * 2 + 100 * 2)

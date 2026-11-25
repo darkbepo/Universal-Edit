@@ -153,6 +153,29 @@ test("a keychain badge from the start screen's 3D tile", async ({ page }) => {
   await expect(page.locator(".logo-note")).toContainText("40.0 × 24.6 mm");
   await page.getByRole("button", { name: "Apply" }).click();
   expect(await page.evaluate(() => window.__viewer3d!.infoRows())).toMatchObject({ Parts: "2", Watertight: "Yes", "Height (Z)": "4.0 mm" });
+  page.once("dialog", (d) => void d.accept()); // "Discard …?" — yes: the badge goes
+  await page.getByRole("button", { name: "← Back to Convert" }).click();
+  await expect(page.locator(".viewer3d")).toBeHidden();
+  await page.locator('.editor-tile[data-editor="model"]').click();
+  await expect(page.locator(".viewer3d-placeholder")).toContainText("Open a 3D model");
+  await expect(page.locator(".logo-list li")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Undo" })).toBeDisabled();
+});
+
+test("Apply right after a change waits for the new trace", async ({ page }) => {
+  await openViewer(page);
+  await page.getByRole("button", { name: "Top", exact: true }).click();
+  await page.getByRole("button", { name: "Add logo…" }).click();
+  await choosePicture(page);
+  await setNumber(page, "#logo-width", 6);
+  const [cx, cy] = await screen(page, [0, 0, 5]);
+  await page.mouse.click(cx, cy);
+  await expect(page.locator(".logo-note")).toContainText("6.0 ×");
+  await page.locator("#logo-width").fill("9");
+  await page.locator("#logo-width").dispatchEvent("change");
+  await page.getByRole("button", { name: "Apply" }).click(); // before the 250 ms pause ends
+  await expect(page.locator(".logo-panel")).toBeHidden();
+  await expect(page.locator(".logo-list li")).toContainText("(9 mm, on the model)");
   page.once("dialog", (d) => void d.accept());
   await page.getByRole("button", { name: "← Back to Convert" }).click();
 });

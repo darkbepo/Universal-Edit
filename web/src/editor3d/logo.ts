@@ -16,6 +16,7 @@ export const MIN_FEATURE_MM = 0.4;
 export const SADDLE_NUDGE = 0.05; // px: corners where two parts touch are moved apart
 export const SINK_MM = 0.2;
 export const HOLE_RADIUS_MM = 2.5;
+export const MIN_WALL_MM = 1; // plate left all round the keychain hole
 export const CORNER_SEGMENTS = 8;
 export const HOLE_SEGMENTS = 32;
 
@@ -305,6 +306,8 @@ export function volume(m: Mesh): number {
   return s / 6;
 }
 
+/** Cap triangles, counter-clockwise, meeting the walls exactly (see logo.py ``_triangulate``):
+ * zero-area triangles are dropped and triangles spanning a corner point are split there. */
 function triangulate(poly: Polygon): [number, number, number][] {
   const rings = [poly.outer, ...poly.holes];
   const pts = rings.flat();
@@ -315,14 +318,69 @@ function triangulate(poly: Polygon): [number, number, number][] {
     k += h.length;
   }
   const idx = earcut(pts.flat(), holeStarts.length ? holeStarts : null, 2);
-  const out: [number, number, number][] = [];
+  let scale = 0;
+  for (const [x, y] of pts) scale = Math.max(scale, Math.abs(x), Math.abs(y));
+  scale ||= 1;
+  const eps = scale * 1e-9;
+  const tris: [number, number, number][] = [];
   for (let i = 0; i < idx.length; i += 3) {
-    let a = idx[i], b = idx[i + 1], c = idx[i + 2];
+    const a = idx[i], b = idx[i + 1], c = idx[i + 2];
     const [ax, ay] = pts[a], [bx, by] = pts[b], [cx, cy] = pts[c];
-    if ((bx - ax) * (cy - ay) - (by - ay) * (cx - ax) < 0) [b, c] = [c, b];
-    out.push([a, b, c]);
+    const area2 = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+    if (Math.abs(area2) <= eps * scale) continue; // zero area: nothing to cover
+    tris.push(area2 < 0 ? [a, c, b] : [a, b, c]);
   }
-  return out;
+  return splitAt(tris, pts, eps);
+}
+
+/** Split every triangle whose edge passes over a corner point (a fan from the opposite corner)
+ * until none does; level / upright edges look corners up by their exact row / column. */
+function splitAt(tris: [number, number, number][], xy: Point[], eps: number): [number, number, number][] {
+  const rows = new Map<number, [number, number][]>(), cols = new Map<number, [number, number][]>();
+  xy.forEach(([x, y], i) => {
+    if (!rows.has(y)) rows.set(y, []);
+    rows.get(y)!.push([x, i]);
+    if (!cols.has(x)) cols.set(x, []);
+    cols.get(x)!.push([y, i]);
+  });
+  const byKey = (p: [number, number], q: [number, number]) => p[0] - q[0] || p[1] - q[1];
+  for (const m of [rows, cols]) for (const v of m.values()) v.sort(byKey);
+  const inside = (u: number, v: number): number[] => {
+    const [ax, ay] = xy[u], [bx, by] = xy[v];
+    if (ay === by || ax === bx) {
+      const [line, k0, k1] = ay === by ? [rows.get(ay)!, ax, bx] : [cols.get(ax)!, ay, by];
+      const lo = Math.min(k0, k1), hi = Math.max(k0, k1);
+      const found = line.filter(([k]) => lo < k && k < hi);
+      if (k0 > k1) found.sort((p, q) => byKey(q, p));
+      return found.map(([, i]) => i);
+    }
+    const dx = bx - ax, dy = by - ay;
+    const length = Math.sqrt(dx * dx + dy * dy);
+    const hits: [number, number][] = [];
+    xy.forEach(([px, py], i) => {
+      const rx = px - ax, ry = py - ay;
+      const t = (rx * dx + ry * dy) / (length * length);
+      if (Math.abs(dx * ry - dy * rx) <= eps * length && t * length > eps && t * length < length - eps) hits.push([t, i]);
+    });
+    hits.sort((p, q) => p[0] - q[0]);
+    return hits.map(([, i]) => i);
+  };
+  const todo = [...tris];
+  const out: [number, number, number][] = [];
+  while (todo.length) {
+    const tri = todo.pop()!;
+    let split = false;
+    for (let e = 0; e < 3 && !split; e++) {
+      const on = inside(tri[e], tri[(e + 1) % 3]);
+      if (!on.length) continue;
+      const seq = [tri[e], ...on, tri[(e + 1) % 3]];
+      const w = tri[(e + 2) % 3];
+      for (let i = 0; i < seq.length - 1; i++) todo.push([seq[i], seq[i + 1], w]);
+      split = true;
+    }
+    if (!split) out.push(tri);
+  }
+  return out.reverse();
 }
 
 /** A closed solid: each polygon from z = ``bottom`` to ``top``. */
@@ -365,11 +423,18 @@ export type PlateKind = "none" | "rectangle" | "rounded";
 export function plateOutline(s: Shape, margin: number, kind: PlateKind = "rectangle", hole = false): [Ring, Ring | null] {
   let x0 = -s.width / 2 - margin;
   const x1 = s.width / 2 + margin;
-  const y0 = -s.height / 2 - margin, y1 = s.height / 2 + margin;
+  let y0 = -s.height / 2 - margin, y1 = s.height / 2 + margin;
   let ringHole: Ring | null = null;
   if (hole) {
-    x0 -= 2 * HOLE_RADIUS_MM + margin;
-    ringHole = circle(x0 + margin + HOLE_RADIUS_MM, 0, HOLE_RADIUS_MM, HOLE_SEGMENTS, true);
+    // at least MIN_WALL_MM of plate all round the hole, however thin the logo / margin
+    const wall = Math.max(margin, MIN_WALL_MM);
+    x0 -= 2 * HOLE_RADIUS_MM + wall;
+    const grow = (2 * HOLE_RADIUS_MM + 2 * MIN_WALL_MM - (y1 - y0)) / 2;
+    if (grow > 0) {
+      y0 -= grow;
+      y1 += grow;
+    }
+    ringHole = circle(x0 + wall + HOLE_RADIUS_MM, 0, HOLE_RADIUS_MM, HOLE_SEGMENTS, true);
   }
   let outer: Ring;
   if (kind === "rounded") {

@@ -57,6 +57,7 @@ class Logo:
     height: float = 0.0
     dropped: int = 0
     overhang: int = 0  # outline points off the face
+    overlap: float = 0.0  # mm³ inside the model / plate (sunk in), so the volume counts it once
 
 
 def picture_from_image(image, name: str) -> Picture:
@@ -99,7 +100,9 @@ def build_logo(
     if shp is None:
         shp = shape_of(pic, s)
     overhang = 0
+    sunk = 0.0
     if s.where == "face":
+        sunk = s.sink
         if point is None or normal is None:
             raise L.LogoError("Click a flat face of the model to place the logo.")
         meshes = (L.placed_logo(shp, s.thickness, point, normal, s.rotation, s.sink),)
@@ -111,12 +114,15 @@ def build_logo(
             overhang = pick.overhang(pts, base.vertices, base.faces, face)
     else:
         parts = L.badge(shp, s.thickness, s.plate, s.margin, s.plate_thickness, s.hole)
+        if s.plate != "none":
+            sunk = min(L.SINK_MM, s.plate_thickness / 2)
         x = 0.0
         if base is not None:
             _lo, hi = base.bounds
             left = shp.width / 2  # how far the badge reaches left of its centre
             if s.plate != "none":
-                left += s.margin + (2 * L.HOLE_RADIUS_MM + s.margin if s.hole else 0)
+                outline, _hole = L.plate_outline(shp, s.margin, s.plate, s.hole)
+                left = -min(x for x, _y in outline)
             x = float(hi[0]) + BADGE_GAP_MM + left
         m = L.placement((x, 0.0, 0.0), (0.0, 0.0, 1.0), s.rotation, 0.0)
         meshes = tuple(L.transform(p, m) for p in parts)
@@ -131,6 +137,7 @@ def build_logo(
         shp.height,
         shp.dropped,
         overhang,
+        shp.area * sunk,
     )
 
 
@@ -177,8 +184,10 @@ class Scene:
         watertight = base.watertight if base is not None else True
         volume = None
         if watertight:
-            volume = (base.volume_mm3 if base is not None else 0.0) + sum(
-                abs(m.volume) for lg in self.logos for m in lg.meshes
+            volume = (
+                (base.volume_mm3 if base is not None else 0.0)
+                + sum(abs(m.volume) for lg in self.logos for m in lg.meshes)
+                - sum(lg.overlap for lg in self.logos)
             )
         return ViewModel(
             name=name or (base.name if base is not None else "Logo"),
@@ -255,3 +264,9 @@ class History:
 
     def mark_saved(self) -> None:
         self.saved = self.scene
+
+    def revert(self) -> None:
+        """Back to what was last saved (or opened), forgetting undo / redo."""
+        self.scene = self.saved
+        self.undo_stack.clear()
+        self.redo_stack.clear()

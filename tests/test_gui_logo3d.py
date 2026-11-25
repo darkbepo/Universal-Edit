@@ -199,6 +199,54 @@ def test_leaving_with_unsaved_logos_asks(window, qtbot, box_stl, ring_png):
     assert asked and "box.stl" in asked[0]
     page.ask = lambda *a: "discard"
     assert page.maybe_leave() and not page.dirty
+    # "Don't save" drops them: coming back shows the model alone, nothing to undo
+    assert page.logo_list.count() == 0 and page.info()["Parts"] == "1"
+    assert not page.history.undo_stack and not page.undo_button.isEnabled()
+
+
+def test_leaving_saves_the_empty_viewers_badge_too(window, qtbot, box_stl, ring_png, tmp_path):
+    """A badge made in the empty viewer, then a model opened: Save still saves the badge."""
+    assert window.open_editor("model")
+    page = window.viewer3d
+    page.start_logo()
+    add_picture(page, qtbot, ring_png)
+    page.apply_logo()
+    window.handle_drop([str(box_stl)])  # dropped on the viewer
+    qtbot.waitUntil(lambda: bool(page.info()) and page.base is not None, timeout=30000)
+    assert page.logo_list.count() == 0  # the model's own (empty) logo list
+    out = tmp_path / "badge.stl"
+    asked = []
+    page.ask_save_path = lambda suggested: asked.append(suggested.name) or str(out)
+    page.ask = lambda *a: "save"
+    assert page.maybe_leave()
+    assert asked == ["logo.3mf"] and out.is_file() and not page.dirty
+
+
+def test_a_dropped_model_waits_while_a_logo_is_made(window, qtbot, box_stl, ring_png, tmp_path):
+    page = open_model(window, qtbot, box_stl)
+    page.start_logo()
+    add_picture(page, qtbot, ring_png)
+    click_top(page)
+    other = tmp_path / "ball.stl"
+    other.write_bytes(trimesh.creation.icosphere(radius=5).export(file_type="stl"))
+    window.handle_drop([str(other)])  # dropped on the viewer
+    assert page.editing is not None and page.editing.logo is not None  # still there
+    assert page.current.path == box_stl and page.file_box.count() == 2
+    assert "Apply or cancel the logo first" in page.message.text()
+    page.apply_logo()
+    assert page.logo_list.count() == 1
+
+
+def test_apply_right_after_a_change_waits_for_the_trace(window, qtbot, box_stl, ring_png):
+    page = open_model(window, qtbot, box_stl)
+    page.start_logo()
+    add_picture(page, qtbot, ring_png)
+    click_top(page)
+    page.logo_panel.width_box.setValue(12)  # needs a new trace
+    with qtbot.waitSignal(page.logo_built, timeout=30000):
+        page.apply_logo()
+    qtbot.waitUntil(lambda: page.editing is None, timeout=5000)
+    assert page.history.scene.logos[0].width == pytest.approx(12)
 
 
 def test_unreadable_picture_says_so(window, qtbot, box_stl, tmp_path):
@@ -257,11 +305,18 @@ def test_real_click_and_drag_in_the_gl_view(window, qtbot, box_stl, ring_png):
     assert page.editing.point == pytest.approx((0, 0, 10), abs=1.0)
     view.repaint()
     img = view.grabFramebuffer()
-    accent = QColor(theme.palette()["accent"])
-    ring = img.pixelColor(centre.x() + int(view.width() * 0.0), centre.y())
-    assert ring != img.pixelColor(2, 2)
-    # drag the logo (press on its ring, not the hole) a few pixels to the right
     px_per_mm = view.height() / (2 * view.camera.distance * 0.3153)  # tan(17.5°)
+    ring = img.pixelColor(centre.x() + int(5.5 * px_per_mm), centre.y())  # on the ring
+    box = img.pixelColor(centre.x() + int(15 * px_per_mm), centre.y())  # the box's top
+    hole = img.pixelColor(centre.x(), centre.y())  # the ring's hole: the box shows through
+    accent = QColor(theme.palette()["accent"])
+
+    def dist(a, b):
+        return abs(a.red() - b.red()) + abs(a.green() - b.green()) + abs(a.blue() - b.blue())
+
+    assert dist(ring, box) > 30 and dist(hole, box) < 30
+    assert dist(ring, accent) < dist(box, accent)  # the preview is drawn in the accent colour
+    # drag the logo (press on its ring, not the hole) a few pixels to the right
     start = QPoint(centre.x() + int(6 * px_per_mm), centre.y())
     assert page._grab_test(start.x(), start.y())
     qtbot.mousePress(view, Qt.MouseButton.LeftButton, pos=start)
@@ -271,4 +326,3 @@ def test_real_click_and_drag_in_the_gl_view(window, qtbot, box_stl, ring_png):
     # the logo keeps the spot it was grabbed by under the pointer: it moved by the drag only
     x, _y, z = page.editing.point
     assert 1 < x < 40 / px_per_mm + 1 and z == pytest.approx(10)
-    assert accent.isValid()

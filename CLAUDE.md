@@ -961,6 +961,20 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       a `<select>` takes the option text into its name). Both apps keep the grabbed spot under
       the pointer while dragging (`grab_offset` / `grabOffset`). e2e `e2e/logo3d.spec.ts` (real
       clicks via the hook's `screenOf(point)`), vitest `tests/logo3d.test.ts` "scene".
+      Review fixes (Nov 2026): earcut leaves zero-area triangles / overlapping edges where a
+      hole's edge and an outer edge lie on one line (text, blocky pictures), so the caps didn't
+      meet the walls: `_triangulate` / `triangulate` drop zero-area triangles and `_split_at` /
+      `splitAt` fan-split any triangle whose edge passes over a corner (level / upright edges
+      look corners up by exact row / column; sloping ones check all) — shared cases "busy"
+      (seeded `random.Random` blocks) check closedness + equal triangle counts. Keychain hole:
+      ≥ `MIN_WALL_MM` (1 mm) of plate all round (the tab grows for thin logos / no margin); the
+      badge's distance from the model uses the plate outline itself. `Logo.overlap` (area × sunk
+      depth) keeps the info volume from counting the sunk part twice. Leaving: "Save" can save
+      any file's logos (`save_as(key)`, None = the empty viewer's badge); "Don't save" =
+      `History.revert` (the logos go). A model dropped while a logo is being made waits in the
+      list. Apply while a trace runs applies when it's back (`apply_when_traced` /
+      `applyWhenTraced`). Web: tracing runs in `ui/editor3d/traceworker.ts` (a module Worker);
+      `beforeunload` while unsaved. A logo has 2+ shapes but counts as one part.
    9. ✅ Start screen = hub (both apps; order and the four "Coming soon" tiles: roadmap 16): editor tiles under the empty drop zone, listed in
       `core/editors.py` / `web/src/core/editors.ts` (same order and text; `available` False =
       greyed "Coming soon"); tests/test_editor_hub.py
