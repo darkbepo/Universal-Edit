@@ -1033,3 +1033,45 @@ def test_track_sliders_are_heard_while_playing(window, qtbot, mono, monkeypatch)
     row["gain"].setValue(-24)
     quiet = np.array(sound.samples[:, 1000:2000])
     assert np.max(np.abs(quiet)) < np.max(np.abs(before)) * 0.07
+
+
+def test_project_keeps_the_tracks_separate(window, qtbot, media, mono, tmp_path):
+    import numpy as np
+
+    from umc.audioedit import project as aproj
+
+    page = open_in_editor(window, qtbot, [media / "tone.wav"])
+    with qtbot.waitSignal(page.opened, timeout=20000):
+        assert page.add_track_file(mono)
+    page.tracks[1].gain_db, page.tracks[1].pan = -6.0, 0.5
+    assert page.set_track_start(1, 1234)
+    page.rename_track(1, "Beep")
+    dest = tmp_path / "session"
+    page.choose_project_path = lambda default: dest
+    with qtbot.waitSignal(page.save_done, timeout=20000):
+        assert page.save_project()
+    saved = tmp_path / "session.umcaudio"
+    assert saved.is_file() and not page.dirty and "Saved “session.umcaudio”" in page.message.text()
+    tracks, active = aproj.from_bytes(saved.read_bytes())
+    assert [t.name for t in tracks] == ["tone", "Beep"] and active == 1
+    assert (tracks[1].gain_db, tracks[1].pan, tracks[1].offset) == (-6.0, 0.5, 1234)
+    assert np.array_equal(tracks[0].doc.samples, page.tracks[0].doc.samples)
+    # opening it again (as a drop) brings back every track; Save then writes the project
+    page.open_empty()
+    with qtbot.waitSignal(page.opened, timeout=20000):
+        page.drop_paths([saved])
+    assert [t.name for t in page.tracks] == ["tone", "Beep"] and page.active_track == 1
+    assert page.tracks[1].offset == 1234 and not page.dirty
+    page.doc.set_selection(0, 100)
+    assert page.run("silence")
+    with qtbot.waitSignal(page.save_done, timeout=20000):
+        assert page.save()
+    again, _ = aproj.from_bytes(saved.read_bytes())
+    assert np.all(again[1].doc.samples[:, :100] == 0) and not page.dirty
+    # a damaged project says so in plain words
+    bad = tmp_path / "bad.umcaudio"
+    bad.write_bytes(b"not a zip")
+    page.open_empty()
+    with qtbot.waitSignal(page.opened, timeout=20000):
+        page.drop_paths([bad])
+    assert "isn't an audio editor project" in page.message.text()

@@ -4,7 +4,10 @@ status line with the selection's start, end and length."""
 
 from __future__ import annotations
 
+import contextlib
 import logging
+import os
+import tempfile
 import threading
 from collections.abc import Callable
 from dataclasses import replace
@@ -38,6 +41,7 @@ from PySide6.QtWidgets import (
 )
 
 from umc.audioedit import noise, ops, record, speed
+from umc.audioedit import project as aproj
 from umc.audioedit import tracks as tr
 from umc.audioedit.document import AudioDoc
 from umc.audioedit.io import (
@@ -54,6 +58,7 @@ from umc.audioedit.io import (
 from umc.converters.audio import LOSSY_EXTS
 from umc.core.detect import AUDIO_EXTS, MediaFamily, detect
 from umc.core.errors import ConversionCancelled, ConversionError
+from umc.core.filemode import match_mode
 from umc.gui.audioeditor.player import DEFAULT_VOLUME, Player
 from umc.gui.audioeditor.recorder import Recorder
 from umc.gui.audioeditor.time_box import TimeBox
@@ -136,6 +141,20 @@ TRACK_NO_ROOM = (
     "There isn't room for another track: the tracks together would be longer than the audio "
     "editor allows."
 )
+
+
+def _write_file(path: Path, data: bytes) -> None:
+    """Temp file next to ``path`` + os.replace: a failed save never leaves half a file."""
+    fd, tmp = tempfile.mkstemp(prefix=".umc-tmp-", dir=path.parent)
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+        match_mode(tmp, path)
+        os.replace(tmp, path)
+    except OSError as exc:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+        raise ConversionError(f"“{path.name}” couldn't be saved: {exc.strerror or exc}") from exc
 
 
 class _Worker(QObject):
@@ -473,6 +492,12 @@ class AudioEditorPage(QWidget):
         lay.addSpacing(12)
         lay.addWidget(self.title)
         lay.addStretch(1)
+        self.project_button = self._button(
+            lay,
+            "Save project…",
+            "Keep every track separate in a project file (.umcaudio) to go on working later",
+        )
+        self.project_button.clicked.connect(self.save_project)
         self.save_as_button = self._button(lay, "Save as…", "Save as (Ctrl+Shift+S)")
         self.save_as_button.clicked.connect(self.save_as)
         self.save_button = self._button(lay, "Save", "Save (Ctrl+S)", "Primary")
@@ -1221,7 +1246,40 @@ class AudioEditorPage(QWidget):
         )
         return True
 
+    def open_project(self, path: Path) -> bool:
+        """Open a .umcaudio project (every track, its settings and timing) on a worker thread."""
+        path = Path(path)
+        if self.busy:
+            return False
+        self.stop()
+        self.opening = True
+        self._cancel = threading.Event()
+        self._show_placeholder(f"Opening {path.name}…")
+        self.show_message("")
+        self._update_state()
+        self._open_request = [path]
+        self._start(
+            lambda _progress: aproj.from_bytes(path.read_bytes()),
+            f"Couldn't open {path.name}. See the log for details.",
+        )
+        return True
+
+    def _project_opened(self, tracks: list[tr.Track], active: int, path: Path) -> None:
+        self.sources, self._save_target = [path], (path, aproj.EXT)
+        self.doc = tracks[active].doc
+        self._set_tracks(tracks, active)
+        self._tracks_saved_rev = self._tracks_rev
+        self.center.setCurrentIndex(0)
+        self._sync_timing()
+        self.view.set_document(self.doc)
+        n = len(tracks)
+        self.show_message(f"Opened the project “{path.name}”: {n} track{'' if n == 1 else 's'}.")
+        self.view.setFocus()
+
     def _opened(self, doc: AudioDoc, paths: list[Path]) -> None:
+        if isinstance(doc, tuple):  # a project: (tracks, chosen track)
+            self._project_opened(doc[0], doc[1], paths[0])
+            return
         if self._open_as_track:
             self._track_opened(doc, paths)
             return
@@ -1472,13 +1530,22 @@ class AudioEditorPage(QWidget):
             return
         exts = " ".join(f"*.{e}" for e in sorted(AUDIO_EXTS))
         paths, _ = QFileDialog.getOpenFileNames(
-            self, "Open audio", str(self._folder()), f"Audio ({exts});;All files (*)"
+            self,
+            "Open audio",
+            str(self._folder()),
+            f"Audio and projects ({exts} *.{aproj.EXT});;All files (*)",
         )
         if paths:
             self.drop_paths([Path(p) for p in paths])
 
     def drop_paths(self, paths: list[Path]) -> None:
-        """Dropped / chosen files: the audio ones replace the current sound (joined)."""
+        """Dropped / chosen files: the audio ones replace the current sound (joined); a project
+        (.umcaudio) replaces it with its tracks."""
+        project = next((p for p in paths if p.suffix.lower() == f".{aproj.EXT}"), None)
+        if project is not None:
+            if self.maybe_leave():
+                self.open_project(project)
+            return
         found = [f for f in (detect(p) for p in paths) if f is not None]
         audio = [f.path for f in found if f.family == MediaFamily.AUDIO]
         if not audio:
@@ -1507,6 +1574,29 @@ class AudioEditorPage(QWidget):
         ext = self.sources[0].suffix.lstrip(".").lower() if self.sources else "wav"
         ids = [e for e, _ in SAVE_FORMATS]
         return self._folder() / f"{stem} edited.{ext if ext in ids else 'wav'}"
+
+    def choose_project_path(self, default: Path) -> Path | None:
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save project", str(default), f"Audio editor project (*.{aproj.EXT})"
+        )
+        return Path(path) if path else None
+
+    def save_project(self) -> bool:
+        """Save every track separately (with its volume, balance and start) to a project file."""
+        if self.doc is None or self.busy or not self.tracks:
+            return False
+        stem = self.sources[0].stem if self.sources else "sound"
+        if self._save_target is not None and self._save_target[1] == aproj.EXT:
+            default = self._save_target[0]
+        else:
+            default = self._folder() / f"{stem}.{aproj.EXT}"
+        path = self.choose_project_path(default)
+        if path is None:
+            return False
+        if path.suffix.lower() != f".{aproj.EXT}":
+            path = path.with_name(f"{path.name}.{aproj.EXT}")
+        self._start_save(path, aproj.EXT)
+        return True
 
     def save(self) -> bool:
         if self._save_target is None:
@@ -1550,6 +1640,19 @@ class AudioEditorPage(QWidget):
         self._saving_rev = doc.revision
         self._saving_state = [(t.doc, t.doc.revision) for t in self.tracks]
         self._saving_tracks_rev = self._tracks_rev
+        if fmt == aproj.EXT:  # the tracks, separately: copies, so editing on can't race the save
+            snapshot = [
+                replace(t, doc=AudioDoc(t.doc.rate, t.doc.samples.copy())) for t in self.tracks
+            ]
+            active = self.active_track
+
+            def write_project(_progress):
+                _write_file(path, aproj.to_bytes(snapshot, active))
+
+            self.show_message(f"Saving the project “{path.name}”…")
+            self._save_request = (path, fmt)
+            self._start(write_project, f"Couldn't save “{path.name}”. See the log for details.")
+            return
         if self.mixing:  # mixed on the worker thread from a copy of the settings
             snapshot = [replace(t) for t in self.tracks]
             tags = self.tracks[0].doc.tags

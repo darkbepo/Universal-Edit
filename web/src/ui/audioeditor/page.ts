@@ -4,6 +4,7 @@
 // Files are decoded in the conversion worker (FFmpeg → float WAV, hidden "audio-edit-open"
 // converter); the samples stay in the page; saving goes through the normal audio converter.
 // Playback uses Web Audio. Loaded on demand from ui/app.ts.
+import * as projectFile from "../../audioedit/project";
 import { AudioDoc } from "../../audioedit/document";
 import * as ops from "../../audioedit/ops";
 import type { Samples } from "../../audioedit/ops";
@@ -56,7 +57,7 @@ type MenuItem = { label: string; fn: () => void; disabled?: boolean; checked?: b
 /** Like 0:13.2 (tenths are enough for a start). */
 const startText = (frames: number, rate: number) => ops.formatTime(frames / rate).slice(0, -2);
 const EMPTY_TEXT = "Open a sound with “Open…”, or drop audio files here (MP3, WAV, FLAC, M4A, OGG, …).";
-const AUDIO_ACCEPT = "audio/*,.mp3,.wav,.flac,.m4a,.aac,.ogg,.oga,.opus,.wma,.aiff,.aif,.ac3,.amr,.ape,.mka";
+const AUDIO_ACCEPT = "audio/*,.umcaudio,.mp3,.wav,.flac,.m4a,.aac,.ogg,.oga,.opus,.wma,.aiff,.aif,.ac3,.amr,.ape,.mka";
 const RULER_H = 24;
 const LANE_GAP = 6;
 const MIN_FPP = 1 / 32; // most zoomed in: 32 px per sample
@@ -174,6 +175,8 @@ export class AudioEditorPage {
   private player: { src: AudioBufferSourceNode; origin: number; end: number; t0: number; paused: boolean } | null = null;
   private remixTimer: number | null = null; // remixSoon's pending re-render
   private saveTarget: { name: string; format: string; bitrate: number; handle?: FileHandle } | null = null;
+  /** Save (Ctrl+S) writes this project (.umcaudio) once one was opened or saved. */
+  private project: { name: string; handle?: FileHandle } | null = null;
   private bitrate = 192;
   private tags: CarriedTags = EMPTY_TAGS; // song details of the opened files, written when saving
 
@@ -199,6 +202,7 @@ export class AudioEditorPage {
         btn("redo", "Redo", "Redo (Ctrl+Y)", () => this.redo()),
         h("span", { class: "gap" }), this.title),
       h("div", { class: "spacer" }),
+      btn("save_project", "Save project…", "Keep every track separate in a project file (.umcaudio) to go on working later", () => void this.saveProject()),
       btn("save_as", "Save as…", "Save as (Ctrl+Shift+S)", () => void this.saveAs()),
       btn("save", "Save", "Save (Ctrl+S)", () => void this.save(), "primary small"));
     const transport = h("div", { class: "audio-group" },
@@ -889,6 +893,11 @@ export class AudioEditorPage {
 
   /** Files picked or dropped on the page: the audio ones replace the sound (asks first). */
   async openFiles(list: File[]): Promise<void> {
+    const project = list.find((f) => f.name.toLowerCase().endsWith(`.${projectFile.EXT}`));
+    if (project) {
+      if (this.maybeLeave()) await this.openProject(project);
+      return;
+    }
     const { detect } = await import("../../core/detect");
     const found = (await Promise.all(list.map((f) => detect(f)))).filter((f): f is InputFile => f?.family === "audio");
     if (!found.length) {
@@ -896,6 +905,30 @@ export class AudioEditorPage {
       return;
     }
     if (this.maybeLeave()) await this.open(found);
+  }
+
+  /** Open a .umcaudio project: every track with its settings and timing. */
+  async openProject(file: File): Promise<boolean> {
+    if (this.busy) return false;
+    this.stop();
+    try {
+      const { tracks: list, active } = projectFile.fromBytes(new Uint8Array(await file.arrayBuffer()), MAX_SAMPLES);
+      this.tags = EMPTY_TAGS;
+      this.setDocument(list[active].doc, [file.name]);
+      this.setTracks(list, active);
+      this.tracksSavedRev = this.tracksRev;
+      this.project = { name: file.name.replace(/\.umcaudio$/i, "") };
+      this.fit();
+      this.renderTracks();
+      this.showMessage(`Opened the project “${file.name}”: ${list.length} track${list.length === 1 ? "" : "s"}.`);
+      return true;
+    } catch (e) {
+      if (!(e instanceof projectFile.ProjectError)) console.error(e);
+      this.showMessage(e instanceof projectFile.ProjectError ? e.message : `Couldn't open “${file.name}”.`, true);
+      return false;
+    } finally {
+      this.update();
+    }
   }
 
   /** Decode (and join) `files`. False if it failed (lastError() says why). */
@@ -935,6 +968,7 @@ export class AudioEditorPage {
   private setDocument(doc: AudioDoc | null, sources: string[]): void {
     if (doc !== this.doc) {
       this.saveTarget = null;
+      this.project = null;
       const name = sources.length === 1 ? sources[0].replace(/\.[^.]+$/, "") : "Track 1";
       this.setTracks(doc ? [tracks.track(doc, name)] : [], 0);
       this.tracksSavedRev = this.tracksRev;
@@ -1674,10 +1708,67 @@ export class AudioEditorPage {
     }
     this.bitrate = choice.bitrate;
     this.saveTarget = { ...choice, handle };
+    this.project = null; // Save now writes this file
     await this.write();
   }
 
+  /** Every track separately, with its volume, left / right and start, as a .umcaudio file. */
+  async saveProject(): Promise<void> {
+    if (!this.doc || this.busy || !this.tracks.length) return;
+    this.stop();
+    const stem = this.project?.name ?? (this.sources[0] ?? "sound").replace(/\.[^.]+$/, "");
+    const choice = await saveDialog(stem, [[projectFile.EXT, "Audio editor project (.umcaudio)"]], projectFile.EXT, this.bitrate);
+    if (!choice) return;
+    let handle: FileHandle | undefined;
+    if (choice.toFile) {
+      try {
+        handle = await (window as unknown as { showSaveFilePicker: (o: object) => Promise<FileHandle> }).showSaveFilePicker({ suggestedName: `${choice.name}.${projectFile.EXT}` });
+      } catch {
+        return; // picker cancelled
+      }
+    }
+    this.project = { name: choice.name.replace(/\.umcaudio$/i, ""), handle };
+    await this.writeProject();
+  }
+
+  private async writeProject(): Promise<void> {
+    const project = this.project!;
+    const fileName = `${project.name}.${projectFile.EXT}`;
+    const states = this.tracks.map((t) => [t.doc, t.doc.state] as const);
+    const rev = this.tracksRev;
+    this.busy = true;
+    this.update();
+    try {
+      const blob = new Blob([projectFile.toBytes(this.tracks, this.activeTrack) as BlobPart], { type: "application/zip" });
+      if (project.handle) {
+        const w = await project.handle.createWritable();
+        await w.write(blob);
+        await w.close();
+      } else {
+        const url = URL.createObjectURL(blob);
+        h("a", { href: url, download: fileName }).click();
+        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      }
+      for (const [d, st] of states) d.markSavedAt(st);
+      if (this.tracksRev === rev) this.tracksSavedRev = rev;
+      this.showMessage(`Saved “${fileName}”.`);
+    } catch (e) {
+      console.error(e);
+      this.showMessage(`Couldn't save “${fileName}”.`, true);
+    } finally {
+      this.busy = false;
+      this.update();
+    }
+  }
+
   async save(): Promise<void> {
+    if (this.project) {
+      if (this.doc && !this.busy) {
+        this.stop();
+        await this.writeProject();
+      }
+      return;
+    }
     if (!this.saveTarget) return this.saveAs();
     if (!this.doc || this.busy) return;
     this.stop();

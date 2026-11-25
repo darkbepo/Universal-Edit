@@ -1112,13 +1112,15 @@ export class VectorEditorPage {
   }
 
   finishPen(close = false): void {
-    const nodes = this.penNodes;
+    // a double-click to finish also clicked twice on the last spot: drop repeated points
+    const nodes = this.penNodes.filter((n, i, all) => i === 0 || n[0] !== all[i - 1][0] || n[1] !== all[i - 1][1]);
     this.penHover = null;
     if (nodes.length < 2) {
       this.penNodes = [];
       this.drawOverlay();
       return;
     }
+    this.penNodes = nodes;
     const segs = this.penSegs(close, null);
     this.penNodes = [];
     let style: [string, string][] = close ? [...this.styleForNew] : [["fill", "none"], ...this.styleForNew.filter(([k]) => k !== "fill")];

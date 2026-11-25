@@ -1122,7 +1122,15 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       right-click: on the selection its actions (`SELECTION_MENU`), elsewhere Play from here /
       Paste here / Select all. Desktop tests replace `page.exec_menu` / `page.ask_text` (a real
       `QMenu.exec` blocks). e2e: the wave canvas is `canvas.audio-canvas` (lanes are canvases too).
-      Not yet: saving the tracks separately (project file).
+      Projects (Nov 2026): `audioedit/project.py` ↔ `project.ts` — a `.umcaudio` ZIP =
+      `project.json` (format `universal-edit-audio-project`, version 1, rate, active, tracks with
+      name / file / gain_db / pan / mute / solo / offset; same keys in both apps, odd values
+      clamped, newer versions refused) + one 32-bit float WAV per track (lossless); packed sizes
+      are checked against `MAX_SAMPLES` before unpacking. "Save project…" in both top bars; Open /
+      drop take `.umcaudio` (desktop `open_project`, web `openProject`); after a project open or
+      save, Save writes the project (desktop `_save_target` fmt "umcaudio", web `project`), Save
+      as exports the mix as before. Tests `tests/test_audioedit_project.py`,
+      `web/tests/audioedit-project.test.ts`, GUI + e2e round trips.
    14. Properties mode (both apps), step 1 = read-only "About this file" — spec
       `docs/superpowers/specs/2026-11-12-properties-design.md`. Model `properties/` (desktop, no
       Qt) ↔ `web/src/properties/`: each app reads a file with its own engines into the same plain

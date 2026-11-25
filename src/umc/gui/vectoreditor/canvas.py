@@ -677,7 +677,11 @@ class VectorCanvas(QWidget):
 
     def finish_pen(self, close: bool = False) -> None:
         """End the path being drawn with the Pen tool (Enter, double-click, another tool)."""
-        nodes, self.pen_nodes = self.pen_nodes, []
+        # a double-click to finish may also have clicked on the last spot: drop repeated points
+        nodes = [
+            n for i, n in enumerate(self.pen_nodes) if i == 0 or n[:2] != self.pen_nodes[i - 1][:2]
+        ]
+        self.pen_nodes = []
         self.pen_hover = None
         if self.doc is None or len(nodes) < 2:
             self.update()

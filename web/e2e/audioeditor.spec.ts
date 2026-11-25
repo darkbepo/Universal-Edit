@@ -666,3 +666,28 @@ test("a track's volume and left / right are heard while it plays", async ({ page
   await expect.poll(async () => (await playing())?.peaks[0]).toBeLessThan(loud * 0.07);
   await page.evaluate(() => window.__audio!.stop());
 });
+
+test("Save project keeps the tracks separate and opens again", async ({ page }) => {
+  await openEditor(page, [fx("tone.wav")]);
+  type Page2 = { tracks: { name: string; gainDb: number; offset: number }[]; dirty: boolean };
+  await page.evaluate(() => {
+    const p = window.__audio as unknown as Page2;
+    p.tracks[0].gainDb = -6;
+    p.tracks[0].offset = 4410;
+  });
+  await page.getByRole("button", { name: "Save project…" }).click();
+  const dialog = page.locator("dialog[open]");
+  await expect(dialog.getByLabel("Format")).toHaveValue("umcaudio");
+  const download = page.waitForEvent("download");
+  await dialog.getByRole("button", { name: "Save", exact: true }).click();
+  const d = await download;
+  expect(d.suggestedFilename()).toBe("tone.umcaudio");
+  const path = await d.path();
+  expect(await page.evaluate(() => (window.__audio as unknown as Page2).dirty)).toBe(false);
+  // open it again in a fresh page through the editor's own Open
+  await openEditor(page, [fx("beep.mp3")]);
+  await page.locator('.audio-editor input[type="file"]').setInputFiles({ name: "tone.umcaudio", mimeType: "application/zip", buffer: readFileSync(path) });
+  await expect(page.locator(".audio-editor .msg")).toContainText("Opened the project “tone.umcaudio”");
+  const t = await page.evaluate(() => (window.__audio as unknown as Page2).tracks.map((x) => [x.name, x.gainDb, x.offset]));
+  expect(t).toEqual([["tone", -6, 4410]]);
+});
