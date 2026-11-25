@@ -198,6 +198,22 @@ def main() -> None:
         "holes": [ring6(h) for h in fallback.polygons[0].holes],
     }
 
+    # random pixels that once left gaps: a corner a hair off an edge after scaling (73) and
+    # rings earcut overlapped although they don't touch (86)
+    import numpy.random as npr
+
+    rng = npr.default_rng(1)
+    cases["noise"] = []
+    for t in range(87):
+        h, w = (int(v) for v in rng.integers(8, 60, 2))
+        rows_n = rng.random((h, w)) < rng.uniform(0.3, 0.8)
+        if t in (73, 86):
+            rows = ["".join("#" if v else "." for v in r) for r in rows_n]
+            for detail in ("smooth", "fine"):
+                m = logo.logo_mesh(logo.shape_of_mask(grid(rows), detail, 40.0), 2.0)
+                cases["noise"].append({"seed": t, "rows": rows, "detail": detail,
+                                       "volume": r6(m.volume)})  # fmt: skip
+
     cases["busy"] = []
     for seed in range(12):
         rows = blocky(seed)

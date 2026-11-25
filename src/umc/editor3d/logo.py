@@ -269,6 +269,8 @@ class Polygon:
     holes: list[Ring] = field(default_factory=list)
     # cap triangles, made once (``prepare``): moving / turning a logo only transforms it
     caps: list[tuple[int, int, int]] | None = field(default=None, compare=False, repr=False)
+    # the unsimplified rings, used if earcut can't triangulate the simplified ones cleanly
+    raw: Polygon | None = field(default=None, compare=False, repr=False)
 
 
 @dataclass
@@ -336,9 +338,12 @@ def shape(
             polygons[best].holes.append(hole)
     if unsimplified is not None:
         for p in polygons:
+            raw_outer = unsimplified[plain[id(p.outer)]]
+            raw_holes = [unsimplified[plain[id(h)]] for h in p.holes]
             if _rings_meet([p.outer, *p.holes]):
-                p.outer = unsimplified[plain[id(p.outer)]]
-                p.holes = [unsimplified[plain[id(h)]] for h in p.holes]
+                p.outer, p.holes = raw_outer, raw_holes
+            else:
+                p.raw = Polygon(raw_outer, raw_holes)
     xs = [x for p in polygons for x, _ in p.outer]
     ys = [y for p in polygons for _, y in p.outer]
     return Shape(polygons, max(xs) - min(xs), max(ys) - min(ys), dropped)
@@ -355,6 +360,8 @@ def _rings_meet(rings: list[Ring]) -> bool:
     local = np.concatenate([np.arange(len(r)) for r in rings])
     size = np.concatenate([np.full(len(r), len(r)) for r in rings])
     lo, hi = np.minimum(a0, a1), np.maximum(a0, a1)
+    # the same "on the line" distance _split_at uses, so both agree on what touches
+    eps = (float(np.abs(a0).max()) or 1.0) * 1e-9
     order = np.argsort(lo[:, 0], kind="stable")
     left = lo[order, 0]
     first = np.searchsorted(left, lo[:, 0], side="left")
@@ -377,19 +384,21 @@ def _rings_meet(rings: list[Ring]) -> bool:
         if not len(i):
             continue
         p, q, r, t = a0[i], a1[i], a0[j], a1[j]
-        hit = (_orient(p, q, r) * _orient(p, q, t) <= 0) & (
-            _orient(r, t, p) * _orient(r, t, q) <= 0
+        hit = (_orient(p, q, r, eps) * _orient(p, q, t, eps) <= 0) & (
+            _orient(r, t, p, eps) * _orient(r, t, q, eps) <= 0
         )
         if hit.any():  # collinear pairs count too: their boxes overlap, so they share a point
             return True
     return False
 
 
-def _orient(o, a, b):
+def _orient(o, a, b, eps: float):
+    """Which side of line o → a point b is on (0 within ``eps`` of the line)."""
     v = (a[..., 0] - o[..., 0]) * (b[..., 1] - o[..., 1]) - (a[..., 1] - o[..., 1]) * (
         b[..., 0] - o[..., 0]
     )
-    return np.sign(v)
+    length = np.hypot(a[..., 0] - o[..., 0], a[..., 1] - o[..., 1])
+    return np.where(np.abs(v) <= eps * length, 0.0, np.sign(v))
 
 
 def shape_from_picture(
@@ -431,8 +440,25 @@ class Mesh:
 
 def _caps(poly: Polygon) -> list[tuple[int, int, int]]:
     if poly.caps is None:
-        poly.caps = _triangulate(poly)
+        tris = _triangulate(poly)
+        if poly.raw is not None and not _covers(poly, tris):
+            # earcut overlapped triangles on these (valid) rings: use the pixel-exact ones
+            poly.outer, poly.holes = poly.raw.outer, poly.raw.holes
+            tris = _triangulate(poly)
+        poly.raw = None
+        poly.caps = tris
     return poly.caps
+
+
+def _covers(poly: Polygon, tris: list[tuple[int, int, int]]) -> bool:
+    """Do the triangles cover exactly the polygon's area (none overlapping)?"""
+    xy = [p for r in (poly.outer, *poly.holes) for p in r]
+    total = 0.0
+    for a, b, c in tris:
+        (ax, ay), (bx, by), (cx, cy) = xy[a], xy[b], xy[c]
+        total += abs((bx - ax) * (cy - ay) - (by - ay) * (cx - ax)) / 2
+    want = abs(area(poly.outer)) - sum(abs(area(h)) for h in poly.holes)
+    return abs(total - want) <= 1e-7 * max(abs(area(poly.outer)), 1e-9)
 
 
 def _triangulate(poly: Polygon) -> list[tuple[int, int, int]]:
@@ -535,12 +561,13 @@ def extrude(polygons: list[Polygon], bottom: float, top: float) -> Mesh:
     verts: list[tuple[float, float, float]] = []
     faces: list[tuple[int, int, int]] = []
     for poly in polygons:
+        caps = _caps(poly)  # first: it may switch the polygon to its unsimplified rings
         rings = [poly.outer, *poly.holes]
         n = sum(len(r) for r in rings)
         base = len(verts)
         for z in (bottom, top):
             verts.extend((x, y, z) for r in rings for x, y in r)
-        for a, b, c in _caps(poly):
+        for a, b, c in caps:
             faces.append((base + n + a, base + n + b, base + n + c))  # top, facing up
             faces.append((base + a, base + c, base + b))  # bottom, facing down
         start = 0

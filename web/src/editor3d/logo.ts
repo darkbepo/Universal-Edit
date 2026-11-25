@@ -238,6 +238,8 @@ export interface Polygon {
   holes: Ring[];
   /** Cap triangles, made once (``prepare``): moving / turning a logo only transforms it. */
   caps?: [number, number, number][];
+  /** The unsimplified rings, used if earcut can't triangulate the simplified ones cleanly. */
+  raw?: { outer: Ring; holes: Ring[] } | null;
 }
 
 export interface Shape {
@@ -289,18 +291,24 @@ export function shape(rings: Ring[], widthMm: number, heightMm: number | null = 
     else polygons[best].holes.push(hole);
   }
   if (unsimplified)
-    for (const p of polygons)
+    for (const p of polygons) {
+      const rawOuter = unsimplified[plain.get(p.outer)!];
+      const rawHoles = p.holes.map((h) => unsimplified[plain.get(h)!]);
       if (ringsMeet([p.outer, ...p.holes])) {
-        p.outer = unsimplified[plain.get(p.outer)!];
-        p.holes = p.holes.map((h) => unsimplified[plain.get(h)!]);
-      }
+        p.outer = rawOuter;
+        p.holes = rawHoles;
+      } else p.raw = { outer: rawOuter, holes: rawHoles };
+    }
   const px = polygons.flatMap((p) => p.outer.map((q) => q[0]));
   const py = polygons.flatMap((p) => p.outer.map((q) => q[1]));
   return { polygons, width: max(px) - min(px), height: max(py) - min(py), dropped };
 }
 
-const orient = (ox: number, oy: number, ax: number, ay: number, bx: number, by: number) =>
-  Math.sign((ax - ox) * (by - oy) - (ay - oy) * (bx - ox));
+/** Which side of line o → a point b is on (0 within ``eps`` of the line, like splitAt). */
+function orient(ox: number, oy: number, ax: number, ay: number, bx: number, by: number, eps: number): number {
+  const v = (ax - ox) * (by - oy) - (ay - oy) * (bx - ox);
+  return Math.abs(v) <= eps * Math.hypot(ax - ox, ay - oy) ? 0 : Math.sign(v);
+}
 
 /** Does any ring cross or touch itself (edges that aren't neighbours), or another ring? Only
  * edges whose x ranges overlap are compared (sorted by their left end). */
@@ -310,6 +318,9 @@ export function ringsMeet(rings: Ring[]): boolean {
     const [bx, by] = r[(i + 1) % r.length];
     e.push({ ax, ay, bx, by, lx: Math.min(ax, bx), hx: Math.max(ax, bx), ly: Math.min(ay, by), hy: Math.max(ay, by), ring: k, local: i, size: r.length });
   }));
+  let scale = 0;
+  for (const r of rings) for (const [x, y] of r) scale = Math.max(scale, Math.abs(x), Math.abs(y));
+  const eps = (scale || 1) * 1e-9;
   const order = e.map((_, i) => i).sort((a, b) => e[a].lx - e[b].lx || a - b);
   const left = order.map((i) => e[i].lx);
   const firstAtLeast = (v: number) => {
@@ -330,8 +341,8 @@ export function ringsMeet(rings: Ring[]): boolean {
       const d = Math.abs(a.local - b.local);
       if (a.ring === b.ring && (d === 1 || d === a.size - 1)) continue;
       if (a.hy < b.ly || a.ly > b.hy) continue;
-      if (orient(a.ax, a.ay, a.bx, a.by, b.ax, b.ay) * orient(a.ax, a.ay, a.bx, a.by, b.bx, b.by) <= 0 &&
-        orient(b.ax, b.ay, b.bx, b.by, a.ax, a.ay) * orient(b.ax, b.ay, b.bx, b.by, a.bx, a.by) <= 0) return true;
+      if (orient(a.ax, a.ay, a.bx, a.by, b.ax, b.ay, eps) * orient(a.ax, a.ay, a.bx, a.by, b.bx, b.by, eps) <= 0 &&
+        orient(b.ax, b.ay, b.bx, b.by, a.ax, a.ay, eps) * orient(b.ax, b.ay, b.bx, b.by, a.bx, a.by, eps) <= 0) return true;
     }
   }
   return false;
@@ -355,7 +366,32 @@ export function prepare(s: Shape): Shape {
   return s;
 }
 
-const caps = (p: Polygon) => (p.caps ??= triangulate(p));
+function caps(p: Polygon): [number, number, number][] {
+  if (!p.caps) {
+    let tris = triangulate(p);
+    if (p.raw && !covers(p, tris)) {
+      // earcut overlapped triangles on these (valid) rings: use the pixel-exact ones
+      p.outer = p.raw.outer;
+      p.holes = p.raw.holes;
+      tris = triangulate(p);
+    }
+    p.raw = null;
+    p.caps = tris;
+  }
+  return p.caps;
+}
+
+/** Do the triangles cover exactly the polygon's area (none overlapping)? */
+function covers(p: Polygon, tris: [number, number, number][]): boolean {
+  const xy = [p.outer, ...p.holes].flat();
+  let total = 0;
+  for (const [a, b, c] of tris) {
+    const [ax, ay] = xy[a], [bx, by] = xy[b], [cx, cy] = xy[c];
+    total += Math.abs((bx - ax) * (cy - ay) - (by - ay) * (cx - ax)) / 2;
+  }
+  const want = Math.abs(area(p.outer)) - p.holes.reduce((t, h) => t + Math.abs(area(h)), 0);
+  return Math.abs(total - want) <= 1e-7 * Math.max(Math.abs(area(p.outer)), 1e-9);
+}
 
 // ------------------------------------------------------------------------------ meshes
 export interface Mesh {
@@ -480,11 +516,12 @@ export function extrude(polygons: Polygon[], bottom: number, top: number): Mesh 
   const verts: number[] = [];
   const faces: number[] = [];
   for (const poly of polygons) {
+    const cap = caps(poly); // first: it may switch the polygon to its unsimplified rings
     const rings = [poly.outer, ...poly.holes];
     const n = rings.reduce((t, r) => t + r.length, 0);
     const base = verts.length / 3;
     for (const z of [bottom, top]) for (const r of rings) for (const [x, y] of r) verts.push(x, y, z);
-    for (const [a, b, c] of caps(poly)) {
+    for (const [a, b, c] of cap) {
       faces.push(base + n + a, base + n + b, base + n + c);
       faces.push(base + a, base + c, base + b);
     }

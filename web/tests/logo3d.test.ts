@@ -143,6 +143,20 @@ describe("rings that touch or cross", () => {
     s.polygons[0].holes.forEach((h, i) => closeAll(h.flat(), f.holes[i].flat()));
   });
 
+  it("noise pictures that once left gaps are closed", () => {
+    // Volumes can differ from the desktop's a little: the two earcut builds triangulate these
+    // differently, so the "triangles overlap → use the pixel rings" fallback may run in one
+    // app only. Each app's mesh must still be closed and hold exactly its outline's area.
+    for (const c of data.noise) {
+      const { m, w, h } = grid(c.rows);
+      const s = shapeOfMask(m, w, h, c.detail as Detail, 40);
+      const mesh = logoMesh(s, 2);
+      expect(watertight(mesh), `${c.seed} ${c.detail}`).toBe(true);
+      close(volume(mesh), shapeArea(s) * 2);
+      close(volume(mesh), c.volume, 0.01);
+    }
+  });
+
   it("a busy picture: a sealed mesh, and placing it again is quick", () => {
     const n = 400;
     const m = new Uint8Array(n * n);
