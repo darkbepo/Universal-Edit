@@ -40,3 +40,8 @@ declare module "dxf" {
     toSVG(): string;
   }
 }
+declare module "earcut" {
+  /** Triangle corner indices (3 per triangle) for flat coordinates with holes starting at
+   * ``holeIndices`` (in points, not numbers). */
+  export default function earcut(data: ArrayLike<number>, holeIndices?: ArrayLike<number> | null, dim?: number): number[];
+}

@@ -55,9 +55,11 @@ for the slicer.
 
 1. `mask(pixels, w, h, mode, threshold, invert)` → 0/1 grid (picture decoded by each app's own
    engine: Pillow / canvas; scaled so the longer side is at most 1024 px first).
-2. `outlines(mask)` → closed loops by **marching squares** on the pixel grid (own code, so both
-   apps produce identical points), then Douglas–Peucker with the detail tolerance and a light
-   corner-keeping smoothing.
+2. `trace(mask)` → closed loops along the pixel edges (own code, so both apps produce identical
+   points; a right-turn rule keeps pixels that touch only diagonally apart, and such corners are
+   moved 0.05 px apart so no zero-width edge is shared), keeping the corners where the outline
+   turns, then Douglas–Peucker with the detail tolerance (a staircase becomes a slope, square
+   corners stay square).
 3. `polygons(loops)` → outer rings with their holes (nesting by even–odd containment, winding
    fixed: outer counter-clockwise, holes clockwise); specks dropped.
 4. `extrude(polygons, width_mm, thickness)` → a closed, watertight mesh: caps triangulated with
@@ -65,10 +67,10 @@ for the slicer.
    as quads per edge. Base plate / hole = more polygons in the same mesh (the logo stands on the
    plate's top; the hole is cut out of the plate polygon before triangulating).
 5. `flat_face(model, triangle)` → the connected coplanar triangles around the clicked one
-   (normals within 1°, plane distance < 0.01 mm) and their outline; `place(logo, face, point,
-   rotation, sink)` → the logo's mesh moved onto that plane (its "up" = the face normal, its
-   X axis = the face's longest edge direction, or world X / Y for horizontal faces), and
-   `overhang(logo, face)` for the warning.
+   (normals within 1°, plane distance < 0.01 mm) and their outline; `placement(point, normal,
+   rotation, sink)` → the matrix putting the logo onto that plane (its "out" = the face normal;
+   on a level face its X axis = world X, otherwise level along the face so the logo stands
+   upright), and `overhang(footprint, face)` for the warning.
 - Shared cases `tests/fixtures/logo3d_cases.json` (made by `python scripts/make_logo3d_cases.py`,
   on purpose only): small masks → loop points, polygon nesting, triangle counts, volumes,
   placement matrices. Triangle order may differ between the two earcut packages, so cases compare
@@ -89,7 +91,7 @@ for the slicer.
 
 ## Steps (one at a time, ship gate each)
 
-1. Model in both apps (`logo`, `pick`) with the shared cases.
+1. ✅ Model in both apps (`logo`, `pick`) with the shared cases.
 2. Desktop: logo panel, placing, undo, Save as; README table rows; self-test step.
 3. Website: the same page features; e2e.
 4. Later: engraving (boolean cut), then text logos.
