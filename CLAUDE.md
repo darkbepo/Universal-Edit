@@ -936,7 +936,20 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       `tests/fixtures/logo3d_cases.json` (`python scripts/make_logo3d_cases.py`, on purpose
       only); earcut's triangle order may differ between the two, so cases compare counts /
       areas / volumes. trimesh's `is_watertight` accepts edges shared by 4 triangles — the
-      tests count edges themselves. Self-test step "3D logo". Next: step 2 (desktop page).
+      tests count edges themselves. Self-test step "3D logo".
+      Step 2 ✅ desktop: `editor3d/scene.py` (Qt-free: `Picture`, `LogoSettings`, `Logo`,
+      `build_logo` (a given `shp` skips tracing: drags only re-place), immutable `Scene` +
+      snapshot `History`, `combined` → one ViewModel, `export` = everything as ONE object via
+      `save_model(…, repair=False, center_on_bed=False)` so a slicer can't spread the parts
+      apart). `pick.flat_face` only welds triangles already in the clicked plane (big models).
+      Page `gui/editor3d/viewer_page.py` (Add logo… / Undo / Redo / Save as…, "Logos" list with
+      Change… / Remove, one History per file + one for the empty viewer; tracing on a
+      `TaskRunner` 250 ms after the last change) + `logo_panel.py` (one QFormLayout,
+      `setRowVisible`; in the "model" add-on's `modules`). `gl_view`: `set_overlay` (preview in
+      the accent colour), `clicked` (a press that moved < 3 px), `grab_test` + `grab_moved` (a
+      left press on the preview drags it over the face's plane instead of orbiting),
+      `set_model(…, fit=False)`. Tests `tests/test_gui_logo3d.py`; its real click / drag test
+      needs GL: `QT_QPA_PLATFORM=xcb xvfb-run -a pytest …` (apt `libxcb-cursor0` etc.).
    9. ✅ Start screen = hub (both apps; order and the four "Coming soon" tiles: roadmap 16): editor tiles under the empty drop zone, listed in
       `core/editors.py` / `web/src/core/editors.ts` (same order and text; `available` False =
       greyed "Coming soon"); tests/test_editor_hub.py

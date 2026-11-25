@@ -71,32 +71,32 @@ class Face:
 
 def flat_face(vertices: np.ndarray, faces: np.ndarray, tri: int) -> Face:
     """The connected triangles around ``tri`` lying in its plane. Corners are matched by
-    position (an STL repeats them), triangles are neighbours when they share an edge."""
-    _, inverse = np.unique(vertices, axis=0, return_inverse=True)
-    welded = inverse.reshape(-1)[faces]
-    edge_map: dict[tuple[int, int], list[int]] = {}
-    for i, (a, b, c) in enumerate(welded.tolist()):
-        for e in ((a, b), (b, c), (c, a)):
-            edge_map.setdefault((min(e), max(e)), []).append(i)
+    position (an STL repeats them), triangles are neighbours when they share an edge. Only
+    triangles in the plane are looked at, so a click on a big model stays quick."""
     ns = normals(vertices, faces)
     n0, p0 = ns[tri], vertices[faces[tri, 0]]
     cos_limit = math.cos(math.radians(FLAT_DEGREES))
+    flat = (ns @ n0 >= cos_limit) & (np.abs((vertices[faces] - p0) @ n0).max(axis=1) <= FLAT_MM)
+    flat[tri] = True
+    cand = np.nonzero(flat)[0]
+    _, inverse = np.unique(vertices[faces[cand]].reshape(-1, 3), axis=0, return_inverse=True)
+    welded = dict(zip(cand.tolist(), inverse.reshape(-1, 3).tolist(), strict=True))
+    edge_map: dict[tuple[int, int], list[int]] = {}
+    for i in cand.tolist():
+        a, b, c = welded[i]
+        for e in ((a, b), (b, c), (c, a)):
+            edge_map.setdefault((min(e), max(e)), []).append(i)
     seen = {tri}
     order = [tri]
     k = 0
     while k < len(order):
-        a, b, c = welded[order[k]].tolist()
+        a, b, c = welded[order[k]]
         k += 1
         for e in ((a, b), (b, c), (c, a)):
             for j in edge_map[(min(e), max(e))]:
-                if j in seen:
-                    continue
-                if float(ns[j] @ n0) < cos_limit:
-                    continue
-                if np.abs((vertices[faces[j]] - p0) @ n0).max() > FLAT_MM:
-                    continue
-                seen.add(j)
-                order.append(j)
+                if j not in seen:
+                    seen.add(j)
+                    order.append(j)
     return Face(order, n0.copy(), p0.copy())
 
 

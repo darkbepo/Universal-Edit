@@ -64,7 +64,7 @@ ADDONS: dict[str, Addon] = {
     "model": Addon(
         "model",
         "3D viewer",
-        modules=("umc.gui.editor3d.viewer_page",),
+        modules=("umc.gui.editor3d.viewer_page", "umc.gui.editor3d.logo_panel"),
         packages=(),
         entry="umc.gui.editor3d.viewer_page",
     ),
