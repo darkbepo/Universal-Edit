@@ -99,7 +99,7 @@ test("3D viewer tile: opens empty, Open… shows a model", async ({ page }) => {
   await expect(viewer).toBeVisible();
   await expect(viewer).toHaveCount(1);
   await expect(page.locator(".viewer3d-placeholder")).toContainText("Open a 3D model");
-  await viewer.locator('input[type="file"]').setInputFiles([`${FIXTURES}cube-10mm.stp`]);
+  await viewer.locator('.editor-top input[type="file"]').setInputFiles([`${FIXTURES}cube-10mm.stp`]); // not the logo picture's
   await expect(page.locator(".viewer3d-info")).toContainText("Width (X)");
   const rows = await page.evaluate(() => window.__viewer3d!.infoRows());
   expect(rows["Width (X)"]).toBe("10.0 mm");
