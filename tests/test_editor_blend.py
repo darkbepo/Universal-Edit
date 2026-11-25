@@ -59,7 +59,9 @@ def test_ora_keeps_the_mode(tmp_path):
     doc = doc_for("screen", 1.0)
     f = tmp_path / "a.ora"
     write_ora(doc, f)
-    assert 'composite-op="svg:screen"' in __import__("zipfile").ZipFile(f).read("stack.xml").decode()
+    assert (
+        'composite-op="svg:screen"' in __import__("zipfile").ZipFile(f).read("stack.xml").decode()
+    )
     again = read_ora(f)
     assert [la.blend for la in again.layers] == ["normal", "screen"]
     assert blend.from_ora("svg:hue") == "normal" and blend.from_ora(None) == "normal"
