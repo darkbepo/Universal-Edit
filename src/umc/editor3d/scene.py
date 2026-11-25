@@ -113,11 +113,11 @@ def build_logo(
         parts = L.badge(shp, s.thickness, s.plate, s.margin, s.plate_thickness, s.hole)
         x = 0.0
         if base is not None:
-            lo, hi = base.bounds
-            total = shp.width + (2 * s.margin if s.plate != "none" else 0)
-            if s.plate != "none" and s.hole:
-                total += 2 * L.HOLE_RADIUS_MM + s.margin
-            x = float(hi[0]) + BADGE_GAP_MM + total / 2
+            _lo, hi = base.bounds
+            left = shp.width / 2  # how far the badge reaches left of its centre
+            if s.plate != "none":
+                left += s.margin + (2 * L.HOLE_RADIUS_MM + s.margin if s.hole else 0)
+            x = float(hi[0]) + BADGE_GAP_MM + left
         m = L.placement((x, 0.0, 0.0), (0.0, 0.0, 1.0), s.rotation, 0.0)
         meshes = tuple(L.transform(p, m) for p in parts)
         point, normal = None, None

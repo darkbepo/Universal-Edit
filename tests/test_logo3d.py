@@ -176,3 +176,16 @@ def test_ray_through_the_centre_looks_at_the_target():
 def test_miss_returns_none():
     v, f = _box()
     assert pick.hit(v, f, [100, 100, 100], [0, 0, 1]) is None
+
+
+def test_badge_stands_clear_of_the_model():
+    from umc.editor3d import scene as S
+
+    v, f = _box()
+    base = __import__("umc.editor3d.mesh", fromlist=["ViewModel"]).ViewModel("box", v, f)
+    pic = S.Picture("ring.png", bytes([0, 0, 0, 255] * 16), 4, 4)
+    for plate, hole in (("none", False), ("rectangle", False), ("rounded", True)):
+        s = S.LogoSettings(where="badge", width=20, plate=plate, hole=hole)
+        lg = S.build_logo(pic, s, base=base)
+        left = min(m.vertices[:, 0].min() for m in lg.meshes)
+        assert left == pytest.approx(20 + S.BADGE_GAP_MM)

@@ -93,5 +93,5 @@ for the slicer.
 
 1. ✅ Model in both apps (`logo`, `pick`) with the shared cases.
 2. ✅ Desktop: logo panel, placing, undo, Save as; README table rows; self-test step.
-3. Website: the same page features; e2e.
+3. ✅ Website: the same page features; e2e.
 4. Later: engraving (boolean cut), then text logos.
