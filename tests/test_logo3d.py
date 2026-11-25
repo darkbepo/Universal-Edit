@@ -300,3 +300,12 @@ def test_prepared_shape_places_quickly():
     t = time.perf_counter()
     mesh = logo.placed_logo(s, 2, (0, 0, 10), (0, 0, 1), 30)
     assert time.perf_counter() - t < 0.2 and _closed(mesh)
+
+
+def test_noise_pictures_are_closed():
+    """Shared cases "noise": random pixels that once left gaps in the caps."""
+    for c in json.loads(CASES.read_text())["noise"]:
+        s = logo.shape_of_mask(grid(c["rows"]), c["detail"], 40)
+        m = logo.logo_mesh(s, 2)
+        assert _closed(m), (c["seed"], c["detail"])
+        assert m.volume == pytest.approx(s.area * 2) and m.volume == pytest.approx(c["volume"])

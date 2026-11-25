@@ -982,6 +982,12 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       desktop trace thread / in the web trace worker; `Polygon.caps`), so drags only transform;
       `_split_at` checks sloping edges against corners within their x range only. The web trace
       worker's `onerror` clears the stuck "Tracing…" state.
+      Third review: `_rings_meet` / `ringsMeet` treat a corner within the same `eps` of an edge
+      as touching (`_orient` / `orient`), like `_split_at`. Earcut can overlap triangles on valid
+      rings (noise pictures): `_caps` / `caps` check the triangles cover exactly the polygon's
+      area (`_covers` / `covers`) and else switch it to its unsimplified rings (`Polygon.raw`);
+      `extrude` asks for the caps before reading the rings. The two earcut builds can differ
+      there, so shared case "noise" compares volumes loosely on the web.
    9. ✅ Start screen = hub (both apps; order and the four "Coming soon" tiles: roadmap 16): editor tiles under the empty drop zone, listed in
       `core/editors.py` / `web/src/core/editors.ts` (same order and text; `available` False =
       greyed "Coming soon"); tests/test_editor_hub.py
