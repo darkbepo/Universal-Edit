@@ -268,5 +268,7 @@ def test_real_click_and_drag_in_the_gl_view(window, qtbot, box_stl, ring_png):
     qtbot.mouseMove(view, start + QPoint(20, 0))
     qtbot.mouseMove(view, start + QPoint(40, 0))
     qtbot.mouseRelease(view, Qt.MouseButton.LeftButton, pos=start + QPoint(40, 0))
-    assert page.editing.point[0] > 1 and page.editing.point[2] == pytest.approx(10)
+    # the logo keeps the spot it was grabbed by under the pointer: it moved by the drag only
+    x, _y, z = page.editing.point
+    assert 1 < x < 40 / px_per_mm + 1 and z == pytest.approx(10)
     assert accent.isValid()

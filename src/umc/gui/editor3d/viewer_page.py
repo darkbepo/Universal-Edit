@@ -153,6 +153,7 @@ class ViewerPage(QWidget):
         self.histories: dict[Path | None, S.History] = {None: S.History()}
         self.editing: _Edit | None = None
         self.saving = False
+        self._grab_offset = np.zeros(3)  # logo point − where the drag started on its plane
         self._rebuild_timer = QTimer(self, singleShot=True, interval=REBUILD_MS)
         self._rebuild_timer.timeout.connect(self._rebuild)
 
@@ -739,29 +740,44 @@ class ViewerPage(QWidget):
 
     def _grab_test(self, x: float, y: float) -> bool:
         e = self.editing
-        if e is None or e.preview is None or e.normal is None:
+        if e is None or e.preview is None or e.normal is None or e.point is None:
             return False
         origin, direction = pick.ray(self.view.camera, x, y, self.view.width(), self.view.height())
-        return pick.hit(e.preview.vertices, e.preview.faces, origin, direction) is not None
+        if pick.hit(e.preview.vertices, e.preview.faces, origin, direction) is None:
+            return False
+        at = self._on_plane(origin, direction)
+        if at is None:
+            return False
+        self._grab_offset = np.asarray(e.point, float) - at
+        return True
 
     def _on_grab_moved(self, x: float, y: float) -> None:
         e = self.editing
         if e is None or e.normal is None or e.shape is None:
             return
         origin, d = pick.ray(self.view.camera, x, y, self.view.width(), self.view.height())
-        self.move_logo_along_ray(origin, d)
+        self.move_logo_along_ray(origin, d, self._grab_offset)
 
-    def move_logo_along_ray(self, origin, direction) -> None:
-        """Slide the logo over its face's plane to where the ray meets it."""
+    def _on_plane(self, origin, direction) -> np.ndarray | None:
+        """Where the ray meets the plane of the logo's face (None: parallel or behind)."""
         e = self.editing
         n, p0 = np.asarray(e.normal, float), np.asarray(e.point, float)
         denom = float(np.dot(direction, n))
         if abs(denom) < 1e-6:
+            return None
+        t = float(np.dot(p0 - np.asarray(origin, float), n)) / denom
+        return np.asarray(origin, float) + np.asarray(direction, float) * t if t > 0 else None
+
+    def move_logo_along_ray(self, origin, direction, offset=(0.0, 0.0, 0.0)) -> None:
+        """Slide the logo over its face's plane to where the ray meets it (+ ``offset``: the
+        logo keeps the spot it was grabbed by under the pointer)."""
+        e = self.editing
+        if e is None or e.normal is None or e.point is None or e.shape is None:
             return
-        t = float(np.dot(p0 - origin, n)) / denom
-        if t <= 0:
+        at = self._on_plane(origin, direction)
+        if at is None:
             return
-        e.point = tuple(float(v) for v in np.asarray(origin) + np.asarray(direction) * t)
+        e.point = tuple(float(v) for v in at + np.asarray(offset, float))
         self._place()
 
     def apply_logo(self) -> None:

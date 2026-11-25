@@ -347,6 +347,7 @@ export function mountApp(root: HTMLElement): void {
       if (subEditor && !subEditor.el.hidden && !subEditor.maybeLeave()) return;
       if (dataEditor && !dataEditor.el.hidden && !dataEditor.maybeLeave()) return;
       if (vectorEditor && !vectorEditor.el.hidden && !vectorEditor.maybeLeave()) return;
+      if (viewer && !viewer.el.hidden && !viewer.maybeLeave()) return;
       showConverter();
     }
     setMode("properties");
@@ -713,6 +714,7 @@ export function mountApp(root: HTMLElement): void {
     if (editing && codeEditor && !codeEditor.el.hidden && !codeEditor.maybeLeave()) return;
     if (editing && dataEditor && !dataEditor.el.hidden && !dataEditor.maybeLeave()) return;
     if (editing && vectorEditor && !vectorEditor.el.hidden && !vectorEditor.maybeLeave()) return;
+    if (editing && viewer && !viewer.el.hidden && !viewer.maybeLeave()) return;
     showConverter();
   });
 

@@ -24,7 +24,7 @@ from umc.editor3d.scene import LogoSettings
 
 MODES = (("alpha", "Transparent background"), ("dark", "Dark parts"), ("light", "Light parts"))
 DETAILS = (("smooth", "Smooth"), ("normal", "Normal"), ("fine", "Fine"))
-WHERE = (("face", "On a face of the model"), ("badge", "As a separate badge"))
+WHERE = (("face", "On the model"), ("badge", "Separate badge"))
 PLATES = (("none", "No plate"), ("rectangle", "Rectangle"), ("rounded", "Rounded rectangle"))
 PREVIEW_PX = 200
 FACE_HINT = "Click a flat face of the model to place the logo, then drag the logo to move it."

@@ -6,9 +6,16 @@ import * as THREE from "three";
 import { VIEW_TARGET } from "../../converters/model3d";
 import type { InputFile } from "../../core/types";
 import { OrbitCamera, FOV, type Vec3 } from "../../editor3d/camera";
+import { LogoError, mask, MAX_SIDE, shape, trace, defaultMode, type Shape } from "../../editor3d/logo";
 import { describe, gridSpec, type ModelStats, type ViewModel } from "../../editor3d/mesh";
+import { flatFace, hit, ray } from "../../editor3d/pick";
+import {
+  buildLogo, combined, defaultSaveName, History, logoPositions, sameSettings, SAVE_EXTS, sceneStl, emptyScene, without, withLogo,
+  type Logo, type LogoSettings, type Picture, type SaveExt, type Scene,
+} from "../../editor3d/scene";
 import { JobCancelled, type ConversionClient } from "../../worker/client";
 import { backLabel } from "../back";
+import { FACE_HINT, LogoPanel } from "./logopanel";
 
 const h = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> & { class?: string } = {}, ...children: (Node | string)[]) => {
   const el = document.createElement(tag);
@@ -26,7 +33,64 @@ const hint = () => (typeof matchMedia === "function" && matchMedia("(pointer: co
 const VIEW_BUTTONS: [string, string][] = [["iso", "3D"], ["front", "Front"], ["top", "Top"], ["right", "Side"]];
 const STYLE_BUTTONS: [Style, string][] = [["shaded", "Shaded"], ["edges", "Edges"], ["wireframe", "Wireframe"]];
 const ORBIT_DEG_PER_PX = 0.4;
+const CLICK_SLOP_PX = 3; // a press that moves less than this is a click, not a drag
+const REBUILD_MS = 250; // after the last setting change
 type Style = "shaded" | "edges" | "wireframe";
+
+/** The logo being made or changed (not in the scene until Apply). */
+interface Edit {
+  index: number | null; // null = a new logo
+  picture: Picture | null;
+  point: Vec3 | null;
+  normal: Vec3 | null;
+  faceTris: number[] | null;
+  shape: Shape | null;
+  shapeKey: string;
+  logo: Logo | null;
+  preview: Float32Array | null; // the logo's triangles, drawn in the accent colour
+  problem: string;
+}
+
+const shapeKey = (pic: Picture, s: LogoSettings) => JSON.stringify([pic.name, pic.w, pic.h, s.mode, s.threshold, s.invert, s.detail, s.width]);
+
+/** Read a picture on the page (SVG drawn at MAX_SIDE, others scaled down to it). */
+async function readPicture(file: File): Promise<Picture> {
+  const svg = /\.svgz?$/i.test(file.name) || file.type === "image/svg+xml";
+  let source: CanvasImageSource, w: number, h: number;
+  if (svg) {
+    const url = URL.createObjectURL(file);
+    try {
+      const img = new Image();
+      img.src = url;
+      await img.decode();
+      const k = MAX_SIDE / Math.max(img.naturalWidth || 300, img.naturalHeight || 150);
+      w = Math.max(1, Math.round((img.naturalWidth || 300) * k));
+      h = Math.max(1, Math.round((img.naturalHeight || 150) * k));
+      source = img;
+      return draw(source, w, h, file.name);
+    } finally {
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+  }
+  const bmp = await createImageBitmap(file);
+  const k = Math.min(1, MAX_SIDE / Math.max(bmp.width, bmp.height));
+  w = Math.max(1, Math.round(bmp.width * k));
+  h = Math.max(1, Math.round(bmp.height * k));
+  try {
+    return draw(bmp, w, h, file.name);
+  } finally {
+    bmp.close();
+  }
+}
+
+function draw(source: CanvasImageSource, w: number, h: number, name: string): Picture {
+  const c = document.createElement("canvas");
+  c.width = w;
+  c.height = h;
+  const g = c.getContext("2d", { willReadFrequently: true })!;
+  g.drawImage(source, 0, 0, w, h);
+  return { name, rgba: g.getImageData(0, 0, w, h).data, w, h };
+}
 
 export interface ViewerOptions {
   client: ConversionClient;
@@ -72,6 +136,20 @@ export class ViewerPage {
   private loadToken = 0;
   private active = false;
   private resizeObserver: ResizeObserver;
+  readonly histories = new Map<InputFile | null, History>([[null, new History()]]);
+  editing: Edit | null = null;
+  saving = false;
+  private overlay: THREE.Mesh | null = null;
+  private logoPanel: LogoPanel;
+  private sideInfo: HTMLElement;
+  private logoBox = h("div", { class: "logo-list-box", hidden: true });
+  private logoList = h("ul", { class: "logo-list", role: "listbox", ariaLabel: "Logos" });
+  private selectedLogo = 0;
+  private topButtons: Record<string, HTMLButtonElement> = {};
+  private rebuildTimer = 0;
+  private press: { x: number; y: number; moved: boolean; button: number } | null = null;
+  private grabbing = false;
+  private grabOffset: Vec3 = [0, 0, 0]; // logo point − where the drag started on its plane
 
   constructor(private opts: ViewerOptions) {
     const btn = (label: string, title: string, fn: () => void, cls = "btn small") => {
@@ -97,21 +175,38 @@ export class ViewerPage {
       if (picker.files?.length) this.opts.onOpen?.(Array.from(picker.files));
       picker.value = "";
     });
+    this.topButtons.open = btn("Open…", "Open 3D models (STL, OBJ, 3MF, STEP, …)", () => picker.click());
+    this.topButtons.logo = btn("Add logo…", "Turn a picture into a raised 3D logo", () => this.startLogo());
+    this.topButtons.undo = btn("Undo", "Undo (Ctrl+Z)", () => this.undo());
+    this.topButtons.redo = btn("Redo", "Redo (Ctrl+Y)", () => this.redo());
+    this.topButtons.save = btn("Save as…", "Save the model with its logos (3MF, STL, …)", () => void this.saveAs());
     const top = h("div", { class: "editor-top" },
-      backLabel(btn("← Back to Convert", "Leave the 3D viewer", () => this.opts.onBack(), "link")),
+      backLabel(btn("← Back to Convert", "Leave the 3D viewer", () => this.back(), "link")),
       h("span", { class: "gap" }),
-      btn("Open…", "Open 3D models (STL, OBJ, 3MF, STEP, …)", () => picker.click()), picker,
+      this.topButtons.open, picker,
       h("span", { class: "gap" }), this.fileBox,
+      h("span", { class: "gap" }), this.topButtons.logo, this.topButtons.undo, this.topButtons.redo, this.topButtons.save,
       h("div", { class: "spacer" }),
       btn("Fit", "Show the whole model (double-click the view)", () => this.fit()), ...views,
       h("span", { class: "gap" }), styles,
       h("span", { class: "gap" }),
       h("label", { class: "check", title: "Grid on the print bed (Z = 0); red = X, green = Y" }, this.gridBox, " Bed grid"));
+    const change = btn("Change…", "Change the chosen logo", () => this.startLogo(this.selectedLogo));
+    const remove = btn("Remove", "Remove the chosen logo", () => this.removeLogo(this.selectedLogo));
+    this.logoBox.append(h("p", { class: "muted small" }, "Logos"), this.logoList, h("div", { class: "logo-buttons" }, change, remove));
     const side = h("div", { class: "editor-side viewer3d-side" }, this.title, this.info,
-      h("p", { class: "muted small" }, "Sizes are in millimetres, as a slicer will see them. Files without a unit (STL, OBJ, PLY) are taken as mm."));
+      h("p", { class: "muted small" }, "Sizes are in millimetres, as a slicer will see them. Files without a unit (STL, OBJ, PLY) are taken as mm."),
+      this.logoBox);
+    this.sideInfo = side;
+    this.logoPanel = new LogoPanel({
+      changed: () => this.onSettingsChanged(),
+      picture: (f) => void this.loadPicture(f),
+      apply: () => this.applyLogo(),
+      cancel: () => this.cancelLogo(),
+    });
     this.el = h("div", { class: "editor viewer3d", hidden: true },
       top,
-      h("div", { class: "viewer3d-body" }, h("div", { class: "viewer3d-view" }, this.canvasHost, this.placeholder), side),
+      h("div", { class: "viewer3d-body" }, h("div", { class: "viewer3d-view" }, this.canvasHost, this.placeholder), side, this.logoPanel.el),
       h("div", { class: "editor-status" }, this.message, h("div", {}, hint())));
 
     this.scene.add(this.modelGroup, this.gridGroup, this.key, this.fill, new THREE.HemisphereLight(0xffffff, 0x666670, 0.9));
@@ -138,8 +233,19 @@ export class ViewerPage {
     return this.message.textContent ?? "";
   }
 
+  get dirty(): boolean {
+    return [...this.histories.values()].some((hs) => hs.dirty);
+  }
+
   maybeLeave(): boolean {
-    return true; // the viewer changes nothing
+    this.cancelLogo();
+    if (this.dirty && !window.confirm("Discard the logos you haven't saved?")) return false;
+    for (const hs of this.histories.values()) hs.markSaved();
+    return true;
+  }
+
+  private back(): void {
+    if (this.maybeLeave()) this.opts.onBack();
   }
 
   // ---------------------------------------------------------------- opening
@@ -159,6 +265,7 @@ export class ViewerPage {
 
   /** Started from the editor tiles: nothing to show until a model is opened or dropped. */
   openEmpty(): void {
+    this.endEdit();
     this.files = [];
     this.current = null;
     this.loadToken++;
@@ -169,9 +276,11 @@ export class ViewerPage {
     this.message.textContent = "";
     this.message.classList.remove("error");
     this.showPlaceholder(EMPTY_TEXT);
+    this.showScene(true);
   }
 
   async showFile(f: InputFile): Promise<void> {
+    this.endEdit();
     this.current = f;
     this.fileBox.selectedIndex = this.files.indexOf(f);
     this.title.textContent = f.name;
@@ -199,9 +308,13 @@ export class ViewerPage {
       this.showPlaceholder(model);
       this.message.textContent = model;
       this.message.classList.add("error");
+      this.syncButtons();
       return;
     }
-    this.showModel(model);
+    if (!this.histories.has(f)) this.histories.set(f, new History(emptyScene(model)));
+    this.message.textContent = "";
+    this.message.classList.remove("error");
+    this.showScene(true);
   }
 
   private async load(f: InputFile): Promise<ViewModel> {
@@ -235,18 +348,36 @@ export class ViewerPage {
     }
   }
 
-  private showModel(m: ViewModel): void {
-    this.message.textContent = "";
-    this.message.classList.remove("error");
-    this.info.replaceChildren(...describe(m).flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, v)]));
+  /** Show the current scene (+ the logo preview), fill the info panel, set the buttons. */
+  private showScene(fit = false): void {
+    const sc = this.shownScene();
+    const m = sc ? combined(sc, this.current?.name ?? "Logo") : null;
+    this.info.replaceChildren(...(m ? describe(m) : []).flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, v)]));
+    this.fillLogos();
+    this.syncButtons();
+    const preview = this.editing?.preview ?? null;
+    if (!m && !preview) {
+      this.disposeModel();
+      this.setOverlay(null);
+      if (!this.current) this.showPlaceholder(EMPTY_TEXT);
+      return;
+    }
     if (!this.ensureRenderer()) {
       this.showPlaceholder("The 3D view needs WebGL, which isn't working in this browser. The model's measurements are on the right.");
       this.message.textContent = this.failed;
       return;
     }
+    const first = !this.mesh && !this.overlay;
     this.placeholder.hidden = true;
     this.canvasHost.hidden = false;
     this.disposeModel();
+    if (m) this.showModel(m);
+    this.setOverlay(preview);
+    if (fit || first) this.fit();
+    else this.requestRender();
+  }
+
+  private showModel(m: ViewModel): void {
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.BufferAttribute(m.positions, 3));
     g.computeVertexNormals(); // non-indexed: flat face normals
@@ -259,7 +390,29 @@ export class ViewerPage {
     this.modelGroup.add(this.mesh);
     this.buildGrid(m.size);
     this.applyStyle();
-    this.fit();
+  }
+
+  private setOverlay(pos: Float32Array | null): void {
+    if (this.overlay) {
+      this.overlay.geometry.dispose();
+      (this.overlay.material as THREE.Material).dispose();
+      this.overlay.removeFromParent();
+      this.overlay = null;
+    }
+    if (pos?.length && this.renderer) {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+      g.computeVertexNormals();
+      g.computeBoundingBox();
+      const accent = new THREE.Color(cssColor("--accent", "#5b5ef0"));
+      this.overlay = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: accent, roughness: 0.6, metalness: 0.05, side: THREE.DoubleSide, flatShading: true }));
+      this.modelGroup.add(this.overlay);
+      if (!this.mesh) {
+        const b = g.boundingBox!;
+        this.buildGrid([b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z]);
+      }
+    }
+    this.requestRender();
   }
 
   private disposeModel(): void {
@@ -335,7 +488,11 @@ export class ViewerPage {
   }
 
   fit(): void {
-    const box = this.mesh?.geometry.boundingBox;
+    let box: THREE.Box3 | null = null;
+    for (const o of [this.mesh, this.overlay]) {
+      const b = o?.geometry.boundingBox;
+      if (b) box = box ? box.clone().union(b) : b.clone();
+    }
     if (box) {
       const r = this.canvasHost.getBoundingClientRect();
       this.camera.fit(box.min.toArray() as Vec3, box.max.toArray() as Vec3, r.width / Math.max(r.height, 1) || 1);
@@ -363,8 +520,11 @@ export class ViewerPage {
           return;
         }
       }
+      this.press = { x: e.clientX, y: e.clientY, moved: false, button: e.button };
+      const [px, py] = this.local(e);
+      this.grabbing = e.button === 0 && !e.shiftKey && this.grabTest(px, py);
       this.drag = { x: e.clientX, y: e.clientY, pan: e.button !== 0 || e.shiftKey, id: e.pointerId };
-      el.classList.add("dragging");
+      el.classList.add(this.grabbing ? "grabbing" : "dragging");
       this.renderer?.domElement.focus();
     });
     el.addEventListener("pointermove", (e) => {
@@ -378,6 +538,15 @@ export class ViewerPage {
         return;
       }
       if (!this.drag || e.pointerId !== this.drag.id) return;
+      if (this.press && !this.press.moved)
+        this.press.moved = Math.abs(e.clientX - this.press.x) + Math.abs(e.clientY - this.press.y) >= CLICK_SLOP_PX;
+      if (this.grabbing) {
+        if (this.press?.moved) {
+          const [px, py] = this.local(e);
+          this.onGrabMoved(px, py);
+        }
+        return;
+      }
       const dx = e.clientX - this.drag.x, dy = e.clientY - this.drag.y;
       this.drag.x = e.clientX;
       this.drag.y = e.clientY;
@@ -389,9 +558,21 @@ export class ViewerPage {
       touches.delete(e.pointerId);
       if (touches.size < 2) pinch = null;
       this.drag = null;
-      el.classList.remove("dragging");
+      this.grabbing = false;
+      el.classList.remove("dragging", "grabbing");
     };
-    el.addEventListener("pointerup", end);
+    el.addEventListener("pointerup", (e) => {
+      const press = this.press, grabbed = this.grabbing;
+      this.press = null;
+      end(e);
+      if (press && !press.moved && press.button === 0 && !grabbed) {
+        const [px, py] = this.local(e);
+        this.onViewClicked(px, py);
+      } else if (press && !press.moved && grabbed) {
+        const [px, py] = this.local(e);
+        this.onViewClicked(px, py); // a click on the logo itself: place it there
+      }
+    });
     el.addEventListener("pointercancel", end);
     el.addEventListener("dblclick", () => this.fit());
     el.addEventListener("wheel", (e) => {
@@ -400,7 +581,20 @@ export class ViewerPage {
       this.requestRender();
     }, { passive: false });
     window.addEventListener("keydown", (e) => {
-      if (!this.active || e.ctrlKey || e.metaKey || e.altKey || (e.target as HTMLElement).closest("input, select, textarea")) return;
+      if (!this.active || (e.target as HTMLElement).closest("input, select, textarea")) return;
+      const ctrl = e.ctrlKey || e.metaKey;
+      if (ctrl && !e.altKey && (e.key === "z" || e.key === "Z" || e.key === "y")) {
+        e.preventDefault();
+        if (e.key === "y" || e.shiftKey) this.redo();
+        else this.undo();
+        return;
+      }
+      if (e.key === "Escape" && this.editing) {
+        e.preventDefault();
+        this.cancelLogo();
+        return;
+      }
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
       const moves: Record<string, () => void> = {
         "+": () => this.camera.zoom(0.85), "=": () => this.camera.zoom(0.85), "-": () => this.camera.zoom(1 / 0.85),
         ArrowLeft: () => this.camera.orbit(-15, 0), ArrowRight: () => this.camera.orbit(15, 0),
@@ -450,6 +644,361 @@ export class ViewerPage {
     r.render(this.scene, this.cam3);
   }
 
+  // ---------------------------------------------------------------- logos
+  private get history(): History | undefined {
+    return this.histories.get(this.current);
+  }
+
+  /** The current file's model + logos (null while it's still loading). */
+  get logoScene(): Scene | null {
+    return this.history?.scene ?? null;
+  }
+
+  private get base(): ViewModel | null {
+    return this.history?.scene.base ?? null;
+  }
+
+  private shownScene(): Scene | null {
+    const sc = this.logoScene;
+    if (!sc) return null;
+    return this.editing?.index != null ? without(sc, this.editing.index) : sc;
+  }
+
+  private fillLogos(): void {
+    const logos = this.logoScene?.logos ?? [];
+    this.selectedLogo = Math.min(this.selectedLogo, Math.max(logos.length - 1, 0));
+    this.logoList.replaceChildren(...logos.map((lg, i) => {
+      const where = lg.settings.where === "badge" ? "badge" : "on the model";
+      const li = h("li", { role: "option", tabIndex: 0 }, `${i + 1}. ${lg.picture.name} (${lg.width.toFixed(0)} mm, ${where})`);
+      li.setAttribute("aria-selected", String(i === this.selectedLogo));
+      li.addEventListener("click", () => {
+        this.selectedLogo = i;
+        this.fillLogos();
+      });
+      li.addEventListener("dblclick", () => this.startLogo(i));
+      return li;
+    }));
+    this.logoBox.hidden = !logos.length;
+  }
+
+  private syncButtons(): void {
+    const hs = this.history;
+    const idle = !this.editing && !this.saving;
+    const b = this.topButtons;
+    b.logo.disabled = !idle || !hs;
+    b.undo.disabled = !idle || !hs?.undoStack.length;
+    b.redo.disabled = !idle || !hs?.redoStack.length;
+    b.save.disabled = !idle || !hs?.scene.logos.length;
+    b.open.disabled = Boolean(this.editing);
+    this.fileBox.disabled = Boolean(this.editing);
+    for (const btn of this.logoBox.querySelectorAll("button")) btn.disabled = !idle;
+  }
+
+  private push(sc: Scene): void {
+    this.history!.push(sc);
+    this.showScene();
+  }
+
+  undo(): void {
+    if (!this.editing && !this.saving && this.history?.undo()) this.showScene();
+  }
+
+  redo(): void {
+    if (!this.editing && !this.saving && this.history?.redo()) this.showScene();
+  }
+
+  removeLogo(index: number): void {
+    const sc = this.logoScene;
+    if (!this.editing && sc && index < sc.logos.length) this.push(without(sc, index));
+  }
+
+  /** Open the logo panel for a new logo (or to change logo ``index``). */
+  startLogo(index: number | null = null): void {
+    const hs = this.history;
+    if (!hs || this.editing || this.saving) return;
+    const e: Edit = { index, picture: null, point: null, normal: null, faceTris: null, shape: null, shapeKey: "", logo: null, preview: null, problem: "" };
+    const p = this.logoPanel;
+    p.setHasModel(Boolean(hs.scene.base));
+    if (index === null) {
+      const s = p.settings();
+      p.setSettings(hs.scene.base ? s : { ...s, where: "badge" });
+      p.setPicture("");
+      p.setPreview(null);
+      p.setSize(0, 0);
+      p.title.textContent = "Add a logo";
+    } else {
+      const lg = hs.scene.logos[index];
+      Object.assign(e, { picture: lg.picture, point: lg.point, normal: lg.normal });
+      if (lg.point && lg.normal && hs.scene.base) e.faceTris = this.faceAtPoint(lg.point, lg.normal);
+      p.setSettings(lg.settings);
+      p.setPicture(lg.picture.name);
+      p.title.textContent = "Change the logo";
+    }
+    this.editing = e;
+    this.sideInfo.hidden = true;
+    p.el.hidden = false;
+    p.setNote("Choose a picture: a PNG with a transparent background works best.");
+    this.showScene();
+    if (e.picture) this.rebuild();
+  }
+
+  private faceAtPoint(point: Vec3, normal: Vec3): number[] | null {
+    const base = this.base!;
+    const o: Vec3 = [point[0] + normal[0] * 0.5, point[1] + normal[1] * 0.5, point[2] + normal[2] * 0.5];
+    const found = hit(base.positions, o, [-normal[0], -normal[1], -normal[2]]);
+    return found ? flatFace(base.positions, found[0]).triangles : null;
+  }
+
+  /** Read a picture file chosen in the panel, then build. */
+  async loadPicture(file: File): Promise<void> {
+    const e = this.editing;
+    if (!e) return;
+    this.logoPanel.setNote(`Reading ${file.name}…`);
+    let pic: Picture;
+    try {
+      pic = await readPicture(file);
+    } catch {
+      if (this.editing === e) this.logoPanel.setNote(`Couldn't read “${file.name}” as a picture.`);
+      return;
+    }
+    if (this.editing !== e) return;
+    Object.assign(e, { picture: pic, shape: null, shapeKey: "" });
+    this.logoPanel.setPicture(pic.name);
+    this.logoPanel.setSettings({ ...this.logoPanel.settings(), mode: defaultMode(pic.rgba, pic.w, pic.h) });
+    this.rebuild();
+  }
+
+  private onSettingsChanged(): void {
+    if (!this.editing) return;
+    clearTimeout(this.rebuildTimer);
+    this.rebuildTimer = window.setTimeout(() => this.rebuild(), REBUILD_MS);
+  }
+
+  /** Trace again if the picture / shape settings changed, else just place again. */
+  rebuild(): void {
+    clearTimeout(this.rebuildTimer);
+    const e = this.editing;
+    if (!e?.picture) return;
+    const s = this.logoPanel.settings();
+    const key = shapeKey(e.picture, s);
+    if (!e.shape || e.shapeKey !== key) {
+      const pic = e.picture;
+      const m = mask(pic.rgba, pic.w, pic.h, s.mode, s.threshold, s.invert);
+      const rgb = new THREE.Color(cssColor("--text", "#1c1f26"));
+      const preview = new Uint8ClampedArray(pic.w * pic.h * 4);
+      for (let i = 0; i < m.length; i++)
+        if (m[i]) preview.set([rgb.r * 255, rgb.g * 255, rgb.b * 255, 255], i * 4);
+      this.logoPanel.setPreview(preview, pic.w, pic.h);
+      try {
+        e.shape = shape(trace(m, pic.w, pic.h, s.detail), s.width);
+        e.shapeKey = key;
+      } catch (err) {
+        if (!(err instanceof LogoError)) throw err;
+        Object.assign(e, { shape: null, shapeKey: "", logo: null, preview: null, problem: err.message });
+        this.logoPanel.setNote(err.message);
+        this.logoPanel.setSize(0, 0);
+        this.showScene();
+        return;
+      }
+    }
+    this.place();
+  }
+
+  /** Extrude + place the traced shape (quick: no tracing). */
+  private place(): void {
+    const e = this.editing!;
+    const s = this.logoPanel.settings();
+    Object.assign(e, { logo: null, preview: null, problem: "" });
+    this.logoPanel.setSize(e.shape!.width, e.shape!.height);
+    if (s.where === "face" && !e.point) {
+      this.logoPanel.setNote(FACE_HINT);
+    } else {
+      try {
+        e.logo = buildLogo(e.picture!, s, e.point, e.normal, this.base, e.faceTris, e.shape!);
+        e.preview = logoPositions([e.logo]);
+      } catch (err) {
+        if (!(err instanceof LogoError)) throw err;
+        e.problem = err.message;
+      }
+      this.logoPanel.setNote(e.problem || logoNote(e.logo!));
+    }
+    this.setOverlay(e.preview);
+    if (!this.mesh && e.preview) this.fit();
+  }
+
+  private local(e: PointerEvent | MouseEvent): [number, number] {
+    const r = this.canvasHost.getBoundingClientRect();
+    return [e.clientX - r.left, e.clientY - r.top];
+  }
+
+  private rayAt(x: number, y: number): [Vec3, Vec3] {
+    return ray(this.camera, x, y, this.canvasHost.clientWidth, this.canvasHost.clientHeight);
+  }
+
+  private onViewClicked(x: number, y: number): void {
+    const e = this.editing, base = this.base;
+    if (!e || !base || this.logoPanel.settings().where !== "face") return;
+    const [o, d] = this.rayAt(x, y);
+    const found = hit(base.positions, o, d);
+    if (found) this.placeOn(found[0], found[1], d);
+  }
+
+  /** Put the logo on the flat face around triangle ``tri`` of the model, at ``point``. */
+  placeOn(tri: number, point: Vec3, viewDir: Vec3 | null = null): void {
+    const e = this.editing, base = this.base;
+    if (!e || !base) return;
+    const face = flatFace(base.positions, tri);
+    let n = face.normal;
+    if (viewDir && n[0] * viewDir[0] + n[1] * viewDir[1] + n[2] * viewDir[2] > 0) n = [-n[0], -n[1], -n[2]];
+    Object.assign(e, { point: [...point] as Vec3, normal: n, faceTris: face.triangles });
+    if (e.shape) this.place();
+    else this.rebuild();
+  }
+
+  private grabTest(x: number, y: number): boolean {
+    const e = this.editing;
+    if (!e?.preview || !e.normal || !e.point) return false;
+    const [o, d] = this.rayAt(x, y);
+    if (hit(e.preview, o, d) === null) return false;
+    const at = this.onPlane(o, d);
+    if (!at) return false;
+    this.grabOffset = [e.point[0] - at[0], e.point[1] - at[1], e.point[2] - at[2]];
+    return true;
+  }
+
+  private onGrabMoved(x: number, y: number): void {
+    const [o, d] = this.rayAt(x, y);
+    this.moveLogoAlongRay(o, d, this.grabOffset);
+  }
+
+  /** Where the ray meets the plane of the logo's face (null: parallel or behind). */
+  private onPlane(o: Vec3, d: Vec3): Vec3 | null {
+    const e = this.editing!;
+    const n = e.normal!, p = e.point!;
+    const denom = d[0] * n[0] + d[1] * n[1] + d[2] * n[2];
+    if (Math.abs(denom) < 1e-6) return null;
+    const t = ((p[0] - o[0]) * n[0] + (p[1] - o[1]) * n[1] + (p[2] - o[2]) * n[2]) / denom;
+    return t > 0 ? [o[0] + d[0] * t, o[1] + d[1] * t, o[2] + d[2] * t] : null;
+  }
+
+  /** Slide the logo over its face's plane to where the ray meets it (+ ``offset``: the logo
+   * keeps the spot it was grabbed by under the pointer). */
+  moveLogoAlongRay(o: Vec3, d: Vec3, offset: Vec3 = [0, 0, 0]): void {
+    const e = this.editing;
+    if (!e?.normal || !e.point || !e.shape) return;
+    const at = this.onPlane(o, d);
+    if (!at) return;
+    e.point = [at[0] + offset[0], at[1] + offset[1], at[2] + offset[2]];
+    this.place();
+  }
+
+  applyLogo(): void {
+    const e = this.editing;
+    if (!e) return;
+    clearTimeout(this.rebuildTimer);
+    if (e.picture) {
+      const s = this.logoPanel.settings();
+      if (!e.shape || e.shapeKey !== shapeKey(e.picture, s)) this.rebuild();
+      else if (!e.logo || !sameSettings(e.logo.settings, s)) this.place();
+    }
+    if (!e.logo) {
+      this.logoPanel.setNote(e.problem || (e.picture ? FACE_HINT : "Choose a picture first."));
+      return;
+    }
+    const sc = withLogo(this.history!.scene, e.logo, e.index);
+    this.endEdit();
+    this.push(sc);
+  }
+
+  cancelLogo(): void {
+    if (!this.editing) return;
+    this.endEdit();
+    this.showScene();
+  }
+
+  private endEdit(): void {
+    clearTimeout(this.rebuildTimer);
+    if (!this.editing) return;
+    this.editing = null;
+    this.setOverlay(null);
+    this.logoPanel.el.hidden = true;
+    this.sideInfo.hidden = false;
+  }
+
+  /** Ask for a format, then write the model with its logos (the worker's model writers). */
+  async saveAs(ext?: SaveExt): Promise<boolean> {
+    const hs = this.history;
+    if (!hs?.scene.logos.length || this.editing || this.saving) return false;
+    ext ??= (await this.askSaveFormat()) ?? undefined;
+    if (!ext) return false;
+    const sc = hs.scene;
+    this.saving = true;
+    this.syncButtons();
+    const name = defaultSaveName(this.current?.name ?? null, ext);
+    this.message.classList.remove("error");
+    this.message.textContent = `Saving ${name}…`;
+    try {
+      const file = new File([sceneStl(sc) as BlobPart], "scene.stl", { type: "model/stl" });
+      const input: InputFile = { file, name: file.name, ext: "stl", family: "model" };
+      const target = { id: ext, label: ext.toUpperCase(), ext, group: "3D model", converterId: "model3d" };
+      const opts = { units: "mm", scale_percent: 100, center_on_bed: false, repair: false, merge_parts: true, stl_format: "binary", detail: "normal" };
+      const out = await this.opts.client.run(target, [input], opts, () => undefined);
+      const url = URL.createObjectURL(new Blob([out[0].data as BlobPart], { type: "application/octet-stream" }));
+      const a = h("a", { href: url, download: name });
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      hs.saved = sc;
+      this.message.textContent = `Saved “${name}”.`;
+      this.lastSaved = { name, data: out[0].data };
+      return true;
+    } catch (err) {
+      this.message.textContent = err instanceof Error && err.message ? err.message : `Couldn't save ${name}.`;
+      this.message.classList.add("error");
+      return false;
+    } finally {
+      this.saving = false;
+      this.syncButtons();
+    }
+  }
+
+  /** The last saved file (tests). */
+  lastSaved: { name: string; data: Uint8Array } | null = null;
+
+  private askSaveFormat(): Promise<SaveExt | null> {
+    return new Promise((resolve) => {
+      const select = h("select", { id: "logo-save-format" },
+        ...SAVE_EXTS.map((x) => h("option", { value: x }, x === "3mf" ? "3MF (best for slicers)" : x.toUpperCase())));
+      const dialog = h("dialog", { class: "logo-save-dialog" },
+        h("h2", {}, "Save as"),
+        h("label", {}, "Format ", select),
+        h("p", { class: "muted small" }, "The model and its logos are saved as one object, in millimetres."));
+      const done = (v: SaveExt | null) => {
+        dialog.close();
+        dialog.remove();
+        resolve(v);
+      };
+      const cancel = h("button", { class: "btn small", type: "button" }, "Cancel");
+      cancel.addEventListener("click", () => done(null));
+      const ok = h("button", { class: "btn primary", type: "button" }, "Save");
+      ok.addEventListener("click", () => done(select.value as SaveExt));
+      dialog.addEventListener("cancel", (e) => {
+        e.preventDefault();
+        done(null);
+      });
+      dialog.append(h("div", { class: "logo-buttons" }, cancel, ok));
+      this.el.append(dialog);
+      dialog.showModal();
+    });
+  }
+
+  /** Where a point of the model is on screen, relative to the page (tests: real mouse clicks). */
+  screenOf(p: Vec3): [number, number] {
+    this.render();
+    const v = new THREE.Vector3(...p).project(this.cam3);
+    const r = this.canvasHost.getBoundingClientRect();
+    return [r.left + ((v.x + 1) / 2) * r.width, r.top + ((1 - v.y) / 2) * r.height];
+  }
+
   /** {label: value} of the info panel (tests). */
   infoRows(): Record<string, string> {
     const out: Record<string, string> = {};
@@ -457,6 +1006,14 @@ export class ViewerPage {
     dts.forEach((dt) => (out[dt.textContent ?? ""] = (dt.nextElementSibling as HTMLElement).textContent ?? ""));
     return out;
   }
+}
+
+function logoNote(lg: Logo): string {
+  const notes = [`${lg.width.toFixed(1)} × ${lg.height.toFixed(1)} mm.`];
+  if (lg.overhang) notes.push("The logo hangs over the edge of this face — make it smaller or move it.");
+  if (lg.dropped) notes.push(`${lg.dropped} tiny ${lg.dropped === 1 ? "bit" : "bits"} left out (too small to print).`);
+  if (lg.settings.where === "face") notes.push("Drag the logo to move it, or click another face.");
+  return notes.join(" ");
 }
 
 export function mountViewer(host: HTMLElement, opts: ViewerOptions): ViewerPage {

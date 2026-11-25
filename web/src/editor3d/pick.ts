@@ -72,46 +72,54 @@ export function faceArea(pos: ArrayLike<number>, face: Face): number {
   return s / 2;
 }
 
-/** The connected triangles around ``tri`` in its plane (corners matched by position). */
+/** The connected triangles around ``tri`` in its plane (corners matched by position). Only
+ * triangles in the plane are looked at, so a click on a big model stays quick. */
 export function flatFace(pos: ArrayLike<number>, tri: number): Face {
   const n = Math.floor(pos.length / 9);
+  const n0 = normalOf(pos, tri), p0 = corner(pos, tri, 0);
+  const cosLimit = Math.cos((FLAT_DEGREES * Math.PI) / 180);
+  const cand: number[] = [];
+  for (let j = 0; j < n; j++) {
+    if (j !== tri) {
+      if (dot(normalOf(pos, j), n0) < cosLimit) continue;
+      let off = 0;
+      for (let m = 0; m < 3; m++) off = Math.max(off, Math.abs(dot(sub(corner(pos, j, m), p0), n0)));
+      if (off > FLAT_MM) continue;
+    }
+    cand.push(j);
+  }
   const ids = new Map<string, number>();
-  const welded = new Int32Array(n * 3);
-  for (let k = 0; k < n * 3; k++) {
-    const key = `${pos[k * 3]},${pos[k * 3 + 1]},${pos[k * 3 + 2]}`;
-    let id = ids.get(key);
-    if (id === undefined) ids.set(key, (id = ids.size));
-    welded[k] = id;
+  const welded = new Map<number, [number, number, number]>();
+  for (const t of cand) {
+    const w = [0, 1, 2].map((k) => {
+      const key = `${pos[t * 9 + k * 3]},${pos[t * 9 + k * 3 + 1]},${pos[t * 9 + k * 3 + 2]}`;
+      let id = ids.get(key);
+      if (id === undefined) ids.set(key, (id = ids.size));
+      return id;
+    }) as [number, number, number];
+    welded.set(t, w);
   }
   const edgeMap = new Map<string, number[]>();
   const ek = (a: number, b: number) => `${Math.min(a, b)},${Math.max(a, b)}`;
-  for (let i = 0; i < n; i++) {
-    const a = welded[i * 3], b = welded[i * 3 + 1], c = welded[i * 3 + 2];
+  for (const t of cand) {
+    const [a, b, c] = welded.get(t)!;
     for (const [p, q] of [[a, b], [b, c], [c, a]]) {
       const key = ek(p, q);
       const list = edgeMap.get(key);
-      if (list) list.push(i);
-      else edgeMap.set(key, [i]);
+      if (list) list.push(t);
+      else edgeMap.set(key, [t]);
     }
   }
-  const n0 = normalOf(pos, tri), p0 = corner(pos, tri, 0);
-  const cosLimit = Math.cos((FLAT_DEGREES * Math.PI) / 180);
   const seen = new Set([tri]);
   const order = [tri];
   for (let k = 0; k < order.length; k++) {
-    const t = order[k];
-    const a = welded[t * 3], b = welded[t * 3 + 1], c = welded[t * 3 + 2];
-    for (const [p, q] of [[a, b], [b, c], [c, a]]) {
-      for (const j of edgeMap.get(ek(p, q))!) {
-        if (seen.has(j)) continue;
-        if (dot(normalOf(pos, j), n0) < cosLimit) continue;
-        let off = 0;
-        for (let m = 0; m < 3; m++) off = Math.max(off, Math.abs(dot(sub(corner(pos, j, m), p0), n0)));
-        if (off > FLAT_MM) continue;
-        seen.add(j);
-        order.push(j);
-      }
-    }
+    const [a, b, c] = welded.get(order[k])!;
+    for (const [p, q] of [[a, b], [b, c], [c, a]])
+      for (const j of edgeMap.get(ek(p, q))!)
+        if (!seen.has(j)) {
+          seen.add(j);
+          order.push(j);
+        }
   }
   return { triangles: order, normal: n0, point: p0 };
 }

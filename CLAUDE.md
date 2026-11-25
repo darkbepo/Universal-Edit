@@ -950,6 +950,17 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       left press on the preview drags it over the face's plane instead of orbiting),
       `set_model(…, fit=False)`. Tests `tests/test_gui_logo3d.py`; its real click / drag test
       needs GL: `QT_QPA_PLATFORM=xcb xvfb-run -a pytest …` (apt `libxcb-cursor0` etc.).
+      Step 3 ✅ website: `web/src/editor3d/scene.ts` (port of scene.py; `combined` → ViewModel,
+      `sceneStl` = one binary STL that the worker's `model3d` converter turns into the chosen
+      format with `center_on_bed` / `repair` off and `merge_parts` on), page `ui/editor3d/page.ts`
+      (pictures read on the page with `createImageBitmap` / an `<img>` for SVG, traced on the
+      page; Add logo… / Undo / Redo / Save as… (`dialog.logo-save-dialog`,
+      `#logo-save-format`), `.logo-list li`, Ctrl+Z / Ctrl+Y, Esc; `maybeLeave` confirms, and
+      app.ts asks it on Convert / Properties) + `logopanel.ts` (`.logo-panel`, `#logo-*` inputs,
+      `.logo-note`, `.logo-picture-name`; rows are `<div>` + `<label for>` — a `<label>` wrapping
+      a `<select>` takes the option text into its name). Both apps keep the grabbed spot under
+      the pointer while dragging (`grab_offset` / `grabOffset`). e2e `e2e/logo3d.spec.ts` (real
+      clicks via the hook's `screenOf(point)`), vitest `tests/logo3d.test.ts` "scene".
    9. ✅ Start screen = hub (both apps; order and the four "Coming soon" tiles: roadmap 16): editor tiles under the empty drop zone, listed in
       `core/editors.py` / `web/src/core/editors.ts` (same order and text; `available` False =
       greyed "Coming soon"); tests/test_editor_hub.py

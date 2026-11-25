@@ -7,7 +7,9 @@ import {
   area, badge, defaultMode, footprint, logoMesh, LogoError, mask, placement, shape, shapeArea, trace,
   volume, type Detail, type MaskMode, type Mesh, type PlateKind, type Ring,
 } from "../src/editor3d/logo";
+import type { ViewModel } from "../src/editor3d/mesh";
 import { faceArea, flatFace, hit, overhang, ray } from "../src/editor3d/pick";
+import { BADGE_GAP_MM, buildLogo, combined, DEFAULT_SETTINGS, defaultSaveName, emptyScene, History, sceneStl, without, withLogo } from "../src/editor3d/scene";
 
 const grid = (rows: string[]) => ({ m: Uint8Array.from(rows.join("").split(""), (c) => (c === "#" ? 1 : 0)), w: rows[0].length, h: rows.length });
 const close = (a: number, b: number, tol = 1e-6) => expect(Math.abs(a - b)).toBeLessThanOrEqual(tol * Math.max(1, Math.abs(b)));
@@ -140,5 +142,79 @@ describe("meshes", () => {
   it("outer rings run counter-clockwise, holes clockwise", () => {
     const rings = traced(data.trace.find((t) => t.name === "ring")!.rows);
     expect(rings.map((r) => Math.sign(area(r)))).toEqual([1, -1, 1, -1]);
+  });
+});
+
+describe("scene", () => {
+  const ringRows = data.trace.find((t) => t.name === "ring")!.rows;
+  const picture = () => {
+    const { m, w, h } = grid(ringRows);
+    const rgba = new Uint8Array(w * h * 4);
+    m.forEach((v, i) => (rgba[i * 4 + 3] = v ? 255 : 0));
+    return { name: "ring.png", rgba, w, h };
+  };
+  const box = (): ViewModel => {
+    // 40 × 40 × 10 box standing on the bed, as a triangle soup
+    const c = (x: number, y: number, z: number) => [x ? 20 : -20, y ? 20 : -20, z ? 10 : 0];
+    const quads = [[[0,0,0],[0,1,0],[1,1,0],[1,0,0]], [[0,0,1],[1,0,1],[1,1,1],[0,1,1]], [[0,0,0],[1,0,0],[1,0,1],[0,0,1]],
+      [[0,1,0],[0,1,1],[1,1,1],[1,1,0]], [[0,0,0],[0,0,1],[0,1,1],[0,1,0]], [[1,0,0],[1,1,0],[1,1,1],[1,0,1]]];
+    const pos: number[] = [];
+    for (const q of quads) for (const t of [[0, 1, 2], [0, 2, 3]]) for (const k of t) pos.push(...c(q[k][0], q[k][1], q[k][2]));
+    return { name: "box.stl", positions: Float32Array.from(pos), triangles: 12, parts: 1, size: [40, 40, 10], watertight: true, volumeMm3: 16000 };
+  };
+
+  it("a logo on the top face stands on it and sinks in", () => {
+    const base = box();
+    const s = { ...DEFAULT_SETTINGS, width: 20 };
+    const lg = buildLogo(picture(), s, [2, 3, 10], [0, 0, 1], base, [2, 3]);
+    expect(lg.overhang).toBe(0);
+    const z = lg.meshes[0].vertices.filter((_, i) => i % 3 === 2);
+    close(Math.min(...z), 9.8);
+    close(Math.max(...z), 12);
+    const far = buildLogo(picture(), { ...s, width: 60 }, [0, 0, 10], [0, 0, 1], base, [2, 3]);
+    expect(far.overhang).toBeGreaterThan(0);
+    expect(() => buildLogo(picture(), s, null, null, base, null)).toThrow(LogoError);
+  });
+
+  it("a badge stands right of the model; combined counts every piece", () => {
+    const base = box();
+    const s = { ...DEFAULT_SETTINGS, where: "badge" as const, width: 20, plate: "rounded" as const, hole: true };
+    const lg = buildLogo(picture(), s, null, null, base, null);
+    expect(lg.meshes.length).toBe(2);
+    const x = lg.meshes[0].vertices.filter((_, i) => i % 3 === 0);
+    close(Math.min(...x), 20 + BADGE_GAP_MM);
+    const sc = withLogo(emptyScene(base), lg);
+    const m = combined(sc)!;
+    expect(m.parts).toBe(3);
+    expect(m.triangles).toBe(12 + lg.meshes.reduce((t, mm) => t + mm.faces.length / 3, 0));
+    close(m.size[2], 10);
+    expect(m.volumeMm3!).toBeGreaterThan(16000);
+    expect(combined(without(sc, 0))).toBe(base);
+  });
+
+  it("STL of the scene holds every triangle", () => {
+    const base = box();
+    const lg = buildLogo(picture(), { ...DEFAULT_SETTINGS, width: 20 }, [0, 0, 10], [0, 0, 1], base, [2, 3]);
+    const stl = sceneStl(withLogo(emptyScene(base), lg));
+    const n = new DataView(stl.buffer).getUint32(80, true);
+    expect(n).toBe(12 + lg.meshes[0].faces.length / 3);
+    expect(stl.length).toBe(84 + 50 * n);
+    expect(() => sceneStl(emptyScene())).toThrow(LogoError);
+    expect(defaultSaveName("box.stl", "3mf")).toBe("box with logo.3mf");
+    expect(defaultSaveName(null, "stl")).toBe("logo.stl");
+  });
+
+  it("history: undo, redo, dirty", () => {
+    const hs = new History(emptyScene(box()));
+    expect(hs.dirty).toBe(false);
+    const lg = buildLogo(picture(), { ...DEFAULT_SETTINGS, width: 20 }, [0, 0, 10], [0, 0, 1], null, null);
+    hs.push(withLogo(hs.scene, lg));
+    expect(hs.dirty).toBe(true);
+    expect(hs.undo()).toBe(true);
+    expect(hs.dirty).toBe(false);
+    expect(hs.redo()).toBe(true);
+    hs.markSaved();
+    expect(hs.dirty).toBe(false);
+    expect(hs.redo()).toBe(false);
   });
 });
