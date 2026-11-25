@@ -17,7 +17,7 @@ export const EDITORS: EditorInfo[] = [
   { id: "document", title: "Document editor", blurb: "Write and format documents", icon: "document", available: true },
   { id: "code", title: "Code editor", blurb: "Quick edits to code and text files", icon: "code", available: true },
   { id: "model", title: "3D viewer", blurb: "Look at and measure 3D models", icon: "cube", available: true },
-  { id: "vector", title: "Vector editor", blurb: "Edit shapes and paths in SVG drawings", icon: "vector", available: false },
+  { id: "vector", title: "Vector editor", blurb: "Edit shapes and paths in SVG drawings", icon: "vector", available: true },
   { id: "font", title: "Font editor", blurb: "Change letters, spacing and font names", icon: "font", available: false },
   { id: "subtitle", title: "Subtitle editor", blurb: "Fix subtitle text and timing", icon: "subtitle", available: true },
   { id: "data", title: "Data editor", blurb: "Edit CSV, JSON, XML and spreadsheets", icon: "table", available: true },
@@ -29,6 +29,8 @@ export const COMING_SOON = "Coming soon";
 export const DATA_FIRST: ReadonlySet<string> = new Set(["csv", "tsv", "xlsx"]);
 // … and offers it under Edit's ▾ for these (the code editor stays first: they're often configs).
 export const DATA_TOO: ReadonlySet<string> = new Set(["json", "yaml", "xml"]);
+// The vector editor opens these (the code editor is offered too). Same set in editors.py.
+export const VECTOR_EXTS: ReadonlySet<string> = new Set(["svg", "svgz"]);
 
 // Start-screen tile rows (owner, Nov 2026): as many tiles per row as fit, spread evenly over the
 // rows so no tile is left alone, each row centred; the tiles stretch to fill the width.

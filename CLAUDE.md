@@ -1311,7 +1311,7 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
     turn comes, both apps, like the other editors (set `available` True, add-on on desktop):
     1. Vector editor (`vector`): select / move / reshape SVG shapes and paths, fill / stroke,
        text, layers (groups); saves SVG, exports PDF / PNG through the vector converter.
-       Spec `docs/superpowers/specs/2026-11-24-vector-editor-design.md` (4 steps).
+       Spec `docs/superpowers/specs/2026-11-24-vector-editor-design.md` (4 steps, all ✅).
        1. ✅ Model basics: `vectoredit/` ↔ `web/src/vectoredit/` (line-by-line ports): `xmlsrc`
           (own XML reader keeping each node's source text; the writer re-emits untouched nodes
           as written and rebuilds only changed start tags, so a save changes nothing else;
@@ -1355,6 +1355,25 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
           SVGZ (`editors.VECTOR_EXTS`; the code editor under ▾); the viewer's Edit too. Tile
           available on the desktop (`WEB_LATER` keeps the website's "Coming soon" until step 4);
           installer component + CI add-on list; self-test step "vector editor".
+       4. ✅ Website page `web/src/ui/vectoreditor/` (page, shortcuts — ids as the desktop; New =
+          Alt+N, Export = Alt+E, actual size = Alt+0: the browser keeps Ctrl+N / E / 1), loaded on
+          demand from `ui/app.ts` (`loadVectorEditor`; `editChoices` uses `VECTOR_EXTS`, ▾ "Edit as
+          drawing" / "Edit as code"). The drawing is an `<img class="vec-image">` of a blob URL of
+          the SVG (re-made only when the shown document changes); `canvas.vec-overlay` on top draws
+          page border, selection, handles, rubber band, path points, pen preview — the same
+          gestures, snapping (`stepFor` / `snapTo` = desktop `step`), `resized` and tools as the
+          desktop canvas. Layers = nested `ul.vec-layers` (topmost first, tick = show / hide,
+          double-click = rename through `askText`), Appearance = native colour / number / range
+          inputs. Clipboard = the browser's copy / cut / paste events on the focused stage (plain
+          SVG text); Ctrl+C / V buttons fall back to `navigator.clipboard`. Export = the vector
+          converter in the worker (PNG / JPG / WebP / TIFF). Hooks: `.vector-editor`,
+          `.vec-stage`, `.vec-tool[data-tool]`, `.vec-layers li[data-path]`, `dialog.vec-new-dialog`
+          (`#vec-size` / `-width` / `-height` / `-unit`), `dialog.vec-save-dialog`,
+          `window.__vectoreditor` (`text`, `items`, `selection`, `dirty`, `tool`, `select`,
+          `client(x, y)` = a document point on screen for real mouse moves, `setZoom`) with `?e2e`;
+          e2e `e2e/vectoreditor.spec.ts`. Also fixed: Convert / Properties now ask about unsaved
+          changes in the data editor (and Convert in the code editor) too. The vector editor is
+          complete; `WEB_LATER` is empty again.
     2. Font editor (`font`): font names / metadata, letter spacing (side bearings, kerning
        pairs), glyph preview; fontTools on the desktop, HarfBuzz / own tables on the web.
     3. ✅ Subtitle editor (`subtitle`, both apps; spec

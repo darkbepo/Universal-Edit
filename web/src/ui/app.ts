@@ -3,7 +3,7 @@
 // bar with status, progress and Convert. Narrow screens stack the same parts in one column.
 import { zipSync } from "fflate";
 import { detect } from "../core/detect";
-import { DATA_FIRST, DATA_TOO } from "../core/editors";
+import { DATA_FIRST, DATA_TOO, VECTOR_EXTS } from "../core/editors";
 import { defaults, type Values } from "../core/options";
 import { fileFractions } from "../core/progress";
 import { converterById, targetsFor } from "../core/registry";
@@ -69,6 +69,7 @@ export function mountApp(root: HTMLElement): void {
   let codeEditor: import("./codeeditor/page").CodeEditorPage | null = null;
   let subEditor: import("./subtitleeditor/page").SubtitleEditorPage | null = null;
   let dataEditor: import("./dataeditor/page").DataEditorPage | null = null;
+  let vectorEditor: import("./vectoreditor/page").VectorEditorPage | null = null;
   let editing = false;
   // Three columns (badge + theme | logo + name | Convert/Edit): the outer two are equally wide, so the
   // name stays centred on the page.
@@ -236,7 +237,7 @@ export function mountApp(root: HTMLElement): void {
   const appMain = root.querySelector("main.app") as HTMLElement;
   // A lone .zip is a document when it is a Markdown ZIP the website saved (checked once per file).
   const markdownZips = new WeakMap<InputFile, boolean>();
-  type EditKind = "image" | "model" | "audio" | "document" | "code" | "subtitle" | "video" | "data";
+  type EditKind = "image" | "model" | "audio" | "document" | "code" | "subtitle" | "video" | "data" | "vector";
   // files the code editor opens (the language table's extensions; "" = text with none)
   const CODE_EDITABLE_EXTS = new Set(["", ...codeLanguages.languages.flatMap((l) => l.exts)]);
   /** Every editor that can open the files, the one Edit opens first (the desktop's
@@ -257,6 +258,8 @@ export function mountApp(root: HTMLElement): void {
     // CSV / TSV / XLSX: the data editor first; JSON / YAML / XML: under ▾ (desktop: DATA_FIRST / DATA_TOO)
     if (files.length === 1 && DATA_FIRST.has(files[0].ext)) return CODE_EDITABLE_EXTS.has(files[0].ext) ? ["data", "code"] : ["data"];
     if (files.length === 1 && DATA_TOO.has(files[0].ext) && CODE_EDITABLE_EXTS.has(files[0].ext)) return ["code", "data"];
+    // SVG: the vector editor first, the code editor under ▾ (desktop: VECTOR_EXTS)
+    if (files.length === 1 && VECTOR_EXTS.has(files[0].ext)) return CODE_EDITABLE_EXTS.has(files[0].ext) ? ["vector", "code"] : ["vector"];
     if (files.length === 1) {
       const f = files[0];
       if (f.ext === "txt" || f.ext === "md") return ["document", "code"];
@@ -288,7 +291,7 @@ export function mountApp(root: HTMLElement): void {
     editMore.hidden = editChoices().length < 2;
     editMenu.hidden = true;
     const kind = editKind();
-    editMode.title = kind === "data" ? "Open the table in the data editor" : kind === "video" ? "Open the files in the video editor" : kind === "subtitle" ? "Open the subtitles in the subtitle editor (with the video, if added)" : kind === "code" ? "Open the files in the code editor" : kind === "document" ? "Open the document in the document editor" : kind === "model" ? "Open the 3D models in the 3D viewer" : kind === "image" ? "Open the images in the image editor (each image becomes a layer)" : kind === "audio" ? "Open the sound in the audio editor (several files are joined)" : "Add images, audio, code, subtitles, one text document, or 3D models to edit them";
+    editMode.title = kind === "vector" ? "Open the drawing in the vector editor" : kind === "data" ? "Open the table in the data editor" : kind === "video" ? "Open the files in the video editor" : kind === "subtitle" ? "Open the subtitles in the subtitle editor (with the video, if added)" : kind === "code" ? "Open the files in the code editor" : kind === "document" ? "Open the document in the document editor" : kind === "model" ? "Open the 3D models in the 3D viewer" : kind === "image" ? "Open the images in the image editor (each image becomes a layer)" : kind === "audio" ? "Open the sound in the audio editor (several files are joined)" : "Add images, audio, code, subtitles, one text document, or 3D models to edit them";
   }
   const canEdit = () => editKind() !== null;
   function showConverter() {
@@ -304,6 +307,7 @@ export function mountApp(root: HTMLElement): void {
     video?.hide();
     docEditor?.hide();
     dataEditor?.hide();
+    vectorEditor?.hide();
     codeEditor?.hide();
     subEditor?.hide();
     appMain.hidden = false;
@@ -341,6 +345,8 @@ export function mountApp(root: HTMLElement): void {
       if (video && !video.el.hidden && !video.maybeLeave()) return;
       if (codeEditor && !codeEditor.el.hidden && !codeEditor.maybeLeave()) return;
       if (subEditor && !subEditor.el.hidden && !subEditor.maybeLeave()) return;
+      if (dataEditor && !dataEditor.el.hidden && !dataEditor.maybeLeave()) return;
+      if (vectorEditor && !vectorEditor.el.hidden && !vectorEditor.maybeLeave()) return;
       showConverter();
     }
     setMode("properties");
@@ -397,6 +403,19 @@ export function mountApp(root: HTMLElement): void {
     dataEditorP = null; // try again next time
     throw e;
   }));
+  let vectorEditorP: Promise<import("./vectoreditor/page").VectorEditorPage> | null = null;
+  async function loadVectorEditor(): Promise<import("./vectoreditor/page").VectorEditorPage | null> {
+    try {
+      return await (vectorEditorP ??= import("./vectoreditor/page").then(({ mountVectorEditor }) =>
+        (vectorEditor = mountVectorEditor(root, { client, onBack: showConverter }))));
+    } catch (e) {
+      vectorEditorP = null; // try again next time
+      console.error("Couldn't load the vector editor", e);
+      note.textContent = "Couldn't load the vector editor. Check the internet connection and try again.";
+      note.hidden = false;
+      return null;
+    }
+  }
   async function loadDataEditor(): Promise<import("./dataeditor/page").DataEditorPage | null> {
     try {
       return await ensureDataEditor();
@@ -425,6 +444,23 @@ export function mountApp(root: HTMLElement): void {
   async function enterEdit(choice?: EditKind) {
     if (editing || busy || opening || !canEdit()) return;
     const kind = choice && editChoices().includes(choice) ? choice : editKind();
+    if (kind === "vector") {
+      opening = true;
+      editMode.disabled = true;
+      try {
+        const page = await loadVectorEditor();
+        if (!page) return;
+        if (await page.open(files)) showPage(page);
+        else {
+          note.textContent = page.lastError();
+          note.hidden = false;
+        }
+      } finally {
+        opening = false;
+        editMode.disabled = !canEdit();
+      }
+      return;
+    }
     if (kind === "data") {
       opening = true;
       editMode.disabled = true;
@@ -589,6 +625,13 @@ export function mountApp(root: HTMLElement): void {
         showPage(d);
         return;
       }
+      if (id === "vector") {
+        const page = await loadVectorEditor();
+        if (!page) return;
+        showPage(page);
+        if (!(await page.openEmpty())) showConverter();
+        return;
+      }
       if (id === "data") {
         const page = await loadDataEditor();
         if (!page) return;
@@ -627,7 +670,7 @@ export function mountApp(root: HTMLElement): void {
     }
   }
   editMode.addEventListener("click", () => void enterEdit());
-  const labels: Partial<Record<EditKind, string>> = { code: "Edit as code", document: "Edit as document", subtitle: "Edit as subtitles", data: "Edit as table" };
+  const labels: Partial<Record<EditKind, string>> = { code: "Edit as code", document: "Edit as document", subtitle: "Edit as subtitles", data: "Edit as table", vector: "Edit as drawing" };
   editMore.addEventListener("click", (e) => {
     e.stopPropagation();
     if (!editMenu.hidden) {
@@ -667,6 +710,9 @@ export function mountApp(root: HTMLElement): void {
     if (editing && video && !video.el.hidden && !video.maybeLeave()) return;
     if (editing && docEditor && !docEditor.el.hidden && !docEditor.maybeLeave()) return;
     if (editing && subEditor && !subEditor.el.hidden && !subEditor.maybeLeave()) return;
+    if (editing && codeEditor && !codeEditor.el.hidden && !codeEditor.maybeLeave()) return;
+    if (editing && dataEditor && !dataEditor.el.hidden && !dataEditor.maybeLeave()) return;
+    if (editing && vectorEditor && !vectorEditor.el.hidden && !vectorEditor.maybeLeave()) return;
     showConverter();
   });
 

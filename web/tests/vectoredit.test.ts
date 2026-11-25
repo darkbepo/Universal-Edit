@@ -276,3 +276,18 @@ describe("nodes, paths and the clipboard", () => {
     expect(ps3).toEqual(c.drawing_paths);
   });
 });
+
+describe("vector editor page maths", () => {
+  it("snaps drags to tidy steps and resizes from handles", async () => {
+    const { stepFor, snapTo, resized } = await import("../src/ui/vectoreditor/page");
+    expect([stepFor(1), stepFor(4.4), stepFor(0.3), stepFor(0.05)]).toEqual([1, 0.1, 1, 10]);
+    expect(snapTo(20.088, 1)).toBe(20);
+    expect(snapTo(20.088, 0.1)).toBe(20.1);
+    const b = new Box(0, 0, 10, 20);
+    const r = resized(b, "se", 20, 30, false)!;
+    expect([r.x0, r.y0, r.x1, r.y1]).toEqual([0, 0, 20, 30]);
+    const k = resized(b, "nw", -10, 5, true)!;
+    expect([k.width / k.height]).toEqual([0.5]);
+    expect(resized(b, "e", 0, 0, false)).toBeNull();
+  });
+});
