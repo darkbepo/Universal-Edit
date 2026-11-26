@@ -264,6 +264,26 @@ describe("scene", () => {
     expect(check({ vertices: Float64Array.from(now.meshes[0].vertices), faces: Array.from({ length: now.meshes[0].faces.length / 3 }, (_, i) => [0, 1, 2].map((k) => now.meshes[0].faces[i * 3 + k]) as [number, number, number]) }).volume).toBeGreaterThan(0);
   });
 
+  it("a badge scaled then mirrored keeps its plate and its place", () => {
+    const base = box();
+    const s = { ...DEFAULT_SETTINGS, width: 20, where: "badge" as const, plate: "rectangle" as const, margin: 3, plate_thickness: 2 };
+    let sc: Scene = { base, logos: [buildLogo(picture(), s, null, null, base, null)] };
+    sc = arranged(sc, A.scale(10, 10, 10));
+    const lg = sc.logos[0];
+    close(lg.settings.plate_thickness, 20);
+    close(lg.settings.margin, 30);
+    const [lo, hi] = boundsOf(lg.meshes);
+    const msc = arranged(sc, A.mirror("x", A.centreOf(sc.base!.positions)));
+    const out = msc.logos[0];
+    const [lo2, hi2] = boundsOf(out.meshes);
+    close(lo2[0], -hi[0], 1e-5);
+    close(hi2[0], -lo[0], 1e-5);
+    close(hi2[2] - lo2[2], hi[2] - lo[2], 1e-5);
+    const again = buildLogo(out.picture, out.settings, null, null, msc.base, null);
+    const [alo, ahi] = boundsOf(again.meshes);
+    closeAll([0, 1, 2].map((i) => ahi[i] - alo[i]), [0, 1, 2].map((i) => hi2[i] - lo2[i]), 1e-5);
+  });
+
   it("undo keeps a bounded amount of models", () => {
     const old = UNDO_BYTES;
     setUndoBytes(60_000);

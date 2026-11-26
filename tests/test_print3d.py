@@ -189,3 +189,26 @@ def box_soup(x0, y0, z0, x1, y1, z1):
     c = [[x, y, z] for z in (z0, z1) for y in (y0, y1) for x in (x0, x1)]
     quads = [(0, 2, 3, 1), (4, 5, 7, 6), (0, 1, 5, 4), (2, 6, 7, 3), (0, 4, 6, 2), (1, 3, 7, 5)]
     return [x for a, b, cc, d in quads for t in ((a, b, cc), (a, cc, d)) for i in t for x in c[i]]
+
+
+def test_scaled_then_mirrored_badge_keeps_its_plate_and_place():
+    v, f = indexed(box_soup(-20, -10, 0, 20, 10, 10))
+    base = ViewModel("box", v, f, watertight=True, volume_mm3=8000.0)
+    pic = S.Picture("bar.png", bytes([0, 0, 0, 255] * 8), 4, 2)
+    s = S.LogoSettings(width=20, where="badge", plate="rectangle", margin=3, plate_thickness=2)
+    sc = S.Scene(base, (S.build_logo(pic, s, None, None, base),))
+    sc = sc.arranged(arrange.scale(10, 10, 10))
+    lg = sc.logos[0]
+    assert lg.settings.plate_thickness == pytest.approx(20) and lg.settings.margin == pytest.approx(
+        30
+    )
+    lo, hi = _bounds(lg.meshes)
+    msc = sc.arranged(arrange.mirror("x", arrange.centre_of(sc.base.vertices)))
+    out = msc.logos[0]
+    lo2, hi2 = _bounds(out.meshes)
+    assert lo2[0] == pytest.approx(-hi[0]) and hi2[0] == pytest.approx(-lo[0])  # mirrored place
+    assert hi2[2] - lo2[2] == pytest.approx(hi[2] - lo[2])  # same plate, same way up
+    assert meshcheck.check(out.meshes[0].vertices, out.meshes[0].faces).volume > 0
+    again = S.build_logo(out.picture, out.settings, None, None, msc.base)
+    a_lo, a_hi = _bounds(again.meshes)
+    assert a_hi - a_lo == pytest.approx(hi2 - lo2, abs=1e-6)  # Change… gives the same size

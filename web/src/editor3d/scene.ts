@@ -129,26 +129,59 @@ export function arranged(sc: Scene, m: Matrix): Scene {
   const logos = sc.logos.map((lg): Logo => {
     const point = lg.point ? applyPoint(m, lg.point) : null;
     const normal = lg.normal ? applyNormal(m, lg.normal) : null;
+    const wide = stretch(m, lg.normal ?? [0, 0, 1], lg.settings.rotation, 0); // along its width
+    const tall = stretch(m, lg.normal ?? [0, 0, 1], lg.settings.rotation, 1);
     const s: LogoSettings = {
       ...lg.settings,
-      width: lg.settings.width * k,
+      width: lg.settings.width * wide,
       thickness: lg.settings.thickness * k,
       sink: lg.settings.sink * k,
+      margin: lg.settings.margin * k,
+      plate_thickness: lg.settings.plate_thickness * k,
       rotation: turned(m, lg.normal ?? [0, 0, 1], normal ?? [0, 0, 1], lg.settings),
     };
-    if (det < 0) {
+    if (det < 0 && s.where === "face") {
+      // made again where it now is, not mirrored
       try {
-        return buildLogo(lg.picture, s, point, normal, base, null);
+        return { ...buildLogo(lg.picture, s, point, normal, base, null), overhang: lg.overhang };
       } catch (err) {
         if (!(err instanceof LogoError)) throw err;
       }
     }
+    if (det < 0 && s.where !== "face") {
+      // a badge: moved to its mirrored place, never turned inside out (two parallel mirrors = a move)
+      const c = meshCentre(lg.meshes);
+      const to = applyPoint(m, c);
+      const shift = [to[0] - c[0], to[1] - c[1], to[2] - c[2]];
+      const meshes = lg.meshes.map((x) => {
+        const v = Float64Array.from(x.vertices);
+        for (let i = 0; i < v.length; i++) v[i] += shift[i % 3];
+        return { vertices: v, faces: x.faces };
+      });
+      return { ...lg, settings: { ...s, rotation: lg.settings.rotation }, meshes };
+    }
     return {
       ...lg, settings: s, point, normal, meshes: lg.meshes.map((x) => applyIndexed(x.vertices, x.faces, m)),
-      width: lg.width * k, height: lg.height * k, overlap: lg.overlap * k ** 3,
+      width: lg.width * wide, height: lg.height * tall, overlap: lg.overlap * wide * tall * k,
     };
   });
   return { base, logos };
+}
+
+/** How much ``m`` lengthens the logo's width (axis 0) or height (1) direction. */
+function stretch(m: Matrix, normal: Vec3, rotation: number, axis: 0 | 1): number {
+  const x = frame(normal, rotation)[axis];
+  return Math.hypot(...[0, 1, 2].map((r) => m[r][0] * x[0] + m[r][1] * x[1] + m[r][2] * x[2]));
+}
+
+function meshCentre(meshes: readonly Mesh[]): Vec3 {
+  const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+  for (const x of meshes)
+    for (let i = 0; i < x.vertices.length; i++) {
+      lo[i % 3] = Math.min(lo[i % 3], x.vertices[i]);
+      hi[i % 3] = Math.max(hi[i % 3], x.vertices[i]);
+    }
+  return [0, 1, 2].map((a) => (lo[a] + hi[a]) / 2) as Vec3;
 }
 
 /** The logo's turn on its face after ``m`` (see scene.py ``_turned``). */
