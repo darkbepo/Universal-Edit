@@ -215,8 +215,9 @@ export function sceneStl(sc: Scene): Uint8Array {
   return out;
 }
 
-export function defaultSaveName(source: string | null, ext: string): string {
-  return source ? `${source.replace(/\.[^.]+$/, "")} with logo.${ext}` : `logo.${ext}`;
+/** "<name> with logo.3mf" / "<name> edited.3mf"; "logo.3mf" in the empty viewer. */
+export function defaultSaveName(source: string | null, ext: string, logos = true): string {
+  return source ? `${source.replace(/\.[^.]+$/, "")} ${logos ? "with logo" : "edited"}.${ext}` : `logo.${ext}`;
 }
 
 /** Undo / redo of whole scenes. */

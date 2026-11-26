@@ -626,7 +626,18 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 .viewer3d-side p { margin-top: 12px; font-size: 12px; color: var(--muted); }
 .viewer3d .editor-top label.check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
 .viewer3d .editor-top select { background: var(--surface-alt); border: 1px solid transparent; border-radius: 8px; padding: 5px 8px; max-width: 240px; }
-.viewer3d-body:has(.logo-panel:not([hidden])) { grid-template-columns: 1fr 320px; }
+.viewer3d-body:has(.logo-panel:not([hidden]), .arrange-panel:not([hidden]), .check-panel:not([hidden])) { grid-template-columns: 1fr 320px; }
+.arr-inline { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.arr-inline input[type="number"], .arrange-panel select, .filament-row select { min-width: 0; width: 6.5em; font: inherit; padding: 4px 6px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+.arrange-panel #arr-bed { width: 100%; }
+.arr-custom { display: flex; gap: 6px; }
+.arr-custom input { min-width: 0; flex: 1; font: inherit; padding: 4px 6px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+.arr-turn { display: grid; grid-template-columns: 1.5em 1fr 1fr 1fr; align-items: center; gap: 4px; }
+.arrange-panel button[aria-pressed="true"], .viewer3d .editor-top button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.check-result { margin: 4px 0; padding-left: 18px; font-size: 13px; }
+.check-result li { margin: 2px 0; }
+.filament-row { margin-top: 8px; font-size: 13px; }
+.filament-row #filament-infill { width: 4.5em; }
 .viewer3d-canvas.grabbing { cursor: move; }
 .logo-picture { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .logo-picture-name { overflow-wrap: anywhere; }
@@ -644,7 +655,7 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 .logo-list-box .logo-buttons { justify-content: flex-start; }
 .logo-save-dialog label { display: flex; align-items: center; gap: 8px; }
 @media (max-width: 900px) {
-  .viewer3d-body, .viewer3d-body:has(.logo-panel:not([hidden])) { grid-template-columns: 1fr; grid-template-rows: minmax(320px, 1fr) auto; }
+  .viewer3d-body, .viewer3d-body:has(.logo-panel:not([hidden]), .arrange-panel:not([hidden]), .check-panel:not([hidden])) { grid-template-columns: 1fr; grid-template-rows: minmax(320px, 1fr) auto; }
   .logo-row { grid-template-columns: 120px 1fr; }
   .viewer3d-side { border-left: 0; border-top: 1px solid var(--border); }
 }
