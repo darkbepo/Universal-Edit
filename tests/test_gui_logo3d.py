@@ -75,7 +75,7 @@ def click_top(page):
 
 def test_logo_on_the_top_face(window, qtbot, box_stl, ring_png):
     page = open_model(window, qtbot, box_stl)
-    assert page.logo_button.isEnabled() and not page.save_button.isEnabled()
+    assert page.logo_button.isEnabled() and page.save_button.isEnabled()  # any model saves
     page.logo_button.click()
     assert page.editing is not None and page.side.currentWidget() is page.logo_panel
     assert not page.logo_button.isEnabled() and not page.file_box.isEnabled()

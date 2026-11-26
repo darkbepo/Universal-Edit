@@ -41,6 +41,15 @@ class ViewModel:
         w, d, h = (hi - lo).tolist()
         return w, d, h
 
+    @property
+    def area(self) -> float:
+        """Surface area, mm² (cached)."""
+        if "area" not in self._cache:
+            t = self.vertices[self.faces]
+            n = np.cross(t[:, 1] - t[:, 0], t[:, 2] - t[:, 0])
+            self._cache["area"] = float(np.linalg.norm(n, axis=1).sum()) / 2
+        return self._cache["area"]
+
     def triangle_buffer(self) -> np.ndarray:
         """Interleaved float32 (3·F, 6): position xyz + flat face normal xyz, per corner.
 

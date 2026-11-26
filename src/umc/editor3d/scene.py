@@ -246,9 +246,11 @@ def export(scene: Scene, ext: str) -> bytes:
     return save_model(trimesh.Scene(mesh), ext, opts)
 
 
-def default_save_name(source: Path | None, ext: str) -> str:
-    stem = source.stem if source is not None else "logo"
-    return f"{stem} with logo.{ext}" if source is not None else f"{stem}.{ext}"
+def default_save_name(source: Path | None, ext: str, logos: bool = True) -> str:
+    """ "<name> with logo.3mf" / "<name> edited.3mf"; "logo.3mf" in the empty viewer."""
+    if source is None:
+        return f"logo.{ext}"
+    return f"{source.stem} {'with logo' if logos else 'edited'}.{ext}"
 
 
 @dataclass

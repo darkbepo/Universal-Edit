@@ -9,12 +9,13 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 import numpy as np
-from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal, Slot
+from PySide6.QtCore import QObject, QSettings, Qt, QThread, QTimer, Signal, Slot
 from PySide6.QtGui import QColor, QImage, QKeySequence, QPainter, QShortcut
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
     QComboBox,
+    QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
     QFrame,
@@ -31,13 +32,17 @@ from PySide6.QtWidgets import (
 from umc.core.detect import MODEL_EXTS, DetectedFile
 from umc.core.errors import ConversionError
 from umc.core.filemode import match_mode
+from umc.editor3d import arrange as A
+from umc.editor3d import filament as FIL
 from umc.editor3d import logo as L
+from umc.editor3d import meshcheck as MC
 from umc.editor3d import pick
 from umc.editor3d import scene as S
 from umc.editor3d.mesh import ViewModel, describe, load_view_model
 from umc.gui import theme
 from umc.gui.editor3d.gl_view import ModelGLView
 from umc.gui.editor3d.logo_panel import FACE_HINT, LogoPanel
+from umc.gui.editor3d.print_panels import ArrangePanel, CheckPanel
 from umc.gui.viewer.tasks import TaskRunner
 
 log = logging.getLogger(__name__)
@@ -99,6 +104,19 @@ def _trace_job(pic: S.Picture, s: S.LogoSettings, colour: tuple[int, int, int]):
     return shp, rgba.tobytes()
 
 
+def load_bed() -> tuple[str, float, float, float]:
+    """The printer bed chosen before (QSettings ``viewer3d/bed``), else the default."""
+    raw = QSettings().value("viewer3d/bed", "")
+    try:
+        name, w, d, h = str(raw).split("|")
+        bed = (name, float(w), float(d), float(h))
+        if all(10 <= v <= 2000 for v in bed[1:]):
+            return bed
+    except ValueError:
+        pass
+    return A.DEFAULT_BED
+
+
 def _view_model(meshes, name: str) -> ViewModel | None:
     meshes = [m for m in meshes if len(m.faces)]
     if not meshes:
@@ -142,6 +160,8 @@ class ViewerPage(QWidget):
     loaded = Signal()  # a model finished loading (or failed): for tests
     logo_built = Signal()  # the logo preview was (re)built or failed: for tests
     saved = Signal(str)  # a Save as finished (the path, or "" if it failed): for tests
+    checked = Signal()  # a check finished (Check panel): for tests
+    repaired = Signal()  # a repair finished: for tests
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -159,6 +179,19 @@ class ViewerPage(QWidget):
         self._grab_offset = np.zeros(3)  # logo point − where the drag started on its plane
         self._rebuild_timer = QTimer(self, singleShot=True, interval=REBUILD_MS)
         self._rebuild_timer.timeout.connect(self._rebuild)
+        self.panel = ""  # "arrange" / "check" while that side panel is open
+        self.laying_flat = False  # Arrange: the next click on the model picks the face
+        self.report: MC.Report | None = None  # the last check (Check panel)
+        self.checked_scene: S.Scene | None = None
+        self.bed = load_bed()
+        settings = QSettings()
+        self.material = str(settings.value("viewer3d/material", "PLA"))
+        if self.material not in FIL.DENSITY:
+            self.material = "PLA"
+        try:
+            self.infill = min(1.0, max(0.0, float(settings.value("viewer3d/infill", 0.15))))
+        except (TypeError, ValueError):
+            self.infill = FIL.DEFAULT_INFILL
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -188,7 +221,27 @@ class ViewerPage(QWidget):
         self.logo_panel.apply_requested.connect(self.apply_logo)
         self.logo_panel.cancel_requested.connect(self.cancel_logo)
         self.side.addWidget(self.logo_panel)
+        self.arrange_panel = ArrangePanel()
+        ap = self.arrange_panel
+        ap.rotate.connect(self.rotate)
+        ap.mirror.connect(self.mirror)
+        ap.scale_by.connect(self.scale_by)
+        ap.size_to.connect(self.size_to)
+        ap.move_to.connect(self.move_to)
+        ap.centre.connect(self.centre)
+        ap.units.connect(self.units)
+        ap.lay_flat.connect(self.set_laying_flat)
+        ap.bed_changed.connect(self.set_bed)
+        ap.done.connect(self.close_panel)
+        ap.set_bed(self.bed)
+        self.side.addWidget(ap)
+        self.check_panel = CheckPanel()
+        self.check_panel.repair.connect(self.repair)
+        self.check_panel.overhangs.connect(lambda *_a: self.run_check())
+        self.check_panel.done.connect(self.close_panel)
+        self.side.addWidget(self.check_panel)
         body.addWidget(self.side)
+        self.view.set_bed(self.bed[1:])
         root.addLayout(body, 1)
         for keys, slot in ((QKeySequence.StandardKey.Undo, self.undo),
                            (QKeySequence.StandardKey.Redo, self.redo),
@@ -212,6 +265,11 @@ class ViewerPage(QWidget):
     # ------------------------------------------------------------ layout
     def _build_top_bar(self) -> QWidget:
         bar = QFrame(objectName="EditorTopBar")
+        # the 3D viewer has many buttons: let short ones be as narrow as their words (Qt's
+        # style gives every button 80 px), so the bar fits ~760 px instead of ~1650
+        bar.setStyleSheet(
+            "QPushButton#Small, QPushButton#Segment { min-width: 0px; padding: 5px 9px; }"
+        )
         lay = QHBoxLayout(bar)
         lay.setContentsMargins(12, 8, 12, 8)
         lay.setSpacing(6)
@@ -239,7 +297,11 @@ class ViewerPage(QWidget):
         self.undo_button.clicked.connect(self.undo)
         self.redo_button = button("Redo", "Redo (Ctrl+Y)")
         self.redo_button.clicked.connect(self.redo)
-        self.save_button = button("Save as…", "Save the model with its logos (3MF, STL, …)")
+        self.arrange_button = button("Arrange", "Move, turn, scale, lay flat; your printer's bed")
+        self.arrange_button.clicked.connect(lambda: self.open_panel("arrange"))
+        self.check_button = button("Check", "Check for holes and other problems; overhangs")
+        self.check_button.clicked.connect(lambda: self.open_panel("check"))
+        self.save_button = button("Save as…", "Save the model with its changes (3MF, STL, …)")
         self.save_button.clicked.connect(self.save_as)
         lay.addStretch(1)
 
@@ -289,6 +351,22 @@ class ViewerPage(QWidget):
         note.setWordWrap(True)
         lay.addSpacing(8)
         lay.addWidget(note)
+        fil = QHBoxLayout()
+        fil.addWidget(QLabel("Filament", objectName="Muted"))
+        self.material_box = QComboBox()
+        self.material_box.addItems(list(FIL.DENSITY))
+        self.material_box.setCurrentText(self.material)
+        self.material_box.setToolTip("For the filament estimate")
+        self.material_box.currentTextChanged.connect(self._filament_changed)
+        self.infill_box = QDoubleSpinBox()
+        self.infill_box.setRange(0, 100)
+        self.infill_box.setDecimals(0)
+        self.infill_box.setSuffix(" % infill")
+        self.infill_box.setValue(round(self.infill * 100))
+        self.infill_box.valueChanged.connect(self._filament_changed)
+        fil.addWidget(self.material_box)
+        fil.addWidget(self.infill_box)
+        lay.addLayout(fil)
         self.logos_title = QLabel("Logos", objectName="Muted")
         lay.addSpacing(8)
         lay.addWidget(self.logos_title)
@@ -442,9 +520,14 @@ class ViewerPage(QWidget):
         self._fill_logos()
         if model is None:
             return
-        for label, value in describe(model):
+        rows = describe(model)
+        rows.append(("Printer bed", A.fit_note(model.size, self.bed[1:])))
+        if model.volume_mm3:
+            rows += FIL.rows(model.volume_mm3, model.area, self.material, self.infill)
+        for label, value in rows:
             v = QLabel(value)
             v.setObjectName("InfoValue")
+            v.setWordWrap(True)
             v.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             self.form.addRow(QLabel(label, objectName="Muted"), v)
 
@@ -497,6 +580,13 @@ class ViewerPage(QWidget):
             self.center.setCurrentWidget(self.view)
         self._fill_info(combined)
         self._sync_buttons()
+        if self.panel == "arrange" and sc is not None and not sc.empty:
+            pos = sc.positions()
+            lo, hi = A.bounds(pos)
+            size = [b - a for a, b in zip(lo, hi, strict=True)]
+            self.arrange_panel.show_model(size, A.centre_of(pos), A.fit_note(size, self.bed[1:]))
+        if self.panel == "check" and sc is not self.checked_scene:
+            self.run_check()
 
     def title_name(self) -> str:
         return self.current.name if self.current is not None else "Logo"
@@ -523,7 +613,10 @@ class ViewerPage(QWidget):
         self.logo_button.setEnabled(idle and h is not None)
         self.undo_button.setEnabled(idle and h is not None and bool(h.undo_stack))
         self.redo_button.setEnabled(idle and h is not None and bool(h.redo_stack))
-        self.save_button.setEnabled(idle and h is not None and bool(h.scene.logos))
+        self.save_button.setEnabled(idle and h is not None and not h.scene.empty)
+        some = idle and h is not None and not h.scene.empty
+        self.arrange_button.setEnabled(some)
+        self.check_button.setEnabled(some)
         has = h is not None and self.logo_list.currentRow() >= 0 and bool(h.scene.logos)
         self.edit_logo_button.setEnabled(idle and has)
         self.remove_logo_button.setEnabled(idle and has)
@@ -548,9 +641,178 @@ class ViewerPage(QWidget):
         if self.editing is None and h is not None and 0 <= row < len(h.scene.logos):
             self._push(h.scene.without(row))
 
+    # ------------------------------------------------------------ arrange / check panels
+    def open_panel(self, name: str) -> None:
+        """Show the Arrange or Check panel (again = back to the info)."""
+        h = self.history
+        if self.panel == name:
+            self.close_panel()
+            return
+        if h is None or h.scene.empty or self.editing is not None or self.saving:
+            return
+        self.close_panel()
+        self.panel = name
+        self.side.setCurrentWidget(self.arrange_panel if name == "arrange" else self.check_panel)
+        if name == "check":
+            self.check_panel.repaired.setText("")
+            self.checked_scene = None
+        self._refresh()
+
+    def close_panel(self) -> None:
+        if not self.panel:
+            return
+        self.panel = ""
+        self.set_laying_flat(False)
+        self.tasks.cancel_group("check")
+        self.view.set_highlight(None)
+        self.side.setCurrentIndex(0)
+        self._sync_buttons()
+
+    def _scene(self) -> S.Scene | None:
+        h = self.history
+        return h.scene if h is not None and not h.scene.empty and self.editing is None else None
+
+    def arrange(self, m: A.Matrix, settle: bool = True) -> None:
+        """One undo step: the model and its logos moved by ``m`` (then back on the bed)."""
+        sc = self._scene()
+        if sc is None or self.saving:
+            return
+        pos = sc.positions()
+        self._push(sc.arranged(A.settle(pos, m) if settle else m))
+
+    def _centre(self) -> tuple[float, float, float]:
+        sc = self._scene()
+        return A.centre_of(sc.positions()) if sc is not None else (0.0, 0.0, 0.0)
+
+    def rotate(self, axis: str, degrees: float) -> None:
+        if degrees % 360:
+            self.arrange(A.rotate(axis, degrees, self._centre()))
+
+    def mirror(self, axis: str) -> None:
+        self.arrange(A.mirror(axis, self._centre()))
+
+    def scale_by(self, sx: float, sy: float, sz: float) -> None:
+        if (sx, sy, sz) != (1, 1, 1) and min(sx, sy, sz) > 0:
+            self.arrange(A.scale(sx, sy, sz, self._centre()))
+
+    def units(self, key: str) -> None:
+        k = A.UNIT_FIXES[key]
+        self.scale_by(k, k, k)
+
+    def size_to(self, axis: str, mm: float, keep: bool) -> None:
+        sc = self._scene()
+        if sc is None:
+            return
+        lo, hi = A.bounds(sc.positions())
+        i = "xyz".index(axis)
+        now = hi[i] - lo[i]
+        if now <= 0 or abs(mm - now) < 1e-9:
+            return
+        k = mm / now
+        self.scale_by(*((k, k, k) if keep else tuple(k if j == i else 1.0 for j in range(3))))
+
+    def move_to(self, x: float, y: float) -> None:
+        cx, cy, _cz = self._centre()
+        if abs(x - cx) > 1e-9 or abs(y - cy) > 1e-9:
+            self.arrange(A.translate(x - cx, y - cy, 0.0), settle=False)
+
+    def centre(self) -> None:
+        sc = self._scene()
+        if sc is not None:
+            self.arrange(A.centred(sc.positions()), settle=False)
+
+    def set_laying_flat(self, on: bool) -> None:
+        self.laying_flat = on
+        if not on:
+            self.arrange_panel.stop_lay_flat()
+        self.message.setText("Click the face that should lie on the bed." if on else "")
+
+    def lay_flat_on(self, tri: int, view_dir=None) -> None:
+        """Turn the model so the flat face around triangle ``tri`` (of what's shown) lies on
+        the bed."""
+        m = self.view.model
+        if m is None:
+            return
+        face = pick.flat_face(m.vertices, m.faces, tri)
+        normal = face.normal
+        if view_dir is not None and float(np.dot(normal, view_dir)) > 0:
+            normal = -normal  # the inside of a model wound the wrong way round
+        self.set_laying_flat(False)
+        self.arrange(A.lay_flat(normal, self._centre()))
+
+    def set_bed(self, bed) -> None:
+        self.bed = (str(bed[0]), float(bed[1]), float(bed[2]), float(bed[3]))
+        QSettings().setValue("viewer3d/bed", "|".join(str(x) for x in self.bed))
+        self.view.set_bed(self.bed[1:])
+        self._refresh()
+
+    def _filament_changed(self, *_a) -> None:
+        self.material = self.material_box.currentText()
+        self.infill = self.infill_box.value() / 100
+        settings = QSettings()
+        settings.setValue("viewer3d/material", self.material)
+        settings.setValue("viewer3d/infill", self.infill)
+        self._refresh()
+
+    def run_check(self) -> None:
+        """Check what's shown (off the UI thread); the panel and the red overhangs follow."""
+        sc = self._scene()
+        if self.panel != "check" or sc is None:
+            return
+        m = sc.combined(self.title_name())
+        self.checked_scene = sc
+        angle = self.check_panel.angle.value()
+        show = self.check_panel.show_overhangs.isChecked()
+        self.check_panel.result.setText("Checking…")
+
+        def done(report: MC.Report) -> None:
+            if self.panel != "check":
+                return
+            self.report = report
+            self.check_panel.show_report(
+                MC.notes(report), not report.problems, report.overhang_area
+            )
+            hl = None
+            if show and report.overhang_faces:
+                hl = ViewModel("overhangs", m.vertices, m.faces[report.overhang_faces])
+            self.view.set_highlight(hl)
+            self.checked.emit()
+
+        self.tasks.submit("check", lambda: MC.check(m.vertices, m.faces, angle), done)
+
+    def repair(self) -> None:
+        """One undo step: the model (not the logos) repaired, then checked again."""
+        sc = self._scene()
+        if sc is None or sc.base is None or self.saving:
+            return
+        base = sc.base
+        self.check_panel.repair_button.setEnabled(False)
+        self.check_panel.repaired.setText("Repairing…")
+
+        def work():
+            x = MC.repair(base.vertices, base.faces)
+            after = MC.check(x.vertices, x.faces)
+            return x, after
+
+        def done(result) -> None:
+            x, after = result
+            self.check_panel.repaired.setText(MC.repaired_note(x, after))
+            if x.changed and self.history is not None and self.history.scene is sc:
+                fixed = ViewModel(
+                    base.name, x.vertices, x.faces, after.parts,
+                    after.closed and not after.problems, after.volume or None,
+                )  # fmt: skip
+                self._push(sc.with_base(fixed))
+            else:
+                self.run_check()
+            self.repaired.emit()
+
+        self.tasks.submit("repair", work, done, exclusive=False)
+
     # ------------------------------------------------------------ making a logo
     def start_logo(self, index: int | None = None) -> None:
         """Open the logo panel for a new logo (or to change logo ``index``)."""
+        self.close_panel()
         h = self.history
         if h is None or self.editing is not None or self.saving:
             return
@@ -734,6 +996,13 @@ class ViewerPage(QWidget):
         return " ".join(notes)
 
     def _on_view_clicked(self, x: float, y: float) -> None:
+        if self.laying_flat and self.view.model is not None:
+            m = self.view.model
+            o, d = pick.ray(self.view.camera, x, y, self.view.width(), self.view.height())
+            found = pick.hit(m.vertices, m.faces, o, d)
+            if found is not None:
+                self.lay_flat_on(found[0], d)
+            return
         e, base = self.editing, self.base
         if e is None or base is None or self.logo_panel.settings().where != "face":
             return
@@ -877,11 +1146,11 @@ class ViewerPage(QWidget):
         if key is _CURRENT:
             key = self.key
         h = self.histories.get(key)
-        if h is None or not h.scene.logos or self.editing is not None or self.saving:
+        if h is None or h.scene.empty or self.editing is not None or self.saving:
             return False
         src = key
         folder = src.parent if src is not None else Path.home()
-        path = self.ask_save_path(folder / S.default_save_name(src, "3mf"))
+        path = self.ask_save_path(folder / S.default_save_name(src, "3mf", bool(h.scene.logos)))
         if not path:
             return False
         dest = Path(path)
@@ -955,8 +1224,8 @@ class ViewerPage(QWidget):
                 continue
             name = key.name if key is not None else "the logo"
             answer = self.ask(
-                "Unsaved logos",
-                f"Save {name} with its logos first?",
+                "Unsaved changes",
+                f"Save {name} with your changes first?",
                 ("save", "discard", "cancel"),
             )
             if answer == "cancel":

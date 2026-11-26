@@ -71,7 +71,8 @@ function clean(v: Float64Array, f: Tri[]): { keep: number[]; zero: number; dup: 
       zero++;
       return;
     }
-    const key = [a, b, c].sort((x, y) => x - y).join(",");
+    // the same corners the same way round (opposite = two parts touching face to face: fine)
+    const key = a <= b && a <= c ? `${a},${b},${c}` : b <= c ? `${b},${c},${a}` : `${c},${a},${b}`;
     if (seen.has(key)) {
       dup++;
       return;
@@ -94,6 +95,21 @@ function edgesOf(f: Tri[]): Map<string, number[]> {
       else out.set(k, [i]);
     }
   });
+  return out;
+}
+
+/** Each edge: "ok" (two triangles running it opposite ways, or 2k with k each way — closed parts
+ * touching, which prints fine), "open", "flipped" or "shared" (see meshcheck.py ``_kinds``). */
+function kindsOf(f: Tri[], edges: Map<string, number[]>): Map<string, string> {
+  const forward = new Map<string, number>();
+  for (const [a, b, c] of f)
+    for (const [p, q] of [[a, b], [b, c], [c, a]])
+      if (p < q) forward.set(`${p},${q}`, (forward.get(`${p},${q}`) ?? 0) + 1);
+  const out = new Map<string, string>();
+  for (const [key, tris] of edges) {
+    const n = tris.length, fw = forward.get(key) ?? 0;
+    out.set(key, n === 1 ? "open" : n % 2 === 0 && fw * 2 === n ? "ok" : n === 2 ? "flipped" : "shared");
+  }
   return out;
 }
 
@@ -168,18 +184,17 @@ export function check(m: Indexed, overhangDeg = OVERHANG_DEG): Report {
   r.duplicates = dup;
   const good = keep.map((i) => f[i]);
   const edges = edgesOf(good);
-  const directed = new Map<string, number>();
-  for (const [a, b, c] of good) for (const [p, q] of [[a, b], [b, c], [c, a]]) directed.set(`${p},${q}`, (directed.get(`${p},${q}`) ?? 0) + 1);
-  for (const [k, tris] of edges) {
-    if (tris.length === 1) r.open_edges++;
-    else if (tris.length > 2) r.shared_edges++;
-    else if ((directed.get(k) ?? 0) !== 1) r.flipped_edges++;
+  const kinds = kindsOf(good, edges);
+  for (const k of kinds.values()) {
+    if (k === "open") r.open_edges++;
+    else if (k === "shared") r.shared_edges++;
+    else if (k === "flipped") r.flipped_edges++;
   }
   const part = partsOf(good.length, edges);
   r.parts = part.length ? Math.max(...part) + 1 : 0;
   const vols = volumesOf(v, good, part, r.parts);
   const openPart = new Array<boolean>(r.parts).fill(false);
-  for (const tris of edges.values()) if (tris.length !== 2) for (const t of tris) openPart[part[t]] = true;
+  for (const [key, tris] of edges) if (kinds.get(key) !== "ok") for (const t of tris) openPart[part[t]] = true;
   const biggest = vols.reduce((m2, x) => Math.max(m2, Math.abs(x)), 0);
   for (let p = 0; p < r.parts; p++) {
     if (!openPart[p] && vols[p] < 0) r.inside_out++;
@@ -286,10 +301,11 @@ export function repair(m: Indexed): Repaired {
   }
   // 3. closed parts facing inwards: turn them all
   edges = edgesOf(good);
+  const kinds = kindsOf(good, edges);
   let part = partsOf(good.length, edges);
   let parts = part.length ? Math.max(...part) + 1 : 0;
   const openPart = new Array<boolean>(parts).fill(false);
-  for (const tris of edges.values()) if (tris.length !== 2) for (const t of tris) openPart[part[t]] = true;
+  for (const [key, tris] of edges) if (kinds.get(key) !== "ok") for (const t of tris) openPart[part[t]] = true;
   let vols = volumesOf(v, good, part, parts);
   const inward = vols.map((x, p) => !openPart[p] && x < 0);
   good = good.map(([a, b, c], i) => (inward[part[i]] ? [a, c, b] : [a, b, c]));

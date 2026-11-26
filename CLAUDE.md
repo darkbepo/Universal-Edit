@@ -988,6 +988,33 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       area (`_covers` / `covers`) and else switch it to its unsimplified rings (`Polygon.raw`);
       `extrude` asks for the caps before reading the rings. The two earcut builds can differ
       there, so shared case "noise" compares volumes loosely on the web.
+      Print tools (owner, Nov 2026; spec `docs/superpowers/specs/2026-11-26-3d-print-tools-design.md`).
+      Step 1 ✅ model: `editor3d/arrange.py` ↔ `arrange.ts` (4×4 row-major matrices: `rotate`
+      exact at multiples of 90°, `scale`, `mirror`, `lay_flat` = Rodrigues turning the normal to
+      −Z, `settle` = then back on the bed with the X / Y centre kept, `centred`, `apply` reverses
+      mirrored triangles as (a, c, b), `apply_normal` = inverse transpose; `BEDS`, `fit_note`),
+      `meshcheck.py` ↔ `meshcheck.ts` (`weld` numbers merged corners in first-appearance order —
+      the web welds the Float32 soup; `check` → `Report`; an edge is "ok" with 2 triangles running
+      it opposite ways or 2k with k each way (closed parts touching), a repeat only counts the
+      same way round (opposite = touching faces); `repair` = clean → orient (BFS over two-triangle
+      edges) → fill hole loops flat (earcut on the Newell plane) → turn inward closed parts →
+      drop tiny bits (< 1 mm³ and < 1 % of the biggest) → unused vertices out; `notes` /
+      `repaired_note(x, after)`), `filament.py` ↔ `filament.ts` (0.8 mm solid shell + infill).
+      `Scene.arranged(m)` / `arranged(sc, m)` moves logos too (meshes, point, normal);
+      `with_base` for Repair. Shared cases `tests/fixtures/print3d_cases.json`
+      (`python scripts/make_print3d_cases.py`). Known limit: overhangs are per face, so a face
+      resting on another separate part still counts.
+      Step 2 ✅ desktop: `gui/editor3d/print_panels.py` (`ArrangePanel`, `CheckPanel`; in the
+      "model" add-on's `modules`), page `open_panel("arrange" | "check")` / `close_panel`,
+      `arrange(m, settle)` + `rotate` / `mirror` / `scale_by` / `size_to` / `move_to` / `centre`
+      / `units` / `lay_flat_on(tri)` (a click while `laying_flat`), `run_check` (TaskRunner
+      "check"; re-runs when the shown scene changes, `checked` signal) and `repair` (base only,
+      `repaired` signal). Bed = QSettings `viewer3d/bed` ("name|w|d|h", `load_bed`),
+      `gl_view.set_bed` (outline box) / `set_highlight` (overhang faces in red, drawn at the same
+      depth while the model is pushed back by its polygon offset). Info rows "Printer bed" and
+      the filament rows (QSettings `viewer3d/material` / `viewer3d/infill`; `ViewModel.area`
+      cached). Save as works for any model ("<name> edited.3mf" without logos). The top bar sets
+      `min-width: 0` on its buttons (Qt gives each 80 px: the bar needed 1645 px).
    9. ✅ Start screen = hub (both apps; order and the four "Coming soon" tiles: roadmap 16): editor tiles under the empty drop zone, listed in
       `core/editors.py` / `web/src/core/editors.ts` (same order and text; `available` False =
       greyed "Coming soon"); tests/test_editor_hub.py

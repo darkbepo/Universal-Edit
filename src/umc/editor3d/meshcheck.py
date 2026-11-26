@@ -49,14 +49,16 @@ def _clean(v: np.ndarray, f: np.ndarray) -> tuple[list[int], int, int]:
     many of each kind were left out."""
     eps = (_scale(v) * 1e-9) ** 2
     a2 = _areas2(v, f).tolist() if len(f) else []
-    seen: set[tuple[int, int, int]] = set()
+    seen: set[tuple[int, ...]] = set()
     keep: list[int] = []
     zero = dup = 0
     for i, (a, b, c) in enumerate(f.tolist()):
         if a2[i] <= eps or a in (b, c) or b == c:
             zero += 1
             continue
-        key = tuple(sorted((a, b, c)))
+        # the same corners the same way round (two parts touching face to face have the
+        # same corners the other way round: that's fine)
+        key = min((a, b, c), (b, c, a), (c, a, b))
         if key in seen:
             dup += 1
             continue
@@ -71,6 +73,29 @@ def _edges(f: list[list[int]]) -> dict[tuple[int, int], list[int]]:
     for i, (a, b, c) in enumerate(f):
         for p, q in ((a, b), (b, c), (c, a)):
             out.setdefault((p, q) if p < q else (q, p), []).append(i)
+    return out
+
+
+def _kinds(f: list[list[int]], edges) -> dict[tuple[int, int], str]:
+    """Each edge: "ok" (two triangles running it opposite ways, or 2k triangles with k each
+    way — closed parts touching along it, which prints fine), "open" (one triangle: a hole),
+    "flipped" (two triangles running it the same way) or "shared" (anything else)."""
+    forward: dict[tuple[int, int], int] = {}
+    for a, b, c in f:
+        for p, q in ((a, b), (b, c), (c, a)):
+            if p < q:
+                forward[(p, q)] = forward.get((p, q), 0) + 1
+    out = {}
+    for key, tris in edges.items():
+        n, fw = len(tris), forward.get(key, 0)
+        if n == 1:
+            out[key] = "open"
+        elif n % 2 == 0 and fw * 2 == n:
+            out[key] = "ok"
+        elif n == 2:
+            out[key] = "flipped"
+        else:
+            out[key] = "shared"
     return out
 
 
@@ -150,24 +175,20 @@ def check(vertices: np.ndarray, faces: np.ndarray, overhang_deg: float = OVERHAN
     keep, r.zero_area, r.duplicates = _clean(v, f)
     good = f[keep].tolist()
     edges = _edges(good)
-    directed: dict[tuple[int, int], int] = {}
-    for a, b, c in good:
-        for p, q in ((a, b), (b, c), (c, a)):
-            directed[(p, q)] = directed.get((p, q), 0) + 1
-    for (lo, hi), tris in edges.items():
-        n = len(tris)
-        if n == 1:
+    kinds = _kinds(good, edges)
+    for k in kinds.values():
+        if k == "open":
             r.open_edges += 1
-        elif n > 2:
+        elif k == "shared":
             r.shared_edges += 1
-        elif directed.get((lo, hi), 0) != 1:  # both triangles run lo → hi (or hi → lo)
+        elif k == "flipped":
             r.flipped_edges += 1
     part = _parts(len(good), edges)
     r.parts = max(part) + 1 if part else 0
     vols = _volumes(v, good, part, r.parts)
     open_part = [False] * r.parts
-    for tris in edges.values():
-        if len(tris) != 2:
+    for key, tris in edges.items():
+        if kinds[key] != "ok":
             for t in tris:
                 open_part[part[t]] = True
     biggest = max((abs(x) for x in vols), default=0.0)
@@ -278,11 +299,12 @@ def repair(vertices: np.ndarray, faces: np.ndarray) -> Repaired:
         out.holes_filled += 1
     # 3. closed parts facing inwards: turn them all
     edges = _edges(good)
+    kinds = _kinds(good, edges)
     part = _parts(len(good), edges)
     parts = max(part) + 1 if part else 0
     open_part = [False] * parts
-    for tris in edges.values():
-        if len(tris) != 2:
+    for key, tris in edges.items():
+        if kinds[key] != "ok":
             for t in tris:
                 open_part[part[t]] = True
     vols = _volumes(v, good, part, parts)
