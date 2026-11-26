@@ -14,6 +14,7 @@ from pathlib import Path
 
 import numpy as np
 
+from umc.editor3d import arrange as A
 from umc.editor3d import logo as L
 from umc.editor3d.mesh import ViewModel
 
@@ -157,6 +158,31 @@ class Scene:
 
     def without(self, index: int) -> Scene:
         return replace(self, logos=self.logos[:index] + self.logos[index + 1 :])
+
+    def with_base(self, base: ViewModel | None) -> Scene:
+        """The model replaced (Repair), logos kept."""
+        return replace(self, base=base)
+
+    def arranged(self, m: A.Matrix) -> Scene:
+        """Everything moved / turned / scaled by ``m``: the model and every logo (their
+        meshes, and the point / direction they were placed at, so Change… still works)."""
+        base = self.base
+        if base is not None:
+            v, f = A.apply(base.vertices, base.faces, m)
+            volume = base.volume_mm3 * abs(A.determinant3(m)) if base.volume_mm3 else None
+            base = ViewModel(base.name, v, f, base.parts, base.watertight, volume)
+        logos = []
+        for lg in self.logos:
+            meshes = tuple(L.Mesh(*A.apply(x.vertices, x.faces, m)) for x in lg.meshes)
+            point = A.apply_point(m, lg.point) if lg.point is not None else None
+            normal = A.apply_normal(m, lg.normal) if lg.normal is not None else None
+            logos.append(replace(lg, meshes=meshes, point=point, normal=normal))
+        return Scene(base, tuple(logos))
+
+    def positions(self) -> np.ndarray:
+        """Every corner of the model and the logos (for bounds)."""
+        parts = [v for v, _f in self.meshes()]
+        return np.concatenate(parts) if parts else np.zeros((0, 3))
 
     @property
     def empty(self) -> bool:
