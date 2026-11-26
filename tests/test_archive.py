@@ -147,3 +147,78 @@ def test_pack_any_files(media, tmp_path):
 def test_pack_targets_not_offered_for_archives(sample_zip):
     ids = {t.id for t in targets_for([detect(sample_zip)])}
     assert "archive:extract" in ids and not any(i.startswith("pack:") for i in ids)
+
+
+unix_only = pytest.mark.skipif(__import__("os").name == "nt", reason="Unix permissions")
+
+
+@pytest.fixture
+def scripts(tmp_path) -> Path:
+    """A folder with an executable script (set-uid too, which must never come back), a plain
+    file and a script readable only by its owner."""
+    import os
+
+    d = tmp_path / "src"
+    d.mkdir()
+    (d / "run.sh").write_text("#!/bin/sh\necho hi\n")
+    os.chmod(d / "run.sh", 0o4755)
+    (d / "notes.txt").write_text("plain\n")
+    os.chmod(d / "notes.txt", 0o644)
+    (d / "mine.sh").write_text("#!/bin/sh\n")
+    os.chmod(d / "mine.sh", 0o700)
+    return d
+
+
+def _modes(folder: Path) -> dict[str, int]:
+    return {p.name: p.stat().st_mode & 0o7777 for p in folder.rglob("*") if p.is_file()}
+
+
+@unix_only
+@pytest.mark.parametrize("fmt", ["zip", "tar.gz", "7z"])
+def test_extracting_keeps_the_executable_bit(scripts, tmp_path, fmt):
+    """Owner's report: a zip extracted on Linux lost its scripts' executable bit."""
+    import os
+    import threading
+
+    names = ["run.sh", "notes.txt", "mine.sh"]
+    arc = tmp_path / f"s.{fmt}"
+    archive.create([(scripts / n, n) for n in names], arc, fmt, "normal", "", False,
+                   lambda _f: None, threading.Event())  # fmt: skip
+    out = tmp_path / "out"
+    old = os.umask(0o022)
+    try:
+        archive.extract(arc, fmt, out, "", lambda _f: None, threading.Event())
+    finally:
+        os.umask(old)
+    modes = _modes(out)
+    assert modes["run.sh"] & 0o111 == 0o111 and not modes["run.sh"] & 0o7000  # no set-uid
+    assert modes["notes.txt"] & 0o111 == 0
+    assert modes["mine.sh"] & 0o100  # the owner can still run it
+
+
+@unix_only
+def test_a_zip_from_windows_gets_no_executable_bits(tmp_path):
+    import threading
+
+    arc = tmp_path / "win.zip"
+    with zipfile.ZipFile(arc, "w") as zf:
+        info = zipfile.ZipInfo("tool.exe")
+        info.create_system = 0  # made on Windows
+        info.external_attr = 0o755 << 16  # nonsense there: must be ignored
+        zf.writestr(info, b"MZ")
+    out = tmp_path / "out"
+    archive.extract(arc, "zip", out, "", lambda _f: None, threading.Event())
+    assert (out / "tool.exe").stat().st_mode & 0o111 == 0
+
+
+@unix_only
+def test_repacking_keeps_the_executable_bit(scripts, tmp_path):
+    import threading
+
+    arc = tmp_path / "s.zip"
+    archive.create([(scripts / "run.sh", "bin/run.sh")], arc, "zip", "normal", "", False,
+                   lambda _f: None, threading.Event())  # fmt: skip
+    [tar] = convert([arc], "tar.gz", tmp_path / "re")
+    out = tmp_path / "out"
+    archive.extract(tar, "tar.gz", out, "", lambda _f: None, threading.Event())
+    assert (out / "bin" / "run.sh").stat().st_mode & 0o111 == 0o111
