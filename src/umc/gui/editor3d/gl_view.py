@@ -108,6 +108,16 @@ def grid_lines(lo: np.ndarray, hi: np.ndarray) -> tuple[np.ndarray, np.ndarray, 
     )
 
 
+def bed_lines(size: tuple[float, float, float]) -> np.ndarray:
+    """The 12 edges of the printer's build volume, centred on X / Y = 0, from Z = 0 up."""
+    w, d, h = (float(v) for v in size)
+    x0, x1, y0, y1 = -w / 2, w / 2, -d / 2, d / 2
+    c = [(x, y, z) for z in (0.0, h) for y in (y0, y1) for x in (x0, x1)]
+    pairs = [(0, 1), (1, 3), (3, 2), (2, 0), (4, 5), (5, 7), (7, 6), (6, 4),
+             (0, 4), (1, 5), (2, 6), (3, 7)]  # fmt: skip
+    return np.array([c[i] for pair in pairs for i in pair], np.float32)
+
+
 def gl_problem() -> str:
     """Why this computer can't show OpenGL in a widget, or "" when it can."""
     if QGuiApplication.platformName() in ("offscreen", "minimal", "vnc"):
@@ -146,6 +156,10 @@ class ModelGLView(QOpenGLWidget):
         self._line_prog: QOpenGLShaderProgram | None = None
         self.overlay: ViewModel | None = None  # the logo being placed, in the accent colour
         self._overlay_dirty = False
+        self.highlight: ViewModel | None = None  # overhang faces, in red over the model
+        self._highlight_dirty = False
+        self.bed: tuple[float, float, float] | None = None  # printer bed outline (w, d, h)
+        self._bed_dirty = False
         # (x, y) → True when a left press there should drag the overlay instead of orbiting
         self.grab_test = None
         self._press: QPointF | None = None
@@ -164,6 +178,16 @@ class ModelGLView(QOpenGLWidget):
     def set_overlay(self, model: ViewModel | None) -> None:
         self.overlay = model
         self._overlay_dirty = True
+        self.update()
+
+    def set_highlight(self, model: ViewModel | None) -> None:
+        self.highlight = model
+        self._highlight_dirty = True
+        self.update()
+
+    def set_bed(self, size: tuple[float, float, float] | None) -> None:
+        self.bed = size
+        self._bed_dirty = True
         self.update()
 
     def set_style(self, style: str) -> None:
@@ -278,6 +302,13 @@ class ModelGLView(QOpenGLWidget):
             o = self.overlay
             self._upload("overlay", o.triangle_buffer() if o is not None else None)
             self._overlay_dirty = False
+        if self._highlight_dirty:
+            o = self.highlight
+            self._upload("highlight", o.triangle_buffer() if o is not None else None)
+            self._highlight_dirty = False
+        if self._bed_dirty:
+            self._upload("bed", bed_lines(self.bed) if self.bed is not None else None)
+            self._bed_dirty = False
         mvp = _qmatrix(self.mvp())
         f.glEnable(GL_DEPTH_TEST)
         f.glEnable(GL_BLEND)
@@ -303,6 +334,18 @@ class ModelGLView(QOpenGLWidget):
             self._draw(prog, "mesh", GL_TRIANGLES, 24, True)
             f.glDisable(GL_POLYGON_OFFSET_FILL)
             prog.release()
+        if self.highlight is not None and self.style in ("shaded", "edges"):
+            prog = self._mesh_prog
+            prog.bind()
+            prog.setUniformValue("mvp", mvp)
+            prog.setUniformValue("color", QVector3D(0.86, 0.25, 0.25))
+            cam = self.camera
+            key = cam.direction() * 0.8 + cam.up() * 0.45 + cam.right() * -0.35
+            prog.setUniformValue("light", QVector3D(*(key / np.linalg.norm(key)).tolist()))
+            fill = cam.direction() * 0.5 + cam.right() * 0.8
+            prog.setUniformValue("fill", QVector3D(*(fill / np.linalg.norm(fill)).tolist()))
+            self._draw(prog, "highlight", GL_TRIANGLES, 24, True)  # the model sits pushed back
+            prog.release()
         if self.overlay is not None:
             prog = self._mesh_prog
             prog.bind()
@@ -325,6 +368,8 @@ class ModelGLView(QOpenGLWidget):
                 self._upload("edges", self.model.edge_buffer())
             edge = QColor(p["text"]) if self.style == "wireframe" else QColor(p["muted"])
             self._lines("edges", edge, 0.85 if self.style == "wireframe" else 0.35)
+        if self.bed is not None:
+            self._lines("bed", QColor(p["accent"]), 0.7)
         if self.show_grid:
             line = QColor(p["muted"])
             self._lines("grid_minor", line, 0.18)

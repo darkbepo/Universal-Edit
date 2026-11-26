@@ -55,6 +55,8 @@ def main() -> None:
         "flat square": [[[0, 0, 0], [4, 0, 0], [4, 4, 0]], [[0, 0, 0], [4, 4, 0], [0, 4, 0]]],
         "fin": cube[:2] + [[[-5, -5, 0], [5, 5, 0], [0, 0, 8]]] + cube[2:],
         "two cubes": cube + box(10, -5, 0, 20, 5, 10),
+        "touching cubes": cube + box(5, -5, 0, 15, 5, 10),
+        "stacked cubes": cube + box(-5, -5, 10, 15, 5, 20),
     }
     cases: dict = {"models": [], "arrange": [], "settle": [], "fits": [], "filament": []}
     for name, tris in models.items():
