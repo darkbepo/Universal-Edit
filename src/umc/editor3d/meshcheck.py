@@ -99,9 +99,10 @@ def _kinds(f: list[list[int]], edges) -> dict[tuple[int, int], str]:
     return out
 
 
-def _parts(n: int, edges: dict[tuple[int, int], list[int]]) -> list[int]:
+def _parts(n: int, edges: dict[tuple[int, int], list[int]], pairs: bool = False) -> list[int]:
     """Part number per triangle (triangles sharing an edge are one part), numbered in order of
-    each part's first triangle."""
+    each part's first triangle. ``pairs``: join only across edges of exactly two triangles —
+    the surfaces Repair turns as one (parts merely touching along an edge stay apart)."""
     parent = list(range(n))
 
     def find(x: int) -> int:
@@ -111,6 +112,8 @@ def _parts(n: int, edges: dict[tuple[int, int], list[int]]) -> list[int]:
         return x
 
     for tris in edges.values():
+        if pairs and len(tris) != 2:
+            continue
         r0 = find(tris[0])
         for t in tris[1:]:
             r = find(t)
@@ -126,6 +129,36 @@ def _parts(n: int, edges: dict[tuple[int, int], list[int]]) -> list[int]:
             label[r] = len(label)
         out.append(label[r])
     return out
+
+
+def _surfaces(v, f, edges) -> tuple[list[int], list[float], list[bool]]:
+    """Surface number per triangle (joined across two-triangle edges), each surface's signed
+    volume, and whether it's closed (every edge of it "ok")."""
+    group = _parts(len(f), edges, pairs=True)
+    n = max(group) + 1 if group else 0
+    vols = _volumes(v, f, group, n)
+    # closed = it closes up on its own: each of its edges used by two of its own triangles,
+    # once each way (a wall where two parts touch face to face doesn't)
+    runs: dict[tuple[int, int, int], list[int]] = {}
+    for i, (a, b, c) in enumerate(f):
+        g = group[i]
+        for p, q in ((a, b), (b, c), (c, a)):
+            k = (g, p, q) if p < q else (g, q, p)
+            runs.setdefault(k, [0, 0])[0 if p < q else 1] += 1
+    closed = [True] * n
+    for (g, _p, _q), (fw, bw) in runs.items():
+        if fw != 1 or bw != 1:
+            closed[g] = False
+    return group, vols, closed
+
+
+def _tiny(vols: list[float], closed: list[bool]) -> list[bool]:
+    """Closed surfaces too small to print (an open one's volume means nothing)."""
+    biggest = max((abs(x) for x in vols), default=0.0)
+    return [
+        c and abs(x) < TINY_MM3 and abs(x) < TINY_SHARE * biggest
+        for x, c in zip(vols, closed, strict=True)
+    ]
 
 
 def _volumes(v: np.ndarray, f: list[list[int]], part: list[int], parts: int) -> list[float]:
@@ -186,17 +219,9 @@ def check(vertices: np.ndarray, faces: np.ndarray, overhang_deg: float = OVERHAN
     part = _parts(len(good), edges)
     r.parts = max(part) + 1 if part else 0
     vols = _volumes(v, good, part, r.parts)
-    open_part = [False] * r.parts
-    for key, tris in edges.items():
-        if kinds[key] != "ok":
-            for t in tris:
-                open_part[part[t]] = True
-    biggest = max((abs(x) for x in vols), default=0.0)
-    for p in range(r.parts):
-        if not open_part[p] and vols[p] < 0:
-            r.inside_out += 1
-        if abs(vols[p]) < TINY_MM3 and abs(vols[p]) < TINY_SHARE * biggest:
-            r.tiny_parts += 1
+    _group, svols, closed = _surfaces(v, good, edges)
+    r.inside_out = sum(1 for x, c in zip(svols, closed, strict=True) if c and x < 0)
+    r.tiny_parts = sum(_tiny(svols, closed))
     r.holes = len(_hole_loops(good, edges)[0])
     r.volume = abs(sum(vols)) if r.closed and not r.flipped_edges else 0.0
     if good:
@@ -242,11 +267,13 @@ def _hole_loops(f: list[list[int]], edges) -> tuple[list[list[int]], int]:
         used.add(start)
         cur = start[1]
         ok = True
+        on_loop = {start[0]}
         while cur != start[0]:
-            if cur in loop:  # touches itself: not a simple hole
+            if cur in on_loop:  # touches itself: not a simple hole
                 ok = False
                 break
             loop.append(cur)
+            on_loop.add(cur)
             step = next((q for q in nxt.get(cur, []) if (cur, q) not in used), None)
             if step is None:
                 ok = False
@@ -299,31 +326,20 @@ def repair(vertices: np.ndarray, faces: np.ndarray) -> Repaired:
         out.holes_filled += 1
     # 3. closed parts facing inwards: turn them all
     edges = _edges(good)
-    kinds = _kinds(good, edges)
-    part = _parts(len(good), edges)
-    parts = max(part) + 1 if part else 0
-    open_part = [False] * parts
-    for key, tris in edges.items():
-        if kinds[key] != "ok":
-            for t in tris:
-                open_part[part[t]] = True
-    vols = _volumes(v, good, part, parts)
-    inward = [not open_part[p] and vols[p] < 0 for p in range(parts)]
+    group, svols, closed = _surfaces(v, good, edges)
+    inward = [c and x < 0 for x, c in zip(svols, closed, strict=True)]
     for i, (a, b, c) in enumerate(good):
-        if inward[part[i]]:
+        if inward[group[i]]:
             good[i] = [a, c, b]
     out.turned = sum(
-        1 for i in range(original) if flip[i] != inward[part[i]]
+        1 for i in range(original) if flip[i] != inward[group[i]]
     )  # facing differently from before
     # 4. tiny loose bits
     edges = _edges(good)
-    part = _parts(len(good), edges)
-    parts = max(part) + 1 if part else 0
-    vols = _volumes(v, good, part, parts)
-    biggest = max((abs(x) for x in vols), default=0.0)
-    tiny = [abs(x) < TINY_MM3 and abs(x) < TINY_SHARE * biggest for x in vols]
+    group, svols, closed = _surfaces(v, good, edges)
+    tiny = _tiny(svols, closed)
     out.tiny_removed = sum(tiny)
-    good = [t for i, t in enumerate(good) if not tiny[part[i]]]
+    good = [t for i, t in enumerate(good) if not tiny[group[i]]]
     # 5. only the vertices still used, in first-use order
     remap: dict[int, int] = {}
     for t in good:

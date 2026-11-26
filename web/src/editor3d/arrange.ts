@@ -92,6 +92,9 @@ export function layFlat(normal: Vec3, centre: Vec3 = [0, 0, 0]): Matrix {
   return about(m, centre);
 }
 
+/** Would ``m`` leave everything where it is? */
+export const isIdentity = (m: Matrix, eps = 1e-9) => m.every((row, r) => row.every((x, c) => Math.abs(x - (r === c ? 1 : 0)) <= eps));
+
 export const determinant3 = (m: Matrix) =>
   m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
 
@@ -114,8 +117,9 @@ export function applyIndexed(vertices: ArrayLike<number>, faces: ArrayLike<numbe
   const v = new Float64Array(vertices.length);
   for (let i = 0; i < vertices.length; i += 3)
     for (let r = 0; r < 3; r++) v[i + r] = m[r][0] * vertices[i] + m[r][1] * vertices[i + 1] + m[r][2] * vertices[i + 2] + m[r][3];
+  if (determinant3(m) >= 0) return { vertices: v, faces: faces as Uint32Array }; // shared: never changed
   const f = Uint32Array.from(faces);
-  if (determinant3(m) < 0) for (let i = 0; i < f.length; i += 3) [f[i + 1], f[i + 2]] = [f[i + 2], f[i + 1]];
+  for (let i = 0; i < f.length; i += 3) [f[i + 1], f[i + 2]] = [f[i + 2], f[i + 1]];
   return { vertices: v, faces: f };
 }
 
@@ -173,8 +177,14 @@ export function centred(pos: ArrayLike<number>): Matrix {
 
 export const fits = (size: Vec3, bed: Vec3) => size.map((s, i) => Math.max(0, s - bed[i]));
 
-export function fitNote(size: Vec3, bed: Vec3): string {
+/** Does the model (its bounds) fit on the bed (centred on X / Y = 0, from Z = 0 up)? */
+export function fitNote(lo: Vec3, hi: Vec3, bed: Vec3): string {
+  const size: Vec3 = [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]];
   const over = fits(size, bed);
   const parts = ["wide", "deep", "tall"].flatMap((w, i) => (over[i] > 0 ? [`${over[i].toFixed(1)} mm too ${w}`] : []));
-  return parts.length ? `Too big for the bed: ${parts.join(", ")}.` : "Fits the printer's bed.";
+  if (parts.length) return `Too big for the bed: ${parts.join(", ")}.`;
+  const [w, d] = bed;
+  const off = Math.max(0, -w / 2 - lo[0], hi[0] - w / 2, -d / 2 - lo[1], hi[1] - d / 2);
+  if (off > 0.05) return `Hangs ${off.toFixed(1)} mm off the edge of the bed — Centre moves it back.`;
+  return "Fits the printer's bed.";
 }

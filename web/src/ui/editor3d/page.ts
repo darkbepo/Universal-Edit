@@ -243,8 +243,9 @@ export class ViewerPage {
     this.infillBox.value = String(Math.round(this.infill * 100));
     const filamentChanged = () => {
       this.material = this.materialBox.value;
-      const v = Number(this.infillBox.value);
-      this.infill = Number.isFinite(v) ? Math.min(1, Math.max(0, v / 100)) : this.infill;
+      const v = this.infillBox.value.trim() === "" ? NaN : Number(this.infillBox.value);
+      if (Number.isFinite(v)) this.infill = Math.min(1, Math.max(0, v / 100));
+      this.infillBox.value = String(Math.round(this.infill * 100));
       try {
         localStorage.setItem("umc-filament", `${this.material}|${this.infill}`);
       } catch {
@@ -373,6 +374,7 @@ export class ViewerPage {
       return;
     }
     this.endEdit();
+    if (f !== this.current) this.closePanel(); // its results are about the other file
     this.current = f;
     this.fileBox.selectedIndex = this.files.indexOf(f);
     this.title.textContent = f.name;
@@ -451,7 +453,7 @@ export class ViewerPage {
       const pos = scenePositions(sc);
       const [lo, hi] = A.bounds(pos);
       const size: Vec3 = [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]];
-      this.arrangePanel.showModel(size, A.centreOf(pos), A.fitNote(size, this.bed.slice(1) as Vec3));
+      this.arrangePanel.showModel(size, A.centreOf(pos), A.fitNote(lo, hi, this.bed.slice(1) as Vec3));
     }
     if (this.panel === "check" && sc !== this.checkedScene) this.runCheck();
     const preview = this.editing?.preview ?? null;
@@ -961,6 +963,12 @@ export class ViewerPage {
     this.panel = "";
     this.setLayingFlat(false);
     this.checkId++;
+    if (this.repairScene) {
+      this.repairId++; // a repair still running is dropped
+      this.repairScene = null;
+      this.checkPanel.repairButton.disabled = false;
+      this.checkPanel.repaired.textContent = "";
+    }
     this.setHighlight(null);
     this.arrangePanel.el.hidden = this.checkPanel.el.hidden = true;
     this.sideInfo.hidden = false;
@@ -977,7 +985,9 @@ export class ViewerPage {
     const sc = this.logoScene;
     if (!sc || (!sc.base && !sc.logos.length) || this.editing || this.saving) return;
     const pos = scenePositions(sc);
-    this.push(arranged(sc, settleIt ? A.settle(pos, m) : m));
+    const final = settleIt ? A.settle(pos, m) : m;
+    if (A.isIdentity(final)) return; // nothing would move: no undo step, nothing to save
+    this.push(arranged(sc, final));
   }
 
   rotate(axis: "x" | "y" | "z", degrees: number): void {
@@ -1057,7 +1067,8 @@ export class ViewerPage {
 
   private infoRowsOf(m: ViewModel): [string, string][] {
     const rows = describe(m);
-    rows.push(["Printer bed", A.fitNote(m.size, this.bed.slice(1) as Vec3)]);
+    const [lo, hi] = A.bounds(m.positions);
+    rows.push(["Printer bed", A.fitNote(lo, hi, this.bed.slice(1) as Vec3)]);
     if (m.volumeMm3) {
       let area = this.areaCache.get(m.positions);
       if (area === undefined) {
@@ -1083,7 +1094,7 @@ export class ViewerPage {
     if (!m) return;
     this.checkedScene = sc;
     this.checkPanel.checking();
-    const request: CheckRequest = { kind: "check", id: ++this.checkId, positions: m.positions.slice(), angle: Number(this.checkPanel.angle.value) || 45 };
+    const request: CheckRequest = { kind: "check", id: ++this.checkId, positions: m.positions.slice(), angle: Math.min(89, Math.max(10, Number(this.checkPanel.angle.value) || 45)) };
     this.checkPositions = m.positions;
     this.helper().postMessage(request, [request.positions.buffer]);
   }
@@ -1126,8 +1137,16 @@ export class ViewerPage {
   private onRepaired(a: RepairAnswer): void {
     if (a.id !== this.repairId) return;
     const sc = this.repairScene;
+    this.repairScene = null;
+    if (!a.error && (this.editing || this.panel !== "check" || this.history?.scene !== sc)) {
+      this.checkPanel.repaired.textContent = "The model changed while it was being repaired — press Repair again.";
+      this.checkPanel.repairButton.disabled = false;
+      this.repaired++;
+      return;
+    }
     this.checkPanel.repaired.textContent = a.error || a.note;
-    if (a.changed && a.positions && a.after && sc?.base && this.history?.scene === sc) {
+    if (a.error) this.checkPanel.repairButton.disabled = false;
+    if (a.changed && a.positions && a.after && sc?.base) {
       const after = a.after;
       const [lo, hi] = A.bounds(a.positions);
       const base: ViewModel = {

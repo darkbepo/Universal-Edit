@@ -57,6 +57,8 @@ def main() -> None:
         "two cubes": cube + box(10, -5, 0, 20, 5, 10),
         "touching cubes": cube + box(5, -5, 0, 15, 5, 10),
         "stacked cubes": cube + box(-5, -5, 10, 15, 5, 20),
+        "touching, one inside out": cube + [[t[0], t[2], t[1]] for t in box(5, 5, 0, 15, 15, 10)],
+        "big open shell and a tiny box": box(-100, -100, 0, 100, 100, 2)[2:] + tiny,
     }
     cases: dict = {"models": [], "arrange": [], "settle": [], "fits": [], "filament": []}
     for name, tris in models.items():
@@ -162,17 +164,21 @@ def main() -> None:
         )
     cases["centred"] = [[r6(x) for x in row] for row in arrange.centred(v + [30, -12, 4])]
     cases["centred_soup"] = soup(box(25, -17, 4, 35, -7, 14))
-    for size, bed in [
-        ((100, 100, 100), (220, 220, 250)),
-        ((300, 10, 260), (256, 256, 256)),
-        ((220, 220.5, 250), (220, 220, 250)),
+    for lo, hi, bed in [
+        ((-50, -50, 0), (50, 50, 100), (220, 220, 250)),
+        ((-150, -5, 0), (150, 5, 260), (256, 256, 256)),
+        ((-110, -110.25, 0), (110, 110.25, 250), (220, 220, 250)),
+        ((80, -10, 0), (140, 10, 30), (220, 220, 250)),
+        ((-30, -125, 0), (30, -85, 10), (220, 220, 250)),
     ]:
+        size = [b - a for a, b in zip(lo, hi, strict=True)]
         cases["fits"].append(
             {
-                "size": size,
+                "lo": lo,
+                "hi": hi,
                 "bed": bed,
                 "over": [r6(x) for x in arrange.fits(size, bed)],
-                "note": arrange.fit_note(size, bed),
+                "note": arrange.fit_note(lo, hi, bed),
             }
         )
     for vol, area, mat, infill in [

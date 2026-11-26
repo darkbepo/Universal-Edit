@@ -98,6 +98,11 @@ def lay_flat(normal, centre=(0.0, 0.0, 0.0)) -> Matrix:
     return _about(m, centre)
 
 
+def is_identity(m: Matrix, eps: float = 1e-9) -> bool:
+    """Would ``m`` leave everything where it is?"""
+    return all(abs(m[r][c] - (1.0 if r == c else 0.0)) <= eps for r in range(4) for c in range(4))
+
+
 def determinant3(m: Matrix) -> float:
     return (
         m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
@@ -110,7 +115,7 @@ def apply(vertices: np.ndarray, faces: np.ndarray, m: Matrix) -> tuple[np.ndarra
     """Transformed copies; a mirroring matrix reverses the triangles so they still face out."""
     a = np.array(m, dtype=np.float64)
     v = vertices @ a[:3, :3].T + a[:3, 3]
-    f = faces[:, [0, 2, 1]].copy() if determinant3(m) < 0 else faces.copy()
+    f = faces[:, [0, 2, 1]].copy() if determinant3(m) < 0 else faces  # shared: never changed
     return v, f
 
 
@@ -157,10 +162,16 @@ def fits(size, bed) -> list[float]:
     return [max(0.0, float(s) - float(b)) for s, b in zip(size, bed, strict=True)]
 
 
-def fit_note(size, bed) -> str:
+def fit_note(lo, hi, bed) -> str:
+    """Does the model (its bounds) fit on the bed (centred on X / Y = 0, from Z = 0 up)?"""
+    size = [float(b) - float(a) for a, b in zip(lo, hi, strict=True)]
     over = fits(size, bed)
     words = ("wide", "deep", "tall")
     parts = [f"{o:.1f} mm too {w}" for o, w in zip(over, words, strict=True) if o > 0]
-    if not parts:
-        return "Fits the printer's bed."
-    return "Too big for the bed: " + ", ".join(parts) + "."
+    if parts:
+        return "Too big for the bed: " + ", ".join(parts) + "."
+    w, d = float(bed[0]), float(bed[1])
+    off = max(0.0, -w / 2 - lo[0], hi[0] - w / 2, -d / 2 - lo[1], hi[1] - d / 2)
+    if off > 0.05:
+        return f"Hangs {off:.1f} mm off the edge of the bed — Centre moves it back."
+    return "Fits the printer's bed."

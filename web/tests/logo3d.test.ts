@@ -9,7 +9,9 @@ import {
 } from "../src/editor3d/logo";
 import type { ViewModel } from "../src/editor3d/mesh";
 import { faceArea, flatFace, hit, overhang, ray } from "../src/editor3d/pick";
-import { BADGE_GAP_MM, buildLogo, combined, DEFAULT_SETTINGS, defaultSaveName, emptyScene, History, sceneStl, without, withLogo } from "../src/editor3d/scene";
+import * as A from "../src/editor3d/arrange";
+import { check, weld } from "../src/editor3d/meshcheck";
+import { arranged, BADGE_GAP_MM, buildLogo, combined, DEFAULT_SETTINGS, defaultSaveName, emptyScene, History, type Scene, scenePositions, sceneStl, setUndoBytes, UNDO_BYTES, without, withLogo } from "../src/editor3d/scene";
 
 const grid = (rows: string[]) => ({ m: Uint8Array.from(rows.join("").split(""), (c) => (c === "#" ? 1 : 0)), w: rows[0].length, h: rows.length });
 const close = (a: number, b: number, tol = 1e-6) => expect(Math.abs(a - b)).toBeLessThanOrEqual(tol * Math.max(1, Math.abs(b)));
@@ -229,6 +231,65 @@ describe("scene", () => {
     for (const q of quads) for (const t of [[0, 1, 2], [0, 2, 3]]) for (const k of t) pos.push(...c(q[k][0], q[k][1], q[k][2]));
     return { name: "box.stl", positions: Float32Array.from(pos), triangles: 12, parts: 1, size: [40, 40, 10], watertight: true, volumeMm3: 16000 };
   };
+
+  const boundsOf = (ms: Mesh[]) => {
+    const all: number[] = [];
+    for (const x of ms) all.push(...x.vertices);
+    return A.bounds(all);
+  };
+
+  it("Change… after arranging rebuilds the logo that's there (mirrors the desktop)", () => {
+    const base = box();
+    const lg = buildLogo(picture(), { ...DEFAULT_SETTINGS, width: 20, thickness: 2 }, [0, 0, 10], [0, 0, 1], base, [2, 3]);
+    let sc: Scene = { base, logos: [lg] };
+    for (const m of [A.rotate("z", 90, A.centreOf(base.positions)), A.scale(2, 2, 2), A.rotate("x", -90, A.centreOf(scenePositions(sc)))])
+      sc = arranged(sc, A.settle(scenePositions(sc), m));
+    const now = sc.logos[0];
+    close(now.settings.width, 40);
+    close(now.width, 40);
+    const again = buildLogo(now.picture, now.settings, now.point, now.normal, sc.base, null);
+    const [lo1, hi1] = boundsOf(now.meshes), [lo2, hi2] = boundsOf(again.meshes);
+    closeAll(lo1, lo2, 1e-4);
+    closeAll(hi1, hi2, 1e-4);
+  });
+
+  it("mirroring makes logos again, not mirrored", () => {
+    const base = box();
+    const lg = buildLogo(picture(), { ...DEFAULT_SETTINGS, width: 20, rotation: 30 }, [5, 0, 10], [0, 0, 1], base, [2, 3]);
+    const out = arranged({ base, logos: [lg] }, A.mirror("x", A.centreOf(base.positions)));
+    const now = out.logos[0];
+    closeAll(now.point!, [-5, 0, 10]);
+    const fresh = buildLogo(now.picture, now.settings, now.point, now.normal, out.base, null);
+    closeAll(Array.from(now.meshes[0].vertices), Array.from(fresh.meshes[0].vertices));
+    expect(check({ vertices: Float64Array.from(now.meshes[0].vertices), faces: Array.from({ length: now.meshes[0].faces.length / 3 }, (_, i) => [0, 1, 2].map((k) => now.meshes[0].faces[i * 3 + k]) as [number, number, number]) }).volume).toBeGreaterThan(0);
+  });
+
+  it("undo keeps a bounded amount of models", () => {
+    const old = UNDO_BYTES;
+    setUndoBytes(60_000);
+    try {
+      const b = box();
+      const big = new Float32Array(b.positions.length * 40);
+      for (let i = 0; i < 40; i++) big.set(b.positions, i * b.positions.length); // ~ 17 kB a step
+      const hs = new History({ base: { ...b, positions: big }, logos: [] });
+      for (let i = 0; i < 10; i++) hs.push(arranged(hs.scene, A.translate(i + 1, 0, 0)));
+      expect(hs.undoStack.length).toBeGreaterThan(0);
+      expect(hs.undoStack.length).toBeLessThan(4);
+      expect(hs.undo()).toBe(true);
+    } finally {
+      setUndoBytes(old);
+    }
+  });
+
+  it("a big model is checked without running out of stack", () => {
+    const b = box();
+    const n = 20_000; // 240 000 triangles, boxes side by side
+    const pos = new Float32Array(b.positions.length * n);
+    for (let i = 0; i < n; i++) for (let j = 0; j < b.positions.length; j++) pos[i * b.positions.length + j] = b.positions[j] + (j % 3 === 0 ? i * 50 : 0);
+    const r = check(weld(pos));
+    expect(r.triangles).toBe(n * 12);
+    expect(r.parts).toBe(n);
+  });
 
   it("a logo on the top face stands on it and sinks in", () => {
     const base = box();

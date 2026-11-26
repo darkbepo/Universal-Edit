@@ -113,7 +113,8 @@ function kindsOf(f: Tri[], edges: Map<string, number[]>): Map<string, string> {
   return out;
 }
 
-function partsOf(n: number, edges: Map<string, number[]>): number[] {
+/** Part number per triangle; ``pairs``: join only across two-triangle edges (see _parts). */
+function partsOf(n: number, edges: Map<string, number[]>, pairs = false): number[] {
   const parent = Array.from({ length: n }, (_, i) => i);
   const find = (x: number) => {
     while (parent[x] !== x) {
@@ -123,6 +124,7 @@ function partsOf(n: number, edges: Map<string, number[]>): number[] {
     return x;
   };
   for (const tris of edges.values()) {
+    if (pairs && tris.length !== 2) continue;
     let r0 = find(tris[0]);
     for (const t of tris.slice(1)) {
       let r = find(t);
@@ -140,6 +142,38 @@ function partsOf(n: number, edges: Map<string, number[]>): number[] {
     out.push(label.get(r)!);
   }
   return out;
+}
+
+const count = (labels: number[]) => {
+  let m = -1;
+  for (const x of labels) if (x > m) m = x; // (Math.max(...labels) overflows the stack on big models)
+  return m + 1;
+};
+
+/** Surface per triangle (joined across two-triangle edges), signed volumes, closed or not. */
+function surfacesOf(v: Float64Array, f: Tri[], edges: Map<string, number[]>): { group: number[]; vols: number[]; closed: boolean[] } {
+  const group = partsOf(f.length, edges, true);
+  const n = count(group);
+  const vols = volumesOf(v, f, group, n);
+  // closed = it closes up on its own: each of its edges used by two of its own triangles, once
+  // each way (a wall where two parts touch face to face doesn't)
+  const runs = new Map<string, [number, number]>();
+  f.forEach(([a, b, c], i) => {
+    for (const [p, q] of [[a, b], [b, c], [c, a]]) {
+      const k = p < q ? `${group[i]},${p},${q}` : `${group[i]},${q},${p}`;
+      let r = runs.get(k);
+      if (!r) runs.set(k, (r = [0, 0]));
+      r[p < q ? 0 : 1]++;
+    }
+  });
+  const closed = new Array<boolean>(n).fill(true);
+  for (const [k, [fw, bw]] of runs) if (fw !== 1 || bw !== 1) closed[Number(k.slice(0, k.indexOf(",")))] = false;
+  return { group, vols, closed };
+}
+
+function tinyOf(vols: number[], closed: boolean[]): boolean[] {
+  const biggest = vols.reduce((m, x) => Math.max(m, Math.abs(x)), 0);
+  return vols.map((x, i) => closed[i] && Math.abs(x) < TINY_MM3 && Math.abs(x) < TINY_SHARE * biggest);
 }
 
 function volumesOf(v: Float64Array, f: Tri[], part: number[], parts: number): number[] {
@@ -191,15 +225,11 @@ export function check(m: Indexed, overhangDeg = OVERHANG_DEG): Report {
     else if (k === "flipped") r.flipped_edges++;
   }
   const part = partsOf(good.length, edges);
-  r.parts = part.length ? Math.max(...part) + 1 : 0;
+  r.parts = count(part);
   const vols = volumesOf(v, good, part, r.parts);
-  const openPart = new Array<boolean>(r.parts).fill(false);
-  for (const [key, tris] of edges) if (kinds.get(key) !== "ok") for (const t of tris) openPart[part[t]] = true;
-  const biggest = vols.reduce((m2, x) => Math.max(m2, Math.abs(x)), 0);
-  for (let p = 0; p < r.parts; p++) {
-    if (!openPart[p] && vols[p] < 0) r.inside_out++;
-    if (Math.abs(vols[p]) < TINY_MM3 && Math.abs(vols[p]) < TINY_SHARE * biggest) r.tiny_parts++;
-  }
+  const sf = surfacesOf(v, good, edges);
+  r.inside_out = sf.vols.filter((x, i) => sf.closed[i] && x < 0).length;
+  r.tiny_parts = tinyOf(sf.vols, sf.closed).filter(Boolean).length;
   r.holes = holeLoops(good, edges).loops.length;
   r.volume = isClosed(r) && !r.flipped_edges ? Math.abs(vols.reduce((s, x) => s + x, 0)) : 0;
   if (good.length) {
@@ -246,15 +276,17 @@ function holeLoops(f: Tri[], edges: Map<string, number[]>): { loops: number[][];
   for (const [s0, s1] of order) {
     if (used.has(`${s0},${s1}`)) continue;
     const loop = [s0];
+    const onLoop = new Set([s0]);
     used.add(`${s0},${s1}`);
     let cur = s1;
     let ok = true;
     while (cur !== s0) {
-      if (loop.includes(cur)) {
+      if (onLoop.has(cur)) {
         ok = false;
         break;
       }
       loop.push(cur);
+      onLoop.add(cur);
       const step = (nxt.get(cur) ?? []).find((q) => !used.has(`${cur},${q}`));
       if (step === undefined) {
         ok = false;
@@ -301,24 +333,16 @@ export function repair(m: Indexed): Repaired {
   }
   // 3. closed parts facing inwards: turn them all
   edges = edgesOf(good);
-  const kinds = kindsOf(good, edges);
-  let part = partsOf(good.length, edges);
-  let parts = part.length ? Math.max(...part) + 1 : 0;
-  const openPart = new Array<boolean>(parts).fill(false);
-  for (const [key, tris] of edges) if (kinds.get(key) !== "ok") for (const t of tris) openPart[part[t]] = true;
-  let vols = volumesOf(v, good, part, parts);
-  const inward = vols.map((x, p) => !openPart[p] && x < 0);
-  good = good.map(([a, b, c], i) => (inward[part[i]] ? [a, c, b] : [a, b, c]));
-  for (let i = 0; i < original; i++) if (flip[i] !== inward[part[i]]) out.turned++;
+  const sf = surfacesOf(v, good, edges);
+  const inward = sf.vols.map((x, i) => sf.closed[i] && x < 0);
+  good = good.map(([a, b, c], i) => (inward[sf.group[i]] ? [a, c, b] : [a, b, c]));
+  for (let i = 0; i < original; i++) if (flip[i] !== inward[sf.group[i]]) out.turned++;
   // 4. tiny loose bits
   edges = edgesOf(good);
-  part = partsOf(good.length, edges);
-  parts = part.length ? Math.max(...part) + 1 : 0;
-  vols = volumesOf(v, good, part, parts);
-  const biggest = vols.reduce((s, x) => Math.max(s, Math.abs(x)), 0);
-  const tiny = vols.map((x) => Math.abs(x) < TINY_MM3 && Math.abs(x) < TINY_SHARE * biggest);
+  const sf2 = surfacesOf(v, good, edges);
+  const tiny = tinyOf(sf2.vols, sf2.closed);
   out.tiny_removed = tiny.filter(Boolean).length;
-  good = good.filter((_, i) => !tiny[part[i]]);
+  good = good.filter((_, i) => !tiny[sf2.group[i]]);
   // 5. only the vertices still used, in first-use order
   const remap = new Map<number, number>();
   for (const t of good) for (const x of t) if (!remap.has(x)) remap.set(x, remap.size);

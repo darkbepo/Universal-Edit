@@ -363,6 +363,7 @@ class ViewerPage(QWidget):
         self.infill_box.setDecimals(0)
         self.infill_box.setSuffix(" % infill")
         self.infill_box.setValue(round(self.infill * 100))
+        self.infill_box.setKeyboardTracking(False)  # updates when typing ends, not per key
         self.infill_box.valueChanged.connect(self._filament_changed)
         fil.addWidget(self.material_box)
         fil.addWidget(self.infill_box)
@@ -438,6 +439,8 @@ class ViewerPage(QWidget):
             self.show_file(self.files[index])
 
     def show_file(self, f: DetectedFile) -> None:
+        if self.editing is None and f != self.current:
+            self.close_panel()  # its results are about the other file
         if self.editing is not None:
             # a model dropped while a logo is being made: it waits in the list
             self._select_current()
@@ -521,7 +524,8 @@ class ViewerPage(QWidget):
         if model is None:
             return
         rows = describe(model)
-        rows.append(("Printer bed", A.fit_note(model.size, self.bed[1:])))
+        lo, hi = model.bounds
+        rows.append(("Printer bed", A.fit_note(lo.tolist(), hi.tolist(), self.bed[1:])))
         if model.volume_mm3:
             rows += FIL.rows(model.volume_mm3, model.area, self.material, self.infill)
         for label, value in rows:
@@ -584,7 +588,7 @@ class ViewerPage(QWidget):
             pos = sc.positions()
             lo, hi = A.bounds(pos)
             size = [b - a for a, b in zip(lo, hi, strict=True)]
-            self.arrange_panel.show_model(size, A.centre_of(pos), A.fit_note(size, self.bed[1:]))
+            self.arrange_panel.show_model(size, A.centre_of(pos), A.fit_note(lo, hi, self.bed[1:]))
         if self.panel == "check" and sc is not self.checked_scene:
             self.run_check()
 
@@ -678,7 +682,10 @@ class ViewerPage(QWidget):
         if sc is None or self.saving:
             return
         pos = sc.positions()
-        self._push(sc.arranged(A.settle(pos, m) if settle else m))
+        final = A.settle(pos, m) if settle else m
+        if A.is_identity(final):
+            return  # nothing would move: no undo step, nothing to save
+        self._push(sc.arranged(final))
 
     def _centre(self) -> tuple[float, float, float]:
         sc = self._scene()
@@ -778,7 +785,13 @@ class ViewerPage(QWidget):
             self.view.set_highlight(hl)
             self.checked.emit()
 
-        self.tasks.submit("check", lambda: MC.check(m.vertices, m.faces, angle), done)
+        def failed(_msg: str) -> None:
+            if self.panel == "check":
+                self.check_panel.result.setText("Couldn't check this model.")
+                self.check_panel.repair_button.setEnabled(True)
+            self.checked.emit()
+
+        self.tasks.submit("check", lambda: MC.check(m.vertices, m.faces, angle), done, failed)
 
     def repair(self) -> None:
         """One undo step: the model (not the logos) repaired, then checked again."""
@@ -796,8 +809,21 @@ class ViewerPage(QWidget):
 
         def done(result) -> None:
             x, after = result
+            still = (
+                self.panel == "check"
+                and self.editing is None
+                and self.history is not None
+                and self.history.scene is sc
+            )
+            if not still:  # the model changed (or a logo is being made): not applied
+                self.check_panel.repaired.setText(
+                    "The model changed while it was being repaired — press Repair again."
+                )
+                self.check_panel.repair_button.setEnabled(True)
+                self.repaired.emit()
+                return
             self.check_panel.repaired.setText(MC.repaired_note(x, after))
-            if x.changed and self.history is not None and self.history.scene is sc:
+            if x.changed:
                 fixed = ViewModel(
                     base.name, x.vertices, x.faces, after.parts,
                     after.closed and not after.problems, after.volume or None,
@@ -807,7 +833,12 @@ class ViewerPage(QWidget):
                 self.run_check()
             self.repaired.emit()
 
-        self.tasks.submit("repair", work, done, exclusive=False)
+        def failed(_msg: str) -> None:
+            self.check_panel.repaired.setText("Couldn't repair this model.")
+            self.check_panel.repair_button.setEnabled(True)
+            self.repaired.emit()
+
+        self.tasks.submit("repair", work, done, failed, exclusive=False)
 
     # ------------------------------------------------------------ making a logo
     def start_logo(self, index: int | None = None) -> None:

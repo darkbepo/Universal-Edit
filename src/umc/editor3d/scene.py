@@ -9,6 +9,7 @@ the older ones for undo. ``combined`` is one ViewModel for the view and the info
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -164,20 +165,48 @@ class Scene:
         return replace(self, base=base)
 
     def arranged(self, m: A.Matrix) -> Scene:
-        """Everything moved / turned / scaled by ``m``: the model and every logo (their
-        meshes, and the point / direction they were placed at, so Change… still works)."""
+        """Everything moved / turned / scaled by ``m``: the model and every logo. A logo keeps
+        what Change… needs (point, direction, its turn on the face, sizes scaled with it); when
+        ``m`` mirrors, logos are made again the right way round (text never reads backwards)."""
+        det = A.determinant3(m)
+        k = abs(det) ** (1 / 3)
         base = self.base
         if base is not None:
             v, f = A.apply(base.vertices, base.faces, m)
-            volume = base.volume_mm3 * abs(A.determinant3(m)) if base.volume_mm3 else None
+            volume = base.volume_mm3 * abs(det) if base.volume_mm3 else None
             base = ViewModel(base.name, v, f, base.parts, base.watertight, volume)
         logos = []
         for lg in self.logos:
-            meshes = tuple(L.Mesh(*A.apply(x.vertices, x.faces, m)) for x in lg.meshes)
+            s = lg.settings
             point = A.apply_point(m, lg.point) if lg.point is not None else None
             normal = A.apply_normal(m, lg.normal) if lg.normal is not None else None
-            logos.append(replace(lg, meshes=meshes, point=point, normal=normal))
+            s = replace(
+                s,
+                width=s.width * k,
+                thickness=s.thickness * k,
+                sink=s.sink * k,
+                rotation=_turned(m, lg.normal or (0.0, 0.0, 1.0), normal or (0.0, 0.0, 1.0), s),
+            )
+            if det < 0:  # rebuilt where it now is, from the picture, not mirrored
+                try:
+                    logos.append(build_logo(lg.picture, s, point, normal, base))
+                    continue
+                except L.LogoError:
+                    pass
+            meshes = tuple(L.Mesh(*A.apply(x.vertices, x.faces, m)) for x in lg.meshes)
+            logos.append(
+                replace(
+                    lg, settings=s, meshes=meshes, point=point, normal=normal,
+                    width=lg.width * k, height=lg.height * k, overlap=lg.overlap * k**3,
+                )
+            )  # fmt: skip
         return Scene(base, tuple(logos))
+
+    @property
+    def nbytes(self) -> int:
+        """Memory the model's own arrays take (for the undo limit)."""
+        b = self.base
+        return 0 if b is None else int(b.vertices.nbytes + b.faces.nbytes)
 
     def positions(self) -> np.ndarray:
         """Every corner of the model and the logos (for bounds)."""
@@ -246,6 +275,21 @@ def export(scene: Scene, ext: str) -> bytes:
     return save_model(trimesh.Scene(mesh), ext, opts)
 
 
+def _turned(m: A.Matrix, old_normal, new_normal, s: LogoSettings) -> float:
+    """The logo's turn on its face after ``m``: its "right" direction moved by ``m``, measured
+    against the new face's own starting direction (``logo.frame``)."""
+    x_old = L.frame(old_normal, s.rotation)[0]
+    a = np.array(m, dtype=np.float64)[:3, :3]
+    x = a @ x_old
+    n = np.asarray(new_normal, float)
+    x = x - n * float(x @ n)
+    length = float(np.linalg.norm(x))
+    if length < 1e-12:
+        return s.rotation
+    bx, by, _n = L.frame(n, 0.0)
+    return math.degrees(math.atan2(float(x @ by), float(x @ bx)))
+
+
 def default_save_name(source: Path | None, ext: str, logos: bool = True) -> str:
     """ "<name> with logo.3mf" / "<name> edited.3mf"; "logo.3mf" in the empty viewer."""
     if source is None:
@@ -253,9 +297,13 @@ def default_save_name(source: Path | None, ext: str, logos: bool = True) -> str:
     return f"{source.stem} {'with logo' if logos else 'edited'}.{ext}"
 
 
+UNDO_BYTES = 500 * 1024 * 1024  # models kept for undo (Arrange makes a new one each step)
+
+
 @dataclass
 class History:
-    """Undo / redo of whole scenes (scenes share their meshes, so this is cheap)."""
+    """Undo / redo of whole scenes. Logos share their meshes; an arranged model is a new
+    copy, so the oldest steps are dropped once the models kept pass ``UNDO_BYTES``."""
 
     scene: Scene = field(default_factory=Scene)
     undo_stack: list[Scene] = field(default_factory=list)
@@ -271,6 +319,19 @@ class History:
         self.undo_stack.append(self.scene)
         self.redo_stack.clear()
         self.scene = scene
+        self._trim()
+
+    def _trim(self) -> None:
+        seen: set[int] = set()
+        total = 0
+        for i, sc in enumerate(reversed([*self.undo_stack, self.scene])):
+            key = id(sc.base)
+            if key not in seen:
+                seen.add(key)
+                total += sc.nbytes
+            if total > UNDO_BYTES and i > 0:
+                del self.undo_stack[: len(self.undo_stack) - i + 1]
+                return
 
     def undo(self) -> bool:
         if not self.undo_stack:

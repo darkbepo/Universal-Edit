@@ -4,7 +4,7 @@
 import { applyIndexed, applyNormal, applyPoint, applySoup, bounds, determinant3, type Matrix } from "./arrange";
 import type { Vec3 } from "./camera";
 import {
-  badge, LogoError, plateOutline, shapeArea, placedLogo, placement, positions, shapeFromPicture, transform, footprint, SINK_MM, volume,
+  badge, frame, LogoError, plateOutline, shapeArea, placedLogo, placement, positions, shapeFromPicture, transform, footprint, SINK_MM, volume,
   type Detail, type MaskMode, type Mesh, type PlateKind, type Shape,
 } from "./logo";
 import type { ModelStats, ViewModel } from "./mesh";
@@ -115,21 +115,61 @@ export const without = (sc: Scene, index: number): Scene => ({ base: sc.base, lo
 /** The model replaced (Repair), logos kept. */
 export const withBase = (sc: Scene, base: ViewModel | null): Scene => ({ base, logos: sc.logos });
 
-/** Everything moved / turned / scaled by ``m``: the model and every logo (meshes, and the point
- * / direction they were placed at, so Change… still works). */
+/** Everything moved / turned / scaled by ``m`` (see scene.py ``arranged``): logos keep what
+ * Change… needs (point, direction, turn on the face, sizes scaled); when ``m`` mirrors they are
+ * made again the right way round. */
 export function arranged(sc: Scene, m: Matrix): Scene {
+  const det = determinant3(m);
+  const k = Math.cbrt(Math.abs(det));
   let base = sc.base;
   if (base) {
-    const det = Math.abs(determinant3(m));
-    base = { ...base, positions: applySoup(base.positions, m), size: sizeOf(applySoup(base.positions, m)), volumeMm3: base.volumeMm3 !== null ? base.volumeMm3 * det : null };
+    const positions = applySoup(base.positions, m);
+    base = { ...base, positions, size: sizeOf(positions), volumeMm3: base.volumeMm3 !== null ? base.volumeMm3 * Math.abs(det) : null };
   }
-  const logos = sc.logos.map((lg) => ({
-    ...lg,
-    meshes: lg.meshes.map((x) => applyIndexed(x.vertices, x.faces, m)),
-    point: lg.point ? applyPoint(m, lg.point) : null,
-    normal: lg.normal ? applyNormal(m, lg.normal) : null,
-  }));
+  const logos = sc.logos.map((lg): Logo => {
+    const point = lg.point ? applyPoint(m, lg.point) : null;
+    const normal = lg.normal ? applyNormal(m, lg.normal) : null;
+    const s: LogoSettings = {
+      ...lg.settings,
+      width: lg.settings.width * k,
+      thickness: lg.settings.thickness * k,
+      sink: lg.settings.sink * k,
+      rotation: turned(m, lg.normal ?? [0, 0, 1], normal ?? [0, 0, 1], lg.settings),
+    };
+    if (det < 0) {
+      try {
+        return buildLogo(lg.picture, s, point, normal, base, null);
+      } catch (err) {
+        if (!(err instanceof LogoError)) throw err;
+      }
+    }
+    return {
+      ...lg, settings: s, point, normal, meshes: lg.meshes.map((x) => applyIndexed(x.vertices, x.faces, m)),
+      width: lg.width * k, height: lg.height * k, overlap: lg.overlap * k ** 3,
+    };
+  });
   return { base, logos };
+}
+
+/** The logo's turn on its face after ``m`` (see scene.py ``_turned``). */
+function turned(m: Matrix, oldNormal: Vec3, newNormal: Vec3, s: LogoSettings): number {
+  const xo = frame(oldNormal, s.rotation)[0];
+  let x = [0, 1, 2].map((r) => m[r][0] * xo[0] + m[r][1] * xo[1] + m[r][2] * xo[2]);
+  const ln = Math.hypot(...newNormal);
+  const n = newNormal.map((c) => c / ln);
+  const dn = x[0] * n[0] + x[1] * n[1] + x[2] * n[2];
+  x = x.map((c, i) => c - n[i] * dn);
+  if (Math.hypot(...x) < 1e-12) return s.rotation;
+  const [bx, by] = frame(n as Vec3, 0);
+  return (Math.atan2(x[0] * by[0] + x[1] * by[1] + x[2] * by[2], x[0] * bx[0] + x[1] * bx[1] + x[2] * bx[2]) * 180) / Math.PI;
+}
+
+/** Memory the model's own soup takes (for the undo limit). */
+export const sceneBytes = (sc: Scene) => sc.base?.positions.byteLength ?? 0;
+export let UNDO_BYTES = 300 * 1024 * 1024;
+/** Tests only. */
+export function setUndoBytes(n: number): void {
+  UNDO_BYTES = n;
 }
 
 function sizeOf(pos: Float32Array): [number, number, number] {
@@ -233,6 +273,26 @@ export class History {
     this.undoStack.push(this.scene);
     this.redoStack = [];
     this.scene = sc;
+    this.trim();
+  }
+
+  /** An arranged model is a new copy: drop the oldest steps once the models kept pass
+   * ``UNDO_BYTES``. */
+  private trim(): void {
+    const seen = new Set<unknown>();
+    let total = 0;
+    const all = [...this.undoStack, this.scene].reverse();
+    for (let i = 0; i < all.length; i++) {
+      const key = all[i].base;
+      if (!seen.has(key)) {
+        seen.add(key);
+        total += sceneBytes(all[i]);
+      }
+      if (total > UNDO_BYTES && i > 0) {
+        this.undoStack.splice(0, this.undoStack.length - i + 1);
+        return;
+      }
+    }
   }
   undo(): boolean {
     const prev = this.undoStack.pop();

@@ -71,4 +71,4 @@ These are small, common jobs; the viewer already loads every model format we con
 2. ✅ Desktop: Arrange + Check panels, bed box, overhang colours, lay-flat clicks, filament rows;
    README rows.
 3. ✅ Website: the same; e2e.
-4. Review, fixes, land on main.
+4. ✅ Review, fixes, land on main.
