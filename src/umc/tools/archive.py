@@ -153,6 +153,37 @@ def _zip_is_link(info) -> bool:
     return (info.external_attr >> 16) & 0o170000 == 0o120000
 
 
+def _zip_mode(info) -> int:
+    """The Unix permission bits a zip made on Unix stores (0 = none: Windows tools)."""
+    if info.create_system != 3:  # 3 = Unix
+        return 0
+    return (info.external_attr >> 16) & 0o777
+
+
+def _keep_exec(path: Path, stored: int) -> None:
+    """Give an extracted file back the "executable" bits the archive had for it (scripts and
+    programs keep working), within the user's umask. Only execute bits: the read / write bits
+    stay the usual ones for a new file, and setuid / setgid / sticky are never set."""
+    if os.name == "nt" or not stored & 0o111:
+        return
+    with contextlib.suppress(OSError):
+        now = path.stat().st_mode & 0o777
+        # execute only where the new file is readable: that is the umask the user chose
+        # (reading the umask itself would mean changing it, which other threads would feel)
+        os.chmod(path, now | (stored & 0o111 & ((now & 0o444) >> 2)))
+
+
+def _plain_mode(path: Path) -> None:
+    """py7zr restores the archive's permission bits as stored, set-uid / set-gid / sticky
+    included: keep only the ordinary read / write / execute bits."""
+    if os.name == "nt":
+        return
+    with contextlib.suppress(OSError):
+        mode = path.stat().st_mode
+        if mode & 0o7000:
+            os.chmod(path, mode & 0o777)
+
+
 def _zip_time(info) -> datetime | None:
     try:
         return datetime(*info.date_time)
@@ -185,6 +216,7 @@ def _extract_zip(src, dest, password, progress, cancel, pick, unique) -> list[Pa
                 if "password" in str(exc).lower() or "encrypted" in str(exc).lower():
                     raise _wrong_password(src.name) from exc
                 raise
+            _keep_exec(target, _zip_mode(info))
             when = _zip_time(info)
             _set_mtime(target, when.timestamp() if when else None)
             out.append(target)
@@ -250,6 +282,7 @@ def _extract_7z(src, dest, password, progress, cancel, pick, unique) -> list[Pat
                 continue
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(found), target)
+            _plain_mode(target)
             _set_mtime(target, times.get(norm_name(name)))
             out.append(target)
     finally:
@@ -274,6 +307,7 @@ def _extract_tar(src, dest, progress, cancel, pick, unique) -> list[Path]:
                 continue
             with fin, target.open("wb") as fout:
                 shutil.copyfileobj(fin, fout, 1 << 20)
+            _keep_exec(target, m.mode)
             _set_mtime(target, m.mtime)
             out.append(target)
             progress((n + 1) / len(members))

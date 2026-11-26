@@ -1712,6 +1712,11 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
        Explorer / MIME match the last suffix, and every plain `.gz` would be caught.
        Archives are registered for Open with (`fileicons` kind "archive", `archive.ico`) but
        never made the default: `linux_integration.viewer_types` leaves them out (owner).
+       Permissions (owner's report, Nov 2026: a zip extracted on Linux lost its executable bit):
+       `_keep_exec` gives ZIP (only Unix-made: `create_system` 3) and TAR files back their
+       stored execute bits, only where the new file is readable (= the user's umask; reading
+       the umask itself would change it for every thread); 7Z keeps py7zr's restored bits minus
+       set-uid / set-gid / sticky (`_plain_mode`). Tests `test_archive.py` "executable_bit".
 
 ## Handoff — read this first (for the next Claude account)
 
