@@ -1024,6 +1024,14 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       localStorage `umc-bed` ("name|w|d|h"), filament `umc-filament` ("PLA|0.15"; `#filament-*`
       in the details). e2e `e2e/print3d.spec.ts` builds its STL files in the test; Ctrl+Z in a
       number box is the box's own undo (tests click Undo).
+      Review fixes: `arranged` scales the logos' width / thickness / sink (∛|det|) and keeps
+      their turn on the face (`_turned` / `turned`), so Change… rebuilds the same logo; a
+      mirroring matrix makes logos again (never mirrored text). Undo keeps at most `UNDO_BYTES`
+      of models (500 MB desktop / 300 MB web, oldest steps dropped). A move that changes
+      nothing (`is_identity` / `isIdentity`) is no undo step. A repair whose model changed
+      meanwhile (another step, a logo being made, the panel closed, another file) is dropped
+      with "press Repair again"; switching files closes the panels. `fit_note(lo, hi, bed)`
+      also says when a model hangs off the bed's edge.
    9. ✅ Start screen = hub (both apps; order and the four "Coming soon" tiles: roadmap 16): editor tiles under the empty drop zone, listed in
       `core/editors.py` / `web/src/core/editors.ts` (same order and text; `available` False =
       greyed "Coming soon"); tests/test_editor_hub.py

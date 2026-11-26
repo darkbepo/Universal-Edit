@@ -117,9 +117,10 @@ def test_scene_arranged_moves_logos_too():
 
 
 def test_fit_and_units():
-    assert arrange.fit_note((300, 10, 10), (256, 256, 256)) == (
+    assert arrange.fit_note((0, 0, 0), (300, 10, 10), (256, 256, 256)) == (
         "Too big for the bed: 44.0 mm too wide."
     )
+    assert arrange.fit_note((100, 0, 0), (140, 10, 10), (256, 256, 256)).startswith("Hangs 12.0")
     assert arrange.UNIT_FIXES["inch"] == 25.4
     assert [b[0] for b in arrange.BEDS][:2] == ["Prusa MK4", "Prusa MINI"]
 
@@ -132,3 +133,59 @@ def test_filament_estimate():
     assert filament.estimate(1000, 0, "PLA", 1)["metres"] == pytest.approx(
         1000 / (np.pi * 0.875**2) / 1000
     )
+
+
+def _bounds(meshes):
+    v = np.concatenate([m.vertices for m in meshes])
+    return v.min(axis=0), v.max(axis=0)
+
+
+def test_change_after_arrange_rebuilds_the_same_logo():
+    """Review: after turning / scaling, Change… snapped the logo back to its old size and
+    direction. Rebuilding from the stored settings must give the logo that's there."""
+    v, f = indexed(box_soup(-20, -10, 0, 20, 10, 10))
+    base = ViewModel("box", v, f, watertight=True, volume_mm3=8000.0)
+    pic = S.Picture("bar.png", bytes([0, 0, 0, 255] * 8), 4, 2)  # a 2:1 bar shows its direction
+    lg = S.build_logo(pic, S.LogoSettings(width=30, thickness=2), (0, 0, 10), (0, 0, 1), base)
+    sc = S.Scene(base, (lg,))
+    for m in (
+        arrange.rotate("z", 90, arrange.centre_of(v)),
+        arrange.scale(2, 2, 2),
+        arrange.rotate("x", -90, arrange.centre_of(v)),
+    ):
+        sc = sc.arranged(arrange.settle(sc.positions(), m))
+    now = sc.logos[0]
+    assert now.settings.width == pytest.approx(60) and now.width == pytest.approx(60)
+    again = S.build_logo(now.picture, now.settings, now.point, now.normal, sc.base)
+    lo1, hi1 = _bounds(now.meshes)
+    lo2, hi2 = _bounds(again.meshes)
+    assert lo1 == pytest.approx(lo2, abs=1e-6) and hi1 == pytest.approx(hi2, abs=1e-6)
+
+
+def test_mirroring_makes_logos_again_unmirrored():
+    v, f = indexed(box_soup(-20, -10, 0, 20, 10, 10))
+    base = ViewModel("box", v, f, watertight=True, volume_mm3=8000.0)
+    pic = S.Picture("bar.png", bytes([0, 0, 0, 255] * 8), 4, 2)
+    lg = S.build_logo(pic, S.LogoSettings(width=20, rotation=30), (5, 0, 10), (0, 0, 1), base)
+    out = S.Scene(base, (lg,)).arranged(arrange.mirror("x", arrange.centre_of(v)))
+    now = out.logos[0]
+    assert now.point == pytest.approx((-5, 0, 10))
+    fresh = S.build_logo(now.picture, now.settings, now.point, now.normal, out.base)
+    assert np.allclose(now.meshes[0].vertices, fresh.meshes[0].vertices)  # made, not mirrored
+    assert meshcheck.check(now.meshes[0].vertices, now.meshes[0].faces).volume > 0
+
+
+def test_undo_keeps_a_bounded_amount_of_models(monkeypatch):
+    monkeypatch.setattr(S, "UNDO_BYTES", 60_000)
+    v, f = indexed(box_soup(-5, -5, 0, 5, 5, 10))
+    big = np.repeat(v, 20, axis=0)  # ~ 18 kB a step
+    h = S.History(S.Scene(ViewModel("m", big, f)))
+    for i in range(10):
+        h.push(h.scene.arranged(arrange.translate(i + 1, 0, 0)))
+    assert 0 < len(h.undo_stack) < 4 and h.undo()
+
+
+def box_soup(x0, y0, z0, x1, y1, z1):
+    c = [[x, y, z] for z in (z0, z1) for y in (y0, y1) for x in (x0, x1)]
+    quads = [(0, 2, 3, 1), (4, 5, 7, 6), (0, 1, 5, 4), (2, 6, 7, 3), (0, 4, 6, 2), (1, 3, 7, 5)]
+    return [x for a, b, cc, d in quads for t in ((a, b, cc), (a, cc, d)) for i in t for x in c[i]]

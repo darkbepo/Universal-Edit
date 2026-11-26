@@ -92,8 +92,9 @@ describe("arrange: shared cases", () => {
   it("centred, fits, beds", () => {
     closeAll(centred(Float32Array.from(data.centred_soup)).flat(), data.centred.flat());
     for (const c of data.fits) {
-      closeAll(fits(c.size as Vec3, c.bed as Vec3), c.over);
-      expect(fitNote(c.size as Vec3, c.bed as Vec3)).toBe(c.note);
+      const size = c.hi.map((h, i) => h - c.lo[i]) as Vec3;
+      closeAll(fits(size, c.bed as Vec3), c.over);
+      expect(fitNote(c.lo as Vec3, c.hi as Vec3, c.bed as Vec3)).toBe(c.note);
     }
     expect(BEDS).toEqual(data.beds);
   });

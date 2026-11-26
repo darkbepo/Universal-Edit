@@ -183,3 +183,27 @@ def test_save_arranged_model(window, qtbot, slab, tmp_path):
     assert names == ["slab edited.3mf"] and not page.dirty
     m = trimesh.load(out, force="mesh")
     assert m.extents == pytest.approx([40, 10, 20])
+
+
+def test_nothing_moved_is_no_undo_step(window, qtbot, slab):
+    page = open_model(window, qtbot, slab)
+    page.rotate("z", 360)
+    page.scale_by(1, 1, 1)
+    page.arrange(A.identity())
+    assert not page.history.undo_stack and not page.history.dirty
+
+
+def test_repair_dropped_when_the_model_changed(window, qtbot, tmp_path):
+    box = trimesh.creation.box((20, 20, 20))
+    holed = trimesh.Trimesh(box.vertices, box.faces[2:], process=False)
+    p = tmp_path / "holed.stl"
+    p.write_bytes(holed.export(file_type="stl"))
+    page = open_model(window, qtbot, p)
+    with qtbot.waitSignal(page.checked, timeout=30000):
+        page.open_panel("check")
+    with qtbot.waitSignal(page.repaired, timeout=30000):
+        page.repair()
+        page.rotate("z", 90)  # changes the model before the repair comes back
+    assert "press Repair again" in page.check_panel.repaired.text()
+    assert page.check_panel.repair_button.isEnabled()
+    assert len(page.history.undo_stack) == 1  # only the turn
