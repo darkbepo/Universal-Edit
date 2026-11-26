@@ -1015,6 +1015,15 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       the filament rows (QSettings `viewer3d/material` / `viewer3d/infill`; `ViewModel.area`
       cached). Save as works for any model ("<name> edited.3mf" without logos). The top bar sets
       `min-width: 0` on its buttons (Qt gives each 80 px: the bar needed 1645 px).
+      Step 3 ✅ website: `ui/editor3d/printpanels.ts` (`ArrangePanel` / `CheckPanel`, ids
+      `#arr-*` / `#check-*`; the turn / mirror buttons are named by their title, e.g. "Turn
+      +90° about X"), page `openPanel` / `closePanel` / `arrange` / `layFlatOn` / `runCheck` /
+      `repair` (check + repair run in the helper worker `traceworker.ts`: messages with `kind`
+      "check" / "repair", answers dropped by id; `checked` / `repaired` counters for tests),
+      `arranged(sc, m)` / `withBase` / `scenePositions` in `editor3d/scene.ts`. Bed =
+      localStorage `umc-bed` ("name|w|d|h"), filament `umc-filament` ("PLA|0.15"; `#filament-*`
+      in the details). e2e `e2e/print3d.spec.ts` builds its STL files in the test; Ctrl+Z in a
+      number box is the box's own undo (tests click Undo).
    9. ✅ Start screen = hub (both apps; order and the four "Coming soon" tiles: roadmap 16): editor tiles under the empty drop zone, listed in
       `core/editors.py` / `web/src/core/editors.ts` (same order and text; `available` False =
       greyed "Coming soon"); tests/test_editor_hub.py

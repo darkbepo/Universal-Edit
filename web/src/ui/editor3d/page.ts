@@ -10,13 +10,16 @@ import { LogoError, MAX_SIDE, defaultMode, type Shape } from "../../editor3d/log
 import { describe, gridSpec, type ModelStats, type ViewModel } from "../../editor3d/mesh";
 import { flatFace, hit, ray } from "../../editor3d/pick";
 import {
-  buildLogo, combined, defaultSaveName, History, logoPositions, sameSettings, SAVE_EXTS, sceneStl, emptyScene, without, withLogo,
+  arranged, buildLogo, combined, defaultSaveName, History, logoPositions, sameSettings, SAVE_EXTS, sceneStl, scenePositions, emptyScene, withBase, without, withLogo,
   type Logo, type LogoSettings, type Picture, type SaveExt, type Scene,
 } from "../../editor3d/scene";
 import { JobCancelled, type ConversionClient } from "../../worker/client";
 import { backLabel } from "../back";
 import { FACE_HINT, LogoPanel } from "./logopanel";
-import type { TraceAnswer, TraceRequest } from "./traceworker";
+import { ArrangePanel, CheckPanel } from "./printpanels";
+import type { CheckAnswer, CheckRequest, RepairAnswer, RepairRequest, TraceAnswer, TraceRequest } from "./traceworker";
+import * as A from "../../editor3d/arrange";
+import { DENSITY, rows as filamentRows } from "../../editor3d/filament";
 
 const h = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> & { class?: string } = {}, ...children: (Node | string)[]) => {
   const el = document.createElement(tag);
@@ -52,6 +55,17 @@ interface Edit {
   problem: string;
   tracing: number; // id of the trace being waited for (0: none)
   applyWhenTraced: boolean; // Apply was pressed while tracing
+}
+
+function loadBed(): A.Bed {
+  try {
+    const [name, ...dims] = (localStorage.getItem("umc-bed") ?? "").split("|");
+    const n = dims.map(Number);
+    if (name && n.length === 3 && n.every((v) => Number.isFinite(v) && v >= 10 && v <= 2000)) return [name, n[0], n[1], n[2]];
+  } catch {
+    // private window
+  }
+  return A.DEFAULT_BED;
 }
 
 const shapeKey = (pic: Picture, s: LogoSettings) => JSON.stringify([pic.name, pic.w, pic.h, s.mode, s.threshold, s.invert, s.detail, s.width]);
@@ -155,6 +169,22 @@ export class ViewerPage {
   private grabOffset: Vec3 = [0, 0, 0]; // logo point − where the drag started on its plane
   private tracer: Worker | null = null;
   private traceId = 0;
+  panel: "" | "arrange" | "check" = "";
+  layingFlat = false;
+  report: import("../../editor3d/meshcheck").Report | null = null;
+  private checkedScene: Scene | null = null;
+  private checkId = 0;
+  private repairId = 0;
+  private arrangePanel: ArrangePanel;
+  private checkPanel: CheckPanel;
+  private highlight: THREE.Mesh | null = null;
+  private bedGroup = new THREE.Group();
+  bed: A.Bed = loadBed();
+  material = "PLA";
+  infill = 0.15;
+  private materialBox = h("select", { id: "filament-material", title: "For the filament estimate" });
+  private infillBox = h("input", { id: "filament-infill", type: "number", min: "0", max: "100", step: "5", title: "Infill (%)" });
+  private areaCache = new WeakMap<Float32Array, number>();
 
   constructor(private opts: ViewerOptions) {
     const btn = (label: string, title: string, fn: () => void, cls = "btn small") => {
@@ -184,13 +214,15 @@ export class ViewerPage {
     this.topButtons.logo = btn("Add logo…", "Turn a picture into a raised 3D logo", () => this.startLogo());
     this.topButtons.undo = btn("Undo", "Undo (Ctrl+Z)", () => this.undo());
     this.topButtons.redo = btn("Redo", "Redo (Ctrl+Y)", () => this.redo());
-    this.topButtons.save = btn("Save as…", "Save the model with its logos (3MF, STL, …)", () => void this.saveAs());
+    this.topButtons.arrange = btn("Arrange", "Move, turn, scale, lay flat; your printer's bed", () => this.openPanel("arrange"));
+    this.topButtons.check = btn("Check", "Check for holes and other problems; overhangs", () => this.openPanel("check"));
+    this.topButtons.save = btn("Save as…", "Save the model with its changes (3MF, STL, …)", () => void this.saveAs());
     const top = h("div", { class: "editor-top" },
       backLabel(btn("← Back to Convert", "Leave the 3D viewer", () => this.back(), "link")),
       h("span", { class: "gap" }),
       this.topButtons.open, picker,
       h("span", { class: "gap" }), this.fileBox,
-      h("span", { class: "gap" }), this.topButtons.logo, this.topButtons.undo, this.topButtons.redo, this.topButtons.save,
+      h("span", { class: "gap" }), this.topButtons.logo, this.topButtons.arrange, this.topButtons.check, this.topButtons.undo, this.topButtons.redo, this.topButtons.save,
       h("div", { class: "spacer" }),
       btn("Fit", "Show the whole model (double-click the view)", () => this.fit()), ...views,
       h("span", { class: "gap" }), styles,
@@ -199,9 +231,47 @@ export class ViewerPage {
     const change = btn("Change…", "Change the chosen logo", () => this.startLogo(this.selectedLogo));
     const remove = btn("Remove", "Remove the chosen logo", () => this.removeLogo(this.selectedLogo));
     this.logoBox.append(h("p", { class: "muted small" }, "Logos"), this.logoList, h("div", { class: "logo-buttons" }, change, remove));
+    try {
+      const [mat, inf] = (localStorage.getItem("umc-filament") ?? "").split("|");
+      if (mat in DENSITY) this.material = mat;
+      if (inf !== undefined && Number.isFinite(Number(inf)) && inf !== "") this.infill = Math.min(1, Math.max(0, Number(inf)));
+    } catch {
+      // private window: defaults
+    }
+    for (const mat of Object.keys(DENSITY)) this.materialBox.append(h("option", { value: mat }, mat));
+    this.materialBox.value = this.material;
+    this.infillBox.value = String(Math.round(this.infill * 100));
+    const filamentChanged = () => {
+      this.material = this.materialBox.value;
+      const v = Number(this.infillBox.value);
+      this.infill = Number.isFinite(v) ? Math.min(1, Math.max(0, v / 100)) : this.infill;
+      try {
+        localStorage.setItem("umc-filament", `${this.material}|${this.infill}`);
+      } catch {
+        // not kept
+      }
+      this.showScene();
+    };
+    this.materialBox.addEventListener("change", filamentChanged);
+    this.infillBox.addEventListener("change", filamentChanged);
     const side = h("div", { class: "editor-side viewer3d-side" }, this.title, this.info,
       h("p", { class: "muted small" }, "Sizes are in millimetres, as a slicer will see them. Files without a unit (STL, OBJ, PLY) are taken as mm."),
+      h("div", { class: "arr-inline filament-row" }, h("label", { htmlFor: "filament-material", class: "muted small" }, "Filament"), this.materialBox, this.infillBox, h("span", { class: "muted small" }, "% infill")),
       this.logoBox);
+    this.arrangePanel = new ArrangePanel({
+      rotate: (axis, deg) => this.rotate(axis, deg),
+      mirror: (axis) => this.arrange(A.mirror(axis, this.centreNow())),
+      scaleBy: (sx, sy, sz) => this.scaleBy(sx, sy, sz),
+      sizeTo: (axis, mm, keep) => this.sizeTo(axis, mm, keep),
+      moveTo: (x, y) => this.moveTo(x, y),
+      centre: () => this.centre(),
+      units: (key) => this.scaleBy(A.UNIT_FIXES[key], A.UNIT_FIXES[key], A.UNIT_FIXES[key]),
+      layFlat: (on) => this.setLayingFlat(on),
+      bedChanged: (bed) => this.setBed(bed),
+      done: () => this.closePanel(),
+    });
+    this.arrangePanel.setBed(this.bed);
+    this.checkPanel = new CheckPanel({ repair: () => this.repair(), overhangs: () => this.runCheck(), done: () => this.closePanel() });
     this.sideInfo = side;
     this.logoPanel = new LogoPanel({
       changed: () => this.onSettingsChanged(),
@@ -211,11 +281,12 @@ export class ViewerPage {
     });
     this.el = h("div", { class: "editor viewer3d", hidden: true },
       top,
-      h("div", { class: "viewer3d-body" }, h("div", { class: "viewer3d-view" }, this.canvasHost, this.placeholder), side, this.logoPanel.el),
+      h("div", { class: "viewer3d-body" }, h("div", { class: "viewer3d-view" }, this.canvasHost, this.placeholder), side, this.logoPanel.el, this.arrangePanel.el, this.checkPanel.el),
       h("div", { class: "editor-status" }, this.message, h("div", {}, hint())));
 
-    this.scene.add(this.modelGroup, this.gridGroup, this.key, this.fill, new THREE.HemisphereLight(0xffffff, 0x666670, 0.9));
+    this.scene.add(this.modelGroup, this.gridGroup, this.bedGroup, this.key, this.fill, new THREE.HemisphereLight(0xffffff, 0x666670, 0.9));
     this.cam3.up.set(0, 0, 1);
+    this.buildBed();
     this.installControls();
     this.resizeObserver = new ResizeObserver(() => this.requestRender());
     this.resizeObserver.observe(this.canvasHost);
@@ -246,7 +317,7 @@ export class ViewerPage {
   maybeLeave(): boolean {
     this.cancelLogo();
     if (!this.dirty) return true;
-    if (!window.confirm("Discard the logos you haven't saved?")) return false;
+    if (!window.confirm("Discard the changes you haven't saved?")) return false;
     for (const hs of this.histories.values()) hs.revert(); // the logos go
     this.showScene();
     return true;
@@ -373,9 +444,16 @@ export class ViewerPage {
   private showScene(fit = false): void {
     const sc = this.shownScene();
     const m = sc ? combined(sc, this.current?.name ?? "Logo") : null;
-    this.info.replaceChildren(...(m ? describe(m) : []).flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, v)]));
+    this.info.replaceChildren(...(m ? this.infoRowsOf(m) : []).flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, v)]));
     this.fillLogos();
     this.syncButtons();
+    if (this.panel === "arrange" && sc && !(sc.base === null && !sc.logos.length)) {
+      const pos = scenePositions(sc);
+      const [lo, hi] = A.bounds(pos);
+      const size: Vec3 = [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]];
+      this.arrangePanel.showModel(size, A.centreOf(pos), A.fitNote(size, this.bed.slice(1) as Vec3));
+    }
+    if (this.panel === "check" && sc !== this.checkedScene) this.runCheck();
     const preview = this.editing?.preview ?? null;
     if (!m && !preview) {
       this.disposeModel();
@@ -709,7 +787,12 @@ export class ViewerPage {
     b.logo.disabled = !idle || !hs;
     b.undo.disabled = !idle || !hs?.undoStack.length;
     b.redo.disabled = !idle || !hs?.redoStack.length;
-    b.save.disabled = !idle || !hs?.scene.logos.length;
+    const some = Boolean(hs && (hs.scene.base || hs.scene.logos.length));
+    b.save.disabled = !idle || !some;
+    b.arrange.disabled = !idle || !some;
+    b.check.disabled = !idle || !some;
+    b.arrange.setAttribute("aria-pressed", String(this.panel === "arrange"));
+    b.check.setAttribute("aria-pressed", String(this.panel === "check"));
     b.open.disabled = Boolean(this.editing);
     this.fileBox.disabled = Boolean(this.editing);
     for (const btn of this.logoBox.querySelectorAll("button")) btn.disabled = !idle;
@@ -735,6 +818,7 @@ export class ViewerPage {
 
   /** Open the logo panel for a new logo (or to change logo ``index``). */
   startLogo(index: number | null = null): void {
+    this.closePanel();
     const hs = this.history;
     if (!hs || this.editing || this.saving) return;
     const e: Edit = { index, picture: null, point: null, normal: null, faceTris: null, shape: null, shapeKey: "", logo: null, preview: null, problem: "", tracing: 0, applyWhenTraced: false };
@@ -812,29 +896,267 @@ export class ViewerPage {
     const rgb = new THREE.Color(cssColor("--text", "#1c1f26"));
     const id = (e.tracing = ++this.traceId);
     this.logoPanel.setNote("Tracing the picture…");
-    if (!this.tracer) {
-      this.tracer = new Worker(new URL("./traceworker.ts", import.meta.url), { type: "module" });
-      this.tracer.onmessage = (m: MessageEvent<TraceAnswer>) => this.onTraced(m.data);
-      // the worker couldn't load or died: say so, and start a new one next time
-      this.tracer.onerror = this.tracer.onmessageerror = (ev: Event) => {
-        ev.preventDefault?.();
-        this.tracer?.terminate();
-        this.tracer = null;
-        const ed = this.editing;
-        if (ed?.tracing) {
-          Object.assign(ed, { tracing: 0, applyWhenTraced: false, shape: null, shapeKey: "", logo: null, preview: null, problem: "Couldn't trace the picture — try again." });
-          this.logoPanel.setNote(ed.problem);
-          this.setOverlay(null);
-        }
-      };
-    }
+    const worker = this.helper();
     const request: TraceRequest = {
       id, rgba: pic.rgba.slice(), w: pic.w, h: pic.h, mode: s.mode, threshold: s.threshold, invert: s.invert,
       detail: s.detail, width: s.width, colour: [Math.round(rgb.r * 255), Math.round(rgb.g * 255), Math.round(rgb.b * 255)],
     };
-    this.tracer.postMessage(request, [request.rgba.buffer]);
+    worker.postMessage(request, [request.rgba.buffer]);
     e.shapeKey = key;
     e.shape = null;
+  }
+
+  /** The helper worker (tracing, checks, repairs), made on first use. */
+  private helper(): Worker {
+    if (this.tracer) return this.tracer;
+    const w = new Worker(new URL("./traceworker.ts", import.meta.url), { type: "module" });
+    w.onmessage = (m: MessageEvent<TraceAnswer | CheckAnswer | RepairAnswer>) => {
+      const a = m.data;
+      if (a.kind === "check") this.onChecked(a);
+      else if (a.kind === "repair") this.onRepaired(a);
+      else this.onTraced(a);
+    };
+    // the worker couldn't load or died: say so, and start a new one next time
+    w.onerror = w.onmessageerror = (ev: Event) => {
+      ev.preventDefault?.();
+      w.terminate();
+      if (this.tracer === w) this.tracer = null;
+      const ed = this.editing;
+      if (ed?.tracing) {
+        Object.assign(ed, { tracing: 0, applyWhenTraced: false, shape: null, shapeKey: "", logo: null, preview: null, problem: "Couldn't trace the picture — try again." });
+        this.logoPanel.setNote(ed.problem);
+        this.setOverlay(null);
+      }
+      if (this.checkId > 0 && this.panel === "check") this.checkPanel.result.textContent = "Couldn't check this model.";
+      this.checkId++;
+      if (this.repairId > 0) this.checkPanel.repaired.textContent = "";
+      this.repairId++;
+      this.checkPanel.repairButton.disabled = false;
+    };
+    return (this.tracer = w);
+  }
+
+  // ---------------------------------------------------------------- arrange / check panels
+  /** Show the Arrange or Check panel (again = back to the details). */
+  openPanel(name: "arrange" | "check"): void {
+    if (this.panel === name) {
+      this.closePanel();
+      return;
+    }
+    const sc = this.logoScene;
+    if (!sc || (!sc.base && !sc.logos.length) || this.editing || this.saving) return;
+    this.closePanel();
+    this.panel = name;
+    this.sideInfo.hidden = true;
+    (name === "arrange" ? this.arrangePanel : this.checkPanel).el.hidden = false;
+    if (name === "check") {
+      this.checkPanel.repaired.textContent = "";
+      this.checkedScene = null;
+    }
+    this.showScene();
+  }
+
+  closePanel(): void {
+    if (!this.panel) return;
+    this.panel = "";
+    this.setLayingFlat(false);
+    this.checkId++;
+    this.setHighlight(null);
+    this.arrangePanel.el.hidden = this.checkPanel.el.hidden = true;
+    this.sideInfo.hidden = false;
+    this.syncButtons();
+  }
+
+  private centreNow(): Vec3 {
+    const sc = this.logoScene;
+    return sc ? A.centreOf(scenePositions(sc)) : [0, 0, 0];
+  }
+
+  /** One undo step: the model and its logos moved by ``m`` (then back on the bed). */
+  arrange(m: A.Matrix, settleIt = true): void {
+    const sc = this.logoScene;
+    if (!sc || (!sc.base && !sc.logos.length) || this.editing || this.saving) return;
+    const pos = scenePositions(sc);
+    this.push(arranged(sc, settleIt ? A.settle(pos, m) : m));
+  }
+
+  rotate(axis: "x" | "y" | "z", degrees: number): void {
+    if (degrees % 360) this.arrange(A.rotate(axis, degrees, this.centreNow()));
+  }
+
+  scaleBy(sx: number, sy: number, sz: number): void {
+    if ((sx !== 1 || sy !== 1 || sz !== 1) && Math.min(sx, sy, sz) > 0) this.arrange(A.scale(sx, sy, sz, this.centreNow()));
+  }
+
+  sizeTo(axis: "x" | "y" | "z", mm: number, keep: boolean): void {
+    const sc = this.logoScene;
+    if (!sc) return;
+    const [lo, hi] = A.bounds(scenePositions(sc));
+    const i = "xyz".indexOf(axis);
+    const now = hi[i] - lo[i];
+    if (now <= 0 || Math.abs(mm - now) < 1e-9) return;
+    const k = mm / now;
+    if (keep) this.scaleBy(k, k, k);
+    else this.scaleBy(i === 0 ? k : 1, i === 1 ? k : 1, i === 2 ? k : 1);
+  }
+
+  moveTo(x: number, y: number): void {
+    const [cx, cy] = this.centreNow();
+    if (Math.abs(x - cx) > 1e-9 || Math.abs(y - cy) > 1e-9) this.arrange(A.translate(x - cx, y - cy, 0), false);
+  }
+
+  centre(): void {
+    const sc = this.logoScene;
+    if (sc) this.arrange(A.centred(scenePositions(sc)), false);
+  }
+
+  setLayingFlat(on: boolean): void {
+    this.layingFlat = on;
+    if (!on) this.arrangePanel.stopLayFlat();
+    this.message.textContent = on ? "Click the face that should lie on the bed." : "";
+  }
+
+  /** Turn so the flat face around triangle ``tri`` (of the shown scene) lies on the bed. */
+  layFlatOn(tri: number, viewDir: Vec3 | null = null): void {
+    const sc = this.logoScene;
+    if (!sc) return;
+    const face = flatFace(scenePositions(sc), tri);
+    let n = face.normal;
+    if (viewDir && n[0] * viewDir[0] + n[1] * viewDir[1] + n[2] * viewDir[2] > 0) n = [-n[0], -n[1], -n[2]];
+    this.setLayingFlat(false);
+    this.arrange(A.layFlat(n, this.centreNow()));
+  }
+
+  setBed(bed: A.Bed): void {
+    this.bed = bed;
+    try {
+      localStorage.setItem("umc-bed", bed.join("|"));
+    } catch {
+      // not kept
+    }
+    this.buildBed();
+    this.showScene();
+  }
+
+  private buildBed(): void {
+    for (const c of [...this.bedGroup.children]) {
+      const l = c as THREE.LineSegments;
+      l.geometry.dispose();
+      (l.material as THREE.Material).dispose();
+      c.removeFromParent();
+    }
+    const [, w, d, hgt] = this.bed;
+    const x0 = -w / 2, x1 = w / 2, y0 = -d / 2, y1 = d / 2;
+    const c = [0, 1, 2, 3, 4, 5, 6, 7].map((i) => [i & 1 ? x1 : x0, i & 2 ? y1 : y0, i & 4 ? hgt : 0]);
+    const pairs = [[0, 1], [1, 3], [3, 2], [2, 0], [4, 5], [5, 7], [7, 6], [6, 4], [0, 4], [1, 5], [2, 6], [3, 7]];
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(pairs.flatMap(([a, b]) => [...c[a], ...c[b]]), 3));
+    this.bedGroup.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: new THREE.Color(cssColor("--accent", "#5b5ef0")), transparent: true, opacity: 0.7 })));
+    this.requestRender();
+  }
+
+  private infoRowsOf(m: ViewModel): [string, string][] {
+    const rows = describe(m);
+    rows.push(["Printer bed", A.fitNote(m.size, this.bed.slice(1) as Vec3)]);
+    if (m.volumeMm3) {
+      let area = this.areaCache.get(m.positions);
+      if (area === undefined) {
+        area = 0;
+        const p = m.positions;
+        for (let i = 0; i < p.length; i += 9) {
+          const ux = p[i + 3] - p[i], uy = p[i + 4] - p[i + 1], uz = p[i + 5] - p[i + 2];
+          const vx = p[i + 6] - p[i], vy = p[i + 7] - p[i + 1], vz = p[i + 8] - p[i + 2];
+          area += Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx) / 2;
+        }
+        this.areaCache.set(m.positions, area);
+      }
+      rows.push(...filamentRows(m.volumeMm3, area, this.material, this.infill));
+    }
+    return rows;
+  }
+
+  /** Check what's shown (in the helper worker); the panel and the red overhangs follow. */
+  runCheck(): void {
+    const sc = this.logoScene;
+    if (this.panel !== "check" || !sc) return;
+    const m = combined(sc, this.current?.name ?? "Logo");
+    if (!m) return;
+    this.checkedScene = sc;
+    this.checkPanel.checking();
+    const request: CheckRequest = { kind: "check", id: ++this.checkId, positions: m.positions.slice(), angle: Number(this.checkPanel.angle.value) || 45 };
+    this.checkPositions = m.positions;
+    this.helper().postMessage(request, [request.positions.buffer]);
+  }
+
+  private checkPositions: Float32Array | null = null;
+
+  private onChecked(a: CheckAnswer): void {
+    if (a.id !== this.checkId || this.panel !== "check") return;
+    if (!a.report) {
+      this.checkPanel.result.textContent = a.error;
+      return;
+    }
+    this.report = a.report;
+    this.checkPanel.showReport(a.notes, a.ok, a.report.overhang_area);
+    const pos = this.checkPositions;
+    if (this.checkPanel.show.checked && pos && a.report.overhang_faces.length) {
+      const out = new Float32Array(a.report.overhang_faces.length * 9);
+      a.report.overhang_faces.forEach((t, i) => out.set(pos.subarray(t * 9, t * 9 + 9), i * 9));
+      this.setHighlight(out);
+    } else this.setHighlight(null);
+    this.checked++;
+  }
+
+  /** How many checks have finished (tests). */
+  checked = 0;
+
+  /** One undo step: the model (not the logos) repaired, then checked again. */
+  repair(): void {
+    const sc = this.logoScene;
+    if (!sc?.base || this.saving || this.editing) return;
+    this.checkPanel.repairButton.disabled = true;
+    this.checkPanel.repaired.textContent = "Repairing…";
+    this.repairScene = sc;
+    const request: RepairRequest = { kind: "repair", id: ++this.repairId, positions: sc.base.positions.slice() };
+    this.helper().postMessage(request, [request.positions.buffer]);
+  }
+
+  private repairScene: Scene | null = null;
+
+  private onRepaired(a: RepairAnswer): void {
+    if (a.id !== this.repairId) return;
+    const sc = this.repairScene;
+    this.checkPanel.repaired.textContent = a.error || a.note;
+    if (a.changed && a.positions && a.after && sc?.base && this.history?.scene === sc) {
+      const after = a.after;
+      const [lo, hi] = A.bounds(a.positions);
+      const base: ViewModel = {
+        ...sc.base, positions: a.positions, triangles: a.positions.length / 9, parts: after.parts,
+        size: [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]], watertight: a.closed, volumeMm3: after.volume || null,
+      };
+      this.push(withBase(sc, base));
+    } else this.runCheck();
+    this.repaired++;
+  }
+
+  /** How many repairs have finished (tests). */
+  repaired = 0;
+
+  private setHighlight(pos: Float32Array | null): void {
+    if (this.highlight) {
+      this.highlight.geometry.dispose();
+      (this.highlight.material as THREE.Material).dispose();
+      this.highlight.removeFromParent();
+      this.highlight = null;
+    }
+    if (pos?.length) {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+      g.computeVertexNormals();
+      this.highlight = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: 0xdb4040, roughness: 0.7, side: THREE.DoubleSide, flatShading: true }));
+      this.modelGroup.add(this.highlight);
+    }
+    this.requestRender();
   }
 
   private onTraced(a: TraceAnswer): void {
@@ -890,6 +1212,15 @@ export class ViewerPage {
   }
 
   private onViewClicked(x: number, y: number): void {
+    if (this.layingFlat) {
+      const sc = this.logoScene;
+      if (!sc) return;
+      const pos = scenePositions(sc);
+      const [o, d] = this.rayAt(x, y);
+      const found = hit(pos, o, d);
+      if (found) this.layFlatOn(found[0], d);
+      return;
+    }
     const e = this.editing, base = this.base;
     if (!e || !base || this.logoPanel.settings().where !== "face") return;
     const [o, d] = this.rayAt(x, y);
@@ -987,13 +1318,13 @@ export class ViewerPage {
   /** Ask for a format, then write the model with its logos (the worker's model writers). */
   async saveAs(ext?: SaveExt): Promise<boolean> {
     const hs = this.history;
-    if (!hs?.scene.logos.length || this.editing || this.saving) return false;
+    if (!hs || (!hs.scene.base && !hs.scene.logos.length) || this.editing || this.saving) return false;
     ext ??= (await this.askSaveFormat()) ?? undefined;
     if (!ext) return false;
     const sc = hs.scene;
     this.saving = true;
     this.syncButtons();
-    const name = defaultSaveName(this.current?.name ?? null, ext);
+    const name = defaultSaveName(this.current?.name ?? null, ext, hs.scene.logos.length > 0);
     this.message.classList.remove("error");
     this.message.textContent = `Saving ${name}…`;
     try {

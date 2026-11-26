@@ -1,7 +1,43 @@
-// Traces a logo picture off the page (the desktop does it on a worker thread): mask → outlines
-// → shape (with its cap triangles), plus the silhouette for the panel's preview. One request at a time per page; the page
-// drops answers to requests it no longer wants.
+// The 3D viewer's helper worker (the desktop uses worker threads): traces logo pictures (mask → outlines
+// → shape with its cap triangles, + the silhouette for the panel's preview), and checks / repairs models
+// for printing. The page drops answers it no longer wants (ids).
 import { LogoError, mask, prepare, shapeOfMask, type Detail, type MaskMode, type Shape } from "../../editor3d/logo";
+import { check, hasProblems, isClosed, notes, repair, repairChanged, repairedNote, soup, weld, type Report } from "../../editor3d/meshcheck";
+
+/** Check a model (a triangle soup) for printing. */
+export interface CheckRequest {
+  kind: "check";
+  id: number;
+  positions: Float32Array;
+  angle: number;
+}
+
+/** Repair a model, then check it again. */
+export interface RepairRequest {
+  kind: "repair";
+  id: number;
+  positions: Float32Array;
+}
+
+export interface CheckAnswer {
+  kind: "check";
+  id: number;
+  report: Report | null;
+  notes: string[];
+  ok: boolean;
+  error: string;
+}
+
+export interface RepairAnswer {
+  kind: "repair";
+  id: number;
+  changed: boolean;
+  positions: Float32Array | null; // the repaired model, when it changed
+  note: string;
+  after: Report | null;
+  closed: boolean;
+  error: string;
+}
 
 export interface TraceRequest {
   id: number;
@@ -17,14 +53,41 @@ export interface TraceRequest {
 }
 
 export interface TraceAnswer {
+  kind?: undefined;
   id: number;
   shape: Shape | null;
   error: string; // plain words when there's no shape
   preview: Uint8ClampedArray;
 }
 
-self.onmessage = (e: MessageEvent<TraceRequest>) => {
-  const r = e.data;
+const post = (answer: object, transfer: Transferable[] = []) => (self as unknown as Worker).postMessage(answer, transfer);
+
+self.onmessage = (e: MessageEvent<TraceRequest | CheckRequest | RepairRequest>) => {
+  const d = e.data;
+  if ("kind" in d && d.kind === "check") {
+    try {
+      const report = check(weld(d.positions), d.angle);
+      post({ kind: "check", id: d.id, report, notes: notes(report), ok: !hasProblems(report), error: "" } satisfies CheckAnswer);
+    } catch (err) {
+      console.error(err);
+      post({ kind: "check", id: d.id, report: null, notes: [], ok: false, error: "Couldn't check this model." } satisfies CheckAnswer);
+    }
+    return;
+  }
+  if ("kind" in d && d.kind === "repair") {
+    try {
+      const x = repair(weld(d.positions));
+      const after = check(x);
+      const positions = repairChanged(x) ? soup(x) : null;
+      const answer: RepairAnswer = { kind: "repair", id: d.id, changed: repairChanged(x), positions, note: repairedNote(x, after), after, closed: isClosed(after) && !hasProblems(after), error: "" };
+      post(answer, positions ? [positions.buffer] : []);
+    } catch (err) {
+      console.error(err);
+      post({ kind: "repair", id: d.id, changed: false, positions: null, note: "", after: null, closed: false, error: "Couldn't repair this model." } satisfies RepairAnswer);
+    }
+    return;
+  }
+  const r = d as TraceRequest;
   const preview = new Uint8ClampedArray(r.w * r.h * 4);
   let found: Shape | null = null;
   let error = "";
