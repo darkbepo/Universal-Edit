@@ -334,8 +334,9 @@ test.describe("change video details", () => {
     const file = await download;
     expect(file.suggestedFilename()).toBe("clip.mp4");
     await expect(form).toContainText("Downloaded “clip.mp4”", { timeout: 60_000 });
-    // the queue holds the changed video: the form shows its details now
-    await expect(page.locator("#vf-title")).toHaveValue("Beach day");
+    // the queue holds the changed video: the form shows its details now (read again in the
+    // worker, which can take a while on a busy machine)
+    await expect(page.locator("#vf-title")).toHaveValue("Beach day", { timeout: 60_000 });
     await expect(page.locator("#vf-description")).toHaveValue("Two lines\nof notes");
     await expect(page.locator("#vf-date")).toHaveValue("2026-06-01 12:00");
     await expect(page.locator("#vf-rotation")).toHaveValue("90");

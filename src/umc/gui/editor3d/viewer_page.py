@@ -668,6 +668,9 @@ class ViewerPage(QWidget):
         self.panel = ""
         self.set_laying_flat(False)
         self.tasks.cancel_group("check")
+        self.tasks.cancel_group("repair")  # a repair still running is dropped
+        self.check_panel.repair_button.setEnabled(True)
+        self.check_panel.repaired.setText("")
         self.view.set_highlight(None)
         self.side.setCurrentIndex(0)
         self._sync_buttons()

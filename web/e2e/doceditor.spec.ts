@@ -696,10 +696,13 @@ test("the arrow keys step over an empty link, and typing keeps it", async ({ pag
   await editAsDocument(page);
   await pm(page).locator("p").click();
   await page.keyboard.press("Home");
-  // a short pause after each press: ProseMirror reads the browser's move on `selectionchange`
+  // ProseMirror reads the browser's move on `selectionchange`, a little later: wait until the
+  // editor's own cursor has moved (a fixed pause was too short on a busy machine)
+  const head = () => page.evaluate(() => (window as unknown as Window & { __doceditor: { selection: [number, number] } }).__doceditor.selection[1]);
   const press = async (key: string) => {
+    const before = await head();
     await page.keyboard.press(key);
-    await page.waitForTimeout(100);
+    await expect.poll(head).not.toBe(before);
   };
   for (let i = 0; i < 3; i++) await press("ArrowRight"); // a, b, then the link + c
   await page.keyboard.type("X");

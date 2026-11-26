@@ -3,6 +3,12 @@ import { defineConfig, devices } from "@playwright/test";
 // E2E_BASE_URL runs the suite against an already running server (e.g. the local launcher).
 const external = process.env.E2E_BASE_URL;
 
+// Without a UTF-8 locale (bare Linux containers: LANG unset = "POSIX") Chromium can't open a file
+// whose path has a non-ASCII character, e.g. a test folder named after "Find file…": the file
+// never reaches the page. Give the browser one when the system has none.
+const utf8 = /utf-?8/i.test(process.env.LC_ALL || process.env.LC_CTYPE || process.env.LANG || "");
+const browserEnv = process.platform === "linux" && !utf8 ? { ...process.env, LC_ALL: "C.UTF-8" } : undefined;
+
 export default defineConfig({
   testDir: "e2e",
   timeout: 180_000,
@@ -18,7 +24,7 @@ export default defineConfig({
     use: {
       ...devices["Desktop Chrome"],
       // a fake microphone (a steady beep) for the audio editor's Record button, allowed without asking
-      launchOptions: { args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"] },
+      launchOptions: { args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"], env: browserEnv },
       permissions: ["microphone"],
     },
   }],

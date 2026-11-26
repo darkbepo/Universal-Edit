@@ -207,3 +207,21 @@ def test_repair_dropped_when_the_model_changed(window, qtbot, tmp_path):
     assert "press Repair again" in page.check_panel.repaired.text()
     assert page.check_panel.repair_button.isEnabled()
     assert len(page.history.undo_stack) == 1  # only the turn
+
+
+def test_closing_the_panel_drops_a_running_repair(window, qtbot, tmp_path):
+    box = trimesh.creation.box((20, 20, 20))
+    holed = trimesh.Trimesh(box.vertices, box.faces[2:], process=False)
+    p = tmp_path / "holed.stl"
+    p.write_bytes(holed.export(file_type="stl"))
+    page = open_model(window, qtbot, p)
+    with qtbot.waitSignal(page.checked, timeout=30000):
+        page.open_panel("check")
+    page.repair()
+    page.close_panel()  # e.g. another file was chosen
+    with qtbot.waitSignal(page.checked, timeout=30000):
+        page.open_panel("check")
+    cp = page.check_panel
+    assert cp.repaired.text() == "" and cp.repair_button.isEnabled()
+    qtbot.wait(500)  # the dropped repair finishes in the background: nothing is applied
+    assert not page.history.undo_stack and "hole" in cp.result.text()
