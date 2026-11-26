@@ -1,6 +1,7 @@
 // What the 3D viewer shows and saves once logos are added (port of the desktop's
 // umc/editor3d/scene.py): the opened model plus logos, immutable, with snapshot undo.
 // No DOM, no three.js.
+import { applyIndexed, applyNormal, applyPoint, applySoup, bounds, determinant3, type Matrix } from "./arrange";
 import type { Vec3 } from "./camera";
 import {
   badge, LogoError, plateOutline, shapeArea, placedLogo, placement, positions, shapeFromPicture, transform, footprint, SINK_MM, volume,
@@ -110,6 +111,40 @@ export function withLogo(sc: Scene, logo: Logo, index: number | null = null): Sc
 }
 
 export const without = (sc: Scene, index: number): Scene => ({ base: sc.base, logos: sc.logos.filter((_, i) => i !== index) });
+
+/** The model replaced (Repair), logos kept. */
+export const withBase = (sc: Scene, base: ViewModel | null): Scene => ({ base, logos: sc.logos });
+
+/** Everything moved / turned / scaled by ``m``: the model and every logo (meshes, and the point
+ * / direction they were placed at, so Change… still works). */
+export function arranged(sc: Scene, m: Matrix): Scene {
+  let base = sc.base;
+  if (base) {
+    const det = Math.abs(determinant3(m));
+    base = { ...base, positions: applySoup(base.positions, m), size: sizeOf(applySoup(base.positions, m)), volumeMm3: base.volumeMm3 !== null ? base.volumeMm3 * det : null };
+  }
+  const logos = sc.logos.map((lg) => ({
+    ...lg,
+    meshes: lg.meshes.map((x) => applyIndexed(x.vertices, x.faces, m)),
+    point: lg.point ? applyPoint(m, lg.point) : null,
+    normal: lg.normal ? applyNormal(m, lg.normal) : null,
+  }));
+  return { base, logos };
+}
+
+function sizeOf(pos: Float32Array): [number, number, number] {
+  const [lo, hi] = bounds(pos);
+  return [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]];
+}
+
+/** Every corner of the model and the logos, as one soup (for bounds). */
+export function scenePositions(sc: Scene): Float32Array {
+  const extra = logoPositions(sc.logos);
+  const out = new Float32Array((sc.base?.positions.length ?? 0) + extra.length);
+  if (sc.base) out.set(sc.base.positions);
+  out.set(extra, sc.base?.positions.length ?? 0);
+  return out;
+}
 
 /** Every logo piece as one triangle soup (like ViewModel.positions). */
 export function logoPositions(logos: readonly Logo[]): Float32Array {
