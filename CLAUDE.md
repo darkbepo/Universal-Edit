@@ -1024,9 +1024,11 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       localStorage `umc-bed` ("name|w|d|h"), filament `umc-filament` ("PLA|0.15"; `#filament-*`
       in the details). e2e `e2e/print3d.spec.ts` builds its STL files in the test; Ctrl+Z in a
       number box is the box's own undo (tests click Undo).
-      Review fixes: `arranged` scales the logos' width / thickness / sink (∛|det|) and keeps
-      their turn on the face (`_turned` / `turned`), so Change… rebuilds the same logo; a
-      mirroring matrix makes logos again (never mirrored text). Undo keeps at most `UNDO_BYTES`
+      Review fixes: `arranged` scales the logos' thickness / sink / plate margin / plate
+      thickness by ∛|det|, the width by the stretch along the logo's own width
+      (`_stretch` / `stretch`), and keeps their turn on the face (`_turned` / `turned`), so
+      Change… rebuilds the same logo; a mirror makes face logos again (never mirrored text,
+      overhang kept) and moves a badge to its mirrored place without flipping it. Undo keeps at most `UNDO_BYTES`
       of models (500 MB desktop / 300 MB web, oldest steps dropped). A move that changes
       nothing (`is_identity` / `isIdentity`) is no undo step. A repair whose model changed
       meanwhile (another step, a logo being made, the panel closed, another file) is dropped

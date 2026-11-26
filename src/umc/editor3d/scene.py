@@ -180,24 +180,40 @@ class Scene:
             s = lg.settings
             point = A.apply_point(m, lg.point) if lg.point is not None else None
             normal = A.apply_normal(m, lg.normal) if lg.normal is not None else None
+            wide = _stretch(m, lg.normal or (0.0, 0.0, 1.0), s.rotation, 0)  # along its width
+            tall = _stretch(m, lg.normal or (0.0, 0.0, 1.0), s.rotation, 1)
             s = replace(
                 s,
-                width=s.width * k,
+                width=s.width * wide,
                 thickness=s.thickness * k,
                 sink=s.sink * k,
+                margin=s.margin * k,
+                plate_thickness=s.plate_thickness * k,
                 rotation=_turned(m, lg.normal or (0.0, 0.0, 1.0), normal or (0.0, 0.0, 1.0), s),
             )
-            if det < 0:  # rebuilt where it now is, from the picture, not mirrored
+            if det < 0 and s.where == "face":  # made again where it now is, not mirrored
                 try:
-                    logos.append(build_logo(lg.picture, s, point, normal, base))
+                    again = build_logo(lg.picture, s, point, normal, base)
+                    logos.append(replace(again, overhang=lg.overhang))
                     continue
                 except L.LogoError:
                     pass
+            if det < 0 and s.where != "face":
+                # a badge: moved to its mirrored place, never turned inside out (two parallel
+                # mirrors = a move)
+                c = _centre(lg.meshes)
+                shift = np.asarray(A.apply_point(m, c)) - np.asarray(c)
+                meshes = tuple(L.Mesh(x.vertices + shift, x.faces) for x in lg.meshes)
+                logos.append(
+                    replace(lg, settings=replace(s, rotation=lg.settings.rotation), meshes=meshes)
+                )
+                continue
             meshes = tuple(L.Mesh(*A.apply(x.vertices, x.faces, m)) for x in lg.meshes)
             logos.append(
                 replace(
                     lg, settings=s, meshes=meshes, point=point, normal=normal,
-                    width=lg.width * k, height=lg.height * k, overlap=lg.overlap * k**3,
+                    width=lg.width * wide, height=lg.height * tall,
+                    overlap=lg.overlap * wide * tall * k,
                 )
             )  # fmt: skip
         return Scene(base, tuple(logos))
@@ -273,6 +289,17 @@ def export(scene: Scene, ext: str) -> bytes:
     )
     opts = ModelOptions(center_on_bed=False, repair=False, merge_parts=True)
     return save_model(trimesh.Scene(mesh), ext, opts)
+
+
+def _stretch(m: A.Matrix, normal, rotation: float, axis: int) -> float:
+    """How much ``m`` lengthens the logo's width (axis 0) or height (1) direction."""
+    x = L.frame(normal, rotation)[axis]
+    return float(np.linalg.norm(np.array(m, dtype=np.float64)[:3, :3] @ x))
+
+
+def _centre(meshes) -> tuple[float, float, float]:
+    v = np.concatenate([x.vertices for x in meshes])
+    return tuple(float(c) for c in (v.min(axis=0) + v.max(axis=0)) / 2)  # type: ignore[return-value]
 
 
 def _turned(m: A.Matrix, old_normal, new_normal, s: LogoSettings) -> float:
