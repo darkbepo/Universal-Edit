@@ -209,6 +209,10 @@ def main(argv: list[str] | None = None) -> int:
     theme.load_choice()  # the remembered System / Light / Dark, before the first window
     theme.apply(app)  # our palette too: tables / text boxes / dialogs otherwise follow the OS
     theme.notifier().changed.connect(lambda: theme.apply(app))
+    from umc.gui import touch
+
+    touch.install(app)  # finger scrolling in lists / text boxes (the mouse is unchanged)
+    touch.notifier().changed.connect(lambda: theme.apply(app))
 
     from umc.gui.launcher import AppController
 

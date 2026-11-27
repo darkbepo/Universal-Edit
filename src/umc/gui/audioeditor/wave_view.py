@@ -23,6 +23,7 @@ from umc.audioedit import peaks, spectrum
 from umc.audioedit.document import AudioDoc
 from umc.audioedit.ops import format_time
 from umc.gui import theme
+from umc.gui.touch import PinchZoom
 
 RULER_H = 24
 LANE_GAP = 6
@@ -63,6 +64,15 @@ class WaveView(QWidget):
         self._spectro_at = 0.0  # when they were computed (time.monotonic)
         self._spectro_timer = QTimer(self, singleShot=True, interval=SETTLE_MS)
         self._spectro_timer.timeout.connect(self.update)
+        self.pinch = PinchZoom(self, lambda f, at: self.zoom(f, at.x()), self._pan_px)
+
+    def _pan_px(self, delta) -> None:
+        """Two-finger pan: the sound follows the fingers sideways."""
+        if self.doc is None:
+            return
+        self.start -= delta.x() * self.fpp
+        self._clamp()
+        self._changed()
 
     def set_spectrogram(self, on: bool) -> None:
         self.spectrogram = on

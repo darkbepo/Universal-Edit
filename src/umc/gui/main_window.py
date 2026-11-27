@@ -40,7 +40,7 @@ from umc.core.detect import DetectedFile, MediaFamily, detect
 from umc.core.job import ConversionJob, file_fractions
 from umc.core.registry import MixedInputError, Target, targets_for
 from umc.doceditor.types import EDITABLE_DOCUMENT_EXTS
-from umc.gui import branding, icons, theme
+from umc.gui import branding, icons, theme, touch
 from umc.gui.properties.panel import PropertiesPanel
 from umc.gui.tool_dialog import ToolMissingDialog
 from umc.gui.widgets.drop_zone import DropZone
@@ -179,9 +179,9 @@ class MainWindow(QMainWindow):
         tl.addWidget(self.mode_bar, 0, 2, right)
         # the outer columns only share the spare width equally when it's enough for the switch;
         # an equal minimum keeps the name centred in a narrow window too (Windows' wider fonts)
-        side = self.mode_bar.sizeHint().width()
-        tl.setColumnMinimumWidth(0, side)
-        tl.setColumnMinimumWidth(2, side)
+        self._top_grid = tl
+        self._fit_top_bar()
+        touch.notifier().changed.connect(self._fit_top_bar)  # bigger buttons, wider switch
         outer.addWidget(top)
         self.editor = None  # EditorPage, created on first use
         self.doc_editor = None  # DocEditorPage, created on first use
@@ -355,6 +355,17 @@ class MainWindow(QMainWindow):
         )
         self._apply_left_width()
         self._update_left_sizes()
+        self._fit_top_bar()
+
+    def _fit_top_bar(self) -> None:
+        """Wide: the name sits centred (equal outer columns). Narrow (a tablet held upright):
+        only the logo, and the outer columns stop reserving the switch's width on both sides,
+        so Convert | Edit | Properties isn't cut off."""
+        narrow = bool(self._narrow)
+        self.title.setVisible(not narrow)
+        side = 0 if narrow else self.mode_bar.sizeHint().width()
+        self._top_grid.setColumnMinimumWidth(0, side)
+        self._top_grid.setColumnMinimumWidth(2, side)
 
     def _apply_left_width(self) -> None:
         if self.narrow or not self.files:

@@ -27,6 +27,7 @@ from PySide6.QtOpenGLWidgets import QOpenGLWidget
 from umc.editor3d.camera import OrbitCamera
 from umc.editor3d.mesh import ViewModel
 from umc.gui import theme
+from umc.gui.touch import PinchZoom
 
 log = logging.getLogger(__name__)
 
@@ -165,6 +166,21 @@ class ModelGLView(QOpenGLWidget):
         self._press: QPointF | None = None
         self._moved = False
         self._grabbing = False
+        self.pinch = PinchZoom(self, self._pinch_zoom, self._pinch_pan, self._pinch_start)
+
+    def _pinch_start(self) -> None:
+        self._drag = None  # the first finger's orbit / drag stops
+        self._grabbing = False
+
+    def _pinch_zoom(self, factor: float, _at) -> None:
+        self.camera.zoom(1 / factor)  # fingers apart = closer
+        self.camera_changed.emit()
+        self.update()
+
+    def _pinch_pan(self, delta) -> None:
+        self.camera.pan(delta.x(), delta.y(), self.height())
+        self.camera_changed.emit()
+        self.update()
 
     # ------------------------------------------------------------ public
     def set_model(self, model: ViewModel | None, fit: bool = True) -> None:

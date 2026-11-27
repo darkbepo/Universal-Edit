@@ -43,6 +43,7 @@ from PySide6.QtWidgets import (
 from umc.core.errors import ConversionCancelled, ConversionError
 from umc.core.filemode import match_mode
 from umc.gui import icons, theme
+from umc.gui.touch import Foldable
 from umc.gui.vectoreditor.canvas import VectorCanvas
 from umc.gui.vectoreditor.panels import AppearancePanel, LayersPanel
 from umc.gui.vectoreditor.shortcuts import SHORTCUTS
@@ -240,6 +241,7 @@ class VectorEditorPage(QWidget):
         middle = QSplitter()
         middle.addWidget(self.canvas)
         middle.addWidget(right)
+        self.side = right
         middle.setStretchFactor(0, 1)
         middle.setSizes([900, 280])
 
@@ -255,6 +257,8 @@ class VectorEditorPage(QWidget):
         root.addWidget(self._build_top_bar())
         root.addLayout(body, 1)
         root.addWidget(self._build_status_bar())
+        # a tablet-sized window: layers + appearance fold behind a button
+        self.fold = Foldable(self, [self.side], self.panels_button)
         self._install_shortcuts()
         self._show_doc(fit=True)
 
@@ -285,6 +289,7 @@ class VectorEditorPage(QWidget):
         lay.addStretch(1)
         self.undo_button = tb("Undo", "Undo (Ctrl+Z)", self.undo)
         self.redo_button = tb("Redo", "Redo (Ctrl+Y)", self.redo)
+        self.panels_button = tb("Layers", "Show layers and appearance", lambda: None)
         tb("?", "Keyboard shortcuts (F1)", self.show_shortcuts)
         tb("Export…", "Export as PDF, PNG, JPG … (Ctrl+E)", self.export)
         self.save_as_button = tb("Save as…", "Save as (Ctrl+Shift+S)", self.save_as)

@@ -17,6 +17,7 @@ from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QWidget
 
 from umc.gui import theme
+from umc.gui.touch import PinchZoom
 from umc.vectoredit import doc as vdoc
 from umc.vectoredit import pathdata, shapes, xmlsrc
 from umc.vectoredit.doc import Path, VectorDoc, VectorError
@@ -80,6 +81,14 @@ class VectorCanvas(QWidget):
         self._image_key: tuple | None = None
         self._renderer_ok = True
         self._fitted = False
+        self.pinch = PinchZoom(self, self.zoom_by, self.pan_view, self.cancel_gesture)
+
+    def pan_view(self, delta: QPointF) -> None:
+        """Move the drawing by ``delta`` screen px (two-finger pan)."""
+        self.origin += delta
+        self._image = None
+        self.view_changed.emit()
+        self.update()
 
     # ------------------------------------------------------------------ document / view
     def set_document(self, doc: VectorDoc, fit: bool = False) -> None:

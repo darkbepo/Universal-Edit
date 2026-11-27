@@ -15,6 +15,7 @@ from PySide6.QtCore import (
     QObject,
     QPointF,
     QRectF,
+    QSettings,
     Qt,
     QThread,
     QTimer,
@@ -84,6 +85,7 @@ from umc.gui.editor.layers_panel import LayersPanel
 from umc.gui.editor.shortcuts import SHORTCUTS
 from umc.gui.editor.side_panel import ColorSwatches, ToolSettings
 from umc.gui.editor.tool_rail import ToolRail
+from umc.gui.touch import Foldable
 
 log = logging.getLogger(__name__)
 
@@ -301,8 +303,11 @@ class EditorPage(QWidget):
         self.tool_settings.changed.connect(self._update_live_text)  # size, bold… while typing
         self.tool_settings.setMinimumWidth(250)
         self.tool_settings.title.hide()  # the window's title already names the tool
-        middle.addWidget(self._build_side())
+        self.side = self._build_side()
+        middle.addWidget(self.side)
         root.addLayout(middle, 1)
+        # a tablet-sized window: colours + layers fold behind a button, the rail shows icons
+        self.fold = Foldable(self, [self.side], self.panels_button, on_fold=self._folded)
 
         status = QFrame(objectName="EditorStatus")
         sl = QHBoxLayout(status)
@@ -345,11 +350,19 @@ class EditorPage(QWidget):
         tb("100 %", "Actual pixels (Ctrl+1)", lambda: self.canvas.set_zoom(1.0))
         lay.addSpacing(12)
         lay.addStretch(1)
+        self.panels_button = tb("Layers", "Show colours and layers", lambda: None)
         tb("?", "Keyboard shortcuts (?)", lambda: self.show_shortcuts())
         lay.addSpacing(6)
         self.save_as_button = tb("Save as…", "Save as (Ctrl+Shift+S)", lambda: self.save_as())
         self.save_button = tb("Save", "Save (Ctrl+S)", lambda: self.save(), "Primary")
         return bar
+
+    def _folded(self, narrow: bool) -> None:
+        if narrow:
+            self.tool_bar.set_narrow(True, remember=False)
+        else:
+            saved = QSettings().value("editor/rail_narrow", False, type=bool)
+            self.tool_bar.set_narrow(bool(saved), remember=False)
 
     def _build_side(self) -> QWidget:
         scroll = QScrollArea(objectName="EditorSide")

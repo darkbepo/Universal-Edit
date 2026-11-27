@@ -20,6 +20,7 @@ from umc.editor.selection import outline as selection_outline
 from umc.editor.tools.base import Tool, ToolContext
 from umc.gui import theme
 from umc.gui.editor.crop_bar import nearest_corner, place_bar
+from umc.gui.touch import PinchZoom
 
 SELECT_TOOLS = ("select", "ellipse_select", "lasso", "polygon_lasso", "wand")
 
@@ -91,6 +92,13 @@ class EditorCanvas(QWidget):
         self._release_at: tuple[float, float] | None = None
         self._outline_key = None
         self._outline_path = QPainterPath()
+        # two fingers: pinch zooms, moving them pans; a stroke the first finger began is dropped
+        self.pinch = PinchZoom(
+            self,
+            lambda f, at: self.set_zoom(self.zoom * f, at),
+            self.pan_by,
+            self.cancel_gesture,
+        )
 
     # ------------------------------------------------------------ document
     def set_document(self, doc: Document, history: History) -> None:

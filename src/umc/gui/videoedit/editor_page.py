@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 
 from umc.core.detect import AUDIO_EXTS, IMAGE_EXTS, VIDEO_EXTS
 from umc.core.errors import ConversionError
+from umc.gui.touch import Foldable
 from umc.gui.videoedit.dialogs import ExportDialog, LocateDialog
 from umc.gui.videoedit.inspector import Inspector, change_label, target_of
 from umc.gui.videoedit.media_list import MediaList
@@ -145,14 +146,18 @@ class VideoEditorPage(QWidget):
         middle = QHBoxLayout()
         middle.setContentsMargins(12, 12, 12, 12)
         middle.setSpacing(12)
-        middle.addWidget(self._build_media_column())
+        self.media_column = self._build_media_column()
+        middle.addWidget(self.media_column)
         self.preview = PreviewView()
         self.preview.step_requested.connect(self.step_frames)
         self.preview.play_toggled.connect(self._play_toggled)
         self.preview.loop_toggled.connect(lambda on: setattr(self.player, "loop", on))
         middle.addWidget(self.preview, 1)
-        middle.addWidget(self._build_inspector())
+        self.inspector_column = self._build_inspector()
+        middle.addWidget(self.inspector_column)
         root.addLayout(middle, 1)
+        # a tablet-sized window: media + details fold behind a button, the preview gets the room
+        self.fold = Foldable(self, [self.media_column, self.inspector_column], self.panels_button)
 
         self.timeline = TimelineView()
         self.timeline.edit.connect(self._timeline_edit)
@@ -198,6 +203,7 @@ class VideoEditorPage(QWidget):
         self.undo_button = tb("Undo", "Undo (Ctrl+Z)", self.undo)
         self.redo_button = tb("Redo", "Redo (Ctrl+Y)", self.redo)
         lay.addStretch(1)
+        self.panels_button = tb("Media && details", "Show media and clip details", lambda: None)
         self.save_button = tb("Save project", "Save project (Ctrl+S)", self.save)
         self.save_as_button = tb("Save project as…", "Save project as (Ctrl+Shift+S)", self.save_as)
         self.export_button = tb("Export…", "Export the video (Ctrl+E)", self.export, "Primary")

@@ -14,6 +14,7 @@ from PySide6.QtGui import QColor, QFont, QImage, QMouseEvent, QPainter, QPen, QW
 from PySide6.QtWidgets import QWidget
 
 from umc.gui import theme
+from umc.gui.touch import PinchZoom
 from umc.videoedit import edits
 from umc.videoedit.project import (
     AudioClip,
@@ -76,6 +77,17 @@ class TimelineView(QWidget):
         self.setAcceptDrops(True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._update_size()
+        self.pinch = PinchZoom(
+            self, lambda f, at: self._zoom(f, at.x()), self._pan_px, self._pinch_start
+        )
+
+    def _pinch_start(self) -> None:
+        self._drag = None  # a clip the first finger picked up stays where it was
+        self._seeking = False
+
+    def _pan_px(self, delta) -> None:
+        self.scroll_seconds = max(0.0, self.scroll_seconds - delta.x() / self.pixels_per_second)
+        self.update()
 
     # ---- state ----------------------------------------------------------------------------
     def set_project(self, project: Project) -> None:

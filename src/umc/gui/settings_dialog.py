@@ -64,6 +64,22 @@ class SettingsDialog(QDialog):
         theme_row.addStretch(1)
         lay.addLayout(theme_row)
         lay.addSpacing(10)
+        from umc.gui import touch
+
+        lay.addWidget(QLabel("Bigger controls for fingers", objectName="CardTitle"))
+        touch_row = QHBoxLayout()
+        self.touch_group = QButtonGroup(self)
+        self.touch_buttons: dict[str, QRadioButton] = {}
+        for key in touch.CHOICES:
+            radio = QRadioButton(touch.LABELS[key])
+            radio.setChecked(key == touch.choice())
+            radio.toggled.connect(lambda on, k=key: on and touch.set_choice(k))
+            self.touch_group.addButton(radio)
+            touch_row.addWidget(radio)
+            self.touch_buttons[key] = radio
+        touch_row.addStretch(1)
+        lay.addLayout(touch_row)
+        lay.addSpacing(10)
         head = QLabel("Windows", objectName="CardTitle")
         lay.addWidget(head)
         self.boxes: dict[str, QCheckBox] = {}

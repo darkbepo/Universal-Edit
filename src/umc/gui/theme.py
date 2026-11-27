@@ -248,9 +248,12 @@ def qpalette():
 
 
 def apply(app) -> None:
-    """Palette + stylesheet on the whole application (at start and on every light ↔ dark)."""
+    """Palette + stylesheet (+ finger-sized controls in touch mode) on the whole application,
+    at start and on every light ↔ dark or touch on ↔ off."""
+    from umc.gui import touch
+
     app.setPalette(qpalette())
-    app.setStyleSheet(stylesheet())
+    app.setStyleSheet(stylesheet() + touch.stylesheet())
 
 
 def stylesheet() -> str:
