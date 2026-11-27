@@ -340,6 +340,7 @@ class MainWindow(QMainWindow):
         super().resizeEvent(event)
         self._apply_layout()
         self._apply_left_width()
+        self._fit_top_bar()
 
     @property
     def narrow(self) -> bool:
@@ -358,14 +359,19 @@ class MainWindow(QMainWindow):
         self._fit_top_bar()
 
     def _fit_top_bar(self) -> None:
-        """Wide: the name sits centred (equal outer columns). Narrow (a tablet held upright):
-        only the logo, and the outer columns stop reserving the switch's width on both sides,
-        so Convert | Edit | Properties isn't cut off."""
+        """The brand stays centred: both outer columns reserve the switch's width. Narrow (a
+        tablet held upright) shows only the logo, and when even that leaves too little room the
+        columns stop reserving, so Convert | Edit | Properties isn't cut off."""
         narrow = bool(self._narrow)
         self.title.setVisible(not narrow)
-        side = 0 if narrow else self.mode_bar.sizeHint().width()
-        self._top_grid.setColumnMinimumWidth(0, side)
-        self._top_grid.setColumnMinimumWidth(2, side)
+        grid = self._top_grid
+        m = grid.contentsMargins()
+        room = self.width() - m.left() - m.right() - 2 * grid.horizontalSpacing()
+        side = self.mode_bar.sizeHint().width()
+        if 2 * side + self.brand.sizeHint().width() > room:
+            side = 0
+        grid.setColumnMinimumWidth(0, side)
+        grid.setColumnMinimumWidth(2, side)
 
     def _apply_left_width(self) -> None:
         if self.narrow or not self.files:
