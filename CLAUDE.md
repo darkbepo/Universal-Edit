@@ -1646,7 +1646,9 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
        click; wheel = volume ±5 (QSettings `viewer/volume`). **No sound device → no
        QAudioOutput** (`QMediaDevices.audioOutputs()` empty): with one, Qt's FFmpeg backend
        deadlocked in `stop()` / `setVideoOutput()` (headless CI); without, playback still runs
-       at real speed. `TaskRunner` treats `ConversionCancelled` as a quiet cancel.
+       at real speed. `Playback.close` never calls `stop()`: a video still playing after the
+       mini player detached its picture locked up there even with a working sound device
+       (PipeWire); `setSource(QUrl())` ends it instead. `TaskRunner` treats `ConversionCancelled` as a quiet cancel.
     2. ✅ Quick Convert (right-click). `core/quickconvert.py` (no Qt): `menu_for(ext)` = the
        converter's targets for a sample file of that type minus `SKIP_PREFIXES` (pack, slideshow,
        split) / `SKIP_IDS` (PDF rotate / organize / protect / unlock: they need a choice) and the

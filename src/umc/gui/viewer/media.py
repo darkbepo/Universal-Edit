@@ -131,9 +131,11 @@ class Playback(QObject):
             self.player.play()
 
     def close(self) -> None:
-        self.player.stop()
-        self.player.setVideoOutput(None)
+        # No stop(): a video that played on after its picture moved nowhere (the mini player
+        # detaches it) made Qt's FFmpeg backend lock up in stop() with a sound device present.
+        # Clearing the source ends playback just as well.
         self.player.setSource(QUrl())
+        self.player.setVideoOutput(None)
         self.deleteLater()
 
     def _on_error(self, _error, message: str) -> None:
