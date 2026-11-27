@@ -153,3 +153,156 @@ export function onFace(points: Vec3[], pos: ArrayLike<number>, face: Face): bool
 
 /** How many of the logo's outline points lie off the face. */
 export const overhang = (points: Vec3[], pos: ArrayLike<number>, face: Face) => onFace(points, pos, face).filter((x) => !x).length;
+
+// ----------------------------------------------------------------------------- curved surfaces
+export const AREA_COS = 0.5; // triangles facing within 60° of the click count towards the direction
+export const CELL_TRIS = 4; // the surface grid aims at this many triangles per cell
+export const MAX_CELLS = 512; // ... with at most this many cells along a side
+export const SURFACE_MARGIN_MM = 1; // triangles this far past the logo's reach are kept too
+
+/** The logo's "out" direction on a curved model: the area-weighted normal of the triangles
+ *  with a corner within ``radius`` of ``point`` that face roughly the clicked way (within
+ *  60°). A flat face (or big triangles with no corner that close) gives ``normal`` back. */
+export function areaNormal(pos: ArrayLike<number>, point: Vec3, normal: Vec3, radius: number): Vec3 {
+  const l0 = Math.sqrt(dot(normal, normal));
+  const n0: Vec3 = [normal[0] / l0, normal[1] / l0, normal[2] / l0];
+  const r2 = radius * radius;
+  let tx = 0, ty = 0, tz = 0;
+  const n = Math.floor(pos.length / 9);
+  for (let i = 0; i < n; i++) {
+    let close = false;
+    for (let k = 0; k < 3 && !close; k++) {
+      const dx = pos[i * 9 + k * 3] - point[0], dy = pos[i * 9 + k * 3 + 1] - point[1], dz = pos[i * 9 + k * 3 + 2] - point[2];
+      close = dx * dx + dy * dy + dz * dz <= r2;
+    }
+    if (!close) continue;
+    const t0 = corner(pos, i, 0);
+    const c = cross(sub(corner(pos, i, 1), t0), sub(corner(pos, i, 2), t0));
+    const length = Math.sqrt(dot(c, c));
+    if (length > 0 && dot(c, n0) >= AREA_COS * length) {
+      tx += c[0];
+      ty += c[1];
+      tz += c[2];
+    }
+  }
+  const size = Math.sqrt(tx * tx + ty * ty + tz * tz);
+  return size > 1e-12 ? [tx / size, ty / size, tz / size] : [n0[0], n0[1], n0[2]];
+}
+
+export interface Samples {
+  h: Float64Array; // height along n (0 where missed)
+  normals: Float64Array; // unit world normal, 3 per point
+  hit: Uint8Array;
+}
+
+/** The model's triangles under a logo, seen along −n from the logo's plane: (u, v) in the
+ *  logo's x / y, h = height along n. Every projection ray of a logo runs along −n, so where
+ *  it meets the model is the triangle a point lies in, in 2D — a uniform grid. */
+export class Surface {
+  constructor(
+    readonly origin: Vec3,
+    readonly axes: [Vec3, Vec3, Vec3], // x, y, n
+    readonly tris: Float64Array, // 9 per triangle: (u, v, h) corners, front-facing only
+    readonly normals: Float64Array, // 3 per triangle, unit, world
+    readonly lo: [number, number],
+    readonly cell: number,
+    readonly size: number,
+    readonly starts: Int32Array, // size² + 1 offsets into items
+    readonly items: Int32Array,
+  ) {}
+
+  get count(): number {
+    return this.tris.length / 9;
+  }
+
+  /** (h, unit world normal, hit) per (u, v) point (2 numbers each): of the front-facing
+   *  triangles the point lies in, the one nearest the logo's plane (|h| smallest). */
+  sample(uv: ArrayLike<number>): Samples {
+    const p = Math.floor(uv.length / 2);
+    const out: Samples = { h: new Float64Array(p), normals: new Float64Array(p * 3), hit: new Uint8Array(p) };
+    if (!p || !this.count) return out;
+    const t = this.tris, eps = 1e-9;
+    for (let i = 0; i < p; i++) {
+      const qx = uv[i * 2], qy = uv[i * 2 + 1];
+      const gx = Math.floor((qx - this.lo[0]) / this.cell), gy = Math.floor((qy - this.lo[1]) / this.cell);
+      if (gx < 0 || gy < 0 || gx >= this.size || gy >= this.size) continue;
+      const cid = gy * this.size + gx;
+      let best = Infinity, which = -1, bestH = 0;
+      for (let j = this.starts[cid]; j < this.starts[cid + 1]; j++) {
+        const k = this.items[j] * 9;
+        const x0 = t[k], y0 = t[k + 1], x1 = t[k + 3], y1 = t[k + 4], x2 = t[k + 6], y2 = t[k + 7];
+        const d = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2);
+        const l0 = ((y1 - y2) * (qx - x2) + (x2 - x1) * (qy - y2)) / d;
+        const l1 = ((y2 - y0) * (qx - x2) + (x0 - x2) * (qy - y2)) / d;
+        const l2 = 1 - l0 - l1;
+        if (!(l0 >= -eps && l1 >= -eps && l2 >= -eps)) continue;
+        const hh = l0 * t[k + 2] + l1 * t[k + 5] + l2 * t[k + 8];
+        if (Math.abs(hh) < best) {
+          best = Math.abs(hh);
+          which = this.items[j];
+          bestH = hh;
+        }
+      }
+      if (which < 0) continue;
+      out.h[i] = bestH;
+      out.normals.set(this.normals.subarray(which * 3, which * 3 + 3), i * 3);
+      out.hit[i] = 1;
+    }
+    return out;
+  }
+}
+
+/** The ``Surface`` around ``origin``: triangles whose (u, v) box comes within ``reach`` (+
+ *  SURFACE_MARGIN_MM) of it, within 2 · reach along n, and that face the logo. One pass over
+ *  all triangles, so a big model costs one sweep per placement, not per ray. */
+export function surface(pos: ArrayLike<number>, origin: Vec3, axes: [Vec3, Vec3, Vec3], reach: number): Surface {
+  const r = reach + SURFACE_MARGIN_MM;
+  const depth = 2 * reach + SURFACE_MARGIN_MM;
+  const limits = [r, r, depth];
+  const offs = axes.map((a) => dot(origin, a));
+  const n = Math.floor(pos.length / 9);
+  const kept: number[] = [];
+  const nrm: number[] = [];
+  const local = new Float64Array(9);
+  const front = 1e-12 * Math.max(r * r, 1e-9);
+  for (let i = 0; i < n; i++) {
+    for (let k = 0; k < 3; k++) {
+      const vx = pos[i * 9 + k * 3], vy = pos[i * 9 + k * 3 + 1], vz = pos[i * 9 + k * 3 + 2];
+      for (let a = 0; a < 3; a++) local[k * 3 + a] = vx * axes[a][0] + vy * axes[a][1] + vz * axes[a][2] - offs[a];
+    }
+    let out = false;
+    for (let a = 0; a < 3 && !out; a++) {
+      const lim = limits[a], c0 = local[a], c1 = local[3 + a], c2 = local[6 + a];
+      out = (c0 < -lim && c1 < -lim && c2 < -lim) || (c0 > lim && c1 > lim && c2 > lim);
+    }
+    if (out) continue;
+    const area2 = (local[3] - local[0]) * (local[7] - local[1]) - (local[4] - local[1]) * (local[6] - local[0]);
+    if (!(area2 > front)) continue;
+    for (let j = 0; j < 9; j++) kept.push(local[j]);
+    const nn = normalOf(pos, i);
+    nrm.push(nn[0], nn[1], nn[2]);
+  }
+  const count = kept.length / 9;
+  const size = Math.min(MAX_CELLS, Math.max(1, Math.ceil(Math.sqrt(count / CELL_TRIS))));
+  const lo: [number, number] = [-r, -r];
+  const cell = (2 * r) / size;
+  const clampCell = (v: number) => Math.min(size - 1, Math.max(0, Math.floor((v - -r) / cell)));
+  const box = new Int32Array(count * 4);
+  const counts = new Int32Array(size * size + 1);
+  for (let i = 0; i < count; i++) {
+    const k = i * 9;
+    const gx0 = clampCell(Math.min(kept[k], kept[k + 3], kept[k + 6])), gx1 = clampCell(Math.max(kept[k], kept[k + 3], kept[k + 6]));
+    const gy0 = clampCell(Math.min(kept[k + 1], kept[k + 4], kept[k + 7])), gy1 = clampCell(Math.max(kept[k + 1], kept[k + 4], kept[k + 7]));
+    box.set([gx0, gx1, gy0, gy1], i * 4);
+    for (let cy = gy0; cy <= gy1; cy++) for (let cx = gx0; cx <= gx1; cx++) counts[cy * size + cx + 1]++;
+  }
+  for (let c = 0; c < size * size; c++) counts[c + 1] += counts[c];
+  const starts = Int32Array.from(counts);
+  const fill = Int32Array.from(counts);
+  const items = new Int32Array(starts[size * size]);
+  for (let i = 0; i < count; i++) {
+    const [gx0, gx1, gy0, gy1] = box.subarray(i * 4, i * 4 + 4);
+    for (let cy = gy0; cy <= gy1; cy++) for (let cx = gx0; cx <= gx1; cx++) items[fill[cy * size + cx]++] = i;
+  }
+  return new Surface(origin, axes, Float64Array.from(kept), Float64Array.from(nrm), lo, cell, size, starts, items);
+}

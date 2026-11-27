@@ -25,6 +25,7 @@ dependencies = [
     "trimesh>=4.0",
     "cascadio>=0.1",
     "mapbox_earcut>=1.0",  # 3D logos: triangulating outlines with holes (ISC)
+    "manifold3d>=3.0",  # 3D logos merged into / cut out of the model: booleans (Apache-2.0)
     "lxml>=5.0",
     "networkx>=3.0",
     "py7zr>=1.0",

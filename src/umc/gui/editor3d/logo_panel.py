@@ -26,8 +26,10 @@ MODES = (("alpha", "Transparent background"), ("dark", "Dark parts"), ("light", 
 DETAILS = (("smooth", "Smooth"), ("normal", "Normal"), ("fine", "Fine"))
 WHERE = (("face", "On the model"), ("badge", "Separate badge"))
 PLATES = (("none", "No plate"), ("rectangle", "Rectangle"), ("rounded", "Rounded rectangle"))
+FITS = (("flat", "Flat"), ("wrap", "Wrap around"))
+STYLES = (("raised", "Raised"), ("engraved", "Engraved (cut in)"))
 PREVIEW_PX = 200
-FACE_HINT = "Click a flat face of the model to place the logo, then drag the logo to move it."
+FACE_HINT = "Click the model to place the logo, then drag the logo to move it over the surface."
 
 
 def _combo(items) -> QComboBox:
@@ -103,6 +105,17 @@ class LogoPanel(QFrame):
         form.addRow("Thickness", self.thickness)
         self.where = _combo(WHERE)
         form.addRow("Place", self.where)
+        self.fit = _combo(FITS)
+        self.fit.setToolTip(
+            "Flat: a flat top, the bottom follows the surface. "
+            "Wrap around: bends with the surface, like a sticker."
+        )
+        form.addRow("Fit to surface", self.fit)
+        self.style_box = _combo(STYLES)
+        self.style_box.setToolTip(
+            "Engraved logos are cut into the model when you save (it must be one closed solid)."
+        )
+        form.addRow("Style", self.style_box)
         self.rotation = _spin(-180, 180, 0, 15, "°")
         form.addRow("Rotation", self.rotation)
         self.sink = _spin(0, 2, 0.2, 0.1)
@@ -133,7 +146,7 @@ class LogoPanel(QFrame):
         buttons.addWidget(self.apply_button)
         lay.addLayout(buttons)
 
-        for box in (self.mode, self.detail, self.where, self.plate):
+        for box in (self.mode, self.detail, self.where, self.plate, self.fit, self.style_box):
             box.currentIndexChanged.connect(self._changed)
         for spin in (self.width_box, self.thickness, self.rotation, self.sink, self.margin,
                      self.plate_thickness):  # fmt: skip
@@ -157,6 +170,8 @@ class LogoPanel(QFrame):
             where=where,
             rotation=self.rotation.value(),
             sink=self.sink.value(),
+            fit=self.fit.currentData(),
+            style=self.style_box.currentData(),
             plate=self.plate.currentData(),
             margin=self.margin.value(),
             plate_thickness=self.plate_thickness.value(),
@@ -167,7 +182,8 @@ class LogoPanel(QFrame):
         self._quiet = True
         try:
             for box, key in ((self.mode, s.mode), (self.detail, s.detail),
-                             (self.where, s.where), (self.plate, s.plate)):  # fmt: skip
+                             (self.where, s.where), (self.plate, s.plate), (self.fit, s.fit),
+                             (self.style_box, s.style)):  # fmt: skip
                 box.setCurrentIndex(max(0, box.findData(key)))
             self.threshold.setValue(s.threshold)
             self.invert.setChecked(s.invert)
@@ -202,7 +218,16 @@ class LogoPanel(QFrame):
         rows = self.form.setRowVisible
         rows(self.where, self._has_model)
         rows(self.threshold, s.mode != "alpha")
-        rows(self.sink, s.where == "face")
+        engraved = s.where == "face" and s.style == "engraved"
+        rows(self.sink, s.where == "face" and not engraved)
+        rows(self.fit, s.where == "face")
+        rows(self.style_box, s.where == "face")
+        label = self.form.labelForField(self.thickness)
+        if label is not None:
+            label.setText("Depth" if engraved else "Thickness")
+        self.thickness.setToolTip(
+            "How deep it's cut in" if engraved else "How far the logo stands out"
+        )
         badge, plate = s.where == "badge", s.plate != "none"
         rows(self.plate, badge)
         for w in (self.margin, self.plate_thickness, self.hole):

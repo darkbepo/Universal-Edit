@@ -326,8 +326,118 @@ def main() -> None:
             )
         cases["face"].append(entry)
 
+    curved(cases)
     OUT.write_text(json.dumps(cases, separators=(",", ":")) + "\n", encoding="utf-8")
     print(f"wrote {OUT}")
+
+
+def r9(v: float) -> float:
+    return round(float(v), 9)
+
+
+def ball() -> tuple[np.ndarray, np.ndarray]:
+    """An icosphere of radius 30 (642 corners), made here so the cases carry its corners."""
+    t = (1 + 5**0.5) / 2
+    v = [[-1, t, 0], [1, t, 0], [-1, -t, 0], [1, -t, 0], [0, -1, t], [0, 1, t], [0, -1, -t],
+         [0, 1, -t], [t, 0, -1], [t, 0, 1], [-t, 0, -1], [-t, 0, 1]]  # fmt: skip
+    f = [[0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11], [1, 5, 9], [5, 11, 4],
+         [11, 10, 2], [10, 7, 6], [7, 1, 8], [3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8],
+         [3, 8, 9], [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1]]  # fmt: skip
+    pts = [np.array(p, float) / np.linalg.norm(p) for p in v]
+    for _ in range(3):
+        mids: dict[tuple[int, int], int] = {}
+
+        def mid(a: int, b: int, mids: dict[tuple[int, int], int] = mids) -> int:
+            key = (min(a, b), max(a, b))
+            if key not in mids:
+                m = pts[a] + pts[b]
+                mids[key] = len(pts)
+                pts.append(m / np.linalg.norm(m))
+            return mids[key]
+
+        nf = []
+        for a, b, c in f:
+            ab, bc, ca = mid(a, b), mid(b, c), mid(c, a)
+            nf += [[a, ab, ca], [b, bc, ab], [c, ca, bc], [ab, bc, ca]]
+        f = nf
+    return np.round(np.array(pts) * 30, 9), np.array(f, np.int64)
+
+
+def curved(cases: dict) -> None:
+    """Logos on curved surfaces: cap refinement, the surface sampler and fitted logos."""
+    cases["refine"] = []
+    for name in ("square", "ring", "letters"):
+        s = logo.prepare(logo.shape(logo.trace(grid(MASKS[name])), 20.0))
+        for poly_i, poly in enumerate(s.polygons):
+            xy = [p for r in (poly.outer, *poly.holes) for p in r]
+            for max_edge in (logo.refine_edge(20.0), 1.5):
+                pts, tris = logo.refine(xy, poly.caps, max_edge)
+                a2 = sum((pts[b][0] - pts[a][0]) * (pts[c][1] - pts[a][1])
+                         - (pts[b][1] - pts[a][1]) * (pts[c][0] - pts[a][0])
+                         for a, b, c in tris)  # fmt: skip
+                cases["refine"].append(
+                    {
+                        "name": name,
+                        "polygon": poly_i,
+                        "max_edge": max_edge,
+                        "points": len(pts),
+                        "triangles": len(tris),
+                        "outline": len(logo.outline_edges(tris)),
+                        "area": r6(a2 / 2),
+                    }  # fmt: skip
+                )
+    v, f = ball()
+    cases["ball"] = {"vertices": v.tolist(), "faces": f.tolist()}
+    cases["surface"] = []
+    for direction, rotation, reach in (([0, 0, 1], 0.0, 10.0), ([0.3, 0.2, 1], 15.0, 14.0),
+                                       ([1, -1, 0.2], -40.0, 6.0)):  # fmt: skip
+        d = np.asarray(direction, float)
+        d /= np.linalg.norm(d)
+        point = d * 30
+        n = pick.area_normal(v, f, point, [0.0, 0.0, 1.0] if d[2] > 0.5 else d, reach)
+        x, y, nn = logo.frame(n, rotation)
+        surf = pick.surface(v, f, point, np.array([x, y, nn]), reach)
+        uv = np.array([[u, w] for u in np.linspace(-reach, reach, 7)
+                       for w in np.linspace(-reach, reach, 5)])  # fmt: skip
+        h, nrm, hit = surf.sample(uv)
+        cases["surface"].append(
+            {
+                "direction": direction,
+                "rotation": rotation,
+                "reach": reach,
+                "point": [r9(c) for c in point],
+                "normal": [r9(c) for c in n],
+                "kept": len(surf.tris),
+                "size": surf.size,
+                "uv": uv.round(9).tolist(),
+                "h": [r9(c) for c in h],
+                "hit": hit.tolist(),
+                "normals": [[r9(c) for c in row] for row in nrm],
+            }  # fmt: skip
+        )
+    cases["fit"] = []
+    s = logo.prepare(logo.shape(logo.trace(grid(MASKS["ring"])), 16.0))
+    reach = max(float(np.hypot(*p)) for poly in s.polygons for p in poly.outer)
+    d = np.array([0.3, 0.2, 1.0]) / np.linalg.norm([0.3, 0.2, 1.0])
+    point = d * 30
+    n = pick.area_normal(v, f, point, d, reach)
+    for fit in logo.FITS:
+        for style in logo.STYLES:
+            x, y, nn = logo.frame(n, 15.0)
+            surf = pick.surface(v, f, point, np.array([x, y, nn]), reach)
+            r = logo.fitted_logo(s, 2.0, point, n, 15.0, 0.2, fit, surf, style)
+            cases["fit"].append(
+                {
+                    "fit": fit,
+                    "style": style,
+                    "point": [r9(c) for c in point],
+                    "normal": [r9(c) for c in n],
+                    "width": 16.0,
+                    "missed": r.missed,
+                    "folded": r.folded,
+                    **mesh_facts(r.mesh),
+                }  # fmt: skip
+            )
 
 
 if __name__ == "__main__":

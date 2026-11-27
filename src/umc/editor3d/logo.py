@@ -689,3 +689,175 @@ def footprint(s: Shape, point, normal, rotation_deg: float = 0.0) -> np.ndarray:
     x, y, _ = frame(normal, rotation_deg)
     pts = np.array([p for poly in s.polygons for p in poly.outer], float)
     return np.asarray(point, float) + pts[:, :1] * x + pts[:, 1:2] * y
+
+
+# ----------------------------------------------------------------------------- curved surfaces
+FITS = ("flat", "wrap")
+STYLES = ("raised", "engraved")
+FOLD_COS = math.cos(math.radians(75))  # a wrapped triangle tilted more than this folds over
+ENGRAVE_LIFT_MM = 0.5  # an engraving cutter reaches this far above the surface
+
+
+def refine_edge(width: float) -> float:
+    """Longest cap edge for a logo ``width`` mm wide that follows a curved surface."""
+    return min(2.0, max(0.3, width / 60))
+
+
+def refine(
+    xy: list[Point], tris: list[tuple[int, int, int]], max_edge: float
+) -> tuple[list[Point], list[tuple[int, int, int]]]:
+    """Split every edge longer than ``max_edge`` at its midpoint, the new point shared by the
+    two triangles on that edge, until none is longer (a triangle with 1 / 2 / 3 split edges
+    becomes 2 / 3 / 4). The triangles stay counter-clockwise and still meet edge to edge, so
+    the outline edges are split the same way and the walls can follow them."""
+    pts = list(xy)
+    out = list(tris)
+    limit = max_edge * max_edge
+    while True:
+        mids: dict[tuple[int, int], int] = {}
+        for tri in out:
+            for k in range(3):
+                a, b = tri[k], tri[(k + 1) % 3]
+                key = (a, b) if a < b else (b, a)
+                if key in mids:
+                    continue
+                (ax, ay), (bx, by) = pts[a], pts[b]
+                if (bx - ax) ** 2 + (by - ay) ** 2 > limit:
+                    mids[key] = len(pts)
+                    pts.append(((ax + bx) / 2, (ay + by) / 2))
+        if not mids:
+            return pts, out
+        nxt: list[tuple[int, int, int]] = []
+        for tri in out:
+            m = [mids.get((min(tri[k], tri[(k + 1) % 3]), max(tri[k], tri[(k + 1) % 3])), -1)
+                 for k in range(3)]  # fmt: skip
+            split = sum(1 for v in m if v >= 0)
+            if split == 0:
+                nxt.append(tri)
+                continue
+            # turn the triangle so its first edge is split (and, with two, the second too)
+            r = 0
+            if split == 1:
+                r = next(k for k in range(3) if m[k] >= 0)
+            elif split == 2:
+                r = next(k for k in range(3) if m[k] < 0)
+                r = (r + 1) % 3
+            a, b, c = tri[r], tri[(r + 1) % 3], tri[(r + 2) % 3]
+            mab, mbc, mca = m[r], m[(r + 1) % 3], m[(r + 2) % 3]
+            if split == 1:
+                nxt += [(a, mab, c), (mab, b, c)]
+            elif split == 2:
+                nxt += [(mab, b, mbc), (a, mab, mbc), (a, mbc, c)]
+            else:
+                nxt += [(a, mab, mca), (mab, b, mbc), (mca, mbc, c), (mab, mbc, mca)]
+        out = nxt
+
+
+def outline_edges(tris: list[tuple[int, int, int]]) -> list[tuple[int, int]]:
+    """The directed edges used by one triangle only (the outline; inside on the left), in
+    the order the triangles list them."""
+    seen: dict[tuple[int, int], int] = {}
+    for a, b, c in tris:
+        for e in ((a, b), (b, c), (c, a)):
+            seen[e] = seen.get(e, 0) + 1
+    return [e for e in seen if (e[1], e[0]) not in seen]
+
+
+@dataclass
+class Fitted:
+    mesh: Mesh
+    missed: int = 0  # outline / cap points whose ray found no surface
+    folded: int = 0  # wrapped triangles tilted more than 75° from the logo's direction
+    area: float = 0.0  # mm², of the logo's outline (for the volume)
+
+
+def _solid(bottom: np.ndarray, top: np.ndarray, tris: list[tuple[int, int, int]]) -> tuple:
+    """Faces of a closed solid between two copies of one refined cap (same vertex order)."""
+    n = len(bottom)
+    faces = []
+    for a, b, c in tris:
+        faces.append((n + a, n + b, n + c))  # top, facing out
+        faces.append((a, c, b))  # bottom, facing in
+    for a, b in outline_edges(tris):
+        faces.append((a, b, b + n))
+        faces.append((a, b + n, a + n))
+    return np.concatenate([bottom, top]), faces
+
+
+def fitted_logo(
+    s: Shape,
+    thickness: float,
+    point,
+    normal,
+    rotation_deg: float,
+    sink: float,
+    fit: str,
+    surf,
+    style: str = "raised",
+) -> Fitted:
+    """The logo fitted to the model's surface (``surf`` = ``pick.surface`` around ``point``
+    with the axes of ``frame(normal, rotation_deg)``). Every cap point is projected along
+    −normal onto the model.
+
+    flat — the top stays one plane ``thickness`` above the highest surface point under the
+    logo, the bottom follows the surface (``sink`` below it): flush, nothing floating.
+    wrap — a decal: bottom on the surface, top ``thickness`` out along the surface's own
+    direction at each point (the normal of the logo's projected bottom).
+    engraved (style) — the same shapes made as a cutter: from ``thickness`` below the
+    surface to ``ENGRAVE_LIFT_MM`` above it, cut out of the model when saving."""
+    x, y, n = frame(normal, rotation_deg)
+    o = np.asarray(point, float)
+    step = refine_edge(s.width)
+    verts: list[np.ndarray] = []
+    faces: list[tuple[int, int, int]] = []
+    missed = 0
+    folded = 0
+    parts = []
+    for poly in s.polygons:
+        caps = _caps(poly)  # first: it may switch the polygon to its unsimplified rings
+        xy = [p for r in (poly.outer, *poly.holes) for p in r]
+        pts, tris = refine(xy, caps, step)
+        uv = np.array(pts, float).reshape(-1, 2)
+        h, _nrm, hit = surf.sample(uv)
+        missed += int((~hit).sum())
+        parts.append((uv, tris, h, hit))
+    if fit == "wrap" and missed:
+        raise LogoError(
+            f"{missed} points of the logo miss the model — move it onto the model or make it "
+            "smaller (or choose Flat)."
+        )
+    hits = [h[hit] for _uv, _t, h, hit in parts if hit.any()]
+    lowest = float(min(v.min() for v in hits)) if hits else 0.0
+    highest = float(max(v.max() for v in hits)) if hits else 0.0
+    engraved = style == "engraved"
+    for uv, tris, h, hit in parts:
+        h = np.where(hit, h, lowest)
+        flat_xy = o + uv[:, :1] * x + uv[:, 1:2] * y
+        if fit == "wrap":
+            ground = flat_xy + h[:, None] * n
+            t = np.array(tris, np.int64).reshape(-1, 3)
+            cr = np.cross(ground[t[:, 1]] - ground[t[:, 0]], ground[t[:, 2]] - ground[t[:, 0]])
+            vn = np.zeros_like(ground)
+            for k in range(3):
+                np.add.at(vn, t[:, k], cr)
+            length = np.linalg.norm(cr, axis=1)
+            folded += int(((length > 0) & (cr @ n < FOLD_COS * length)).sum())
+            size = np.linalg.norm(vn, axis=1, keepdims=True)
+            vn = np.where(size > 1e-12, vn / np.where(size > 1e-12, size, 1), n)
+            if engraved:
+                bottom, top = ground - vn * thickness, ground + vn * ENGRAVE_LIFT_MM
+            else:
+                bottom, top = ground - vn * sink, ground + vn * thickness
+        else:
+            if engraved:
+                bottom = flat_xy + (h - thickness)[:, None] * n
+                top = flat_xy + (highest + ENGRAVE_LIFT_MM) * n
+            else:
+                bottom = flat_xy + (h - sink)[:, None] * n
+                top = flat_xy + (highest + thickness) * n
+        v, f = _solid(bottom, top, tris)
+        base = sum(len(p) for p in verts)
+        verts.append(v)
+        faces += [(a + base, b + base, c + base) for a, b, c in f]
+    mesh = Mesh(np.concatenate(verts).reshape(-1, 3), np.array(faces, np.int64).reshape(-1, 3))
+    return Fitted(mesh, missed, folded, s.area)

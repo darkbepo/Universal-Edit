@@ -3,10 +3,12 @@
 // shows and collects settings; the page builds and places the logo.
 import { DEFAULT_SETTINGS, type LogoSettings } from "../../editor3d/scene";
 
-export const FACE_HINT = "Click a flat face of the model to place the logo, then drag the logo to move it.";
+export const FACE_HINT = "Click the model to place the logo, then drag the logo to move it over the surface.";
 const MODES: [string, string][] = [["alpha", "Transparent background"], ["dark", "Dark parts"], ["light", "Light parts"]];
 const DETAILS: [string, string][] = [["smooth", "Smooth"], ["normal", "Normal"], ["fine", "Fine"]];
 const WHERE: [string, string][] = [["face", "On the model"], ["badge", "Separate badge"]];
+const FITS: [string, string][] = [["flat", "Flat"], ["wrap", "Wrap around"]];
+const STYLES: [string, string][] = [["raised", "Raised"], ["engraved", "Engraved (cut in)"]];
 const PLATES: [string, string][] = [["none", "No plate"], ["rectangle", "Rectangle"], ["rounded", "Rounded rectangle"]];
 export const PICTURE_ACCEPT = ".png,.jpg,.jpeg,.webp,.gif,.bmp,.avif,.svg";
 
@@ -82,6 +84,10 @@ export class LogoPanel {
     row("height", "Height", this.heightText);
     row("thickness", "Thickness (mm)", num("thickness", 0.2, 50, 0.2, 2));
     row("where", "Place", select("where", WHERE));
+    row("fit", "Fit to surface", select("fit", FITS));
+    this.rows.fit.title = "Flat: a flat top, the bottom follows the surface. Wrap around: bends with the surface, like a sticker.";
+    row("style", "Style", select("style", STYLES));
+    this.rows.style.title = "Engraved logos are cut into the model when you save (it must be one closed solid).";
     row("rotation", "Rotation (°)", num("rotation", -180, 180, 15, 0));
     row("sink", "Sink into surface (mm)", num("sink", 0, 2, 0.1, 0.2));
     row("plate", "Base plate", select("plate", PLATES));
@@ -121,6 +127,8 @@ export class LogoPanel {
       where: this.hasModel ? (this.value("where") as LogoSettings["where"]) : "badge",
       rotation: this.number("rotation", 0),
       sink: this.number("sink", d.sink),
+      fit: this.value("fit") as LogoSettings["fit"],
+      style: this.value("style") as LogoSettings["style"],
       plate: this.value("plate") as LogoSettings["plate"],
       margin: this.number("margin", d.margin),
       plate_thickness: this.number("plate_thickness", d.plate_thickness),
@@ -154,7 +162,9 @@ export class LogoPanel {
     const s = this.settings();
     this.rows.where.hidden = !this.hasModel;
     this.rows.threshold.hidden = s.mode === "alpha";
-    this.rows.sink.hidden = s.where !== "face";
+    this.rows.sink.hidden = s.where !== "face" || s.style === "engraved";
+    this.rows.fit.hidden = this.rows.style.hidden = s.where !== "face";
+    this.rows.thickness.querySelector("label")!.textContent = s.where === "face" && s.style === "engraved" ? "Depth (mm)" : "Thickness (mm)";
     const badge = s.where === "badge", plate = s.plate !== "none";
     this.rows.plate.hidden = !badge;
     for (const k of ["margin", "plate_thickness", "hole"]) this.rows[k].hidden = !(badge && plate);

@@ -640,3 +640,169 @@ export function positions(m: Mesh): Float32Array {
   for (let i = 0; i < m.faces.length; i++) out.set(m.vertices.subarray(m.faces[i] * 3, m.faces[i] * 3 + 3), i * 3);
   return out;
 }
+
+// ------------------------------------------------------------------------------ curved surfaces
+export type Fit = "flat" | "wrap";
+export type Style = "raised" | "engraved";
+export const FITS: Fit[] = ["flat", "wrap"];
+export const STYLES: Style[] = ["raised", "engraved"];
+export const FOLD_COS = Math.cos((75 * Math.PI) / 180); // a wrapped triangle tilted more than this folds over
+export const ENGRAVE_LIFT_MM = 0.5; // an engraving cutter reaches this far above the surface
+
+/** Longest cap edge for a logo ``width`` mm wide that follows a curved surface. */
+export const refineEdge = (width: number) => Math.min(2, Math.max(0.3, width / 60));
+
+const edgeKey = (a: number, b: number) => (a < b ? a * 4294967296 + b : b * 4294967296 + a);
+
+/** Split every edge longer than ``maxEdge`` at its midpoint, the new point shared by the two
+ *  triangles on that edge, until none is longer (1 / 2 / 3 split edges → 2 / 3 / 4
+ *  triangles). The triangles stay counter-clockwise and meet edge to edge. */
+export function refine(xy: Point[], tris: [number, number, number][], maxEdge: number): [Point[], [number, number, number][]] {
+  const pts = xy.slice();
+  let out = tris.slice();
+  const limit = maxEdge * maxEdge;
+  for (;;) {
+    const mids = new Map<number, number>();
+    for (const tri of out) {
+      for (let k = 0; k < 3; k++) {
+        const a = tri[k], b = tri[(k + 1) % 3];
+        const key = edgeKey(a, b);
+        if (mids.has(key)) continue;
+        const [ax, ay] = pts[a], [bx, by] = pts[b];
+        if ((bx - ax) ** 2 + (by - ay) ** 2 > limit) {
+          mids.set(key, pts.length);
+          pts.push([(ax + bx) / 2, (ay + by) / 2]);
+        }
+      }
+    }
+    if (!mids.size) return [pts, out];
+    const next: [number, number, number][] = [];
+    for (const tri of out) {
+      const m = [0, 1, 2].map((k) => mids.get(edgeKey(tri[k], tri[(k + 1) % 3])) ?? -1);
+      const split = m.filter((v) => v >= 0).length;
+      if (split === 0) {
+        next.push(tri);
+        continue;
+      }
+      // turn the triangle so its first edge is split (and, with two, the second too)
+      let r = 0;
+      if (split === 1) r = m.findIndex((v) => v >= 0);
+      else if (split === 2) r = (m.findIndex((v) => v < 0) + 1) % 3;
+      const a = tri[r], b = tri[(r + 1) % 3], c = tri[(r + 2) % 3];
+      const mab = m[r], mbc = m[(r + 1) % 3], mca = m[(r + 2) % 3];
+      if (split === 1) next.push([a, mab, c], [mab, b, c]);
+      else if (split === 2) next.push([mab, b, mbc], [a, mab, mbc], [a, mbc, c]);
+      else next.push([a, mab, mca], [mab, b, mbc], [mca, mbc, c], [mab, mbc, mca]);
+    }
+    out = next;
+  }
+}
+
+/** The directed edges used by one triangle only (the outline; inside on the left). */
+export function outlineEdges(tris: [number, number, number][]): [number, number][] {
+  const seen = new Map<number, [number, number]>();
+  for (const [a, b, c] of tris)
+    for (const e of [[a, b], [b, c], [c, a]] as [number, number][]) {
+      const key = e[0] * 4294967296 + e[1];
+      if (!seen.has(key)) seen.set(key, e);
+    }
+  const out: [number, number][] = [];
+  for (const e of seen.values()) if (!seen.has(e[1] * 4294967296 + e[0])) out.push(e);
+  return out;
+}
+
+export interface Fitted {
+  mesh: Mesh;
+  missed: number; // cap points whose ray found no surface
+  folded: number; // wrapped triangles tilted more than 75° from the logo's direction
+  area: number;
+}
+
+/** What ``fittedLogo`` needs of pick.ts's Surface. */
+export interface SurfaceSampler {
+  sample(uv: ArrayLike<number>): { h: Float64Array; normals: Float64Array; hit: Uint8Array };
+}
+
+/** The logo fitted to the model's surface (``surf`` = pick.surface around ``point`` with the
+ *  axes of ``frame(normal, rotationDeg)``); every cap point is projected along −normal.
+ *  flat — the top stays one plane ``thickness`` above the highest surface point under it,
+ *  the bottom follows the surface (``sink`` below). wrap — bottom on the surface, top
+ *  ``thickness`` out along the surface's own direction at each point. engraved — the same
+ *  as a cutter, ``thickness`` below to ENGRAVE_LIFT_MM above the surface. */
+export function fittedLogo(
+  s: Shape, thickness: number, point: Vec3, normal: Vec3, rotationDeg: number, sink: number, fit: Fit, surf: SurfaceSampler, style: Style = "raised",
+): Fitted {
+  const [x, y, n] = frame(normal, rotationDeg);
+  const step = refineEdge(s.width);
+  const verts: number[] = [];
+  const faces: number[] = [];
+  let missed = 0, folded = 0;
+  const parts: { uv: Float64Array; tris: [number, number, number][]; h: Float64Array; hit: Uint8Array }[] = [];
+  for (const poly of s.polygons) {
+    const cap = caps(poly); // first: it may switch the polygon to its unsimplified rings
+    const xy = [poly.outer, ...poly.holes].flat();
+    const [pts, tris] = refine(xy, cap, step);
+    const uv = Float64Array.from(pts.flat());
+    const { h, hit } = surf.sample(uv);
+    for (const v of hit) if (!v) missed++;
+    parts.push({ uv, tris, h, hit });
+  }
+  if (fit === "wrap" && missed)
+    throw new LogoError(`${missed} points of the logo miss the model — move it onto the model or make it smaller (or choose Flat).`);
+  let lowest = Infinity, highest = -Infinity;
+  for (const { h, hit } of parts) for (let i = 0; i < h.length; i++) if (hit[i]) {
+    lowest = Math.min(lowest, h[i]);
+    highest = Math.max(highest, h[i]);
+  }
+  if (lowest === Infinity) lowest = highest = 0;
+  const engraved = style === "engraved";
+  for (const { uv, tris, h: h0, hit } of parts) {
+    const p = uv.length / 2;
+    const h = h0.map((v, i) => (hit[i] ? v : lowest));
+    const bottom = new Float64Array(p * 3), top = new Float64Array(p * 3);
+    const flat = new Float64Array(p * 3);
+    for (let i = 0; i < p; i++)
+      for (let a = 0; a < 3; a++) flat[i * 3 + a] = point[a] + uv[i * 2] * x[a] + uv[i * 2 + 1] * y[a];
+    if (fit === "wrap") {
+      const ground = new Float64Array(p * 3);
+      for (let i = 0; i < p; i++) for (let a = 0; a < 3; a++) ground[i * 3 + a] = flat[i * 3 + a] + h[i] * n[a];
+      const vn = new Float64Array(p * 3);
+      for (const [a, b, c] of tris) {
+        const g = (i: number): Vec3 => [ground[i * 3], ground[i * 3 + 1], ground[i * 3 + 2]];
+        const ga = g(a), gb = g(b), gc = g(c);
+        const cr = cross([gb[0] - ga[0], gb[1] - ga[1], gb[2] - ga[2]], [gc[0] - ga[0], gc[1] - ga[1], gc[2] - ga[2]]);
+        for (const v of [a, b, c]) for (let k = 0; k < 3; k++) vn[v * 3 + k] += cr[k];
+        const length = Math.sqrt(cr[0] * cr[0] + cr[1] * cr[1] + cr[2] * cr[2]);
+        if (length > 0 && cr[0] * n[0] + cr[1] * n[1] + cr[2] * n[2] < FOLD_COS * length) folded++;
+      }
+      for (let i = 0; i < p; i++) {
+        const size = Math.sqrt(vn[i * 3] ** 2 + vn[i * 3 + 1] ** 2 + vn[i * 3 + 2] ** 2);
+        for (let k = 0; k < 3; k++) {
+          const d = size > 1e-12 ? vn[i * 3 + k] / size : n[k];
+          const gk = ground[i * 3 + k];
+          bottom[i * 3 + k] = engraved ? gk - d * thickness : gk - d * sink;
+          top[i * 3 + k] = engraved ? gk + d * ENGRAVE_LIFT_MM : gk + d * thickness;
+        }
+      }
+    } else {
+      for (let i = 0; i < p; i++)
+        for (let k = 0; k < 3; k++) {
+          const f = flat[i * 3 + k];
+          bottom[i * 3 + k] = f + (engraved ? h[i] - thickness : h[i] - sink) * n[k];
+          top[i * 3 + k] = f + (engraved ? highest + ENGRAVE_LIFT_MM : highest + thickness) * n[k];
+        }
+    }
+    const base = verts.length / 3;
+    for (const v of bottom) verts.push(v);
+    for (const v of top) verts.push(v);
+    for (const [a, b, c] of tris) {
+      faces.push(base + p + a, base + p + b, base + p + c); // top, facing out
+      faces.push(base + a, base + c, base + b); // bottom, facing in
+    }
+    for (const [a, b] of outlineEdges(tris)) {
+      faces.push(base + a, base + b, base + b + p);
+      faces.push(base + a, base + b + p, base + a + p);
+    }
+  }
+  return { mesh: { vertices: Float64Array.from(verts), faces: Uint32Array.from(faces) }, missed, folded, area: shapeArea(s) };
+}

@@ -42,6 +42,8 @@ class LogoSettings:
     where: str = "face"  # face (on the model) / badge (a separate piece)
     rotation: float = 0.0  # degrees
     sink: float = L.SINK_MM
+    fit: str = "flat"  # on the model: flat (flat top, bottom follows the surface) / wrap
+    style: str = "raised"  # on the model: raised / engraved (cut into it when saving)
     plate: str = "none"  # badge only: none / rectangle / rounded
     margin: float = 3.0
     plate_thickness: float = 2.0
@@ -58,8 +60,13 @@ class Logo:
     width: float = 0.0  # mm, as built
     height: float = 0.0
     dropped: int = 0
-    overhang: int = 0  # outline points off the face
+    overhang: int = 0  # logo points whose projection misses the model
     overlap: float = 0.0  # mm³ inside the model / plate (sunk in), so the volume counts it once
+    folded: int = 0  # wrapped triangles where the surface turns away (> 75°)
+
+    @property
+    def engraved(self) -> bool:
+        return self.settings.where == "face" and self.settings.style == "engraved"
 
 
 def picture_from_image(image, name: str) -> Picture:
@@ -94,26 +101,38 @@ def build_logo(
     point=None,
     normal=None,
     base: ViewModel | None = None,
-    face_tris: list[int] | None = None,
+    face_tris: list[int] | None = None,  # unused since logos follow the surface (old callers)
     shp: L.Shape | None = None,
+    quick: bool = False,
 ) -> Logo:
     """Trace (unless ``shp`` is given: dragging re-places without tracing again) + extrude +
-    place. Raises logo.LogoError in plain words."""
+    place. On a model (``base``) the logo is fitted to its surface (``s.fit``); ``quick``
+    (while dragging) skips that and stands it on the tangent plane like before. Raises
+    logo.LogoError in plain words."""
     if shp is None:
         shp = shape_of(pic, s)
     overhang = 0
+    folded = 0
     sunk = 0.0
+    overlap: float | None = None
     if s.where == "face":
         sunk = s.sink
         if point is None or normal is None:
-            raise L.LogoError("Click a flat face of the model to place the logo.")
-        meshes = (L.placed_logo(shp, s.thickness, point, normal, s.rotation, s.sink),)
-        if base is not None and face_tris:
+            raise L.LogoError("Click the model to place the logo.")
+        if base is not None and not quick:
             from umc.editor3d import pick
 
-            face = pick.Face(list(face_tris), np.asarray(normal, float), np.asarray(point, float))
-            pts = L.footprint(shp, point, normal, s.rotation)
-            overhang = pick.overhang(pts, base.vertices, base.faces, face)
+            x, y, n = L.frame(normal, s.rotation)
+            surf = pick.surface(base.vertices, base.faces, point, np.array([x, y, n]), reach(shp))
+            fitted = L.fitted_logo(
+                shp, s.thickness, point, normal, s.rotation, s.sink, s.fit, surf, s.style
+            )
+            meshes = (fitted.mesh,)
+            overhang, folded = fitted.missed, fitted.folded
+            if s.style == "engraved":  # a cut: the info volume loses area × depth
+                overlap = abs(fitted.mesh.volume) + shp.area * s.thickness
+        else:  # no model, or dragging: on the tangent plane (instant)
+            meshes = (L.placed_logo(shp, s.thickness, point, normal, s.rotation, s.sink),)
     else:
         parts = L.badge(shp, s.thickness, s.plate, s.margin, s.plate_thickness, s.hole)
         if s.plate != "none":
@@ -139,8 +158,14 @@ def build_logo(
         shp.height,
         shp.dropped,
         overhang,
-        shp.area * sunk,
+        shp.area * sunk if overlap is None else overlap,
+        folded,
     )
+
+
+def reach(shp: L.Shape) -> float:
+    """How far the logo reaches from its centre (mm), whichever way it is turned."""
+    return max((math.hypot(x, y) for p in shp.polygons for x, y in p.outer), default=0.0)
 
 
 @dataclass(frozen=True)
@@ -240,17 +265,25 @@ class Scene:
         out += [(m.vertices, m.faces) for lg in self.logos for m in lg.meshes]
         return out
 
+    def engraved_meshes(self) -> list[tuple[np.ndarray, np.ndarray]]:
+        """The engraved logos' cutters (the page draws them tinted, over the model)."""
+        return [(m.vertices, m.faces) for lg in self.logos if lg.engraved for m in lg.meshes]
+
     def combined(self, name: str = "") -> ViewModel | None:
         """One ViewModel of everything (parts = the model's + one per logo piece)."""
         if self.empty:
             return None
         if not self.logos:
             return self.base
-        parts = self.meshes()
+        parts = [(self.base.vertices, self.base.faces)] if self.base is not None else []
+        parts += [(m.vertices, m.faces) for lg in self.logos if not lg.engraved for m in lg.meshes]
+        # engraved cutters are drawn apart, tinted (``engraved_meshes``)
+        if not parts:
+            parts = [(np.zeros((0, 3)), np.zeros((0, 3), np.int64))]
         offsets = np.cumsum([0] + [len(v) for v, _ in parts[:-1]])
         vertices = np.concatenate([v for v, _ in parts]).astype(np.float64)
         faces = np.concatenate([f + o for (_v, f), o in zip(parts, offsets, strict=True)])
-        pieces = sum(len(lg.meshes) for lg in self.logos)
+        pieces = sum(len(lg.meshes) for lg in self.logos if not lg.engraved)
         base = self.base
         watertight = base.watertight if base is not None else True
         volume = None
@@ -272,15 +305,55 @@ class Scene:
 
 def export(scene: Scene, ext: str) -> bytes:
     """The whole scene as one object in ``ext`` (millimetres; nothing moved or repaired)."""
-    import trimesh
+    return export_with_note(scene, ext, merge=False)[0]
 
-    from umc.converters.model3d import ModelOptions, save_model
 
+MERGE_FAILED = (
+    "Saved as separate overlapping parts: the model isn't one closed solid, so the logos "
+    "couldn't be merged into it (Check → Repair may help)."
+)
+ENGRAVE_FAILED = (
+    "Engraving needs a closed model — run Check → Repair first, or make the logo raised."
+)
+
+
+def needs_solid(scene: Scene) -> bool:
+    return any(lg.engraved for lg in scene.logos)
+
+
+def export_with_note(scene: Scene, ext: str, merge: bool = False) -> tuple[bytes, str]:
+    """``export``, but with ``merge`` the model and its raised logos become one watertight
+    body (boolean union) and engraved logos are cut out of it. A merge that fails falls back
+    to the plain save and says why; engraving can't fall back, so it raises LogoError."""
     if ext not in SAVE_EXTS:
         raise ValueError(ext)
     parts = scene.meshes()
     if not parts:
         raise L.LogoError("There is nothing to save yet.")
+    note = ""
+    if merge or needs_solid(scene):
+        from umc.editor3d import solid
+
+        base = scene.base
+        try:
+            body = solid.combine(
+                (base.vertices, base.faces) if base is not None else None,
+                [(m.vertices, m.faces) for lg in scene.logos if not lg.engraved for m in lg.meshes],
+                [(m.vertices, m.faces) for lg in scene.logos if lg.engraved for m in lg.meshes],
+            )
+            return _save([body], ext), ""
+        except solid.SolidError:
+            if needs_solid(scene):
+                raise L.LogoError(ENGRAVE_FAILED) from None
+            note = MERGE_FAILED
+    return _save(parts, ext), note
+
+
+def _save(parts: list[tuple[np.ndarray, np.ndarray]], ext: str) -> bytes:
+    import trimesh
+
+    from umc.converters.model3d import ModelOptions, save_model
+
     offsets = np.cumsum([0] + [len(v) for v, _ in parts[:-1]])
     mesh = trimesh.Trimesh(
         np.concatenate([v for v, _ in parts]),

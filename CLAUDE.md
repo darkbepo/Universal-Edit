@@ -988,6 +988,30 @@ Logs: `%LOCALAPPDATA%\UniversalEdit\umc.log` (Windows),
       area (`_covers` / `covers`) and else switch it to its unsimplified rings (`Polygon.raw`);
       `extrude` asks for the caps before reading the rings. The two earcut builds can differ
       there, so shared case "noise" compares volumes loosely on the web.
+      Curved surfaces (owner, Nov 2026; spec `docs/superpowers/specs/2026-11-27-3d-logo-curved-design.md`,
+      both apps): "On the model" logos follow the surface. `pick.surface` / `surface` = all of a
+      logo's rays run along −n, so ray casting becomes point-in-triangle in the logo's (u, v)
+      plane over a uniform grid (CSR `starts` / `items`, ~`CELL_TRIS` per cell, ≤ `MAX_CELLS`²);
+      only front-facing triangles within reach + 1 mm and 2·reach + 1 deep count, nearest the
+      plane wins (ties: first listed). `area_normal` / `areaNormal` = the area-weighted normal
+      around the click (within 60°), so one noisy triangle can't tilt the logo. `logo.refine` /
+      `refine` = red–green midpoint splits (`refine_edge` = clamp(width / 60, 0.3, 2) mm), walls
+      from the refined outline edges. `fitted_logo` / `fittedLogo`: `LogoSettings.fit` "flat"
+      (flat top, bottom down to the surface; misses warn) or "wrap" (decal: raised along the
+      projected bottom's own vertex normals; misses refuse, > 75° fold-back warns as `folded`);
+      `style` "raised" or "engraved" (a cutter `thickness` deep + `ENGRAVE_LIFT_MM`; not counted
+      as a part, drawn tinted in the overlay). `Logo.overhang` now = missed points. Dragging
+      re-hits the model (quick build on the tangent plane, fitted `FIT_MS` 120 ms after the
+      pointer stops and on release). Merge on save: `editor3d/solid.py` (manifold3d, Apache-2.0,
+      bundled in the app — a single compiled module, so not in the add-on's `site/`) ↔
+      `web/src/editor3d/solid.ts` (manifold-3d wasm, loaded on first merge in `traceworker.ts`,
+      `engines/manifold.ts`): union of the model + raised logos, then the engraved ones
+      subtracted; a failed union saves as before with `MERGE_FAILED`, engraving refuses
+      (`ENGRAVE_FAILED`). Desktop: "Merge into one solid when saving" under the Logos list
+      (QSettings `viewer3d/merge_logos`), `scene.export_with_note`; web `#logo-save-merge` in the
+      save dialog. Shared cases "refine" / "ball" / "surface" / "fit" in `logo3d_cases.json`;
+      the two earcut builds differ on holes, so the web compares refine counts only for the
+      square. Self-test "3D logo" also wraps a logo onto a ball and merges it.
       Print tools (owner, Nov 2026; spec `docs/superpowers/specs/2026-11-26-3d-print-tools-design.md`).
       Step 1 ✅ model: `editor3d/arrange.py` ↔ `arrange.ts` (4×4 row-major matrices: `rotate`
       exact at multiples of 90°, `scale`, `mirror`, `lay_flat` = Rodrigues turning the normal to

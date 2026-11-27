@@ -8,16 +8,17 @@ import type { InputFile } from "../../core/types";
 import { OrbitCamera, FOV, type Vec3 } from "../../editor3d/camera";
 import { LogoError, MAX_SIDE, defaultMode, type Shape } from "../../editor3d/logo";
 import { describe, gridSpec, type ModelStats, type ViewModel } from "../../editor3d/mesh";
-import { flatFace, hit, ray } from "../../editor3d/pick";
+import { areaNormal, flatFace, hit, normalOf, ray } from "../../editor3d/pick";
 import {
-  arranged, buildLogo, combined, defaultSaveName, History, logoPositions, sameSettings, SAVE_EXTS, sceneStl, scenePositions, emptyScene, withBase, without, withLogo,
+  arranged, buildLogo, combined, defaultSaveName, ENGRAVE_FAILED, engravedPositions, reach, History, isEngraved, logoPositions, MERGE_FAILED, needsSolid, sameSettings, SAVE_EXTS, sceneSolids, sceneStl,
+  scenePositions, emptyScene, withBase, without, withLogo,
   type Logo, type LogoSettings, type Picture, type SaveExt, type Scene,
 } from "../../editor3d/scene";
 import { JobCancelled, type ConversionClient } from "../../worker/client";
 import { backLabel } from "../back";
 import { FACE_HINT, LogoPanel } from "./logopanel";
 import { ArrangePanel, CheckPanel } from "./printpanels";
-import type { CheckAnswer, CheckRequest, RepairAnswer, RepairRequest, TraceAnswer, TraceRequest } from "./traceworker";
+import type { CheckAnswer, CheckRequest, MergeAnswer, MergeRequest, RepairAnswer, RepairRequest, TraceAnswer, TraceRequest } from "./traceworker";
 import * as A from "../../editor3d/arrange";
 import { DENSITY, rows as filamentRows } from "../../editor3d/filament";
 
@@ -39,6 +40,7 @@ const STYLE_BUTTONS: [Style, string][] = [["shaded", "Shaded"], ["edges", "Edges
 const ORBIT_DEG_PER_PX = 0.4;
 const CLICK_SLOP_PX = 3; // a press that moves less than this is a click, not a drag
 const REBUILD_MS = 250; // after the last setting change
+const FIT_MS = 120; // a dragged logo is fitted to the surface this long after the pointer stops
 type Style = "shaded" | "edges" | "wireframe";
 
 /** The logo being made or changed (not in the scene until Apply). */
@@ -164,6 +166,7 @@ export class ViewerPage {
   private selectedLogo = 0;
   private topButtons: Record<string, HTMLButtonElement> = {};
   private rebuildTimer = 0;
+  private fitTimer = 0;
   private press: { x: number; y: number; moved: boolean; button: number } | null = null;
   private grabbing = false;
   private grabOffset: Vec3 = [0, 0, 0]; // logo point − where the drag started on its plane
@@ -456,7 +459,7 @@ export class ViewerPage {
       this.arrangePanel.showModel(size, A.centreOf(pos), A.fitNote(lo, hi, this.bed.slice(1) as Vec3));
     }
     if (this.panel === "check" && sc !== this.checkedScene) this.runCheck();
-    const preview = this.editing?.preview ?? null;
+    const preview = joinSoups(this.editing?.preview ?? null, sc ? engravedPositions(sc) : null);
     if (!m && !preview) {
       this.disposeModel();
       this.setOverlay(null);
@@ -666,6 +669,7 @@ export class ViewerPage {
       const press = this.press, grabbed = this.grabbing;
       this.press = null;
       end(e);
+      if (grabbed && press?.moved) this.onGrabEnded();
       if (press && !press.moved && press.button === 0 && !grabbed) {
         const [px, py] = this.local(e);
         this.onViewClicked(px, py);
@@ -836,7 +840,6 @@ export class ViewerPage {
     } else {
       const lg = hs.scene.logos[index];
       Object.assign(e, { picture: lg.picture, point: lg.point, normal: lg.normal });
-      if (lg.point && lg.normal && hs.scene.base) e.faceTris = this.faceAtPoint(lg.point, lg.normal);
       p.setSettings(lg.settings);
       p.setPicture(lg.picture.name);
       p.title.textContent = "Change the logo";
@@ -847,13 +850,6 @@ export class ViewerPage {
     p.setNote("Choose a picture: a PNG with a transparent background works best.");
     this.showScene();
     if (e.picture) this.rebuild();
-  }
-
-  private faceAtPoint(point: Vec3, normal: Vec3): number[] | null {
-    const base = this.base!;
-    const o: Vec3 = [point[0] + normal[0] * 0.5, point[1] + normal[1] * 0.5, point[2] + normal[2] * 0.5];
-    const found = hit(base.positions, o, [-normal[0], -normal[1], -normal[2]]);
-    return found ? flatFace(base.positions, found[0]).triangles : null;
   }
 
   /** Read a picture file chosen in the panel, then build. */
@@ -912,9 +908,12 @@ export class ViewerPage {
   private helper(): Worker {
     if (this.tracer) return this.tracer;
     const w = new Worker(new URL("./traceworker.ts", import.meta.url), { type: "module" });
-    w.onmessage = (m: MessageEvent<TraceAnswer | CheckAnswer | RepairAnswer>) => {
+    w.onmessage = (m: MessageEvent<TraceAnswer | CheckAnswer | RepairAnswer | MergeAnswer>) => {
       const a = m.data;
-      if (a.kind === "check") this.onChecked(a);
+      if (a.kind === "merge") {
+        this.merges.get(a.id)?.(a);
+        this.merges.delete(a.id);
+      } else if (a.kind === "check") this.onChecked(a);
       else if (a.kind === "repair") this.onRepaired(a);
       else this.onTraced(a);
     };
@@ -934,8 +933,23 @@ export class ViewerPage {
       if (this.repairId > 0) this.checkPanel.repaired.textContent = "";
       this.repairId++;
       this.checkPanel.repairButton.disabled = false;
+      for (const [id, answer] of this.merges) answer({ kind: "merge", id, positions: null, error: "Joining the parts failed." });
+      this.merges.clear();
     };
     return (this.tracer = w);
+  }
+
+  private merges = new Map<number, (a: MergeAnswer) => void>();
+  private mergeId = 0;
+
+  /** The scene as one body (the helper worker's manifold-3d), or an error in plain words. */
+  private merged(sc: Scene): Promise<MergeAnswer> {
+    const { base, raised, engraved } = sceneSolids(sc);
+    const request: MergeRequest = { kind: "merge", id: ++this.mergeId, base: base?.slice() ?? null, raised, engraved };
+    return new Promise((resolve) => {
+      this.merges.set(request.id, resolve);
+      this.helper().postMessage(request, [...(request.base ? [request.base.buffer] : []), ...raised.map((p) => p.buffer), ...engraved.map((p) => p.buffer)]);
+    });
   }
 
   // ---------------------------------------------------------------- arrange / check panels
@@ -1199,9 +1213,10 @@ export class ViewerPage {
   }
 
   /** Extrude + place the traced shape (quick: no tracing). */
-  private place(): void {
+  private place(quick = false): void {
     const e = this.editing!;
     if (!e.shape) return;
+    clearTimeout(this.fitTimer);
     const s = this.logoPanel.settings();
     Object.assign(e, { logo: null, preview: null, problem: "" });
     this.logoPanel.setSize(e.shape!.width, e.shape!.height);
@@ -1209,15 +1224,16 @@ export class ViewerPage {
       this.logoPanel.setNote(FACE_HINT);
     } else {
       try {
-        e.logo = buildLogo(e.picture!, s, e.point, e.normal, this.base, e.faceTris, e.shape!);
+        e.logo = buildLogo(e.picture!, s, e.point, e.normal, this.base, e.faceTris, e.shape!, quick);
         e.preview = logoPositions([e.logo]);
       } catch (err) {
         if (!(err instanceof LogoError)) throw err;
         e.problem = err.message;
       }
-      this.logoPanel.setNote(e.problem || logoNote(e.logo!));
+      this.logoPanel.setNote(e.problem || logoNote(e.logo!, quick));
     }
-    this.setOverlay(e.preview);
+    const sc = this.shownScene();
+    this.setOverlay(joinSoups(e.preview, sc ? engravedPositions(sc) : null));
     if (!this.mesh && e.preview) this.fit();
   }
 
@@ -1247,16 +1263,24 @@ export class ViewerPage {
     if (found) this.placeOn(found[0], found[1], d);
   }
 
-  /** Put the logo on the flat face around triangle ``tri`` of the model, at ``point``. */
-  placeOn(tri: number, point: Vec3, viewDir: Vec3 | null = null): void {
+  /** Put the logo on the model at ``point`` (on triangle ``tri``), facing the way the surface
+   *  around it faces (``areaNormal``: on a curved model one triangle isn't enough). */
+  placeOn(tri: number, point: Vec3, viewDir: Vec3 | null = null, quick = false): void {
     const e = this.editing, base = this.base;
     if (!e || !base) return;
-    const face = flatFace(base.positions, tri);
-    let n = face.normal;
+    let n = normalOf(base.positions, tri);
     if (viewDir && n[0] * viewDir[0] + n[1] * viewDir[1] + n[2] * viewDir[2] > 0) n = [-n[0], -n[1], -n[2]];
-    Object.assign(e, { point: [...point] as Vec3, normal: n, faceTris: face.triangles });
-    if (e.shape) this.place();
+    n = areaNormal(base.positions, point, n, this.logoReach());
+    Object.assign(e, { point: [...point] as Vec3, normal: n, faceTris: null });
+    if (e.shape) this.place(quick);
     else this.rebuild();
+    if (quick) this.fitTimer = window.setTimeout(() => this.editing === e && this.place(), FIT_MS);
+  }
+
+  /** How far the logo being made reaches from its centre (before it's traced: from its width). */
+  private logoReach(): number {
+    const e = this.editing;
+    return e?.shape ? reach(e.shape) : this.logoPanel.settings().width * 0.6;
   }
 
   private grabTest(x: number, y: number): boolean {
@@ -1264,7 +1288,7 @@ export class ViewerPage {
     if (!e?.preview || !e.normal || !e.point) return false;
     const [o, d] = this.rayAt(x, y);
     if (hit(e.preview, o, d) === null) return false;
-    const at = this.onPlane(o, d);
+    const at = this.base ? (hit(this.base.positions, o, d)?.[1] ?? this.onPlane(o, d)) : this.onPlane(o, d);
     if (!at) return false;
     this.grabOffset = [e.point[0] - at[0], e.point[1] - at[1], e.point[2] - at[2]];
     return true;
@@ -1273,6 +1297,13 @@ export class ViewerPage {
   private onGrabMoved(x: number, y: number): void {
     const [o, d] = this.rayAt(x, y);
     this.moveLogoAlongRay(o, d, this.grabOffset);
+  }
+
+  /** The drag ended: fit the logo to the surface now. */
+  private onGrabEnded(): void {
+    const e = this.editing;
+    clearTimeout(this.fitTimer);
+    if (e?.logo && e.shape) this.place();
   }
 
   /** Where the ray meets the plane of the logo's face (null: parallel or behind). */
@@ -1285,15 +1316,22 @@ export class ViewerPage {
     return t > 0 ? [o[0] + d[0] * t, o[1] + d[1] * t, o[2] + d[2] * t] : null;
   }
 
-  /** Slide the logo over its face's plane to where the ray meets it (+ ``offset``: the logo
-   * keeps the spot it was grabbed by under the pointer). */
+  /** Move the logo over the model's surface to where the ray meets it (+ ``offset``: the logo
+   *  keeps the spot it was grabbed by under the pointer), facing the surface there. While the
+   *  drag goes on it stands on the tangent plane (quick); it's fitted ``FIT_MS`` after the
+   *  pointer stops, and when it's let go. */
   moveLogoAlongRay(o: Vec3, d: Vec3, offset: Vec3 = [0, 0, 0]): void {
-    const e = this.editing;
-    if (!e?.normal || !e.point || !e.shape) return;
-    const at = this.onPlane(o, d);
-    if (!at) return;
-    e.point = [at[0] + offset[0], at[1] + offset[1], at[2] + offset[2]];
-    this.place();
+    const e = this.editing, base = this.base;
+    if (!e?.normal || !e.point || !e.shape || !base) return;
+    const under = hit(base.positions, o, d);
+    if (!under) return;
+    const at = under[1];
+    const want: Vec3 = [at[0] + offset[0], at[1] + offset[1], at[2] + offset[2]];
+    // back onto the surface, along the logo's direction
+    const n = e.normal, lift = reach(e.shape) + 1;
+    const from: Vec3 = [want[0] + n[0] * lift, want[1] + n[1] * lift, want[2] + n[2] * lift];
+    const found = hit(base.positions, from, [-n[0], -n[1], -n[2]]) ?? under;
+    this.placeOn(found[0], found[1], d, true);
   }
 
   applyLogo(): void {
@@ -1334,20 +1372,33 @@ export class ViewerPage {
     this.sideInfo.hidden = false;
   }
 
-  /** Ask for a format, then write the model with its logos (the worker's model writers). */
-  async saveAs(ext?: SaveExt): Promise<boolean> {
+  /** Ask for a format, then write the model with its logos (the worker's model writers).
+   *  ``merge``: the model and its logos as one watertight body (engraved logos always cut). */
+  async saveAs(ext?: SaveExt, merge = false): Promise<boolean> {
     const hs = this.history;
     if (!hs || (!hs.scene.base && !hs.scene.logos.length) || this.editing || this.saving) return false;
-    ext ??= (await this.askSaveFormat()) ?? undefined;
-    if (!ext) return false;
+    if (!ext) {
+      const chosen = await this.askSaveFormat();
+      if (!chosen) return false;
+      [ext, merge] = chosen;
+    }
     const sc = hs.scene;
     this.saving = true;
     this.syncButtons();
     const name = defaultSaveName(this.current?.name ?? null, ext, hs.scene.logos.length > 0);
     this.message.classList.remove("error");
     this.message.textContent = `Saving ${name}…`;
+    let note = "";
     try {
-      const file = new File([sceneStl(sc) as BlobPart], "scene.stl", { type: "model/stl" });
+      let body: Float32Array | null = null;
+      if ((merge && sc.base && sc.logos.some((lg) => lg.settings.where === "face")) || needsSolid(sc)) {
+        this.message.textContent = `Merging the logos into the model…`;
+        const answer = await this.merged(sc);
+        if (answer.positions) body = answer.positions;
+        else if (needsSolid(sc)) throw new LogoError(ENGRAVE_FAILED);
+        else note = ` ${MERGE_FAILED}`;
+      }
+      const file = new File([sceneStl(sc, body) as BlobPart], "scene.stl", { type: "model/stl" });
       const input: InputFile = { file, name: file.name, ext: "stl", family: "model" };
       const target = { id: ext, label: ext.toUpperCase(), ext, group: "3D model", converterId: "model3d" };
       const opts = { units: "mm", scale_percent: 100, center_on_bed: false, repair: false, merge_parts: true, stl_format: "binary", detail: "normal" };
@@ -1357,7 +1408,7 @@ export class ViewerPage {
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
       hs.saved = sc;
-      this.message.textContent = `Saved “${name}”.`;
+      this.message.textContent = `Saved “${name}”.${note}`;
       this.lastSaved = { name, data: out[0].data };
       return true;
     } catch (err) {
@@ -1373,15 +1424,25 @@ export class ViewerPage {
   /** The last saved file (tests). */
   lastSaved: { name: string; data: Uint8Array } | null = null;
 
-  private askSaveFormat(): Promise<SaveExt | null> {
+  private askSaveFormat(): Promise<[SaveExt, boolean] | null> {
     return new Promise((resolve) => {
       const select = h("select", { id: "logo-save-format" },
         ...SAVE_EXTS.map((x) => h("option", { value: x }, x === "3mf" ? "3MF (best for slicers)" : x.toUpperCase())));
+      const sc = this.history?.scene;
+      const onModel = !!sc?.base && !!sc.logos.some((lg) => lg.settings.where === "face");
+      const engraved = !!sc?.logos.some(isEngraved);
+      const merge = h("input", { type: "checkbox", id: "logo-save-merge", checked: true, disabled: engraved });
+      const mergeRow = h("div", { class: "logo-save-merge" }, merge, h("label", { htmlFor: "logo-save-merge" }, " Merge into one solid"));
+      mergeRow.title = engraved
+        ? "Engraved logos are always cut into the model"
+        : "Join the model and its logos into one watertight body (else they're saved as overlapping parts)";
+      mergeRow.hidden = !onModel;
       const dialog = h("dialog", { class: "logo-save-dialog" },
         h("h2", {}, "Save as"),
         h("label", {}, "Format ", select),
+        mergeRow,
         h("p", { class: "muted small" }, "The model and its logos are saved as one object, in millimetres, centred on the print bed as shown here."));
-      const done = (v: SaveExt | null) => {
+      const done = (v: [SaveExt, boolean] | null) => {
         dialog.close();
         dialog.remove();
         resolve(v);
@@ -1389,7 +1450,7 @@ export class ViewerPage {
       const cancel = h("button", { class: "btn small", type: "button" }, "Cancel");
       cancel.addEventListener("click", () => done(null));
       const ok = h("button", { class: "btn primary", type: "button" }, "Save");
-      ok.addEventListener("click", () => done(select.value as SaveExt));
+      ok.addEventListener("click", () => done([select.value as SaveExt, onModel && merge.checked]));
       dialog.addEventListener("cancel", (e) => {
         e.preventDefault();
         done(null);
@@ -1417,11 +1478,24 @@ export class ViewerPage {
   }
 }
 
-function logoNote(lg: Logo): string {
+/** Two soups as one (either may be missing or empty). */
+function joinSoups(a: Float32Array | null, b: Float32Array | null): Float32Array | null {
+  if (!a?.length) return b?.length ? b : null;
+  if (!b?.length) return a;
+  const out = new Float32Array(a.length + b.length);
+  out.set(a);
+  out.set(b, a.length);
+  return out;
+}
+
+function logoNote(lg: Logo, quick = false): string {
   const notes = [`${lg.width.toFixed(1)} × ${lg.height.toFixed(1)} mm.`];
-  if (lg.overhang) notes.push("The logo hangs over the edge of this face — make it smaller or move it.");
+  if (lg.overhang) notes.push(`${lg.overhang} points of the logo miss the model — make it smaller or move it.`);
+  if (lg.folded) notes.push("The surface turns away under the logo — try Flat or a smaller logo.");
+  if (quick) notes.push("Let go to fit it to the surface.");
+  else if (lg.settings.where === "face" && lg.settings.style === "engraved") notes.push("It's cut into the model when you save.");
   if (lg.dropped) notes.push(`${lg.dropped} tiny ${lg.dropped === 1 ? "bit" : "bits"} left out (too small to print).`);
-  if (lg.settings.where === "face") notes.push("Drag the logo to move it, or click another face.");
+  if (lg.settings.where === "face") notes.push("Drag the logo to move it, or click another spot.");
   return notes.join(" ");
 }
 

@@ -4,11 +4,11 @@
 import { applyIndexed, applyNormal, applyPoint, applySoup, bounds, determinant3, type Matrix } from "./arrange";
 import type { Vec3 } from "./camera";
 import {
-  badge, frame, LogoError, plateOutline, shapeArea, placedLogo, placement, positions, shapeFromPicture, transform, footprint, SINK_MM, volume,
-  type Detail, type MaskMode, type Mesh, type PlateKind, type Shape,
+  badge, fittedLogo, frame, LogoError, plateOutline, shapeArea, placedLogo, placement, positions, shapeFromPicture, transform, SINK_MM, volume,
+  type Detail, type Fit, type MaskMode, type Mesh, type PlateKind, type Shape, type Style,
 } from "./logo";
 import type { ModelStats, ViewModel } from "./mesh";
-import { overhang, type Face } from "./pick";
+import { surface } from "./pick";
 
 export const BADGE_GAP_MM = 10;
 export const SAVE_EXTS = ["3mf", "stl", "obj", "ply", "glb"] as const;
@@ -31,6 +31,8 @@ export interface LogoSettings {
   where: "face" | "badge";
   rotation: number; // degrees
   sink: number;
+  fit: Fit; // on the model: flat (flat top, bottom follows the surface) / wrap
+  style: Style; // on the model: raised / engraved (cut into it when saving)
   plate: PlateKind;
   margin: number;
   plate_thickness: number;
@@ -39,7 +41,7 @@ export interface LogoSettings {
 
 export const DEFAULT_SETTINGS: LogoSettings = {
   mode: "alpha", threshold: 128, invert: false, detail: "normal", width: 40, thickness: 2, where: "face",
-  rotation: 0, sink: SINK_MM, plate: "none", margin: 3, plate_thickness: 2, hole: false,
+  rotation: 0, sink: SINK_MM, fit: "flat", style: "raised", plate: "none", margin: 3, plate_thickness: 2, hole: false,
 };
 
 export const sameSettings = (a: LogoSettings, b: LogoSettings) =>
@@ -54,29 +56,45 @@ export interface Logo {
   width: number;
   height: number;
   dropped: number;
-  overhang: number;
+  overhang: number; // logo points whose projection misses the model
   overlap: number; // mm³ inside the model / plate (sunk in), so the volume counts it once
+  folded: number; // wrapped triangles where the surface turns away (> 75°)
 }
+
+export const isEngraved = (lg: Logo) => lg.settings.where === "face" && lg.settings.style === "engraved";
+
+/** How far the logo reaches from its centre (mm), whichever way it is turned. */
+export const reach = (shp: Shape) => Math.max(0, ...shp.polygons.flatMap((p) => p.outer.map(([x, y]) => Math.hypot(x, y))));
 
 export const shapeOf = (pic: Picture, s: LogoSettings) =>
   shapeFromPicture(pic.rgba, pic.w, pic.h, s.width, s.mode, s.threshold, s.invert, s.detail);
 
-/** Trace (unless ``shp`` is given) + extrude + place. Throws LogoError in plain words. */
+/** Trace (unless ``shp`` is given) + extrude + place. On a model (``base``) the logo is fitted
+ *  to its surface (``s.fit``); ``quick`` (while dragging) stands it on the tangent plane.
+ *  ``_faceTris`` is unused since logos follow the surface. Throws LogoError in plain words. */
 export function buildLogo(
   pic: Picture, s: LogoSettings, point: Vec3 | null, normal: Vec3 | null,
-  base: ViewModel | null, faceTris: number[] | null, shp?: Shape,
+  base: ViewModel | null, _faceTris: number[] | null, shp?: Shape, quick = false,
 ): Logo {
   shp ??= shapeOf(pic, s);
   let over = 0;
+  let folded = 0;
   let sunk = 0;
+  let overlap: number | null = null;
   let meshes: Mesh[];
   if (s.where === "face") {
     sunk = s.sink;
-    if (!point || !normal) throw new LogoError("Click a flat face of the model to place the logo.");
-    meshes = [placedLogo(shp, s.thickness, point, normal, s.rotation, s.sink)];
-    if (base && faceTris?.length) {
-      const face: Face = { triangles: faceTris, normal, point };
-      over = overhang(footprint(shp, point, normal, s.rotation), base.positions, face);
+    if (!point || !normal) throw new LogoError("Click the model to place the logo.");
+    if (base && !quick) {
+      const axes = frame(normal, s.rotation);
+      const surf = surface(base.positions, point, axes, reach(shp));
+      const fitted = fittedLogo(shp, s.thickness, point, normal, s.rotation, s.sink, s.fit, surf, s.style);
+      meshes = [fitted.mesh];
+      over = fitted.missed;
+      folded = fitted.folded;
+      if (s.style === "engraved") overlap = Math.abs(volume(fitted.mesh)) + shapeArea(shp) * s.thickness; // a cut
+    } else {
+      meshes = [placedLogo(shp, s.thickness, point, normal, s.rotation, s.sink)];
     }
   } else {
     const parts = badge(shp, s.thickness, s.plate, s.margin, s.plate_thickness, s.hole);
@@ -93,7 +111,8 @@ export function buildLogo(
     meshes = parts.map((p) => transform(p, m));
     point = normal = null;
   }
-  return { picture: pic, settings: s, point, normal, meshes, width: shp.width, height: shp.height, dropped: shp.dropped, overhang: over, overlap: shapeArea(shp) * sunk };
+  return { picture: pic, settings: s, point, normal, meshes, width: shp.width, height: shp.height, dropped: shp.dropped, overhang: over,
+    overlap: overlap ?? shapeArea(shp) * sunk, folded };
 }
 
 export interface Scene {
@@ -219,6 +238,9 @@ export function scenePositions(sc: Scene): Float32Array {
   return out;
 }
 
+/** The engraved logos' cutters as one soup (the page draws them tinted, over the model). */
+export const engravedPositions = (sc: Scene) => logoPositions(sc.logos.filter(isEngraved));
+
 /** Every logo piece as one triangle soup (like ViewModel.positions). */
 export function logoPositions(logos: readonly Logo[]): Float32Array {
   const parts = logos.flatMap((lg) => lg.meshes.map(positions));
@@ -245,12 +267,12 @@ function size(pos: Float32Array): [number, number, number] {
 export function combined(sc: Scene, name = ""): ViewModel | null {
   if (!sc.base && !sc.logos.length) return null;
   if (!sc.logos.length) return sc.base;
-  const extra = logoPositions(sc.logos);
+  const extra = logoPositions(sc.logos.filter((lg) => !isEngraved(lg))); // cuts are drawn apart (engravedPositions)
   const base = sc.base;
   const pos = new Float32Array((base?.positions.length ?? 0) + extra.length);
   if (base) pos.set(base.positions);
   pos.set(extra, base?.positions.length ?? 0);
-  const pieces = sc.logos.reduce((t, lg) => t + lg.meshes.length, 0);
+  const pieces = sc.logos.reduce((t, lg) => t + (isEngraved(lg) ? 0 : lg.meshes.length), 0);
   const watertight = base ? base.watertight : true;
   let total: number | null = null;
   if (watertight) {
@@ -270,9 +292,25 @@ export function combined(sc: Scene, name = ""): ViewModel | null {
   return { ...stats, name: name || base?.name || "Logo", positions: pos };
 }
 
-/** Binary STL of the whole scene (the worker turns it into the chosen format). */
-export function sceneStl(sc: Scene): Uint8Array {
-  const parts = [sc.base?.positions ?? new Float32Array(), logoPositions(sc.logos)];
+export const MERGE_FAILED =
+  "Saved as separate overlapping parts: the model isn't one closed solid, so the logos couldn't be merged into it (Check → Repair may help).";
+export const ENGRAVE_FAILED = "Engraving needs a closed model — run Check → Repair first, or make the logo raised.";
+
+export const needsSolid = (sc: Scene) => sc.logos.some(isEngraved);
+
+/** What ``solid.combine`` joins: the model, raised logo pieces, engraved ones (soups). */
+export function sceneSolids(sc: Scene): { base: Float32Array | null; raised: Float32Array[]; engraved: Float32Array[] } {
+  return {
+    base: sc.base?.positions ?? null,
+    raised: sc.logos.filter((lg) => !isEngraved(lg)).flatMap((lg) => lg.meshes.map(positions)),
+    engraved: sc.logos.filter(isEngraved).flatMap((lg) => lg.meshes.map(positions)),
+  };
+}
+
+/** Binary STL of the whole scene (the worker turns it into the chosen format); ``merged`` =
+ *  the one body ``solid.combine`` made of it instead. */
+export function sceneStl(sc: Scene, merged: Float32Array | null = null): Uint8Array {
+  const parts = merged ? [merged] : [sc.base?.positions ?? new Float32Array(), logoPositions(sc.logos)];
   const tris = parts.reduce((t, p) => t + p.length / 9, 0);
   if (!tris) throw new LogoError("There is nothing to save yet.");
   const out = new Uint8Array(84 + tris * 50);

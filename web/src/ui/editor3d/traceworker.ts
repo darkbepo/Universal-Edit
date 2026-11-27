@@ -1,6 +1,9 @@
 // The 3D viewer's helper worker (the desktop uses worker threads): traces logo pictures (mask → outlines
 // → shape with its cap triangles, + the silhouette for the panel's preview), and checks / repairs models
-// for printing. The page drops answers it no longer wants (ids).
+// for printing, and merges logos into a model (manifold-3d, loaded on first merge). The page drops
+// answers it no longer wants (ids).
+import { getManifold } from "../../engines/manifold";
+import { combine, SolidError } from "../../editor3d/solid";
 import { LogoError, mask, prepare, shapeOfMask, type Detail, type MaskMode, type Shape } from "../../editor3d/logo";
 import { check, hasProblems, isClosed, notes, repair, repairChanged, repairedNote, soup, weld, type Report } from "../../editor3d/meshcheck";
 
@@ -17,6 +20,22 @@ export interface RepairRequest {
   kind: "repair";
   id: number;
   positions: Float32Array;
+}
+
+/** Join the model and raised logos into one body, cutting the engraved ones out. */
+export interface MergeRequest {
+  kind: "merge";
+  id: number;
+  base: Float32Array | null;
+  raised: Float32Array[];
+  engraved: Float32Array[];
+}
+
+export interface MergeAnswer {
+  kind: "merge";
+  id: number;
+  positions: Float32Array | null; // the one body (a soup), or null with ``error``
+  error: string;
 }
 
 export interface CheckAnswer {
@@ -62,8 +81,12 @@ export interface TraceAnswer {
 
 const post = (answer: object, transfer: Transferable[] = []) => (self as unknown as Worker).postMessage(answer, transfer);
 
-self.onmessage = (e: MessageEvent<TraceRequest | CheckRequest | RepairRequest>) => {
+self.onmessage = (e: MessageEvent<TraceRequest | CheckRequest | RepairRequest | MergeRequest>) => {
   const d = e.data;
+  if ("kind" in d && d.kind === "merge") {
+    void merge(d);
+    return;
+  }
   if ("kind" in d && d.kind === "check") {
     try {
       const report = check(weld(d.positions), d.angle);
@@ -104,3 +127,13 @@ self.onmessage = (e: MessageEvent<TraceRequest | CheckRequest | RepairRequest>) 
   const answer: TraceAnswer = { id: r.id, shape: found, error, preview };
   (self as unknown as Worker).postMessage(answer, [preview.buffer]);
 };
+
+async function merge(d: MergeRequest): Promise<void> {
+  try {
+    const positions = combine(await getManifold(), d.base, d.raised, d.engraved);
+    post({ kind: "merge", id: d.id, positions, error: "" } satisfies MergeAnswer, [positions.buffer]);
+  } catch (err) {
+    if (!(err instanceof SolidError)) console.error(err);
+    post({ kind: "merge", id: d.id, positions: null, error: err instanceof Error ? err.message : "Joining the parts failed." } satisfies MergeAnswer);
+  }
+}

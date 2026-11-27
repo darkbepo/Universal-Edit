@@ -67,6 +67,7 @@ SAVE_FILTERS = {
     "glb": "GLB (*.glb)",
 }
 REBUILD_MS = 250  # after the last setting change
+FIT_MS = 120  # a dragged logo is fitted to the surface this long after the pointer stops
 _CURRENT = object()  # save_as: the file shown
 
 
@@ -115,6 +116,13 @@ def load_bed() -> tuple[str, float, float, float]:
     except ValueError:
         pass
     return A.DEFAULT_BED
+
+
+def _setting_bool(key: str, default: bool) -> bool:
+    value = QSettings().value(key, default)
+    if isinstance(value, str):
+        return value.lower() in ("true", "1", "yes")
+    return bool(value)
 
 
 def _view_model(meshes, name: str) -> ViewModel | None:
@@ -179,6 +187,8 @@ class ViewerPage(QWidget):
         self._grab_offset = np.zeros(3)  # logo point − where the drag started on its plane
         self._rebuild_timer = QTimer(self, singleShot=True, interval=REBUILD_MS)
         self._rebuild_timer.timeout.connect(self._rebuild)
+        self._fit_timer = QTimer(self, singleShot=True, interval=FIT_MS)
+        self._fit_timer.timeout.connect(self._fit_now)
         self.panel = ""  # "arrange" / "check" while that side panel is open
         self.laying_flat = False  # Arrange: the next click on the model picks the face
         self.report: MC.Report | None = None  # the last check (Check panel)
@@ -206,6 +216,7 @@ class ViewerPage(QWidget):
         self.view.clicked.connect(self._on_view_clicked)
         self.view.grab_test = self._grab_test
         self.view.grab_moved.connect(self._on_grab_moved)
+        self.view.grab_released.connect(self._on_grab_released)
         self.placeholder = QLabel("", objectName="Muted")
         self.placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.placeholder.setWordWrap(True)
@@ -384,6 +395,16 @@ class ViewerPage(QWidget):
         row.addWidget(self.remove_logo_button)
         row.addStretch(1)
         lay.addLayout(row)
+        self.merge_box = QCheckBox("Merge into one solid when saving")
+        self.merge_box.setToolTip(
+            "Joins the model and its logos into one watertight body, so every slicer prints "
+            "them as one. Engraved logos always need this."
+        )
+        self.merge_box.setChecked(_setting_bool("viewer3d/merge_logos", True))
+        self.merge_box.toggled.connect(
+            lambda on: QSettings().setValue("viewer3d/merge_logos", bool(on))
+        )
+        lay.addWidget(self.merge_box)
         self.logo_list.currentRowChanged.connect(lambda _r: self._sync_buttons())
         lay.addStretch(1)
         return card
@@ -567,13 +588,22 @@ class ViewerPage(QWidget):
             sc = sc.without(self.editing.index)  # the one being changed is the preview
         return sc
 
+    def _overlay(self, sc: S.Scene | None) -> ViewModel | None:
+        """The logo being made + the engraved logos (drawn tinted over the model)."""
+        meshes = list(self.editing.logo.meshes) if self.editing and self.editing.logo else []
+        if self.editing is not None and self.editing.preview is None:
+            meshes = []
+        if sc is not None:
+            meshes += [m for lg in sc.logos if lg.engraved for m in lg.meshes]
+        return _view_model(meshes, "logo")
+
     def _refresh(self, fit: bool = False) -> None:
         """Show the current scene (+ the logo preview), fill the info panel, set buttons."""
         sc = self._shown_scene()
         combined = sc.combined(self.title_name()) if sc is not None else None
         preview = self.editing.preview if self.editing is not None else None
         first = self.view.model is None and self.view.overlay is None
-        self.view.set_overlay(preview)
+        self.view.set_overlay(self._overlay(sc))
         self.view.set_model(combined, fit=fit or (first and (combined or preview) is not None))
         if combined is None and preview is None:
             if self.current is None:
@@ -609,6 +639,16 @@ class ViewerPage(QWidget):
         self.logo_list.blockSignals(False)
         for w in (self.logos_title, self.logo_list, self.edit_logo_button, self.remove_logo_button):
             w.setVisible(bool(logos))
+        face = any(lg.settings.where == "face" for lg in logos)
+        engraved = any(lg.engraved for lg in logos)
+        self.merge_box.setVisible(face and h is not None and h.scene.base is not None)
+        self.merge_box.setEnabled(not engraved)
+        self.merge_box.setToolTip(
+            "Engraved logos are always cut into the model as one solid."
+            if engraved
+            else "Joins the model and its logos into one watertight body, so every slicer "
+            "prints them as one."
+        )
 
     def _sync_buttons(self) -> None:
         h = self.history
@@ -864,8 +904,6 @@ class ViewerPage(QWidget):
         else:
             lg = h.scene.logos[index]
             e.picture, e.point, e.normal = lg.picture, lg.point, lg.normal
-            if lg.point is not None and h.scene.base is not None:
-                e.face_tris = self._face_at_point(lg.point, lg.normal)
             self.logo_panel.set_settings(lg.settings)
             self.logo_panel.set_picture(lg.picture.name)
             self.logo_panel.title.setText("Change the logo")
@@ -883,13 +921,6 @@ class ViewerPage(QWidget):
         h = self.history
         if h is not None and 0 <= row < len(h.scene.logos):
             self.start_logo(row)
-
-    def _face_at_point(self, point, normal) -> list[int] | None:
-        """The flat face under a logo placed before (to check the edge again)."""
-        base = self.base
-        n = np.asarray(normal, float)
-        found = pick.hit(base.vertices, base.faces, np.asarray(point) + n * 0.5, -n)
-        return pick.flat_face(base.vertices, base.faces, found[0]).triangles if found else None
 
     def ask_picture_path(self) -> str:
         path, _ = QFileDialog.getOpenFileName(self, "Choose a logo picture", "", PICTURE_FILTER)
@@ -996,9 +1027,11 @@ class ViewerPage(QWidget):
 
         self.tasks.submit("trace", lambda: _trace_job(pic, s, colour), done, failed)
 
-    def _place(self) -> None:
-        """Extrude + place the traced shape where it goes (quick: no tracing)."""
+    def _place(self, quick: bool = False) -> None:
+        """Extrude + place the traced shape where it goes (no tracing). ``quick`` (dragging):
+        stood on the tangent plane, fitted to the surface later (``_fit_now``)."""
         e = self.editing
+        self._fit_timer.stop()
         s = self.logo_panel.settings()
         e.logo, e.preview, e.problem = None, None, ""
         self.logo_panel.set_size(e.shape.width, e.shape.height)
@@ -1007,26 +1040,34 @@ class ViewerPage(QWidget):
         else:
             try:
                 e.logo = S.build_logo(
-                    e.picture, s, e.point, e.normal, self.base, e.face_tris, shp=e.shape
+                    e.picture, s, e.point, e.normal, self.base, shp=e.shape, quick=quick
                 )
             except L.LogoError as exc:
                 e.problem = str(exc)
             else:
                 e.preview = _view_model(e.logo.meshes, "logo")
-            self.logo_panel.set_note(e.problem or self._logo_note(e.logo))
+            self.logo_panel.set_note(e.problem or self._logo_note(e.logo, quick))
         self._refresh()
         self.logo_built.emit()
 
     @staticmethod
-    def _logo_note(lg: S.Logo) -> str:
+    def _logo_note(lg: S.Logo, quick: bool = False) -> str:
         notes = [f"{lg.width:.1f} × {lg.height:.1f} mm."]
         if lg.overhang:
-            notes.append("The logo hangs over the edge of this face — make it smaller or move it.")
+            notes.append(
+                f"{lg.overhang} points of the logo miss the model — make it smaller or move it."
+            )
+        if lg.folded:
+            notes.append("The surface turns away under the logo — try Flat or a smaller logo.")
+        if quick:
+            notes.append("Let go to fit it to the surface.")
+        elif lg.settings.where == "face" and lg.engraved:
+            notes.append("It's cut into the model when you save.")
         if lg.dropped:
             bits = "bit" if lg.dropped == 1 else "bits"
             notes.append(f"{lg.dropped} tiny {bits} left out (too small to print).")
         if lg.settings.where == "face":
-            notes.append("Drag the logo to move it, or click another face.")
+            notes.append("Drag the logo to move it, or click another spot.")
         return " ".join(notes)
 
     def _on_view_clicked(self, x: float, y: float) -> None:
@@ -1045,22 +1086,46 @@ class ViewerPage(QWidget):
         if found is not None:
             self.place_on(found[0], found[1], direction)
 
-    def place_on(self, tri: int, point, view_dir=None) -> None:
-        """Put the logo on the flat face around triangle ``tri`` of the model, at ``point``."""
+    def place_on(self, tri: int, point, view_dir=None, quick: bool = False) -> None:
+        """Put the logo on the model at ``point`` (on triangle ``tri``), facing the way the
+        surface around it faces (``area_normal``: on a curved model one triangle isn't enough)."""
         e, base = self.editing, self.base
         if e is None or base is None:
             return
-        face = pick.flat_face(base.vertices, base.faces, tri)
-        normal = face.normal
+        a, b, c = base.vertices[base.faces[tri]]
+        normal = np.cross(b - a, c - a)
+        length = float(np.linalg.norm(normal))
+        normal = normal / length if length > 0 else np.array([0.0, 0.0, 1.0])
         if view_dir is not None and float(np.dot(normal, view_dir)) > 0:
             normal = -normal  # clicked the inside of a model wound the wrong way round
+        normal = pick.area_normal(base.vertices, base.faces, point, normal, self._logo_reach())
         e.point = tuple(float(v) for v in point)
         e.normal = tuple(float(v) for v in normal)
-        e.face_tris = face.triangles
+        e.face_tris = None
         if e.shape is not None:
-            self._place()
+            self._place(quick)
+            if quick:
+                self._fit_timer.start()
         else:
             self._rebuild()
+
+    def _logo_reach(self) -> float:
+        """How far the logo being made reaches from its centre (before it's traced: from its
+        width)."""
+        e = self.editing
+        if e is not None and e.shape is not None:
+            return S.reach(e.shape)
+        return self.logo_panel.settings().width * 0.6
+
+    def _fit_now(self) -> None:
+        """Fit the dragged logo to the surface (the pointer stopped, or let go)."""
+        e = self.editing
+        if e is not None and e.shape is not None and e.point is not None:
+            self._place()
+
+    def _on_grab_released(self) -> None:
+        self._fit_timer.stop()
+        self._fit_now()
 
     def _grab_test(self, x: float, y: float) -> bool:
         e = self.editing
@@ -1069,7 +1134,9 @@ class ViewerPage(QWidget):
         origin, direction = pick.ray(self.view.camera, x, y, self.view.width(), self.view.height())
         if pick.hit(e.preview.vertices, e.preview.faces, origin, direction) is None:
             return False
-        at = self._on_plane(origin, direction)
+        base = self.base
+        under = pick.hit(base.vertices, base.faces, origin, direction) if base else None
+        at = under[1] if under is not None else self._on_plane(origin, direction)
         if at is None:
             return False
         self._grab_offset = np.asarray(e.point, float) - at
@@ -1093,16 +1160,22 @@ class ViewerPage(QWidget):
         return np.asarray(origin, float) + np.asarray(direction, float) * t if t > 0 else None
 
     def move_logo_along_ray(self, origin, direction, offset=(0.0, 0.0, 0.0)) -> None:
-        """Slide the logo over its face's plane to where the ray meets it (+ ``offset``: the
-        logo keeps the spot it was grabbed by under the pointer)."""
-        e = self.editing
-        if e is None or e.normal is None or e.point is None or e.shape is None:
+        """Move the logo over the model's surface to where the ray meets it (+ ``offset``: the
+        logo keeps the spot it was grabbed by under the pointer), facing the surface there.
+        While the drag goes on it stands on the tangent plane (quick); it's fitted ``FIT_MS``
+        after the pointer stops, and when it's let go."""
+        e, base = self.editing, self.base
+        if e is None or e.normal is None or e.point is None or e.shape is None or base is None:
             return
-        at = self._on_plane(origin, direction)
-        if at is None:
+        under = pick.hit(base.vertices, base.faces, origin, direction)
+        if under is None:
             return
-        e.point = tuple(float(v) for v in at + np.asarray(offset, float))
-        self._place()
+        want = np.asarray(under[1], float) + np.asarray(offset, float)
+        # back onto the surface, along the logo's direction
+        n = np.asarray(e.normal, float)
+        lift = S.reach(e.shape) + 1.0
+        found = pick.hit(base.vertices, base.faces, want + n * lift, -n) or under
+        self.place_on(found[0], found[1], direction, quick=True)
 
     def apply_logo(self) -> None:
         e = self.editing
@@ -1143,6 +1216,7 @@ class ViewerPage(QWidget):
 
     def _end_edit(self) -> None:
         self._rebuild_timer.stop()
+        self._fit_timer.stop()
         self.tasks.cancel_group("trace")
         self.tasks.cancel_group("picture")
         if self.editing is not None:
@@ -1193,12 +1267,17 @@ class ViewerPage(QWidget):
             self.message.setText("Save as 3MF, STL, OBJ, PLY or GLB.")
             return False
         scene = h.scene
+        face = any(lg.settings.where == "face" for lg in scene.logos)
+        merge = face and scene.base is not None and self.merge_box.isChecked()
         self.saving = True
         self._sync_buttons()
         self.message.setText(f"Saving {dest.name}…")
 
-        def work() -> str:
-            data = S.export(scene, ext)
+        def work() -> tuple[str, str]:
+            try:
+                data, note = S.export_with_note(scene, ext, merge)
+            except L.LogoError as exc:
+                raise ConversionError(str(exc)) from exc
             fd, tmp = tempfile.mkstemp(prefix=".umc-tmp-", dir=dest.parent)
             try:
                 with os.fdopen(fd, "wb") as fh:
@@ -1208,15 +1287,20 @@ class ViewerPage(QWidget):
             except BaseException:
                 Path(tmp).unlink(missing_ok=True)
                 raise
-            return str(dest)
+            return str(dest), note
 
-        def done(saved_path: str) -> None:
+        def done(result: tuple[str, str]) -> None:
+            saved_path, note = result
             self.saving = False
             h.saved = scene
-            self.message.setText(
-                f"Saved {Path(saved_path).name} — the model and its logos as one object, "
+            joined = (
+                "as one solid" if (merge or S.needs_solid(scene)) and not note else "as one object"
+            )
+            text = (
+                f"Saved {Path(saved_path).name} — the model and its logos {joined}, "
                 "centred on the print bed as shown here."
             )
+            self.message.setText(f"{text} {note}" if note else text)
             self._sync_buttons()
             self.saved.emit(saved_path)
 
@@ -1226,7 +1310,7 @@ class ViewerPage(QWidget):
             self._sync_buttons()
             self.saved.emit("")
 
-        def guarded() -> str:
+        def guarded() -> tuple[str, str]:
             try:
                 return work()
             except OSError as exc:

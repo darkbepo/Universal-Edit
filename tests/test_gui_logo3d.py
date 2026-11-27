@@ -82,7 +82,7 @@ def test_logo_on_the_top_face(window, qtbot, box_stl, ring_png):
     add_picture(page, qtbot, ring_png)
     panel = page.logo_panel
     assert panel.mode.currentData() == "alpha"  # the picture has transparency
-    assert page.editing.logo is None and "Click a flat face" in panel.note.text()
+    assert page.editing.logo is None and "Click the model" in panel.note.text()
     panel.width_box.setValue(20)
     built(page, qtbot)  # re-traced at the new width (after the short pause)
     click_top(page)
@@ -90,15 +90,20 @@ def test_logo_on_the_top_face(window, qtbot, box_stl, ring_png):
     assert lg is not None and lg.overhang == 0 and lg.width == pytest.approx(20)
     v = page.editing.preview.vertices
     assert v[:, 2].min() == pytest.approx(10 - 0.2) and v[:, 2].max() == pytest.approx(12)
-    assert v[:, 0].mean() == pytest.approx(2, abs=0.5)
+    assert (v[:, 0].min() + v[:, 0].max()) / 2 == pytest.approx(2, abs=0.5)  # centred
     assert "20.0 × 20.0 mm" in panel.note.text()
 
-    # drag: slide over the plane to (10, -5)
+    # drag: slide over the surface to (10, -5); quick while dragging, fitted on release
     page.move_logo_along_ray(np.array([10.0, -5.0, 50.0]), np.array([0, 0, -1.0]))
     assert page.editing.point == pytest.approx((10, -5, 10))
-    page.move_logo_along_ray(np.array([30.0, 0, 50.0]), np.array([0, 0, -1.0]))  # off the edge
-    assert page.editing.logo.overhang > 0 and "hangs over the edge" in panel.note.text()
+    assert "Let go to fit it" in panel.note.text() and page._fit_timer.isActive()
+    page._on_grab_released()
+    assert not page._fit_timer.isActive() and "Let go" not in panel.note.text()
+    page.move_logo_along_ray(np.array([15.0, 0, 50.0]), np.array([0, 0, -1.0]))  # over the edge
+    page._on_grab_released()
+    assert page.editing.logo.overhang > 0 and "miss the model" in panel.note.text()
     page.move_logo_along_ray(np.array([0.0, 0, 50.0]), np.array([0, 0, -1.0]))
+    page._on_grab_released()
 
     panel.apply_button.click()
     assert page.editing is None and page.side.currentIndex() == 0
@@ -326,3 +331,96 @@ def test_real_click_and_drag_in_the_gl_view(window, qtbot, box_stl, ring_png):
     # the logo keeps the spot it was grabbed by under the pointer: it moved by the drag only
     x, _y, z = page.editing.point
     assert 1 < x < 40 / px_per_mm + 1 and z == pytest.approx(10)
+
+
+@pytest.fixture
+def ball_stl(tmp_path):
+    p = tmp_path / "ball.stl"
+    p.write_bytes(trimesh.creation.icosphere(subdivisions=4, radius=30).export(file_type="stl"))
+    return p
+
+
+def _edges_closed(m) -> bool:
+    e = np.sort(np.asarray(m.faces)[:, [0, 1, 1, 2, 2, 0]].reshape(-1, 2), axis=1)
+    _u, counts = np.unique(e, axis=0, return_counts=True)
+    return bool((counts == 2).all())
+
+
+def test_wrap_on_a_ball_and_merge_on_save(window, qtbot, ball_stl, ring_png, tmp_path):
+    pytest.importorskip("manifold3d")
+    page = open_model(window, qtbot, ball_stl)
+    page.start_logo()
+    add_picture(page, qtbot, ring_png)
+    panel = page.logo_panel
+    assert panel.fit.isVisibleTo(panel) and panel.style_box.isVisibleTo(panel)
+    panel.fit.setCurrentIndex(panel.fit.findData("wrap"))
+    panel.width_box.setValue(20)
+    built(page, qtbot)
+    base = page.base
+    top = base.vertices[:, 2].max()
+    centre = base.vertices.mean(axis=0)
+    found = pick.hit(base.vertices, base.faces, [centre[0], centre[1], 100], [0, 0, -1])
+    page.place_on(found[0], found[1], np.array([0, 0, -1.0]))
+    lg = page.editing.logo
+    assert lg is not None and lg.settings.fit == "wrap" and lg.overhang == 0
+    v = lg.meshes[0].vertices
+    r = np.linalg.norm(v - centre, axis=1)
+    assert r.min() == pytest.approx(30 - 0.2, abs=0.1) and r.max() == pytest.approx(32, abs=0.1)
+    assert v[:, 2].max() > top  # stands out of the ball
+    page.apply_logo()
+    assert page.merge_box.isVisibleTo(page) and page.merge_box.isEnabled()
+    page.merge_box.setChecked(True)
+    out = tmp_path / "ball.stl"
+    page.ask_save_path = lambda suggested: str(out)
+    with qtbot.waitSignal(page.saved, timeout=60000):
+        assert page.save_as()
+    assert "as one solid" in page.message.text()
+    m = trimesh.load(out, force="mesh")
+    assert _edges_closed(m)
+    assert m.volume > 4 / 3 * np.pi * 30**3 * 0.98
+
+
+def test_engraved_logo_is_cut_in_when_saving(window, qtbot, box_stl, ring_png, tmp_path):
+    pytest.importorskip("manifold3d")
+    page = open_model(window, qtbot, box_stl)
+    page.start_logo()
+    add_picture(page, qtbot, ring_png)
+    panel = page.logo_panel
+    panel.style_box.setCurrentIndex(panel.style_box.findData("engraved"))
+    panel.width_box.setValue(20)
+    built(page, qtbot)
+    assert not panel.sink.isVisibleTo(panel)
+    click_top(page)
+    assert page.editing.logo.engraved and "cut into the model" in panel.note.text()
+    page.apply_logo()
+    assert page.info()["Parts"] == "1" and page.info()["Height (Z)"] == "10.0 mm"
+    assert page.view.overlay is not None  # the cutter, tinted
+    assert not page.merge_box.isEnabled()  # engraving always merges
+    out = tmp_path / "cut.stl"
+    page.ask_save_path = lambda suggested: str(out)
+    with qtbot.waitSignal(page.saved, timeout=60000):
+        assert page.save_as()
+    m = trimesh.load(out, force="mesh")
+    assert _edges_closed(m) and m.bounds[1][2] == pytest.approx(10, abs=1e-3)
+    assert m.volume < 40 * 40 * 10 - 50  # the ring is cut 2 mm deep
+
+
+def test_merge_off_saves_one_object(window, qtbot, box_stl, ring_png, tmp_path):
+    page = open_model(window, qtbot, box_stl)
+    page.start_logo()
+    add_picture(page, qtbot, ring_png)
+    page.logo_panel.width_box.setValue(20)
+    built(page, qtbot)
+    click_top(page)
+    page.apply_logo()
+    page.merge_box.setChecked(False)
+    try:
+        out = tmp_path / "plain.stl"
+        page.ask_save_path = lambda suggested: str(out)
+        with qtbot.waitSignal(page.saved, timeout=30000):
+            page.save_as()
+        assert "as one object" in page.message.text()
+        m = trimesh.load(out, force="mesh")
+        assert len(m.faces) == len(page.history.scene.combined().faces)
+    finally:
+        page.merge_box.setChecked(True)

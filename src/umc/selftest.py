@@ -428,7 +428,25 @@ def _logo3d_check(d: Path) -> list[Path]:
     out = d / "logo.stl"
     mesh = trimesh.util.concatenate([trimesh.Trimesh(p.vertices, p.faces) for p in parts])
     out.write_bytes(mesh.export(file_type="stl"))
-    return [out]
+    # wrapped onto a ball and merged into it (manifold3d is packaged)
+    from umc.editor3d import pick, solid
+
+    ball = trimesh.creation.icosphere(subdivisions=3, radius=30)
+    bv, bf = np.asarray(ball.vertices, float), np.asarray(ball.faces, np.int64)
+    small = logo.prepare(logo.shape(logo.trace(m), 16))
+    top = (0.0, 0.0, 30.0)
+    axes = np.array(logo.frame((0, 0, 1), 0.0))
+    reach = max(float(np.hypot(x, y)) for p in small.polygons for x, y in p.outer)
+    surf = pick.surface(bv, bf, top, axes, reach)
+    fitted = logo.fitted_logo(small, 2, top, (0, 0, 1), 0, logo.SINK_MM, "wrap", surf)
+    if fitted.missed or fitted.folded:
+        raise RuntimeError(f"wrap: {fitted.missed} missed, {fitted.folded} folded")
+    v, f = solid.combine((bv, bf), [(fitted.mesh.vertices, fitted.mesh.faces)], [])
+    merged = d / "merged.stl"
+    merged.write_bytes(trimesh.Trimesh(v, f).export(file_type="stl"))
+    if trimesh.Trimesh(v, f).volume <= ball.volume:
+        raise RuntimeError("the merged logo added nothing")
+    return [out, merged]
 
 
 def _audio_editor_check(d: Path) -> list[Path]:
@@ -753,7 +771,7 @@ def run(report: Path) -> int:
             ("editor add-ons installed and loading", lambda: _addons_check(d / "addons")),
             ("document editor", lambda: _doc_editor_check(d / "doceditor")),
             ("3D viewer (model + Qt OpenGL)", lambda: _viewer3d_check(d / "viewer3d")),
-            ("3D logo (trace, earcut, extrude)", lambda: _logo3d_check(d / "logo3d")),
+            ("3D logo (trace, earcut, extrude, wrap, merge)", lambda: _logo3d_check(d / "logo3d")),
             (
                 "audio editor (open, cut, fade, save as mp3)",
                 lambda: _audio_editor_check(d / "audioedit"),
