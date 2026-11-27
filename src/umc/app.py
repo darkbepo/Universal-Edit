@@ -207,8 +207,8 @@ def main(argv: list[str] | None = None) -> int:
     _sync_thunar()
     app.setStyle("Fusion")
     theme.load_choice()  # the remembered System / Light / Dark, before the first window
-    app.setStyleSheet(theme.stylesheet())
-    theme.notifier().changed.connect(lambda: app.setStyleSheet(theme.stylesheet()))
+    theme.apply(app)  # our palette too: tables / text boxes / dialogs otherwise follow the OS
+    theme.notifier().changed.connect(lambda: theme.apply(app))
 
     from umc.gui.launcher import AppController
 

@@ -181,3 +181,19 @@ def test_stylesheet_parses(qtbot):
     finally:
         qInstallMessageHandler(previous)
     assert not [m for m in messages if "parse" in m.lower()]
+
+
+def test_palette_follows_the_theme(choice, qapp):
+    """Tables, text boxes and dialogs read the QPalette, not the stylesheet: it must be ours,
+    in both looks, or they come out in the platform's colours (light editors in a dark app)."""
+    from PySide6.QtGui import QPalette
+
+    role = QPalette.ColorRole
+    for value, tokens in (("light", choice.LIGHT), ("dark", choice.DARK)):
+        choice.set_choice(value, save=False)
+        choice.apply(qapp)
+        pal = qapp.palette()
+        assert pal.color(role.Base).name() == tokens["surface"]
+        assert pal.color(role.Window).name() == tokens["bg"]
+        assert pal.color(role.Text).name() == tokens["text"]
+        assert pal.color(role.Highlight).name() == tokens["accent"]

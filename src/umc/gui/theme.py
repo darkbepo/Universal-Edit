@@ -205,6 +205,54 @@ def palette() -> dict[str, str]:
     return DARK if is_dark() else LIGHT
 
 
+def qpalette():
+    """A QPalette made from our tokens. Widgets the stylesheet doesn't reach (tables, text
+    boxes, lists, headers, menus, dialogs) read this: without it they took the platform's palette
+    — on Linux that is whatever the platform theme guesses (light Fusion under XFCE with a
+    Qt 5 ``qt5ct`` setting, Qt's own grey dark), so editors came out light in a dark app."""
+    from PySide6.QtGui import QColor, QPalette
+
+    c = palette()
+    pal = QPalette()
+    role = QPalette.ColorRole
+    group = QPalette.ColorGroup
+
+    def put(r, value: str, disabled: str | None = None) -> None:
+        for g in (group.Active, group.Inactive):
+            pal.setColor(g, r, QColor(value))
+        pal.setColor(group.Disabled, r, QColor(disabled or value))
+
+    put(role.Window, c["bg"])
+    put(role.WindowText, c["text"], c["muted"])
+    put(role.Base, c["surface"])
+    put(role.AlternateBase, c["surface_alt"])
+    put(role.ToolTipBase, c["surface"])
+    put(role.ToolTipText, c["text"])
+    put(role.PlaceholderText, c["muted"])
+    put(role.Text, c["text"], c["muted"])
+    put(role.Button, c["surface_alt"])
+    put(role.ButtonText, c["text"], c["muted"])
+    put(role.BrightText, c["danger"])
+    put(role.Light, c["border_strong"])
+    put(role.Midlight, c["border"])
+    put(role.Mid, c["border_strong"])
+    put(role.Dark, c["border_strong"])
+    put(role.Shadow, "#000000")
+    put(role.Highlight, c["accent"], c["border_strong"])
+    put(role.HighlightedText, c["accent_text"], c["text"])
+    put(role.Link, c["accent"])
+    put(role.LinkVisited, c["accent_hover"])
+    if hasattr(role, "Accent"):  # Qt 6.6+
+        put(role.Accent, c["accent"])
+    return pal
+
+
+def apply(app) -> None:
+    """Palette + stylesheet on the whole application (at start and on every light ↔ dark)."""
+    app.setPalette(qpalette())
+    app.setStyleSheet(stylesheet())
+
+
 def stylesheet() -> str:
     template = resources.files("umc.gui").joinpath("style.qss").read_text(encoding="utf-8")
     for key, value in sorted(palette().items(), key=lambda kv: -len(kv[0])):
