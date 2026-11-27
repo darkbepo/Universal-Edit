@@ -47,7 +47,11 @@ def open_file(qtbot, window, path):
     page = window.vector_editor
     assert window.stack.currentWidget() is page
     qtbot.waitUntil(lambda: not page.busy and page.source == path, timeout=10000)
-    page.canvas.set_zoom(2.0)  # whole units under the pointer (see VectorCanvas.step)
+    c = page.canvas
+    c.set_zoom(2.0)  # whole units under the pointer (see VectorCanvas.step)
+    # set_zoom centres on the canvas middle, a half pixel when the canvas size is odd (it
+    # depends on the fonts' panel widths); then whole-pixel clicks land 0.25 units off.
+    c.origin = QPointF(round(c.origin.x()), round(c.origin.y()))
     return page
 
 
